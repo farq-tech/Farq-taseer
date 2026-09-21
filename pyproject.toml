@@ -16,6 +16,9 @@ dev = ["pytest>=8", "httpx>=0.27"]
 [project.scripts]
 farq-api = "farq.__main__:main"
 
+[tool.vercel]
+entrypoint = "src.farq.api:app"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
