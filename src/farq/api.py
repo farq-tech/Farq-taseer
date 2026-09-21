@@ -301,11 +301,26 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
     return app
 
 
-def app() -> FastAPI:
-    root = Path(os.environ.get("FARQ_DATA_DIR", "data/runtime"))
+def default_data_dir() -> Path:
+    configured = os.environ.get("FARQ_DATA_DIR")
+    if configured:
+        return Path(configured)
+    # Vercel functions can write only under /tmp.
+    if os.environ.get("VERCEL"):
+        return Path("/tmp/farq")
+    return Path("data/runtime")
+
+
+def create_default_app() -> FastAPI:
+    root = default_data_dir()
     root.mkdir(parents=True, exist_ok=True)
     store = Store(root / "farq.sqlite3", root / "uploads")
     corpus = MemoryCorpus.from_json(Path(os.environ.get("FARQ_CORPUS_PATH", default_sample_path())))
     config = SearchConfig()
     live = HarajLiveClient(config) if config.enable_live else None
     return create_app(store, corpus, live, config)
+
+
+# Vercel imports this object and serves it as ASGI. A zero-argument factory
+# is not an ASGI callable (scope, receive, send).
+app = create_default_app()
