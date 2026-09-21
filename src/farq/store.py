@@ -290,8 +290,15 @@ class Store:
                 "select count(*) as count from request_recipients where request_id = ?",
                 (request_id,),
             ).fetchone()["count"]
+            seller_names = [
+                item["seller_name"]
+                for item in self._connection.execute(
+                    "select seller_name from request_recipients where request_id = ? order by rowid",
+                    (request_id,),
+                ).fetchall()
+            ]
             messages = self._connection.execute(
-                "select sender_role, seller_id, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
+                "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
                 (request_id,),
             ).fetchall()
             replied: set[str] = set()
@@ -302,6 +309,8 @@ class Store:
                     if message["offer_amount"] is not None:
                         latest_offer = message
             newest_offer = bool(messages) and messages[-1]["sender_role"] == "seller" and messages[-1]["offer_amount"] is not None
+            last = messages[-1] if messages else None
+            preview = " ".join((last["body"] or "").split()) if last is not None else ""
             items.append(
                 {
                     "id": request_id,
@@ -309,6 +318,9 @@ class Store:
                     "need": row["need"],
                     "city": row["city"],
                     "created_at": row["created_at"],
+                    "seller_names": seller_names,
+                    "last_message": preview[:180],
+                    "last_message_at": None if last is None else last["created_at"],
                     "recipient_count": recipient_count,
                     "replied_count": len(replied),
                     "waiting_count": max(0, recipient_count - len(replied)),

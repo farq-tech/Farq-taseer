@@ -41,6 +41,19 @@ function formatCount(value) {
   return new Intl.NumberFormat("ar-SA").format(value);
 }
 
+function ago(iso) {
+  const then = Date.parse(iso || "");
+  if (Number.isNaN(then)) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (minutes < 1) return "الآن";
+  if (minutes < 60) return `منذ ${formatCount(minutes)} د`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? "منذ ساعة" : `منذ ${formatCount(hours)} س`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "منذ يوم";
+  return `منذ ${formatCount(days)} ي`;
+}
+
 function money(amount) {
   if (amount == null || Number.isNaN(Number(amount))) return "";
   return `${new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 0 }).format(amount)} ر.س`;
@@ -225,76 +238,75 @@ function filePreview() {
 }
 
 function shell(body) {
-  return `<header class="top"><a class="brand" href="/" data-action="home">FARQ</a><button class="ghost" type="button" data-action="requests">طلباتي</button></header><main class="shell">${body}</main>`;
+  return `<header class="top"><a class="brand-lockup" href="/" data-action="home"><span class="brand-en">FARQ</span><span class="brand-ar">فرق تسعير</span></a><button class="avatar" type="button" data-action="requests" aria-label="طلباتي">ط</button></header><main class="shell">${body}</main>`;
 }
 
-function composer({ id = "composer-query", compact = false } = {}) {
-  return `<form class="composer" id="${compact ? "refine" : "composer"}">
-    <label class="sr" for="${id}" style="position:absolute;width:1px;height:1px;overflow:hidden">${compact ? "عدّل الطلب" : "وش تبي؟"}</label>
-    <textarea id="${id}" name="query" rows="${compact ? 2 : 3}" placeholder="أبي درابزين ستانلس بالرياض">${esc(state.query)}</textarea>
-    ${filePreview()}
-    <div class="composer-bar">
-      <label class="file-btn">صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">ملف<input type="file" data-action="add-files"></label>
-      <button class="send" type="submit">${compact ? "حدّث" : "دور لي"}</button>
-    </div>
-  </form>`;
+function icon(name, { size = 20, flip = false, label = "" } = {}) {
+  return `<img class="${flip ? "flip" : ""}" src="/icons/${name}.svg" width="${size}" height="${size}" alt="${esc(label)}">`;
+}
+
+function initial(name) {
+  const text = String(name || "ف").trim();
+  return esc(text.charAt(0) || "ف");
 }
 
 function renderHome() {
-  const ideas = ["أبي درابزين ستانلس بالرياض", "كامري 2024 مستعملة", "PS5 مستعمل", "أبي نجار بالرياض", "كفرات باترول"];
+  const examples = ["أبي تلفزيون سامسونج 65 بوصة", "وأبي كامري 2019 نظيفة", "وأحتاج نجار يسوي لي دولاب غرفة"];
   return `<section class="home">
-    <h1>وش تبي؟</h1>
-    <p class="lede">اكتبه بطريقتك.</p>
-    ${composer()}
-    <ul class="ideas">${ideas.map((idea) => `<li><button type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button></li>`).join("")}</ul>
+    <h1>وش تبي نسعّر لك؟</h1>
+    <p class="lede">اكتب طلب واحد أو عدة أشياء حتى لو كانت مختلفة</p>
+    <form class="composer" id="composer">
+      <div class="field">
+        <label class="sr" for="composer-query">وش تبي؟</label>
+        <textarea id="composer-query" name="query" placeholder="أدخل طلباتك هنا...">${esc(state.query)}</textarea>
+        <ul class="examples">${examples.map((idea) => `<li><button type="button" data-action="idea" data-query="${esc(idea)}">- ${esc(idea)}</button></li>`).join("")}</ul>
+      </div>
+      <button class="primary block" type="submit">سَعِّر طلباتي</button>
+    </form>
+    <ol class="steps">
+      <li>${icon("edit")}<strong>١. اكتب</strong><span>اكتب ما تحتاجه بالعامية</span></li>
+      <li>${icon("search")}<strong>٢. نبحث</strong><span>نسعرها من كبار الموردين</span></li>
+      <li>${icon("check-square")}<strong>٣. تختار</strong><span>اختر العرض الأنسب لك</span></li>
+    </ol>
   </section>`;
 }
 
 function renderFacts() {
   const items = facts(state.intent);
   if (!items.length) return "";
-  return `<div class="facts" aria-label="فهم الطلب">${items.map((item) => `<span>${esc(item)}</span>`).join("")}</div>`;
+  return `<div class="parsed"><span class="tag">فهمنا طلبك</span><div class="facts" aria-label="فهم الطلب">${items.map((item) => `<span>${esc(item)}</span>`).join("")}</div></div>`;
 }
 
 function renderQuestion() {
   const question = state.clarification || "";
   const aboutCity = question.includes("مدينة");
   return `<section class="question">
+    <span class="tag">${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</span>
     <p>${esc(question)}</p>
     ${aboutCity ? cityChoices("answer") : ""}
     <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>
   </section>`;
 }
 
-function renderCard(result, index) {
+function renderCard(result) {
   const key = resultKey(result);
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
-  const product = result.result_unit === "ad";
+  const name = result.ad?.title || seller.name || "جهة";
   const price = money(result.ad?.price_amount);
   const where = place(result);
-  if (!product) {
-    return `<article class="card service">
-      ${result.ad ? frame(result.ad, { thumb: true, eager: index < 2 }) : ""}
-      <h2>${esc(seller.name || result.ad?.title || "جهة")}</h2>
-      ${evidenceLines(result).map((line) => `<p class="evidence">${esc(line)}</p>`).join("")}
-      ${where ? `<p class="meta">${esc(where)}</p>` : ""}
-      <div class="card-actions">
-        <button class="text-btn" type="button" data-action="open" data-key="${esc(key)}">التفاصيل</button>
-        <button class="text-btn pick" type="button" data-action="quote" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مضافة للطلب" : "طلب عرض سعر"}</button>
-      </div>
-    </article>`;
-  }
-  return `<article class="card">
-    <button class="card-hit" type="button" data-action="open" data-key="${esc(key)}">
-      ${frame(result.ad, { eager: index < 2 })}
-      ${price ? `<p class="price">${esc(price)}</p>` : ""}
-      <h2>${esc(result.ad?.title || "")}</h2>
-      ${where ? `<p class="meta">${esc(where)}</p>` : ""}
+  return `<article class="vendor">
+    <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
+      ${result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`}
+      <span class="vendor-copy">
+        <strong>${esc(name)}</strong>
+        ${where ? `<span class="meta">${esc(where)}</span>` : ""}
+        ${seller.name && seller.name !== name ? `<span class="meta">${esc(seller.name)}</span>` : ""}
+      </span>
     </button>
-    <div class="card-actions">
-      <button class="text-btn pick" type="button" data-action="quote" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مضافة للطلب" : "طلب عرض سعر"}</button>
+    <div class="vendor-side">
+      ${price ? `<span class="price">${esc(price)}</span>` : ""}
+      <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 14 }) : ""}</button>
     </div>
   </article>`;
 }
@@ -304,8 +316,12 @@ function renderFlow() {
   const live = state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS");
   const products = state.results.length > 0 && state.results.every((item) => item.result_unit === "ad");
   const showEmpty = !asking && !state.partial && state.results.length === 0;
-  return `<section>
-    ${composer({ compact: true })}
+  return `<section class="flow">
+    <div class="nav">
+      <button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("arrow", { size: 24, flip: true, label: "" })}</button>
+      <div class="nav-title"><h1>${esc(state.intent?.need || state.query || "الطلب")}</h1><p>${asking ? "كمّل الطلب قبل النتائج" : "تصفح الجهات المتاحة"}</p></div>
+      <span class="icon-btn" aria-hidden="true">${icon("search", { size: 24 })}</span>
+    </div>
     ${renderFacts()}
     <p class="status ${live ? "live" : ""}" aria-live="polite">${esc(showEmpty ? "" : state.notice)}</p>
     ${asking ? renderQuestion() : ""}
@@ -318,7 +334,7 @@ function renderFlow() {
 function dock() {
   const count = state.selected.size;
   if (!count || state.view === "review") return "";
-  const label = count === 1 ? "طلب عرض سعر" : `طلب عرض سعر من ${formatCount(count)}`;
+  const label = count === 1 ? "أرسل إلى جهة واحدة" : `أرسل إلى ${formatCount(count)} جهات`;
   return `<div class="dock"><button class="primary" type="button" data-action="review">${esc(label)}</button></div>`;
 }
 
@@ -339,11 +355,14 @@ function renderDetail() {
   const key = resultKey(result);
   const selected = state.selected.has(key);
   return `<article class="detail">
-    <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
+    <div class="nav">
+      <button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("arrow", { size: 24, flip: true })}</button>
+      <div class="nav-title"><h1>${esc(result.ad?.title || seller.name || "")}</h1><p>${esc(place(result))}</p></div>
+      <span class="mark">${initial(seller.name)}</span>
+    </div>
     <div class="gallery">${frames}</div>
-    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">ما فيه سعر معلن في الإعلان</p>`}
-    <h2>${esc(result.ad?.title || seller.name || "")}</h2>
-    <p class="meta">${esc([seller.name, place(result)].filter(Boolean).join(" · "))}</p>
+    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">ما فيه سعر معلن</p>`}
+    <p class="meta">${esc(seller.name || "")}</p>
     ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
     ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان في حراج</a></p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
@@ -358,35 +377,31 @@ function renderReview() {
   const ready = state.selected.size > 0 && Boolean(city);
   return `<section class="review">
     <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
-    <h1>طلب عرض سعر</h1>
+    <span class="tag">طلب عرض سعر</span>
+    <h1>جاهز نرسله؟</h1>
     <p class="summary">${esc(state.query)}</p>
     <ul class="who">${names.map((item) => `<li><span>${esc(item.name)}</span><button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
     ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="question"><p>في أي مدينة؟</p>${cityChoices("pick-city")}</div>`}
     <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
-    <p class="meta">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
-    <div class="composer-bar" style="margin-top:14px">
-      <label class="file-btn">صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">فيديو<input type="file" accept="video/*" data-action="add-files"></label>
+    <p class="optional">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
+    <div class="composer-bar">
+      <label class="file-btn">${icon("camera")} صورة<input type="file" accept="image/*" data-action="add-files"></label>
+      <label class="file-btn">${icon("paperclip")} فيديو<input type="file" accept="video/*" data-action="add-files"></label>
     </div>
     ${filePreview()}
-    <button class="primary" type="button" data-action="send" ${ready ? "" : "disabled"} style="margin-top:18px">${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
+    <button class="primary block" type="button" data-action="send" ${ready ? "" : "disabled"}>${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
   </section>`;
 }
 
-function activity(item) {
-  const lines = [];
-  if (item.replied_count > 0) lines.push(`${formatCount(item.replied_count)} من ${formatCount(item.recipient_count)} ردوا`);
-  else lines.push(item.recipient_count ? "بانتظار الرد" : "");
-  if (item.has_new_offer) lines.push("وصل سعر جديد");
-  return lines.filter(Boolean);
-}
-
 function renderRequests() {
-  if (!state.requests.length) return `<section class="requests"><h1>طلباتك</h1><p class="lede">لما ترسل طلب سعر، يبين هنا.</p></section>`;
-  return `<section class="requests"><h1>طلباتك</h1>${state.requests
+  const head = `<div class="nav"><button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("arrow", { size: 24, flip: true })}</button><div class="nav-title"><h1>المحادثات</h1></div><span class="icon-btn" aria-hidden="true"></span></div>`;
+  if (!state.requests.length) return `<section class="requests">${head}<p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>`;
+  return `<section class="requests">${head}${state.requests
     .map((item) => {
-      const lines = activity(item);
-      return `<button class="request" type="button" data-action="thread" data-id="${esc(item.id)}"><strong>${esc(item.need || item.original_text)}</strong>${lines.map((line) => `<em>${esc(line)}</em>`).join("")}</button>`;
+      const title = (item.seller_names || []).filter(Boolean).join(" · ") || item.need || item.original_text;
+      const need = item.need || item.original_text;
+      const when = ago(item.last_message_at || item.created_at);
+      return `<button class="convo" type="button" data-action="thread" data-id="${esc(item.id)}"><span class="mark round">${initial(title)}</span><span class="convo-copy"><strong>${esc(title)}</strong>${need ? `<span class="badge">${esc(need)}</span>` : ""}${item.last_message ? `<em>${esc(item.last_message)}</em>` : ""}</span><span class="convo-meta">${when ? `<span>${esc(when)}</span>` : ""}${item.has_new_offer ? `<span class="unread" aria-label="عرض جديد"></span>` : ""}</span></button>`;
     })
     .join("")}</section>`;
 }
@@ -395,12 +410,18 @@ function renderThread() {
   const thread = state.thread;
   if (!thread) return `<section class="thread"><p>نحمّل المحادثة…</p></section>`;
   const who = (thread.recipients || []).map((item) => item.seller_name).join(" · ");
-  return `<section>
-    <button class="text-btn back" type="button" data-action="requests">طلباتي</button>
-    <h1>${esc(thread.need || thread.original_text)}</h1>
-    <p class="meta">${esc([who, thread.city ? cityLabel(thread.city) : ""].filter(Boolean).join(" · "))}</p>
-    <div class="thread">${bubbles(thread.messages, "user") || `<p class="meta">بانتظار الرد.</p>`}</div>
-    <form class="reply-form" id="user-reply"><input name="body" placeholder="اكتب رسالتك" autocomplete="off"><button class="primary" type="submit">إرسال</button></form>
+  return `<section class="chat">
+    <header class="chat-head">
+      <button class="icon-btn" type="button" data-action="requests" aria-label="رجوع">${icon("arrow", { size: 24, flip: true })}</button>
+      <span class="mark round">${initial(who)}</span>
+      <div class="who-line"><strong>${esc(who || "المحادثة")}</strong><span class="meta">${esc(thread.need || thread.original_text || "")}</span></div>
+    </header>
+    <div class="thread"><p class="day">اليوم</p>${bubbles(thread.messages, "user") || `<p class="meta">بانتظار الرد.</p>`}</div>
+    <form class="reply-form" id="user-reply">
+      <label class="icon-btn" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
+      <input name="body" placeholder="اكتب رسالة..." autocomplete="off">
+      <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
+    </form>
   </section>`;
 }
 
@@ -408,18 +429,19 @@ function renderSeller() {
   const seller = state.seller;
   if (!seller) return `<section class="seller"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
+  const partner = options[0]?.seller_name || "الجهة";
   return `<section class="seller">
-    <p class="brand">FARQ</p>
-    <h1>المحادثة</h1>
-    <p class="summary">${esc(seller.need || seller.original_text)}</p>
-    ${seller.city ? `<p class="meta">${esc(cityLabel(seller.city))}</p>` : ""}
+    <header class="seller-head">
+      <span class="mark round">${initial(partner)}</span>
+      <div class="who-line"><strong>${esc(partner)}</strong><span class="meta">${esc([seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "))}</span></div>
+    </header>
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
-    <div class="thread">${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
+    <div class="thread"><p class="day">اليوم</p>${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
     <form id="seller-reply">
       ${options.length > 1 ? `<select name="seller_id">${options.map((item) => `<option value="${esc(item.seller_id)}">${esc(item.seller_name)}</option>`).join("")}</select>` : `<input type="hidden" name="seller_id" value="${esc(options[0]?.seller_id || "")}">`}
       <input name="amount" inputmode="decimal" placeholder="السعر، إذا عندك" autocomplete="off">
-      <textarea name="body" rows="3" placeholder="اكتب ردك"></textarea>
-      <button class="primary" type="submit">إرسال</button>
+      <textarea name="body" rows="2" placeholder="اكتب رسالة..."></textarea>
+      <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
     </form>
     ${state.notice ? `<p class="status">${esc(state.notice)}</p>` : ""}
   </section>`;
@@ -684,11 +706,27 @@ document.addEventListener("input", (event) => {
   if (event.target.name === "query") state.query = event.target.value;
 });
 
-document.addEventListener("change", (event) => {
-  if (event.target.dataset.action === "add-files") {
-    rememberFiles(event.target.files || []);
-    render();
+document.addEventListener("change", async (event) => {
+  if (event.target.dataset.action !== "add-files") return;
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
+  if (state.view === "thread" && state.thread?.id) {
+    try {
+      await ensureAuth();
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        await api(`/v1/requests/${state.thread.id}/attachments`, { method: "POST", form });
+      }
+      await loadThread(state.thread.id);
+    } catch (_error) {
+      state.notice = "ما انرفق الملف. تقدر ترسل الرسالة بدونه.";
+      render();
+    }
+    return;
   }
+  rememberFiles(files);
+  render();
 });
 
 document.addEventListener("keydown", (event) => {

@@ -127,6 +127,9 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
     assert listed["waiting_count"] == 1
     assert listed["has_new_offer"] is True
     assert listed["latest_offer_amount"] == 2800
+    assert listed["seller_names"]
+    assert "يشمل التوصيل" in listed["last_message"]
+    assert listed["last_message_at"]
     thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
     assert thread["messages"][0]["body"].startswith("طلب عرض سعر")
     assert thread["messages"][0]["sender_role"] == "user"
