@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 
 
@@ -168,17 +169,24 @@ class Store:
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
+        city_name = known_city(city)
+        if city_name is None:
+            raise ValueError("city is required")
         request_id = uuid4().hex
         reply_token = secrets.token_urlsafe(24)
         self._connection.execute(
             "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, reply_token, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, owner_user_id, original_text, need, notes, city, json.dumps(attributes, ensure_ascii=False), reply_token, _now()),
+            (request_id, owner_user_id, original_text, need, notes, city_name, json.dumps(attributes, ensure_ascii=False), reply_token, _now()),
         )
         self._connection.executemany(
             "insert into request_recipients (request_id, seller_id, seller_name, ad_id) values (?, ?, ?, ?)",
             [(request_id, item.seller_id, item.seller_name, item.ad_id) for item in recipients],
         )
         self._connection.commit()
+        lines = ["طلب عرض سعر", (need or original_text or "").strip(), f"المدينة: {city_name}"]
+        if notes and notes.strip():
+            lines.append(notes.strip())
+        self.add_message(request_id, "user", owner_user_id, "\n".join(line for line in lines if line))
         return request_id
 
     def add_attachment(self, request_id: str, owner_user_id: str, filename: str, content_type: str, content: bytes) -> Attachment:
@@ -254,23 +262,7 @@ class Store:
             Attachment(id=item["id"], filename=item["filename"], content_type=item["content_type"], size_bytes=item["size_bytes"])
             for item in self._connection.execute("select * from attachments where request_id = ?", (request_id,))
         ]
-        messages = []
-        for item in self._connection.execute("select * from messages where request_id = ? order by created_at", (request_id,)):
-            offer = None
-            if item["offer_amount"] is not None:
-                offer = Offer(amount=item["offer_amount"], currency=item["offer_currency"])
-            messages.append(
-                Message(
-                    id=item["id"],
-                    request_id=request_id,
-                    sender_role=item["sender_role"],
-                    seller_id=item["seller_id"],
-                    body=item["body"],
-                    offer=offer,
-                    attachment_ids=json.loads(item["attachment_ids_json"]),
-                    created_at=item["created_at"],
-                )
-            )
+        messages = self._messages(request_id)
         return RequestRecord(
             id=row["id"],
             owner_user_id=row["owner_user_id"],
@@ -298,8 +290,15 @@ class Store:
                 "select count(*) as count from request_recipients where request_id = ?",
                 (request_id,),
             ).fetchone()["count"]
+            seller_names = [
+                item["seller_name"]
+                for item in self._connection.execute(
+                    "select seller_name from request_recipients where request_id = ? order by rowid",
+                    (request_id,),
+                ).fetchall()
+            ]
             messages = self._connection.execute(
-                "select sender_role, seller_id, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
+                "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
                 (request_id,),
             ).fetchall()
             replied: set[str] = set()
@@ -310,6 +309,8 @@ class Store:
                     if message["offer_amount"] is not None:
                         latest_offer = message
             newest_offer = bool(messages) and messages[-1]["sender_role"] == "seller" and messages[-1]["offer_amount"] is not None
+            last = messages[-1] if messages else None
+            preview = " ".join((last["body"] or "").split()) if last is not None else ""
             items.append(
                 {
                     "id": request_id,
@@ -317,6 +318,9 @@ class Store:
                     "need": row["need"],
                     "city": row["city"],
                     "created_at": row["created_at"],
+                    "seller_names": seller_names,
+                    "last_message": preview[:180],
+                    "last_message_at": None if last is None else last["created_at"],
                     "recipient_count": recipient_count,
                     "replied_count": len(replied),
                     "waiting_count": max(0, recipient_count - len(replied)),
@@ -349,7 +353,28 @@ class Store:
             "city": row["city"],
             "recipients": recipients,
             "attachments": attachments,
+            "messages": [item.model_dump(mode="json") for item in self._messages(row["id"])],
         }
+
+    def _messages(self, request_id: str) -> list[Message]:
+        messages = []
+        for item in self._connection.execute("select * from messages where request_id = ? order by created_at", (request_id,)):
+            offer = None
+            if item["offer_amount"] is not None:
+                offer = Offer(amount=item["offer_amount"], currency=item["offer_currency"])
+            messages.append(
+                Message(
+                    id=item["id"],
+                    request_id=request_id,
+                    sender_role=item["sender_role"],
+                    seller_id=item["seller_id"],
+                    body=item["body"],
+                    offer=offer,
+                    attachment_ids=json.loads(item["attachment_ids_json"]),
+                    created_at=item["created_at"],
+                )
+            )
+        return messages
 
     def add_seller_reply(self, token: str, seller_id: str | None, body: str, offer: Offer | None) -> Message:
         row = self._request_by_token(token)

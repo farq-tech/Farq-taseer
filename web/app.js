@@ -18,6 +18,15 @@ const state = {
   sellerToken: "",
   token: localStorage.getItem("farq.token") || "",
   busy: false,
+  city: "",
+  cities: [
+    { value: "الرياض", label: "الرياض" },
+    { value: "جده", label: "جدة" },
+    { value: "مكه", label: "مكة" },
+    { value: "المدينة", label: "المدينة" },
+    { value: "الدمام", label: "الدمام" },
+    { value: "الخبر", label: "الخبر" },
+  ],
 };
 
 const app = document.querySelector("#app");
@@ -30,6 +39,19 @@ function esc(value) {
 
 function formatCount(value) {
   return new Intl.NumberFormat("ar-SA").format(value);
+}
+
+function ago(iso) {
+  const then = Date.parse(iso || "");
+  if (Number.isNaN(then)) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (minutes < 1) return "الآن";
+  if (minutes < 60) return `منذ ${formatCount(minutes)} د`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? "منذ ساعة" : `منذ ${formatCount(hours)} س`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "منذ يوم";
+  return `منذ ${formatCount(days)} ي`;
 }
 
 function money(amount) {
@@ -132,6 +154,37 @@ function facts(intent) {
   return items;
 }
 
+function customerCity() {
+  if (state.city) return state.city;
+  const value = state.intent?.location_city?.value;
+  return typeof value === "string" ? value : "";
+}
+
+function cityLabel(value) {
+  const found = state.cities.find((item) => item.value === value || item.label === value);
+  return found?.label || value || "";
+}
+
+function cityChoices(action) {
+  return `<div class="choices">${state.cities
+    .map(
+      (city) =>
+        `<button type="button" data-action="${action}" data-value="${esc(city.label)}" data-city="${esc(city.value)}">${esc(city.label)}</button>`,
+    )
+    .join("")}</div>`;
+}
+
+function bubbles(messages, mine) {
+  return (messages || [])
+    .map((message) => {
+      const role = message.sender_role === mine ? "user" : "seller";
+      const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
+      const body = esc(message.body || "").replace(/\n/g, "<br>");
+      return `<div class="bubble ${role}">${price}<div>${body}</div></div>`;
+    })
+    .join("");
+}
+
 function finalNotice(status, count) {
   if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث من حراج. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
   if (status === "LIVE_UNAVAILABLE") return "حراج ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
@@ -184,93 +237,123 @@ function filePreview() {
     .join("")}</div>`;
 }
 
-function shell(body) {
-  return `<header class="top"><a class="brand" href="/" data-action="home">FARQ</a><button class="ghost" type="button" data-action="requests">طلباتي</button></header><main class="shell">${body}</main>`;
+function icon(name, { size = 20, flip = false, label = "" } = {}) {
+  return `<img class="${flip ? "flip" : ""}" src="/icons/${name}.svg" width="${size}" height="${size}" alt="${esc(label)}">`;
 }
 
-function composer({ id = "composer-query", compact = false } = {}) {
-  return `<form class="composer" id="${compact ? "refine" : "composer"}">
-    <label class="sr" for="${id}" style="position:absolute;width:1px;height:1px;overflow:hidden">${compact ? "عدّل الطلب" : "وش تبي؟"}</label>
-    <textarea id="${id}" name="query" rows="${compact ? 2 : 3}" placeholder="أبي درابزين ستانلس بالرياض">${esc(state.query)}</textarea>
-    ${filePreview()}
-    <div class="composer-bar">
-      <label class="file-btn">صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">ملف<input type="file" data-action="add-files"></label>
-      <button class="send" type="submit">${compact ? "حدّث" : "دور لي"}</button>
-    </div>
-  </form>`;
+function initial(name) {
+  const text = String(name || "ف").trim();
+  return esc(text.charAt(0) || "ف");
+}
+
+function topBar({ title = "فرق تسعير", back = "", end = '<span class="slot" aria-hidden="true"></span>', lined = false } = {}) {
+  const start = back || '<span class="slot" aria-hidden="true"></span>';
+  return `<header class="top-bar${lined ? " lined" : ""}">${end}<a class="brand-title" href="/" data-action="home">${esc(title)}</a>${start}</header>`;
+}
+
+function tabBar(active) {
+  return `<nav class="tab-bar" aria-label="التنقل">
+    <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
+    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests">${icon("briefcase")}<span>طلباتي</span></button>
+    <button class="tab" type="button" disabled aria-disabled="true">${icon("settings")}<span>الإعدادات</span></button>
+  </nav>`;
+}
+
+function shell(body, { bare = false } = {}) {
+  if (bare) return `<main class="shell">${body}</main>`;
+  return `<main class="shell">${body}</main>`;
 }
 
 function renderHome() {
-  const ideas = ["أبي درابزين ستانلس بالرياض", "كامري 2024 مستعملة", "PS5 مستعمل", "أبي نجار بالرياض", "كفرات باترول"];
-  return `<section class="home">
-    <h1>وش تبي؟</h1>
-    <p class="lede">اكتبه بطريقتك.</p>
-    ${composer()}
-    <ul class="ideas">${ideas.map((idea) => `<li><button type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button></li>`).join("")}</ul>
+  const chips = ["سباك بالرياض", "كهربائي بجدة", "نقل عفش"];
+  return `${topBar()}
+  <section class="page home">
+    <h1>وش تبي نسعّر لك؟</h1>
+    <p class="lede">اكتب اللي تحتاجه وخلنا ندور لك</p>
+    <form class="composer" id="composer">
+      <div class="field">
+        <label class="sr" for="composer-query">وش تبي؟</label>
+        <textarea id="composer-query" name="query" placeholder="مثال: أبي سباك وأبي كهربائي بالرياض">${esc(state.query)}</textarea>
+      </div>
+      <div class="suggestions">
+        <span>اقتراحات سريعة</span>
+        <div class="chips">${chips.map((idea) => `<button type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+      </div>
+      <button class="primary block" type="submit">ابحث</button>
+    </form>
+  </section>
+  ${tabBar("home")}`;
+}
+
+function renderSearching() {
+  return `${topBar()}
+  <section class="page searching" aria-live="polite">
+    <div class="pulse"><div class="pulse-mid"><div class="pulse-core">${icon("search-white", { size: 20 })}</div></div></div>
+    <div><h2>ندور لك...</h2><p class="lede">نبحث في أكثر من 2,000 جهة</p></div>
+    <div class="dots" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
+    <div class="original-card"><span>طلبك الأصلي</span><strong>${esc(state.query)}</strong></div>
   </section>`;
 }
 
 function renderFacts() {
   const items = facts(state.intent);
   if (!items.length) return "";
-  return `<div class="facts" aria-label="فهم الطلب">${items.map((item) => `<span>${esc(item)}</span>`).join("")}</div>`;
+  const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : "";
+  const need = items.filter((item) => item !== city)[0] || state.intent?.need || state.query;
+  return `<div class="need-card">${city ? `<span class="loc">${esc(cityLabel(city))}</span>` : "<span></span>"}<div class="copy"><div class="glyph">${initial(need)}</div><div><strong>${esc(need)}</strong><em>فهمنا طلبك وجاهزين ندور</em></div></div></div>`;
 }
 
 function renderQuestion() {
   const question = state.clarification || "";
-  const cities = question.includes("مدينة") ? ["الرياض", "جدة", "الدمام", "مكة"] : [];
-  return `<section class="question">
-    <p>${esc(question)}</p>
-    ${cities.length ? `<div class="choices">${cities.map((city) => `<button type="button" data-action="answer" data-value="${esc(city)}">${esc(city)}</button>`).join("")}</div>` : ""}
-    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>
-  </section>`;
+  const aboutCity = question.includes("مدينة");
+  return `<section class="section-head"><h1>${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</h1><p class="lede">${esc(question)}</p></section>
+    ${aboutCity ? cityChoices("answer") : ""}
+    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>`;
 }
 
-function renderCard(result, index) {
+function snip(result) {
+  const lines = evidenceLines(result);
+  const text = result.ad?.description || lines[1] || lines[0] || "";
+  return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
+}
+
+function renderCard(result) {
   const key = resultKey(result);
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
-  const product = result.result_unit === "ad";
+  const name = result.ad?.title || seller.name || "جهة";
   const price = money(result.ad?.price_amount);
-  const where = place(result);
-  if (!product) {
-    return `<article class="card service">
-      ${result.ad ? frame(result.ad, { thumb: true, eager: index < 2 }) : ""}
-      <h2>${esc(seller.name || result.ad?.title || "جهة")}</h2>
-      ${evidenceLines(result).map((line) => `<p class="evidence">${esc(line)}</p>`).join("")}
-      ${where ? `<p class="meta">${esc(where)}</p>` : ""}
-      <div class="card-actions">
-        <button class="text-btn" type="button" data-action="open" data-key="${esc(key)}">التفاصيل</button>
-        <button class="text-btn pick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مختارة" : "اختَر"}</button>
-      </div>
-    </article>`;
-  }
-  return `<article class="card">
-    <button class="card-hit" type="button" data-action="open" data-key="${esc(key)}">
-      ${frame(result.ad, { eager: index < 2 })}
-      ${price ? `<p class="price">${esc(price)}</p>` : ""}
-      <h2>${esc(result.ad?.title || "")}</h2>
-      ${where ? `<p class="meta">${esc(where)}</p>` : ""}
+  const city = result.ad?.city || seller.city || "";
+  const blurb = snip(result);
+  const thumb = result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`;
+  return `<article class="vendor${selected ? " is-selected" : ""}">
+    <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
+      ${thumb}
+      <span class="vendor-copy">
+        <strong>${esc(name)}</strong>
+        <span class="vendor-meta">${seller.name ? `<span>${esc(seller.name)}</span>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
+        ${blurb ? `<span class="snip">${esc(blurb)}</span>` : ""}
+        <span class="price">${esc(price || "السعر عند الطلب")}</span>
+      </span>
     </button>
-    <div class="card-actions">
-      <button class="text-btn pick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مختارة" : "اختَر"}</button>
-    </div>
+    <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 12 }) : ""}</button>
   </article>`;
 }
 
 function renderFlow() {
   const asking = state.searchState === "CLARIFICATION_REQUIRED" || state.searchState === "LOCATION_AMBIGUOUS";
   const live = state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS");
-  const products = state.results.length > 0 && state.results.every((item) => item.result_unit === "ad");
   const showEmpty = !asking && !state.partial && state.results.length === 0;
-  return `<section>
-    ${composer({ compact: true })}
-    ${renderFacts()}
+  if (live && !state.results.length && !asking) return renderSearching();
+  const need = state.intent?.need || facts(state.intent)[0] || state.query || "النتائج";
+  const back = `<button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: asking ? "فرق تسعير" : "النتائج", back })}
+  <section class="page tight flow">
+    ${asking ? "" : `<div class="group-head"><span>${formatCount(state.results.length)} جهة مطابقة</span><strong>${esc(need)}</strong></div>`}
+    ${asking ? renderFacts() + renderQuestion() : ""}
     <p class="status ${live ? "live" : ""}" aria-live="polite">${esc(showEmpty ? "" : state.notice)}</p>
-    ${asking ? renderQuestion() : ""}
     ${showEmpty ? `<div class="empty"><h2>${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="text-btn" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${state.results.length ? `<div class="cards ${products ? "products" : ""}">${state.results.map(renderCard).join("")}</div>` : ""}
+    ${state.results.length ? `<div class="cards">${state.results.map(renderCard).join("")}</div>` : ""}
     ${dock()}
   </section>`;
 }
@@ -278,8 +361,8 @@ function renderFlow() {
 function dock() {
   const count = state.selected.size;
   if (!count || state.view === "review") return "";
-  const label = count === 1 ? "اطلب سعر" : `اطلب سعر من ${formatCount(count)}`;
-  return `<div class="dock"><button class="primary" type="button" data-action="review">${esc(label)}</button></div>`;
+  const label = count === 1 ? "اطلب السعر من جهة واحدة" : `اطلب السعر من ${formatCount(count)} جهات`;
+  return `<div class="dock"><p class="hint">سنرسل طلبك لكل الجهات المختارة</p><button class="primary compact" type="button" data-action="review">${esc(label)}</button></div>`;
 }
 
 function renderDetail() {
@@ -298,96 +381,109 @@ function renderDetail() {
   const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  return `<article class="detail">
-    <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
+  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: "التفاصيل", back })}
+  <article class="page tight detail">
     <div class="gallery">${frames}</div>
-    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">ما فيه سعر معلن في الإعلان</p>`}
-    <h2>${esc(result.ad?.title || seller.name || "")}</h2>
-    <p class="meta">${esc([seller.name, place(result)].filter(Boolean).join(" · "))}</p>
+    <h1 style="font-size:22px">${esc(result.ad?.title || seller.name || "")}</h1>
+    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">السعر عند الطلب</p>`}
+    <p class="meta">${esc(place(result))}${seller.name ? ` · ${esc(seller.name)}` : ""}</p>
     ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
     ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان في حراج</a></p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
-    <div class="detail-actions"><button class="primary" type="button" data-action="toggle" data-key="${esc(key)}">${selected ? "تم الاختيار" : "اختَر الجهة"}</button></div>
+    <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
     ${dock()}
   </article>`;
 }
 
 function renderReview() {
-  const names = [...state.selected.values()].map((result) => sellerOf(result).name || "بائع");
-  const ready = state.files.length > 0 && state.selected.size > 0;
-  return `<section class="review">
-    <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
+  const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: sellerOf(result).name || "بائع" }));
+  const city = customerCity();
+  const ready = state.selected.size > 0 && Boolean(city);
+  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: "طلب عرض سعر", back })}
+  <section class="page tight review">
     <h1>جاهز نرسله؟</h1>
     <p class="summary">${esc(state.query)}</p>
-    <ul class="who">${names.map((name) => `<li>${esc(name)}</li>`).join("")}</ul>
-    <label>ملاحظة<textarea class="note" id="note">${esc(state.note)}</textarea></label>
-    <div class="composer-bar" style="margin-top:14px">
-      <label class="file-btn">صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">ملف<input type="file" data-action="add-files"></label>
+    <ul class="who">${names.map((item) => `<li><span>${esc(item.name)}</span><button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
+    ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="section-head"><h1 style="font-size:20px">في أي مدينة؟</h1></div>${cityChoices("pick-city")}`}
+    <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
+    <p class="optional">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
+    <div class="composer-bar">
+      <label class="file-btn">${icon("camera")} صورة<input type="file" accept="image/*" data-action="add-files"></label>
+      <label class="file-btn">${icon("paperclip")} فيديو<input type="file" accept="video/*" data-action="add-files"></label>
     </div>
     ${filePreview()}
-    ${state.files.length ? "" : `<p class="warn">أرفق صورة أو ملف قبل الإرسال.</p>`}
-    <button class="primary" type="button" data-action="send" ${ready ? "" : "disabled"} style="margin-top:18px">${state.busy ? "نرسل…" : "أرسل الطلب"}</button>
+    <button class="primary block" type="button" data-action="send" ${ready ? "" : "disabled"}>${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
   </section>`;
 }
 
-function activity(item) {
-  const lines = [];
-  if (item.replied_count > 0) lines.push(`${formatCount(item.replied_count)} من ${formatCount(item.recipient_count)} ردوا`);
-  else lines.push(item.recipient_count ? "بانتظار الرد" : "");
-  if (item.has_new_offer) lines.push("وصل سعر جديد");
-  return lines.filter(Boolean);
-}
-
 function renderRequests() {
-  if (!state.requests.length) return `<section class="requests"><h1>طلباتك</h1><p class="lede">لما ترسل طلب سعر، يبين هنا.</p></section>`;
-  return `<section class="requests"><h1>طلباتك</h1>${state.requests
+  const logo = `<span class="slot" aria-hidden="true"></span>`;
+  const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
+  const head = `<header class="top-bar lined">${logo}${title}${logo}</header>`;
+  if (!state.requests.length) {
+    return `${head}<section class="page soft requests-page"><p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>${tabBar("requests")}`;
+  }
+  return `${head}<section class="page soft requests-page">${state.requests
     .map((item) => {
-      const lines = activity(item);
-      return `<button class="request" type="button" data-action="thread" data-id="${esc(item.id)}"><strong>${esc(item.need || item.original_text)}</strong>${lines.map((line) => `<em>${esc(line)}</em>`).join("")}</button>`;
+      const need = item.need || item.original_text;
+      const when = ago(item.last_message_at || item.created_at);
+      const replied = item.replied_count || 0;
+      const sent = item.recipient_count || 0;
+      const from = item.latest_offer_amount != null ? `من ${money(item.latest_offer_amount)}` : "";
+      return `<button class="request-card" type="button" data-action="thread" data-id="${esc(item.id)}">
+        <div class="row"><span class="when">${esc(when || "")}</span><strong class="title">${esc(need)}</strong></div>
+        <hr>
+        <div class="row">
+          <div class="stats"><strong>${replied ? `وصلت ${formatCount(replied)} أسعار` : "بانتظار الرد"}</strong><span>أرسل إلى ${formatCount(sent)} جهات</span></div>
+          <span class="from">${esc(from || "بانتظار السعر")}</span>
+        </div>
+        ${item.last_message ? `<div class="request-foot"><span>${esc(item.last_message)}</span></div>` : ""}
+      </button>`;
     })
-    .join("")}</section>`;
+    .join("")}</section>${tabBar("requests")}`;
 }
 
 function renderThread() {
   const thread = state.thread;
-  if (!thread) return `<section class="thread"><p>نحمّل المحادثة…</p></section>`;
-  const messages = (thread.messages || [])
-    .map((message) => {
-      const role = message.sender_role === "seller" ? "seller" : "user";
-      const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
-      return `<div class="bubble ${role}">${price}<div>${esc(message.body || "")}</div></div>`;
-    })
-    .join("");
-  return `<section>
-    <button class="text-btn back" type="button" data-action="requests">طلباتي</button>
-    <h1>${esc(thread.need || thread.original_text)}</h1>
-    <p class="meta">${esc(thread.recipients.map((item) => item.seller_name).join(" · "))}</p>
-    <div class="thread">${messages || `<p class="meta">بانتظار الرد.</p>`}</div>
-    ${thread.reply_token ? `<p class="reply-link">عشان يوصلك السعر، أرسل للبائع <a href="/s/${esc(thread.reply_token)}">رابط الرد</a>.</p>` : ""}
-    <form class="reply-form" id="user-reply"><input name="body" placeholder="اكتب رسالتك" autocomplete="off"><button class="primary" type="submit">إرسال</button></form>
-  </section>`;
+  if (!thread) return `<section class="page"><p>نحمّل المحادثة…</p></section>`;
+  const who = (thread.recipients || []).map((item) => item.seller_name).join(" · ");
+  const offer = (thread.messages || []).find((item) => item.offer?.amount != null);
+  const back = `<button class="icon-btn" type="button" data-action="requests" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  const phone = `<span class="icon-btn" aria-hidden="true">${icon("phone", { size: 20 })}</span>`;
+  return `<header class="chat-head">${phone}<div class="who-line"><strong>${esc(who || "المحادثة")}</strong><span class="meta">${esc(thread.need || thread.original_text || "")}</span></div>${back}</header>
+  <section class="page soft chat-page">
+    ${offer ? `<div class="quote-card"><div class="row"><span class="tag">عرض</span><strong>الإجمالي: ${esc(money(offer.offer.amount))}</strong></div><p>الطلب: ${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
+    <div class="thread"><p class="day">اليوم</p>${bubbles(thread.messages, "user") || `<p class="meta">بانتظار الرد.</p>`}</div>
+  </section>
+  <form class="reply-form" id="user-reply">
+    <label class="icon-btn" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
+    <input name="body" placeholder="اكتب رسالتك هنا..." autocomplete="off">
+    <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
+  </form>`;
 }
 
 function renderSeller() {
   const seller = state.seller;
-  if (!seller) return `<section class="seller"><h1>${esc(state.notice || "نحمّل الطلب…")}</h1></section>`;
+  if (!seller) return `<section class="page"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
-  return `<section class="seller">
-    <p class="brand">FARQ</p>
-    <h1>رد على الطلب</h1>
-    <p class="summary">${esc(seller.need || seller.original_text)}</p>
-    ${seller.notes ? `<p>${esc(seller.notes)}</p>` : ""}
-    ${seller.city ? `<p class="meta">${esc(seller.city)}</p>` : ""}
+  const partner = options[0]?.seller_name || "الجهة";
+  return `<header class="seller-head">
+      <span class="mark round">${initial(partner)}</span>
+      <div class="who-line"><strong>${esc(partner)}</strong><span class="meta">${esc([seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "))}</span></div>
+    </header>
+    <section class="page soft">
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
+    <div class="thread"><p class="day">اليوم</p>${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
     <form id="seller-reply">
       ${options.length > 1 ? `<select name="seller_id">${options.map((item) => `<option value="${esc(item.seller_id)}">${esc(item.seller_name)}</option>`).join("")}</select>` : `<input type="hidden" name="seller_id" value="${esc(options[0]?.seller_id || "")}">`}
-      <input name="amount" inputmode="decimal" placeholder="السعر" autocomplete="off">
-      <textarea name="body" rows="3" placeholder="يشمل التوصيل والتركيب"></textarea>
-      <button class="primary" type="submit">أرسل السعر</button>
+      <input name="amount" inputmode="decimal" placeholder="السعر، إذا عندك" autocomplete="off">
+      <textarea name="body" rows="2" placeholder="اكتب رسالة..."></textarea>
+      <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
     </form>
     ${state.notice ? `<p class="status">${esc(state.notice)}</p>` : ""}
-  </section>`;
+    </section>`;
 }
 
 function render() {
@@ -402,10 +498,11 @@ function render() {
     seller: renderSeller,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
-  app.innerHTML = state.view === "seller" ? `<main class="shell">${view()}</main>` : shell(view());
+  app.innerHTML = shell(view());
   bindImages(app);
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
+  if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
 }
 
 function rememberFiles(fileList) {
@@ -446,6 +543,7 @@ async function runSearch(text) {
   const query = (text || "").trim();
   if (!query) return;
   state.query = query;
+  state.city = "";
   state.view = "flow";
   state.partial = true;
   state.searchState = "";
@@ -509,22 +607,31 @@ async function openResult(key) {
   }
 }
 
+function selectResult(key) {
+  const result = state.results.find((item) => resultKey(item) === key) || (state.active && resultKey(state.active) === key ? state.active : null);
+  if (result && sellerOf(result).id) state.selected.set(key, result);
+}
+
 function toggle(key) {
   if (state.selected.has(key)) state.selected.delete(key);
-  else {
-    const result = state.results.find((item) => resultKey(item) === key) || (state.active && resultKey(state.active) === key ? state.active : null);
-    if (result && sellerOf(result).id) state.selected.set(key, result);
-  }
+  else selectResult(key);
+  render();
+}
+
+function openQuote(key) {
+  selectResult(key);
+  if (!state.selected.has(key)) return;
+  state.view = "review";
   render();
 }
 
 async function sendRequest() {
-  if (!state.files.length || !state.selected.size || state.busy) return;
+  const city = customerCity();
+  if (!state.selected.size || !city || state.busy) return;
   state.busy = true;
   render();
   try {
     await ensureAuth();
-    const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : null;
     const attributes = {};
     if (state.intent?.material?.value) attributes.material = state.intent.material.value;
     if (state.intent?.condition?.value === "used") attributes.condition = "مستعمل";
@@ -551,12 +658,14 @@ async function sendRequest() {
     }
     state.busy = false;
     state.files = [];
+    state.note = "";
     state.thread = created;
     state.view = "thread";
     await loadThread(created.id);
   } catch (_error) {
     state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.busy = false;
+    state.view = "review";
     render();
   }
 }
@@ -577,17 +686,20 @@ async function loadThread(id, silent = false) {
   if (!silent || previous !== JSON.stringify(thread.messages || [])) render();
 }
 
-async function loadSeller(token) {
+async function loadSeller(token, silent = false) {
   state.view = "seller";
   state.sellerToken = token;
-  state.notice = "";
+  if (!silent) state.notice = "";
   try {
-    state.seller = await api(`/v1/seller/${token}`, { skipAuth: true });
+    const seller = await api(`/v1/seller/${token}`, { skipAuth: true });
+    const previous = JSON.stringify(state.seller?.messages || []);
+    state.seller = seller;
+    if (!silent || previous !== JSON.stringify(seller.messages || [])) render();
   } catch (_error) {
     state.seller = null;
     state.notice = "ما لقينا الطلب.";
+    render();
   }
-  render();
 }
 
 document.addEventListener("submit", (event) => {
@@ -620,10 +732,7 @@ document.addEventListener("submit", (event) => {
         offer_currency: "SAR",
       },
     })
-      .then(() => {
-        state.notice = "وصل الرد لصاحب الطلب.";
-        render();
-      })
+      .then(() => loadSeller(state.sellerToken))
       .catch(() => {
         state.notice = "ما انرسل الرد.";
         render();
@@ -636,11 +745,27 @@ document.addEventListener("input", (event) => {
   if (event.target.name === "query") state.query = event.target.value;
 });
 
-document.addEventListener("change", (event) => {
-  if (event.target.dataset.action === "add-files") {
-    rememberFiles(event.target.files || []);
-    render();
+document.addEventListener("change", async (event) => {
+  if (event.target.dataset.action !== "add-files") return;
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
+  if (state.view === "thread" && state.thread?.id) {
+    try {
+      await ensureAuth();
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        await api(`/v1/requests/${state.thread.id}/attachments`, { method: "POST", form });
+      }
+      await loadThread(state.thread.id);
+    } catch (_error) {
+      state.notice = "ما انرفق الملف. تقدر ترسل الرسالة بدونه.";
+      render();
+    }
+    return;
   }
+  rememberFiles(files);
+  render();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -666,7 +791,14 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "open") openResult(target.dataset.key);
   else if (action === "toggle") toggle(target.dataset.key);
-  else if (action === "review") {
+  else if (action === "quote") openQuote(target.dataset.key);
+  else if (action === "unselect") {
+    state.selected.delete(target.dataset.key);
+    render();
+  } else if (action === "pick-city") {
+    state.city = target.dataset.city || "";
+    render();
+  } else if (action === "review") {
     state.view = "review";
     render();
   } else if (action === "back-results") {
@@ -686,3 +818,10 @@ document.addEventListener("visibilitychange", () => {
 
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
 else render();
+
+api("/v1/cities", { skipAuth: true })
+  .then((data) => {
+    if (data.cities?.length) state.cities = data.cities;
+    if (state.view === "flow" || state.view === "review") render();
+  })
+  .catch(() => {});

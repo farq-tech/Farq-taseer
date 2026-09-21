@@ -51,7 +51,9 @@ def test_request_message_and_attachment_round_trip(tmp_path: Path):
     fetched = api.get(f"/v1/requests/{request_id}", headers=headers)
     body = fetched.json()
     assert body["attachments"]
-    assert body["messages"][0]["offer"]["amount"] == 1500
+    quote = body["messages"][0]
+    assert quote["body"].startswith("طلب عرض سعر")
+    assert body["messages"][1]["offer"]["amount"] == 1500
     assert "rfq" not in fetched.text.lower()
 
 
@@ -125,9 +127,54 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
     assert listed["waiting_count"] == 1
     assert listed["has_new_offer"] is True
     assert listed["latest_offer_amount"] == 2800
+    assert listed["seller_names"]
+    assert "يشمل التوصيل" in listed["last_message"]
+    assert listed["last_message_at"]
     thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
-    assert thread["messages"][0]["offer"]["amount"] == 2800
-    assert thread["messages"][0]["sender_role"] == "seller"
+    assert thread["messages"][0]["body"].startswith("طلب عرض سعر")
+    assert thread["messages"][0]["sender_role"] == "user"
+    assert "الرياض" in thread["messages"][0]["body"]
+    offer = thread["messages"][1]
+    assert offer["offer"]["amount"] == 2800
+    assert offer["sender_role"] == "seller"
+    seller = api.get(f"/v1/seller/{token}")
+    assert seller.status_code == 200
+    follow = api.post(
+        f"/v1/requests/{request_id}/messages",
+        headers=headers,
+        json={"body": "هل السعر شامل التركيب؟"},
+    )
+    assert follow.status_code == 200
+    conversation = api.get(f"/v1/seller/{token}").json()["messages"]
+    assert conversation[-1]["body"] == "هل السعر شامل التركيب؟"
+    assert conversation[-1]["sender_role"] == "user"
+    chat = api.post(
+        f"/v1/seller/{token}/messages",
+        json={"seller_id": "1", "body": "نعم شامل"},
+    )
+    assert chat.status_code == 200
+    updated = api.get(f"/v1/requests/{request_id}", headers=headers).json()
+    assert updated["messages"][-1]["body"] == "نعم شامل"
+    assert updated["messages"][-1]["sender_role"] == "seller"
+
+
+def test_quote_requires_a_city(tmp_path: Path):
+    api = client(tmp_path)
+    token = api.post("/v1/auth/guest").json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    missing = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={
+            "original_text": "تركيب واجهات",
+            "need": "تركيب واجهات",
+            "recipients": [{"seller_id": "1", "seller_name": "لمسة معدن"}],
+        },
+    )
+    assert missing.status_code == 422
+    cities = api.get("/v1/cities")
+    assert cities.status_code == 200
+    assert any(item["value"] == "الرياض" for item in cities.json()["cities"])
 
 
 def test_search_stream_reports_live_before_the_final_result(tmp_path: Path):
