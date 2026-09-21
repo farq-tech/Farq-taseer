@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
+from farq.cities import city_choices
 from farq.config import SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
@@ -115,6 +116,10 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "contract_version": "1"}
+
+    @app.get("/v1/cities")
+    def cities() -> dict:
+        return {"cities": city_choices()}
 
     @app.post("/v1/auth/register")
     def register(body: RegisterBody) -> dict:

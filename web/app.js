@@ -18,6 +18,15 @@ const state = {
   sellerToken: "",
   token: localStorage.getItem("farq.token") || "",
   busy: false,
+  city: "",
+  cities: [
+    { value: "الرياض", label: "الرياض" },
+    { value: "جده", label: "جدة" },
+    { value: "مكه", label: "مكة" },
+    { value: "المدينة", label: "المدينة" },
+    { value: "الدمام", label: "الدمام" },
+    { value: "الخبر", label: "الخبر" },
+  ],
 };
 
 const app = document.querySelector("#app");
@@ -132,6 +141,36 @@ function facts(intent) {
   return items;
 }
 
+function customerCity() {
+  if (state.city) return state.city;
+  const value = state.intent?.location_city?.value;
+  return typeof value === "string" ? value : "";
+}
+
+function cityLabel(value) {
+  const found = state.cities.find((item) => item.value === value || item.label === value);
+  return found?.label || value || "";
+}
+
+function cityChoices(action) {
+  return `<div class="choices">${state.cities
+    .map(
+      (city) =>
+        `<button type="button" data-action="${action}" data-value="${esc(city.label)}" data-city="${esc(city.value)}">${esc(city.label)}</button>`,
+    )
+    .join("")}</div>`;
+}
+
+function bubbles(messages, mine) {
+  return (messages || [])
+    .map((message) => {
+      const role = message.sender_role === mine ? "user" : "seller";
+      const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
+      return `<div class="bubble ${role}">${price}<div>${esc(message.body || "")}</div></div>`;
+    })
+    .join("");
+}
+
 function finalNotice(status, count) {
   if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث من حراج. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
   if (status === "LIVE_UNAVAILABLE") return "حراج ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
@@ -219,10 +258,10 @@ function renderFacts() {
 
 function renderQuestion() {
   const question = state.clarification || "";
-  const cities = question.includes("مدينة") ? ["الرياض", "جدة", "الدمام", "مكة"] : [];
+  const aboutCity = question.includes("مدينة");
   return `<section class="question">
     <p>${esc(question)}</p>
-    ${cities.length ? `<div class="choices">${cities.map((city) => `<button type="button" data-action="answer" data-value="${esc(city)}">${esc(city)}</button>`).join("")}</div>` : ""}
+    ${aboutCity ? cityChoices("answer") : ""}
     <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>
   </section>`;
 }
@@ -242,7 +281,7 @@ function renderCard(result, index) {
       ${where ? `<p class="meta">${esc(where)}</p>` : ""}
       <div class="card-actions">
         <button class="text-btn" type="button" data-action="open" data-key="${esc(key)}">التفاصيل</button>
-        <button class="text-btn pick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مختارة" : "اختَر"}</button>
+        <button class="text-btn pick" type="button" data-action="quote" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مضافة للطلب" : "طلب عرض سعر"}</button>
       </div>
     </article>`;
   }
@@ -254,7 +293,7 @@ function renderCard(result, index) {
       ${where ? `<p class="meta">${esc(where)}</p>` : ""}
     </button>
     <div class="card-actions">
-      <button class="text-btn pick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مختارة" : "اختَر"}</button>
+      <button class="text-btn pick" type="button" data-action="quote" data-key="${esc(key)}" aria-pressed="${selected}">${selected ? "مضافة للطلب" : "طلب عرض سعر"}</button>
     </div>
   </article>`;
 }
@@ -278,7 +317,7 @@ function renderFlow() {
 function dock() {
   const count = state.selected.size;
   if (!count || state.view === "review") return "";
-  const label = count === 1 ? "اطلب سعر" : `اطلب سعر من ${formatCount(count)}`;
+  const label = count === 1 ? "طلب عرض سعر" : `طلب عرض سعر من ${formatCount(count)}`;
   return `<div class="dock"><button class="primary" type="button" data-action="review">${esc(label)}</button></div>`;
 }
 
@@ -307,27 +346,29 @@ function renderDetail() {
     ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
     ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان في حراج</a></p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
-    <div class="detail-actions"><button class="primary" type="button" data-action="toggle" data-key="${esc(key)}">${selected ? "تم الاختيار" : "اختَر الجهة"}</button></div>
+    <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
     ${dock()}
   </article>`;
 }
 
 function renderReview() {
-  const names = [...state.selected.values()].map((result) => sellerOf(result).name || "بائع");
-  const ready = state.files.length > 0 && state.selected.size > 0;
+  const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: sellerOf(result).name || "بائع" }));
+  const city = customerCity();
+  const ready = state.selected.size > 0 && Boolean(city);
   return `<section class="review">
     <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
-    <h1>جاهز نرسله؟</h1>
+    <h1>طلب عرض سعر</h1>
     <p class="summary">${esc(state.query)}</p>
-    <ul class="who">${names.map((name) => `<li>${esc(name)}</li>`).join("")}</ul>
-    <label>ملاحظة<textarea class="note" id="note">${esc(state.note)}</textarea></label>
+    <ul class="who">${names.map((item) => `<li>${esc(item.name)} <button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
+    ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="question"><p>في أي مدينة؟</p>${cityChoices("pick-city")}</div>`}
+    <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
+    <p class="meta">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
     <div class="composer-bar" style="margin-top:14px">
       <label class="file-btn">صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">ملف<input type="file" data-action="add-files"></label>
+      <label class="file-btn">فيديو<input type="file" accept="video/*" data-action="add-files"></label>
     </div>
     ${filePreview()}
-    ${state.files.length ? "" : `<p class="warn">أرفق صورة أو ملف قبل الإرسال.</p>`}
-    <button class="primary" type="button" data-action="send" ${ready ? "" : "disabled"} style="margin-top:18px">${state.busy ? "نرسل…" : "أرسل الطلب"}</button>
+    <button class="primary" type="button" data-action="send" ${ready ? "" : "disabled"} style="margin-top:18px">${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
   </section>`;
 }
 
@@ -352,39 +393,32 @@ function renderRequests() {
 function renderThread() {
   const thread = state.thread;
   if (!thread) return `<section class="thread"><p>نحمّل المحادثة…</p></section>`;
-  const messages = (thread.messages || [])
-    .map((message) => {
-      const role = message.sender_role === "seller" ? "seller" : "user";
-      const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
-      return `<div class="bubble ${role}">${price}<div>${esc(message.body || "")}</div></div>`;
-    })
-    .join("");
+  const who = (thread.recipients || []).map((item) => item.seller_name).join(" · ");
   return `<section>
     <button class="text-btn back" type="button" data-action="requests">طلباتي</button>
     <h1>${esc(thread.need || thread.original_text)}</h1>
-    <p class="meta">${esc(thread.recipients.map((item) => item.seller_name).join(" · "))}</p>
-    <div class="thread">${messages || `<p class="meta">بانتظار الرد.</p>`}</div>
-    ${thread.reply_token ? `<p class="reply-link">عشان يوصلك السعر، أرسل للبائع <a href="/s/${esc(thread.reply_token)}">رابط الرد</a>.</p>` : ""}
+    <p class="meta">${esc([who, thread.city ? cityLabel(thread.city) : ""].filter(Boolean).join(" · "))}</p>
+    <div class="thread">${bubbles(thread.messages, "user") || `<p class="meta">بانتظار الرد.</p>`}</div>
     <form class="reply-form" id="user-reply"><input name="body" placeholder="اكتب رسالتك" autocomplete="off"><button class="primary" type="submit">إرسال</button></form>
   </section>`;
 }
 
 function renderSeller() {
   const seller = state.seller;
-  if (!seller) return `<section class="seller"><h1>${esc(state.notice || "نحمّل الطلب…")}</h1></section>`;
+  if (!seller) return `<section class="seller"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
   return `<section class="seller">
     <p class="brand">FARQ</p>
-    <h1>رد على الطلب</h1>
+    <h1>المحادثة</h1>
     <p class="summary">${esc(seller.need || seller.original_text)}</p>
-    ${seller.notes ? `<p>${esc(seller.notes)}</p>` : ""}
-    ${seller.city ? `<p class="meta">${esc(seller.city)}</p>` : ""}
+    ${seller.city ? `<p class="meta">${esc(cityLabel(seller.city))}</p>` : ""}
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
+    <div class="thread">${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
     <form id="seller-reply">
       ${options.length > 1 ? `<select name="seller_id">${options.map((item) => `<option value="${esc(item.seller_id)}">${esc(item.seller_name)}</option>`).join("")}</select>` : `<input type="hidden" name="seller_id" value="${esc(options[0]?.seller_id || "")}">`}
-      <input name="amount" inputmode="decimal" placeholder="السعر" autocomplete="off">
-      <textarea name="body" rows="3" placeholder="يشمل التوصيل والتركيب"></textarea>
-      <button class="primary" type="submit">أرسل السعر</button>
+      <input name="amount" inputmode="decimal" placeholder="السعر، إذا عندك" autocomplete="off">
+      <textarea name="body" rows="3" placeholder="اكتب ردك"></textarea>
+      <button class="primary" type="submit">إرسال</button>
     </form>
     ${state.notice ? `<p class="status">${esc(state.notice)}</p>` : ""}
   </section>`;
@@ -406,6 +440,7 @@ function render() {
   bindImages(app);
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
+  if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
 }
 
 function rememberFiles(fileList) {
@@ -446,6 +481,7 @@ async function runSearch(text) {
   const query = (text || "").trim();
   if (!query) return;
   state.query = query;
+  state.city = "";
   state.view = "flow";
   state.partial = true;
   state.searchState = "";
@@ -509,22 +545,31 @@ async function openResult(key) {
   }
 }
 
+function selectResult(key) {
+  const result = state.results.find((item) => resultKey(item) === key) || (state.active && resultKey(state.active) === key ? state.active : null);
+  if (result && sellerOf(result).id) state.selected.set(key, result);
+}
+
 function toggle(key) {
   if (state.selected.has(key)) state.selected.delete(key);
-  else {
-    const result = state.results.find((item) => resultKey(item) === key) || (state.active && resultKey(state.active) === key ? state.active : null);
-    if (result && sellerOf(result).id) state.selected.set(key, result);
-  }
+  else selectResult(key);
+  render();
+}
+
+function openQuote(key) {
+  selectResult(key);
+  if (!state.selected.has(key)) return;
+  state.view = "review";
   render();
 }
 
 async function sendRequest() {
-  if (!state.files.length || !state.selected.size || state.busy) return;
+  const city = customerCity();
+  if (!state.selected.size || !city || state.busy) return;
   state.busy = true;
   render();
   try {
     await ensureAuth();
-    const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : null;
     const attributes = {};
     if (state.intent?.material?.value) attributes.material = state.intent.material.value;
     if (state.intent?.condition?.value === "used") attributes.condition = "مستعمل";
@@ -551,12 +596,14 @@ async function sendRequest() {
     }
     state.busy = false;
     state.files = [];
+    state.note = "";
     state.thread = created;
     state.view = "thread";
     await loadThread(created.id);
   } catch (_error) {
     state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.busy = false;
+    state.view = "review";
     render();
   }
 }
@@ -577,17 +624,20 @@ async function loadThread(id, silent = false) {
   if (!silent || previous !== JSON.stringify(thread.messages || [])) render();
 }
 
-async function loadSeller(token) {
+async function loadSeller(token, silent = false) {
   state.view = "seller";
   state.sellerToken = token;
-  state.notice = "";
+  if (!silent) state.notice = "";
   try {
-    state.seller = await api(`/v1/seller/${token}`, { skipAuth: true });
+    const seller = await api(`/v1/seller/${token}`, { skipAuth: true });
+    const previous = JSON.stringify(state.seller?.messages || []);
+    state.seller = seller;
+    if (!silent || previous !== JSON.stringify(seller.messages || [])) render();
   } catch (_error) {
     state.seller = null;
     state.notice = "ما لقينا الطلب.";
+    render();
   }
-  render();
 }
 
 document.addEventListener("submit", (event) => {
@@ -620,10 +670,7 @@ document.addEventListener("submit", (event) => {
         offer_currency: "SAR",
       },
     })
-      .then(() => {
-        state.notice = "وصل الرد لصاحب الطلب.";
-        render();
-      })
+      .then(() => loadSeller(state.sellerToken))
       .catch(() => {
         state.notice = "ما انرسل الرد.";
         render();
@@ -666,7 +713,14 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "open") openResult(target.dataset.key);
   else if (action === "toggle") toggle(target.dataset.key);
-  else if (action === "review") {
+  else if (action === "quote") openQuote(target.dataset.key);
+  else if (action === "unselect") {
+    state.selected.delete(target.dataset.key);
+    render();
+  } else if (action === "pick-city") {
+    state.city = target.dataset.city || "";
+    render();
+  } else if (action === "review") {
     state.view = "review";
     render();
   } else if (action === "back-results") {
@@ -686,3 +740,10 @@ document.addEventListener("visibilitychange", () => {
 
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
 else render();
+
+api("/v1/cities", { skipAuth: true })
+  .then((data) => {
+    if (data.cities?.length) state.cities = data.cities;
+    if (state.view === "flow" || state.view === "review") render();
+  })
+  .catch(() => {});

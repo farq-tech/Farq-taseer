@@ -41,6 +41,12 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "المبرز": ("المبرز",),
 }
 
+_LABELS: dict[str, str] = {
+    "جده": "جدة",
+    "مكه": "مكة",
+    "الطايف": "الطائف",
+}
+
 _DIRECTIONS = ("شمال", "جنوب", "شرق", "غرب")
 
 
@@ -52,6 +58,17 @@ def canonical_city(value: str | None) -> str | None:
         if normalized == normalize(canonical) or any(normalized == normalize(alias) for alias in aliases):
             return canonical
     return normalized
+
+
+def known_city(value: str | None) -> str | None:
+    city = canonical_city(value)
+    if city in _ALIASES:
+        return city
+    return None
+
+
+def city_choices() -> list[dict[str, str]]:
+    return [{"value": name, "label": _LABELS.get(name, name)} for name in _ALIASES]
 
 
 def find_cities(text: str | None) -> list[str]:
