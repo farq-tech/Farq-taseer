@@ -29,6 +29,7 @@ class SearchState(str, Enum):
     SELLER_UNAVAILABLE = "SELLER_UNAVAILABLE"
     LOCATION_AMBIGUOUS = "LOCATION_AMBIGUOUS"
     TIMEOUT = "TIMEOUT"
+    NO_QUALIFIED_RESULTS = "NO_QUALIFIED_RESULTS"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -110,6 +111,7 @@ class Ad(ContractModel):
     price_currency: str | None = None
     posted_at: str | None = None
     image_ref: str | None = None
+    image_urls: list[str] = Field(default_factory=list)
     category_tags: list[str] = Field(default_factory=list)
     listing_state: str = "unknown"
     seller: Seller
@@ -149,6 +151,7 @@ class Message(ContractModel):
     id: str
     request_id: str
     sender_role: str
+    seller_id: str | None = None
     body: str
     offer: Offer | None = None
     attachment_ids: list[str] = Field(default_factory=list)
@@ -172,4 +175,5 @@ class RequestRecord(ContractModel):
     recipients: list[RequestRecipient]
     attachments: list[Attachment] = Field(default_factory=list)
     messages: list[Message] = Field(default_factory=list)
+    reply_token: str | None = None
     created_at: str

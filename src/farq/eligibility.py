@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import re
+
 from farq.contracts import Ad, IntentResponse, Seller
 from farq.text import normalize, tokens
+
+_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
 def contains_term(text: str | None, term: str) -> bool:
@@ -54,6 +58,10 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
     text = evidence_text(ad, seller)
     if not normalize(text):
         return False, ["no_evidence_text"]
+    if ad is not None and intent.year.known:
+        stated = {int(year) for year in _YEAR.findall(text)}
+        if stated and int(intent.year.value) not in stated:
+            return False, ["year_mismatch"]
     matched: list[str] = []
     for group in intent.eligibility_groups:
         hit = _group_hit(text, group)
