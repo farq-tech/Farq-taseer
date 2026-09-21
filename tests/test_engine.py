@@ -235,3 +235,31 @@ def test_thumbnail_file_names_use_the_measured_cdn_sizes():
     empty = _ad(thumbURL=None)
     assert empty.image_urls == []
     assert empty.image_ref is None
+
+
+def test_parts_games_and_side_mentions_are_not_the_requested_thing():
+    camry = analyze("كامري 2024 مستعملة بالرياض")
+    rim = _ad(id=21, title="جنوط كامري 2024 مستعمل", bodyTEXT="جنوط وكالة", city="الرياض")
+    car = _ad(id=22, title="تويوتا كامري 2024 استاندر", bodyTEXT="ممشى 40 ألف مستعملة", city="الرياض")
+    newer = _ad(id=27, title="كامري 2025", bodyTEXT="ذكر 2024 في الوصف", city="الرياض")
+    fan = _ad(id=28, title="مروحه تبريد كامري 2024", bodyTEXT="قطعة", city="الرياض")
+    assert decide(camry, rim, rim.seller)[0] is False
+    assert decide(camry, car, car.seller)[0] is True
+    assert decide(camry, newer, newer.seller)[0] is False
+    assert decide(camry, fan, fan.seller)[0] is False
+    ps5 = analyze("PS5 مستعمل")
+    game = _ad(id=23, title="لعبة فيفا PS5", bodyTEXT="لعبة فقط", city="الرياض")
+    fresh = _ad(id=24, title="بلايستيشن 5 جديد", bodyTEXT="جديد بكرتونه", city="الرياض")
+    used = _ad(id=25, title="سوني PS5 مستعمل", bodyTEXT="استخدام خفيف", city="الرياض")
+    assert decide(ps5, game, game.seller)[0] is False
+    assert decide(ps5, fresh, fresh.seller)[0] is False
+    assert decide(ps5, used, used.seller)[0] is True
+    carpenter = analyze("نجار بالرياض")
+    mover = _ad(
+        id=26,
+        title="نقل عفش بالرياض",
+        bodyTEXT="نقل عفش نجار حداد دهان مكيف سباك",
+        city="الرياض",
+    )
+    assert decide(carpenter, mover, mover.seller)[0] is False
+    assert analyze("أبي شقة في الرياض وجدة").clarification_question

@@ -643,6 +643,12 @@ document.addEventListener("change", (event) => {
   }
 });
 
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.target.name !== "query") return;
+  event.preventDefault();
+  runSearch(event.target.value);
+});
+
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
@@ -670,6 +676,12 @@ document.addEventListener("click", (event) => {
   else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`);
   else if (action === "send") sendRequest();
   else if (action === "thread") loadThread(target.dataset.id).catch(() => {});
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.view === "thread" && state.thread?.id) {
+    loadThread(state.thread.id, true).catch(() => {});
+  }
 });
 
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));

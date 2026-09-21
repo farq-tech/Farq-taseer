@@ -49,6 +49,14 @@ def score(
         value += 0.03
     if ad is not None and ad.description:
         value += 0.04
+    if ad is not None and ad.title and intent.eligibility_groups:
+        hits = sum(1 for group in intent.eligibility_groups if any(contains_term(ad.title, term) for term in group))
+        if hits == len(intent.eligibility_groups):
+            value += 0.28
+        elif hits:
+            value += 0.06
+    if intent.year.known and ad is not None and ad.title and str(intent.year.value) in ad.title:
+        value += 0.12
     if ad is not None and ad.image_ref:
         value += 0.03
     if seller is not None and seller.specialty_evidence:
