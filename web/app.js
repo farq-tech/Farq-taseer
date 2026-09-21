@@ -166,7 +166,8 @@ function bubbles(messages, mine) {
     .map((message) => {
       const role = message.sender_role === mine ? "user" : "seller";
       const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
-      return `<div class="bubble ${role}">${price}<div>${esc(message.body || "")}</div></div>`;
+      const body = esc(message.body || "").replace(/\n/g, "<br>");
+      return `<div class="bubble ${role}">${price}<div>${body}</div></div>`;
     })
     .join("");
 }
@@ -359,7 +360,7 @@ function renderReview() {
     <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
     <h1>طلب عرض سعر</h1>
     <p class="summary">${esc(state.query)}</p>
-    <ul class="who">${names.map((item) => `<li>${esc(item.name)} <button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
+    <ul class="who">${names.map((item) => `<li><span>${esc(item.name)}</span><button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
     ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="question"><p>في أي مدينة؟</p>${cityChoices("pick-city")}</div>`}
     <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
     <p class="meta">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>

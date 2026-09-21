@@ -259,7 +259,7 @@ h1 {
 .review h1, .requests h1, .thread h1, .seller h1 { font-size: 36px; margin-bottom: 8px; }
 .summary { font-size: 20px; line-height: 1.7; margin: 0 0 18px; }
 .who { list-style: none; padding: 0; margin: 0 0 18px; }
-.who li { padding: 8px 0; font-size: 18px; }
+.who li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; font-size: 18px; }
 .note { width: 100%; min-height: 88px; border: 0; border-radius: 20px; background: var(--card); box-shadow: var(--shadow); padding: 14px 16px; }
 .warn { color: #8a3d18; }
 
