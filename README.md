@@ -9,9 +9,9 @@ pip install -e ".[dev]"
 FARQ_ENABLE_LIVE=0 python3 -m farq
 ```
 
-The process binds to `0.0.0.0:$PORT` (default 8000). Local accounts, requests, and search traces go to `data/runtime`. That disk is ephemeral on Render.
+The process binds to `0.0.0.0:$PORT` (default 8000) and serves the consumer app at `/`. Local accounts, requests, and search traces go to `data/runtime`. That disk is ephemeral on Render.
 
-`FARQ_ENABLE_LIVE=1` calls the public Haraj GraphQL search. Thresholds are environment variables documented in `src/farq/config.py`.
+`FARQ_ENABLE_LIVE=1` is the default. It calls the public Haraj GraphQL search. Set `FARQ_ENABLE_LIVE=0` to keep tests and local runs off the network. Thresholds are environment variables documented in `src/farq/config.py`.
 
 ## Tests
 
