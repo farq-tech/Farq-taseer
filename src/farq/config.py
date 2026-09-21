@@ -1,0 +1,57 @@
+"""Configurable search thresholds. Numbers here are defaults, not claims of quality."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return int(raw)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return float(raw)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    """Quality-gate knobs.
+
+    Product, vehicle, and property intents request live Haraj because the
+    measured local corpus stores sellers, not ads. That is a coverage fact,
+    not a tuned relevance score.
+    """
+
+    min_qualified_local: int = field(default_factory=lambda: _env_int("FARQ_MIN_QUALIFIED_LOCAL", 3))
+    live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 10))
+    live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 2))
+    live_max_queries: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_QUERIES", 3))
+    live_timeout_seconds: float = field(default_factory=lambda: _env_float("FARQ_LIVE_TIMEOUT_SECONDS", 8))
+    live_concurrency: int = field(default_factory=lambda: _env_int("FARQ_LIVE_CONCURRENCY", 2))
+    enable_live: bool = field(default_factory=lambda: _env_bool("FARQ_ENABLE_LIVE", True))
+    # Local rows are sellers, not ads, including trades. Live Haraj is what
+    # can return the ad text those intents need. This is coverage, not a score.
+    live_when_local_has_no_ads_for: tuple[str, ...] = (
+        "product",
+        "vehicle",
+        "property",
+        "other",
+        "service",
+    )
+    max_results: int = field(default_factory=lambda: _env_int("FARQ_MAX_RESULTS", 20))
+    fresh_days: int = field(default_factory=lambda: _env_int("FARQ_FRESH_DAYS", 30))
+    recent_days: int = field(default_factory=lambda: _env_int("FARQ_RECENT_DAYS", 180))

@@ -1,0 +1,2057 @@
+{
+  "dataset": "haraj_seller_sample",
+  "grain": "seller",
+  "source": "construction.suppliers where source_system=HARAJ",
+  "project_id": "mpgbvtaguerncgbzvpwg",
+  "note": "Real rows exported for tests. This is not the full 235625-seller corpus and contains no individual ads.",
+  "rows": [
+    {
+      "external_key": "haraj:seller:106066",
+      "name_ar": "ابومالك النجار",
+      "city": "عنيزة",
+      "district": "الوهلان",
+      "supplied_items_text": "rebar, concrete",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:107985",
+      "name_ar": "ابو ناصر حداد عام الرياض",
+      "city": "الرياض",
+      "district": "الياسمين",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:6ad"
+    },
+    {
+      "external_key": "haraj:seller:12013296",
+      "name_ar": "ونيد نقل عفش",
+      "city": "الرياض",
+      "district": "منفوحة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12014612",
+      "name_ar": "ديكورات دربزين اسمنتي",
+      "city": "أبها",
+      "district": null,
+      "supplied_items_text": "cement",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12066538",
+      "name_ar": "مؤسسة الخير والبركه للنجاره",
+      "city": "خميس مشيط",
+      "district": "حي وسط تندحة",
+      "supplied_items_text": "doors, marble, maintenance",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12117129",
+      "name_ar": "ابو عمار النجار911",
+      "city": "جده",
+      "district": "البغدادية الغربية",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12127468",
+      "name_ar": "نقل عفش ابها و الخميس",
+      "city": "الجبيل",
+      "district": "طيبة",
+      "supplied_items_text": "generators, cleaning-equipment",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12145556",
+      "name_ar": "صالح للحداده",
+      "city": "الخبر",
+      "district": "الخزامى",
+      "supplied_items_text": "rebar, tents",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:12147861",
+      "name_ar": "دينا لنقل العفش - المدينه",
+      "city": "المدينة",
+      "district": "عروة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12175982",
+      "name_ar": "على الحداد",
+      "city": "الهفوف",
+      "district": "الفيصلية الثاني",
+      "supplied_items_text": "carpets",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12191610",
+      "name_ar": "حداد لجميع انوع الحداده",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12192737",
+      "name_ar": "مطابخ المنيوم ابو الحسام",
+      "city": "أبها",
+      "district": "الصناعية",
+      "supplied_items_text": "windows, maintenance",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12200686",
+      "name_ar": "نقل عفش بينبع12",
+      "city": "ينبع",
+      "district": "ينبع البلد",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1222682",
+      "name_ar": "الحمد حدادة هناجر غرابيل",
+      "city": "الطايف",
+      "district": "المعترض",
+      "supplied_items_text": "windows, facade",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12226962",
+      "name_ar": "محل الصفاء للالمنيوم",
+      "city": "جده",
+      "district": "الحرازات",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12256016",
+      "name_ar": "سبائك الالمنيوم الخام",
+      "city": "الظهران",
+      "district": "الدانة الجنوبية",
+      "supplied_items_text": "furniture, marble",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12256858",
+      "name_ar": "المنيوم واستركشر",
+      "city": "خميس مشيط",
+      "district": "حي الواحة",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12324152",
+      "name_ar": "حداده احمد",
+      "city": "بريدة",
+      "district": "الريان",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12345357",
+      "name_ar": "نجار تصنيع وتركيب ابوب و",
+      "city": "المدينة",
+      "district": "قربان",
+      "supplied_items_text": "doors, marble",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12355891",
+      "name_ar": "اسفار نجار",
+      "city": "مكه",
+      "district": "ولي العهد",
+      "supplied_items_text": "finishing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12369916",
+      "name_ar": "شركة الحازم لنقل العفش",
+      "city": "خميس مشيط",
+      "district": "قمبر",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12391470",
+      "name_ar": "حداد الأحساء",
+      "city": "الهفوف",
+      "district": "المروج الشمالي",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12403874",
+      "name_ar": "شركة الأمل لنظافة والعزل",
+      "city": "جده",
+      "district": "الصفا",
+      "supplied_items_text": "cleaning, pest-control",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12439694",
+      "name_ar": "شركه الامين لنقل العفش",
+      "city": "جده",
+      "district": "النور",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12459282",
+      "name_ar": "سكراب حديد نحاس ألمنيوم",
+      "city": "جده",
+      "district": "الامير عبدالمجيد",
+      "supplied_items_text": "generators",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12463787",
+      "name_ar": "نجار بالمدينة المنورة 8",
+      "city": "المدينة",
+      "district": "الرانوناء",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12474533",
+      "name_ar": "ابو سام حداد عام",
+      "city": "خميس مشيط",
+      "district": "شباعة",
+      "supplied_items_text": "structural-steel, landscaping",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12479828",
+      "name_ar": "شغل عزل وصبة رغوية",
+      "city": "المدينة",
+      "district": "الراية",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12481360",
+      "name_ar": "شركه عزل اسطح 18",
+      "city": "بريدة",
+      "district": "الورود",
+      "supplied_items_text": "welding, plastic",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12532021",
+      "name_ar": ".الخيول العربيه لنقل العفش",
+      "city": "الدمام",
+      "district": "البادية",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12550041",
+      "name_ar": "هناجر و زجاج وحداد جده",
+      "city": "جده",
+      "district": "بلدة ذهبان",
+      "supplied_items_text": "siteworks, manpower, structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12579760",
+      "name_ar": "حداد مظلات وسواتر 2",
+      "city": "الرياض",
+      "district": "العود",
+      "supplied_items_text": "steel, rebar",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12585093",
+      "name_ar": "حداد مضلات سواتر الرياض 057",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12601825",
+      "name_ar": "حداده ومقاولات",
+      "city": "الخبر",
+      "district": "الحزام الذهبي",
+      "supplied_items_text": "structural-steel, paint, siteworks, manpower",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:12627205",
+      "name_ar": "تجهيزات مطاعم و ستانلس",
+      "city": "حائل",
+      "district": "النقرة",
+      "supplied_items_text": "kitchen-equipment, food, safety, cleaning-equipment, gases, welding, lubricants, finishing, plastic, chemicals, heavy-equipment",
+      "source_ref": "haraj:67ad"
+    },
+    {
+      "external_key": "haraj:seller:12636591",
+      "name_ar": "ازهار الشروق الحديث للحدادة",
+      "city": "المدينة",
+      "district": "وادي البطان",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:12685226",
+      "name_ar": "فهد محمد النجار 9875",
+      "city": "المدينة",
+      "district": "الزهرة",
+      "supplied_items_text": "cement, aggregates, marble, uniforms, textile, manpower",
+      "source_ref": "haraj:6ad"
+    },
+    {
+      "external_key": "haraj:seller:12704366",
+      "name_ar": "فني ألمنيوم ابوحمد",
+      "city": "الرياض",
+      "district": "العقيق",
+      "supplied_items_text": "doors, windows",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:12711728",
+      "name_ar": "حدادهناجر",
+      "city": "خميس مشيط",
+      "district": "ال هميلة",
+      "supplied_items_text": "cement",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12764640",
+      "name_ar": "مؤسسة مدينة الكفرات",
+      "city": "الرياض",
+      "district": "العمل",
+      "supplied_items_text": "stationery, scaffolding, tyres",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:12765304",
+      "name_ar": "فني مكيفات مكه",
+      "city": "مكه",
+      "district": "شرائع المجاهدين",
+      "supplied_items_text": "electronics",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12765537",
+      "name_ar": "شركه المنجز السريع للعفش",
+      "city": "ينبع",
+      "district": "ينبع البلد",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12775807",
+      "name_ar": "مؤسسة نظم وإنشاء للعزل",
+      "city": "جيزان",
+      "district": "الزهور",
+      "supplied_items_text": "cement, structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12777836",
+      "name_ar": "ثقة العزل",
+      "city": "المدينة",
+      "district": "قربان",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12782757",
+      "name_ar": "درابزين استل نستيل لمسة",
+      "city": "شرورة",
+      "district": "الفهد",
+      "supplied_items_text": "glass",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12784750",
+      "name_ar": "مصنع مطابخ المنيوم 1",
+      "city": "بريدة",
+      "district": "الصباخ",
+      "supplied_items_text": "doors, maintenance",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12787349",
+      "name_ar": "ورشة نجاره الخبر",
+      "city": "الظهران",
+      "district": "القصور",
+      "supplied_items_text": "furniture",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12808164",
+      "name_ar": "ورشه الفهد حداده المنيوم",
+      "city": "جده",
+      "district": "ام السلم",
+      "supplied_items_text": "steel, structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12822875",
+      "name_ar": "مطابخ ونوافذ المنيوم",
+      "city": "أبها",
+      "district": "الصناعية",
+      "supplied_items_text": "doors, maintenance, windows",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:12823742",
+      "name_ar": "م اشواق للمقاولات والحداده",
+      "city": "الرياض",
+      "district": "الحزم",
+      "supplied_items_text": "welding",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12828952",
+      "name_ar": "حداد وخدمات الحام",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12830736",
+      "name_ar": "نجار بالمدينه المنورة",
+      "city": "المدينة",
+      "district": "الدفاع",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12854290",
+      "name_ar": "0ابو الجيلي لنقل العفش",
+      "city": "تبوك",
+      "district": "الفيصلية الشمالية",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12863713",
+      "name_ar": "الحداد عادل",
+      "city": "الرياض",
+      "district": "الخالدية",
+      "supplied_items_text": "structural-steel, paper",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12866175",
+      "name_ar": "المنيوم 3",
+      "city": "الرياض",
+      "district": "النزهة",
+      "supplied_items_text": "facade, windows",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:12869076",
+      "name_ar": "شكرى النجار",
+      "city": "الرياض",
+      "district": "قرطبة",
+      "supplied_items_text": "lighting",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12886940",
+      "name_ar": "على للألمنيوم",
+      "city": "أبها",
+      "district": "حي الصفا",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12918028",
+      "name_ar": "الوعد الالمنيوم وزجاج",
+      "city": "نجران",
+      "district": "دحضة",
+      "supplied_items_text": "glass, insulation, doors, maintenance",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:12929508",
+      "name_ar": "تظليل عزل واجهات المباني",
+      "city": "تبوك",
+      "district": "اليرموك",
+      "supplied_items_text": "insulation",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12936953",
+      "name_ar": "وليد للحداده",
+      "city": "مكه",
+      "district": "الاندلس",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12945519",
+      "name_ar": "سامح المنيوم ابواب ومطابخ",
+      "city": "صبيا",
+      "district": "جخيرة",
+      "supplied_items_text": "marble, kitchen-equipment",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12955787",
+      "name_ar": "حداد لحام متنقل1",
+      "city": "المدينة",
+      "district": "بني معاوية",
+      "supplied_items_text": "welding, structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12969661",
+      "name_ar": "نقل العفش ابو محمد",
+      "city": "الرياض",
+      "district": "النسيم الغربي",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:12974507",
+      "name_ar": "حداد مضلات و سواتر الرياض",
+      "city": "ضرما",
+      "district": null,
+      "supplied_items_text": "tents",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:12993136",
+      "name_ar": "لمسة بصمة للنجارة والحدادة",
+      "city": "ابو عريش",
+      "district": "الورود",
+      "supplied_items_text": "doors, landscaping, gases",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:12995882",
+      "name_ar": "شركة نقل العفش في جدة",
+      "city": "جده",
+      "district": "الربوة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13014531",
+      "name_ar": "محمد نبيل الحداد",
+      "city": "القطيف",
+      "district": "الخامسة",
+      "supplied_items_text": "advertising, electrical",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13028264",
+      "name_ar": "الفجر لنقل العفش 8018",
+      "city": "المدينة",
+      "district": "الاصيفرين",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13034573",
+      "name_ar": "ساندويش بنل حداد",
+      "city": "الرياض",
+      "district": "النرجس",
+      "supplied_items_text": "cement, structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13061807",
+      "name_ar": "غسيل وعزل خزانات 891986",
+      "city": "مكه",
+      "district": "الجامعة",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13098779",
+      "name_ar": "ابراهيم استانلس درابزين وخشب",
+      "city": "الهفوف",
+      "district": "الحمراء الأول",
+      "supplied_items_text": "glass, tyres, pools",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:13111123",
+      "name_ar": "ورشه العلياءللحداده",
+      "city": "جده",
+      "district": "الشراع",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:13111644",
+      "name_ar": "فني مطابخ المنيوم sohaib",
+      "city": "الخبر",
+      "district": "الحمرا",
+      "supplied_items_text": "rebar, marble, kitchen-equipment",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13137078",
+      "name_ar": "ديكورات اسمنتي ودربزين",
+      "city": "الهفوف",
+      "district": "السيفة",
+      "supplied_items_text": "paper, cement",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13143594",
+      "name_ar": "ورشة عين الغزال للحدادة",
+      "city": "المدينة",
+      "district": "الصويدرة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13182198",
+      "name_ar": "معلم عزل جازان",
+      "city": "جيزان",
+      "district": "الشاطئ",
+      "supplied_items_text": "concrete",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13187450",
+      "name_ar": "نخبة الاستانلس استيل",
+      "city": "الرياض",
+      "district": "الملك فهد",
+      "supplied_items_text": "cleaning-equipment, welding",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13192543",
+      "name_ar": "دينا نقل العفش والبضايع",
+      "city": "ينبع",
+      "district": "المجد",
+      "supplied_items_text": "chemicals, transport, cement, rebar",
+      "source_ref": "haraj:8ad"
+    },
+    {
+      "external_key": "haraj:seller:13220133",
+      "name_ar": "حداد 123",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "tents",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13245935",
+      "name_ar": "ابو طلال الظفيري لنقل العفش",
+      "city": "رفحاء",
+      "district": "الصناعية",
+      "supplied_items_text": "furniture",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13264971",
+      "name_ar": "حداد مظلات وسواتر 39",
+      "city": "الرياض",
+      "district": "الياسمين",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13280660",
+      "name_ar": "نقل عفش واساس ابها وخميس",
+      "city": "أبها",
+      "district": "المروج",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13291538",
+      "name_ar": "نقل عفش ينبع 1111",
+      "city": "ينبع",
+      "district": "ينبع البلد",
+      "supplied_items_text": "packaging, transport",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13304138",
+      "name_ar": "مستودعات عفش بتبوك",
+      "city": "تبوك",
+      "district": "الحمراء",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1331072",
+      "name_ar": "اجود الأماكن للألمنيوم",
+      "city": "الطايف",
+      "district": "ج12",
+      "supplied_items_text": "scaffolding",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1332141",
+      "name_ar": "المراد لجميع اعمال الحداده",
+      "city": "جده",
+      "district": "الفاروق",
+      "supplied_items_text": "solar",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13324624",
+      "name_ar": "1ورشه حداده مظلات سواتر 23",
+      "city": "الرياض",
+      "district": "الصحافة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13351356",
+      "name_ar": "شركه نقل عفش بخميس ابها",
+      "city": "خميس مشيط",
+      "district": "الخالدية",
+      "supplied_items_text": "curtains, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13360218",
+      "name_ar": "فني نجارموبيليا",
+      "city": "المدينة",
+      "district": "السلام",
+      "supplied_items_text": "solar, curtains, insulation",
+      "source_ref": "haraj:6ad"
+    },
+    {
+      "external_key": "haraj:seller:13383439",
+      "name_ar": "ابو وعد لنقل العفش 123",
+      "city": "خميس مشيط",
+      "district": "النسيم",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13385908",
+      "name_ar": "ابوجني لنقل العفش بتبوك",
+      "city": "تبوك",
+      "district": "البوادي",
+      "supplied_items_text": "furniture",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13386939",
+      "name_ar": "ابو ناصر النجار",
+      "city": "الدمام",
+      "district": "النور",
+      "supplied_items_text": "portable-cabins",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13445648",
+      "name_ar": "مؤسسة صفا طيبة للحداده",
+      "city": "المدينة",
+      "district": "الخالدية",
+      "supplied_items_text": "fire-safety, structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13472506",
+      "name_ar": "مستلزمات مطاعم وستانلس",
+      "city": "الرياض",
+      "district": "المصانع",
+      "supplied_items_text": "lubricants, kitchen-equipment, gases, safety, cleaning-equipment, pipes, electrical, paper, ready-mix, rebar, landscaping, heavy-equipment, packaging, insulation",
+      "source_ref": "haraj:231ad"
+    },
+    {
+      "external_key": "haraj:seller:13472928",
+      "name_ar": "ورشة قمةالميثاق المنيوم",
+      "city": "الخبر",
+      "district": "الثقبة",
+      "supplied_items_text": "windows, steel, networking",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:13475202",
+      "name_ar": "حداد ضلل وهناجر",
+      "city": "جده",
+      "district": "السنابل",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13505890",
+      "name_ar": "شعله النقل للنجارة والمقاولات",
+      "city": "الدمام",
+      "district": "النخيل",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13527862",
+      "name_ar": "ليزر ضوء القمر للحدادة",
+      "city": "المدينة",
+      "district": "العزيزية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13533098",
+      "name_ar": "شركة نقل العفش بالدمام",
+      "city": "الدمام",
+      "district": "النور",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13534589",
+      "name_ar": "مطابخ المنيوم خميس مشيط",
+      "city": "خميس مشيط",
+      "district": "مصلوم",
+      "supplied_items_text": "marble, doors",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13551915",
+      "name_ar": "شركة عزل اسطح 92837",
+      "city": "المزاحمية",
+      "district": "الاندلس",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:13561759",
+      "name_ar": "حداد لجميع أعمال الحدادة 0",
+      "city": "الرياض",
+      "district": "الجزيرة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13606243",
+      "name_ar": "نقل عفش مع العمال",
+      "city": "عرعر",
+      "district": "القدس",
+      "supplied_items_text": "pipes",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13627947",
+      "name_ar": "عزل-صوت-ديكورات",
+      "city": "الرياض",
+      "district": "قرطبة",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:14ad"
+    },
+    {
+      "external_key": "haraj:seller:13642327",
+      "name_ar": "شركة درة العزل عزل فوم",
+      "city": "حائل",
+      "district": "النقرة",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13643934",
+      "name_ar": "carpenterنجار",
+      "city": "الدمام",
+      "district": "المحمدية",
+      "supplied_items_text": "maintenance",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13645280",
+      "name_ar": "ابو مالك نجار",
+      "city": "تبوك",
+      "district": "الفيصلية الشمالية",
+      "supplied_items_text": "curtains",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13649158",
+      "name_ar": "حدادة عامة قرميدمظلات",
+      "city": "الطايف",
+      "district": "الشهداء الجنوبية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13661612",
+      "name_ar": "أنظمه العزل الحراري والمائي",
+      "city": "بريدة",
+      "district": "النسيم",
+      "supplied_items_text": "cement, aggregates, marble, uniforms, textile, transport, waterproofing, irrigation",
+      "source_ref": "haraj:11ad"
+    },
+    {
+      "external_key": "haraj:seller:13667006",
+      "name_ar": "نجار غرف نوم وابواب وتفصيل",
+      "city": "تبوك",
+      "district": "الفيصلية الشمالية",
+      "supplied_items_text": "doors, maintenance",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13690253",
+      "name_ar": "درر الخليج للحدادة ولامنيوم",
+      "city": "الدمام",
+      "district": "الخضرية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:13693159",
+      "name_ar": "أبو أحمد لنقل العفش البضائع",
+      "city": "الرياض",
+      "district": "العريجاء الوسطى",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13701291",
+      "name_ar": "بيارق للحداده والحديد",
+      "city": "بريدة",
+      "district": "الصفراء",
+      "supplied_items_text": "doors, fasteners, structural-steel",
+      "source_ref": "haraj:6ad"
+    },
+    {
+      "external_key": "haraj:seller:13714034",
+      "name_ar": "نقل عفش الرياض باكستاني",
+      "city": "الرياض",
+      "district": "منفوحة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13759031",
+      "name_ar": "دباب نقل عفش سمير",
+      "city": "جده",
+      "district": "المروة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13765691",
+      "name_ar": "شركة نقل عفش خميس",
+      "city": "خميس مشيط",
+      "district": "الراقي",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13769963",
+      "name_ar": "نجار اليوسف",
+      "city": "جيزان",
+      "district": "السويس",
+      "supplied_items_text": "doors, kitchen-equipment",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13776207",
+      "name_ar": "ورشه حسنين المنيوموحداد",
+      "city": "جده",
+      "district": "الروابي",
+      "supplied_items_text": "maintenance",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13776427",
+      "name_ar": "فاروق حدادي",
+      "city": "مكه",
+      "district": "التقوى",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13781179",
+      "name_ar": "نقل عفش بالمدينة 331463",
+      "city": "المدينة",
+      "district": "الاصيفرين",
+      "supplied_items_text": "transport, waste-management",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13791469",
+      "name_ar": "حداد 788",
+      "city": "حائل",
+      "district": "الوسيطاء",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13804309",
+      "name_ar": "مقاولات حدادة مظلات وسواتر",
+      "city": "خميس مشيط",
+      "district": "المثناة",
+      "supplied_items_text": "landscaping, structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13805363",
+      "name_ar": "الحمد لنقل العفش ءء",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:1380892",
+      "name_ar": "مدار للألمنيوم",
+      "city": "المدينة",
+      "district": "القصواء",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13844300",
+      "name_ar": "حدادمظلات وسواتر المملكه",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "textile, structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:13844617",
+      "name_ar": "مؤسسه العزل وكشف التسربات",
+      "city": "جده",
+      "district": "السلامة",
+      "supplied_items_text": "waterproofing, pipes",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13845312",
+      "name_ar": "اشرف الجميع اعمال الالمنيوم",
+      "city": "الخبر",
+      "district": "صناعية الثقبة",
+      "supplied_items_text": "windows, kitchen-equipment, doors, aggregates, landscaping, gases",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:13854766",
+      "name_ar": "عوازل عزل رولات",
+      "city": "الخبر",
+      "district": "الثقبة",
+      "supplied_items_text": "waterproofing, insulation, paint",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:13865144",
+      "name_ar": "حداد معلم حداده الدمام",
+      "city": "الخبر",
+      "district": "الثقبة",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13893100",
+      "name_ar": "حدادة عامة الرياض",
+      "city": "الرياض",
+      "district": "الخليج",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13902698",
+      "name_ar": "دنجار",
+      "city": "حائل",
+      "district": "الشفا",
+      "supplied_items_text": "furniture",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13924213",
+      "name_ar": "خدمات نقل عفش 89142",
+      "city": "المدينة",
+      "district": "الاصيفرين",
+      "supplied_items_text": "transport, waste-management",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13947486",
+      "name_ar": "حداد مستودعات",
+      "city": "الرياض",
+      "district": "الخالدية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:13958684",
+      "name_ar": "محمد أبو صالح نقل عفش",
+      "city": "نجران",
+      "district": "الفيصلية",
+      "supplied_items_text": "manpower, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:13966325",
+      "name_ar": "المنيوم الستركشر0",
+      "city": "الخبر",
+      "district": "الخبر الشمالية",
+      "supplied_items_text": "facade",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13980628",
+      "name_ar": "ابو محمد .نقل عفش",
+      "city": "أبها",
+      "district": "المطار",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:13999242",
+      "name_ar": "نقل عفش003",
+      "city": "جده",
+      "district": "الامير فواز الجنوبى",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14049137",
+      "name_ar": "معلم جميع انواع العزل",
+      "city": "مكه",
+      "district": "الملك فهد",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14061001",
+      "name_ar": "حداد ابو عريش",
+      "city": "ابو عريش",
+      "district": "الورود",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:14070280",
+      "name_ar": "ابو علي الحداد1",
+      "city": "الخبر",
+      "district": "الحزام الذهبي",
+      "supplied_items_text": "tents, structural-steel, paint",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14082788",
+      "name_ar": "ابو أنس النجار 63688",
+      "city": "الظهران",
+      "district": "هجر",
+      "supplied_items_text": "furniture, printing, manpower",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:14089300",
+      "name_ar": "نقل عفش مثلث الفرسان",
+      "city": "جده",
+      "district": "الربوة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14090834",
+      "name_ar": "حداد وجميع انواع الحام",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14094882",
+      "name_ar": "صيانه ثلاجات مكيفات افران",
+      "city": "خميس مشيط",
+      "district": "الراقي",
+      "supplied_items_text": "pipes",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14100827",
+      "name_ar": "حداد جميع المضلات",
+      "city": "الظهران",
+      "district": "الدوحة الجنوبية",
+      "supplied_items_text": "structural-steel, cement, marble, lubricants, uniforms, transport",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:14117402",
+      "name_ar": "ترميمات وحداده عامه",
+      "city": "الرياض",
+      "district": "العارض",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14117675",
+      "name_ar": "محمد النجار11",
+      "city": "الدمام",
+      "district": "الاثير",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14127362",
+      "name_ar": "مطابخ المنيوم 5700",
+      "city": "عنيزة",
+      "district": "السليمانية",
+      "supplied_items_text": "ready-mix, marble, kitchen-equipment",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:14149468",
+      "name_ar": "عدنان للالمنيوم والحديد",
+      "city": "جده",
+      "district": "الشاطئ",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14163259",
+      "name_ar": "شركة نقل عفش في الدمام",
+      "city": "الدمام",
+      "district": "الريان",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14174154",
+      "name_ar": "شركه السفير لنقل العفش",
+      "city": "الخبر",
+      "district": "البحر",
+      "supplied_items_text": "packaging, transport",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14181770",
+      "name_ar": "حداد الشرقيه وترميم مباني",
+      "city": "الدمام",
+      "district": "احد",
+      "supplied_items_text": "structural-steel, tents, paint",
+      "source_ref": "haraj:9ad"
+    },
+    {
+      "external_key": "haraj:seller:14215124",
+      "name_ar": "عوازل الشرق لعزل الفوم",
+      "city": "أبها",
+      "district": "الروابي",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14237357",
+      "name_ar": "عزل خزانات بالقصيم 73",
+      "city": "بريدة",
+      "district": "الخبيب",
+      "supplied_items_text": "structural-steel, paint, pools",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14238997",
+      "name_ar": "فني عزل اصيل محمد",
+      "city": "مكه",
+      "district": "ولي العهد",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14286800",
+      "name_ar": "نقل عفش ابومحمد",
+      "city": "الخبر",
+      "district": "البستان",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14289005",
+      "name_ar": "مظلات ابواب شبابيك حداده",
+      "city": "الجبيل",
+      "district": "مكة",
+      "supplied_items_text": "landscaping, tents, structural-steel, cement, aggregates, marble, uniforms, transport",
+      "source_ref": "haraj:13ad"
+    },
+    {
+      "external_key": "haraj:seller:14297443",
+      "name_ar": "حداد حدادابوعلى",
+      "city": "الرياض",
+      "district": "النرجس",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14300238",
+      "name_ar": "مؤسسة القمة لنقل العفش",
+      "city": "تبوك",
+      "district": "الحمراء",
+      "supplied_items_text": "packaging, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14310772",
+      "name_ar": "شركة سما للعزل المائي",
+      "city": "خميس مشيط",
+      "district": "الخزان",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14310936",
+      "name_ar": "ورشة مدينه حداد جده",
+      "city": "جده",
+      "district": "مريخ",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14312413",
+      "name_ar": "ابومصعب الحداد",
+      "city": "الرياض",
+      "district": "ام سليم",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14317047",
+      "name_ar": "ابو الطيب حداد بتبوك",
+      "city": "تبوك",
+      "district": "غرب الخالدية",
+      "supplied_items_text": "structural-steel, maintenance",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:14318198",
+      "name_ar": "ابو عمار المنيوم",
+      "city": "الخبر",
+      "district": "الثقبة",
+      "supplied_items_text": "doors, windows",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14353405",
+      "name_ar": "حداد أبو الجوهرة",
+      "city": "الرياض",
+      "district": "الياسمين",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14361082",
+      "name_ar": "الحداد009",
+      "city": "الخبر",
+      "district": "التحلية",
+      "supplied_items_text": "auto-parts",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14371810",
+      "name_ar": "نجار تفصيل وصيانه",
+      "city": "الرياض",
+      "district": "المصيف",
+      "supplied_items_text": "packaging",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14393470",
+      "name_ar": "شركه نقل عفش في تبوك",
+      "city": "تبوك",
+      "district": "غرب الخالدية",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14403990",
+      "name_ar": "ابومحمدلي نقل عفش",
+      "city": "الرياض",
+      "district": "منفوحة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14412032",
+      "name_ar": "حدادلحام جده مضلات وسواتر",
+      "city": "جده",
+      "district": "السنابل",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14413782",
+      "name_ar": "شركة الرزق لنقل عفش بخميس",
+      "city": "خميس مشيط",
+      "district": "الراقي",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14424576",
+      "name_ar": "حراج الخليج عزل خزانات",
+      "city": "تبوك",
+      "district": "الحمراء",
+      "supplied_items_text": "fire-safety, cleaning, maintenance",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14435139",
+      "name_ar": "عزل خزانات ولحام خزانات",
+      "city": "الرياض",
+      "district": "منفوحة",
+      "supplied_items_text": "welding",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14441053",
+      "name_ar": "ابو عمر للالمنيوم والحداده",
+      "city": "المدينة",
+      "district": "العريض",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14448347",
+      "name_ar": "نقل عفش في المملكة",
+      "city": "الدمام",
+      "district": "ابن خلدون",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14451866",
+      "name_ar": "جميع انواع مكائن النجاره",
+      "city": "جيزان",
+      "district": "القلعة",
+      "supplied_items_text": "cleaning-equipment",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14463267",
+      "name_ar": "شركة العبير لنقل العفش",
+      "city": "المدينة",
+      "district": "العزيزية",
+      "supplied_items_text": "transport, waste-management",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14470457",
+      "name_ar": "حداد مظلات سواتر جيزان",
+      "city": "ابو عريش",
+      "district": "الصفا",
+      "supplied_items_text": "structural-steel, tents",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14478799",
+      "name_ar": "صيانة مطابخ المنيوم اا",
+      "city": "خميس مشيط",
+      "district": "الهرير الشرقى",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14485669",
+      "name_ar": "ابو سراج الحداد",
+      "city": "حائل",
+      "district": "المنتزه الغربي",
+      "supplied_items_text": "furniture",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14485726",
+      "name_ar": "تميم لصيانه مطابخ الالمنيوم",
+      "city": "خميس مشيط",
+      "district": "الصناعية",
+      "supplied_items_text": "windows, landscaping, doors",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14490028",
+      "name_ar": "محمد لخدمت الجنوط والكفرات",
+      "city": "الدمام",
+      "district": "ضاحية الملك فهد",
+      "supplied_items_text": "tyres, fasteners, steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14495253",
+      "name_ar": "اوتاد الشمال للألمنيوم",
+      "city": "تبوك",
+      "district": "الريان",
+      "supplied_items_text": "doors, glass, facade",
+      "source_ref": "haraj:6ad"
+    },
+    {
+      "external_key": "haraj:seller:14497507",
+      "name_ar": "نقل عفش تبوك الفارس",
+      "city": "تبوك",
+      "district": "الحمراء",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14518980",
+      "name_ar": "موسسة سلم المعادن للدربزين",
+      "city": "مكه",
+      "district": "الشرائع",
+      "supplied_items_text": "structural-steel, pools",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14538785",
+      "name_ar": "ابو عمر حدادوالمنيوم",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:1453948",
+      "name_ar": "فلم العزل الحراري",
+      "city": "جده",
+      "district": "الاجواد",
+      "supplied_items_text": "cleaning",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14543680",
+      "name_ar": "ديكورات وحداد المدينه",
+      "city": "المدينة",
+      "district": "الرانوناء",
+      "supplied_items_text": "marble",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14545873",
+      "name_ar": "مقاول نجار المزاحميه",
+      "city": "الرياض",
+      "district": "غرناطة",
+      "supplied_items_text": "siteworks",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14561607",
+      "name_ar": "شركه الخليج لنقل العفش. 20",
+      "city": "جده",
+      "district": "الصفا",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14578903",
+      "name_ar": "احمد علي حداد",
+      "city": "مكه",
+      "district": "العكيشية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14585674",
+      "name_ar": "بيت الملوك لنقل العفش",
+      "city": "الطايف",
+      "district": "الحلقة الغربية",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14611851",
+      "name_ar": "لكافه أشغال المنيوم شبابيك شتر",
+      "city": "مكه",
+      "district": "العتيبية",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14625938",
+      "name_ar": "حداد ابو عاصم",
+      "city": "جده",
+      "district": "المحجر",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14638018",
+      "name_ar": "عزل اسطح وتسريبات",
+      "city": "الخبر",
+      "district": "الخبر الشمالية",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14659060",
+      "name_ar": "ورشة تعز الشرقية للحداده",
+      "city": "الدمام",
+      "district": "الخضرية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14667371",
+      "name_ar": "نجد للشتر والمنيوم",
+      "city": "الرياض",
+      "district": "منفوحة",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14668525",
+      "name_ar": "أبوريان للكفرات والجنوط",
+      "city": "الرياض",
+      "district": "الصناعية",
+      "supplied_items_text": "tyres, low-current",
+      "source_ref": "haraj:13ad"
+    },
+    {
+      "external_key": "haraj:seller:14706651",
+      "name_ar": "لمسه الكيان استانلس استيل",
+      "city": "جيزان",
+      "district": "السويس",
+      "supplied_items_text": "pools",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14719184",
+      "name_ar": "شركة المطلق للنقل العفش",
+      "city": "عرعر",
+      "district": "الربوه",
+      "supplied_items_text": "hvac, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14745514",
+      "name_ar": "شركة نقل عفش بتبوك 1234",
+      "city": "تبوك",
+      "district": "العزيزية القديمة",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14747314",
+      "name_ar": "os. للعزل و التبريد",
+      "city": "جده",
+      "district": "السليمانية",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14761639",
+      "name_ar": "مؤسسه ساره للحداده",
+      "city": "الرياض",
+      "district": "النرجس",
+      "supplied_items_text": "steel",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:14786542",
+      "name_ar": "نقل عفش مع",
+      "city": "الدمام",
+      "district": "الاثير",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14799740",
+      "name_ar": "للحداده والالمنيوم مطابخ",
+      "city": "المدينة",
+      "district": "الدفاع",
+      "supplied_items_text": "paint",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14813299",
+      "name_ar": "المعارف حدادة نجارة المنيوم",
+      "city": "عنيزة",
+      "district": "العليا",
+      "supplied_items_text": "cement, structural-steel, landscaping, gases",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:14813654",
+      "name_ar": "حائل نقل عفش 123",
+      "city": "حائل",
+      "district": "السمراء",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14832707",
+      "name_ar": "حداده مكه",
+      "city": "مكه",
+      "district": "جبل النور",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14864902",
+      "name_ar": "مظلات و سواتر و حداده",
+      "city": "مكه",
+      "district": "العوالي",
+      "supplied_items_text": "tents",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14921922",
+      "name_ar": "نقل عفش سما ينبع البحر",
+      "city": "ينبع",
+      "district": "ينبع البلد",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14924806",
+      "name_ar": "كنوزلنقل العفش",
+      "city": "مكه",
+      "district": "الشوقية",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14937426",
+      "name_ar": "الكيان لنقل العفش",
+      "city": "المدينة",
+      "district": "الاصيفرين",
+      "supplied_items_text": "transport, waste-management",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14951246",
+      "name_ar": "دينا عنيزه للنقل العفش",
+      "city": "عنيزة",
+      "district": "وسط المدينة",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:14960451",
+      "name_ar": "الرحمه لنقل عفش ونظافه",
+      "city": "المدينة",
+      "district": "المطار",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:14996156",
+      "name_ar": "سوري لنقل عفش بأرخص الاسعار",
+      "city": "الدمام",
+      "district": "الفيصلية",
+      "supplied_items_text": "furniture, transport, waste-management",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:15007507",
+      "name_ar": "شركة تنظيف وصيانة المكيفات",
+      "city": "الهفوف",
+      "district": "الرفيعة",
+      "supplied_items_text": "cleaning, maintenance",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15008177",
+      "name_ar": "أبو سالم الحدادي 60281",
+      "city": "صامطة",
+      "district": "الجرادية",
+      "supplied_items_text": "food, paper",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:15029185",
+      "name_ar": "لتفصيل الالمنيوم ورخام",
+      "city": "خميس مشيط",
+      "district": "شمال التضامن",
+      "supplied_items_text": "marble, doors, glass, landscaping",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:15081376",
+      "name_ar": "شبكة حديثة للحدادة واللحام",
+      "city": "جده",
+      "district": "الفلاح",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15124559",
+      "name_ar": "حداد الطائف ابوخالد اطلحي",
+      "city": "الطايف",
+      "district": "الشهداء الشمالية",
+      "supplied_items_text": "structural-steel, manpower",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15124799",
+      "name_ar": "مؤسسة فروع طيبه للحداده",
+      "city": "المدينة",
+      "district": "العيون",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15136768",
+      "name_ar": "حداد مضلال وسواتر الرياض",
+      "city": "الرياض",
+      "district": "الياسمين",
+      "supplied_items_text": "tents",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15143297",
+      "name_ar": "نقل عفش بجده رقم 1",
+      "city": "جده",
+      "district": "الربوة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15157287",
+      "name_ar": "ورشة المنيوم صناعية المعيصم",
+      "city": "مكه",
+      "district": "بطحاء قريش",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:15158328",
+      "name_ar": "حداد الدمام القطيف الخبر",
+      "city": "الدمام",
+      "district": "الجلوية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:15160474",
+      "name_ar": "حداد هناجر ومظلات 777",
+      "city": "جده",
+      "district": "الفيصلية",
+      "supplied_items_text": "structural-steel, elevators",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:15172067",
+      "name_ar": "عالم المطابخ والألمنيوم",
+      "city": "خميس مشيط",
+      "district": "شمال التضامن",
+      "supplied_items_text": "ready-mix, kitchen-equipment",
+      "source_ref": "haraj:5ad"
+    },
+    {
+      "external_key": "haraj:seller:15173257",
+      "name_ar": "شركة نقل عفش2",
+      "city": "خميس مشيط",
+      "district": "العرق الشمالي",
+      "supplied_items_text": "packaging",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15199934",
+      "name_ar": "مطابخ المنيوم ورخام صيانه",
+      "city": "جده",
+      "district": "بريمان",
+      "supplied_items_text": "marble",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15229494",
+      "name_ar": "تنظيف مكيفات ومجالس",
+      "city": "حائل",
+      "district": "الورود",
+      "supplied_items_text": "carpets, cleaning",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15254888",
+      "name_ar": "حدادمضلات الشرقيه",
+      "city": "الدمام",
+      "district": "احد",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15287198",
+      "name_ar": "محمود النجار 15493",
+      "city": "الرياض",
+      "district": "منفوحة",
+      "supplied_items_text": "landscaping",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15288839",
+      "name_ar": "نقل عفش في الدمام والخبر22",
+      "city": "الخبر",
+      "district": "الخبر الشمالية",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15294098",
+      "name_ar": "كشف تسربات وعزل اسطح الدمام",
+      "city": "الدمام",
+      "district": "الاتصالات",
+      "supplied_items_text": "pest-control",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15296653",
+      "name_ar": "ابو سام لاعمال الحداده",
+      "city": "الهفوف",
+      "district": null,
+      "supplied_items_text": "structural-steel, block, agriculture, uniforms, manpower",
+      "source_ref": "haraj:7ad"
+    },
+    {
+      "external_key": "haraj:seller:15327438",
+      "name_ar": "ابو احمد حداده.مظلات",
+      "city": "الدمام",
+      "district": "احد",
+      "supplied_items_text": "structural-steel, tents",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15349436",
+      "name_ar": "صادق غطامكيف",
+      "city": "تبوك",
+      "district": "النظيم",
+      "supplied_items_text": "windows",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15396522",
+      "name_ar": "ابو عبد الرحمن لي نقل العفش",
+      "city": "أبها",
+      "district": "النسيم",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15430768",
+      "name_ar": "ابوعمرلجميع اعمال الحداده",
+      "city": "الدمام",
+      "district": "القادسية",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15451141",
+      "name_ar": "زجاج سكريت والمنيوم واخشاب",
+      "city": "جده",
+      "district": "الواحة",
+      "supplied_items_text": "doors, cleaning, textile, glass",
+      "source_ref": "haraj:8ad"
+    },
+    {
+      "external_key": "haraj:seller:15456752",
+      "name_ar": "دباب نقل عفش 123456",
+      "city": "جده",
+      "district": "الربوة",
+      "supplied_items_text": "transport",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:15477368",
+      "name_ar": "بيبان سحب المنيوم حداده",
+      "city": "جيزان",
+      "district": "البشائر",
+      "supplied_items_text": "doors, landscaping, gases, structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:15481541",
+      "name_ar": "مظلات حداد مظلات",
+      "city": "الظهران",
+      "district": "القصور",
+      "supplied_items_text": "structural-steel, tents",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15483417",
+      "name_ar": "حداد 477",
+      "city": "الدمام",
+      "district": "الاثير",
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:4ad"
+    },
+    {
+      "external_key": "haraj:seller:15485270",
+      "name_ar": "ورشة حصن البناء للحدادة",
+      "city": "احد المسارحة",
+      "district": "الروضة",
+      "supplied_items_text": "structural-steel, steel, rebar, doors, cement",
+      "source_ref": "haraj:17ad"
+    },
+    {
+      "external_key": "haraj:seller:15488271",
+      "name_ar": "عبدالرحمن النجارر",
+      "city": "جده",
+      "district": "الثغر",
+      "supplied_items_text": "low-current",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15522666",
+      "name_ar": "شركة العليا للعزل الصوتي",
+      "city": "الرياض",
+      "district": "التعاون",
+      "supplied_items_text": "waterproofing, kitchen-equipment, doors",
+      "source_ref": "haraj:10ad"
+    },
+    {
+      "external_key": "haraj:seller:15534399",
+      "name_ar": "فني الألمنيوم ابهاء",
+      "city": "أبها",
+      "district": "الصفا",
+      "supplied_items_text": "doors",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15556607",
+      "name_ar": "قائدالخيول لنقل العفش",
+      "city": "الظهران",
+      "district": "الدوحة الشمالية",
+      "supplied_items_text": "furniture, transport",
+      "source_ref": "haraj:2ad"
+    },
+    {
+      "external_key": "haraj:seller:15558076",
+      "name_ar": "خدمات أبها للعزل",
+      "city": "بللسمر",
+      "district": "البساتين",
+      "supplied_items_text": "waterproofing",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1031009",
+      "name_ar": "سراييفو",
+      "city": "الرياض",
+      "district": "الصحافة",
+      "supplied_items_text": "glass",
+      "source_ref": "haraj:3ad"
+    },
+    {
+      "external_key": "haraj:seller:1022526",
+      "name_ar": "يوسف للتسويق العقاري",
+      "city": "بريدة",
+      "district": "الشقة",
+      "supplied_items_text": "glass",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1041080",
+      "name_ar": "saeed.ekhwan",
+      "city": "القطيف",
+      "district": "الروضة",
+      "supplied_items_text": "marble",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1017220",
+      "name_ar": "aziizbk",
+      "city": "الدمام",
+      "district": "الشاطئ الشرقي",
+      "supplied_items_text": "paint",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:seller:1000014",
+      "name_ar": "كمارو2010",
+      "city": "عنيزة",
+      "district": "الثقافة",
+      "supplied_items_text": "glass",
+      "source_ref": "haraj:1ad"
+    },
+    {
+      "external_key": "haraj:test",
+      "name_ar": "haraj test row",
+      "city": "الرياض",
+      "district": null,
+      "supplied_items_text": "structural-steel",
+      "source_ref": "haraj:test"
+    }
+  ]
+}

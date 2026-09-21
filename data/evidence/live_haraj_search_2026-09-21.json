@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-09-21T11:34:20.266829+00:00",
+  "endpoint": "https://graphql.haraj.com.sa/?queryName=Search",
+  "query": "درابزين ستانلس",
+  "city": "الرياض",
+  "requested_page_size": 5,
+  "pages_fetched": 2,
+  "has_next_reported": true,
+  "returned_count": 10,
+  "unique_ids": 10,
+  "items": [
+    {
+      "id": "184904980",
+      "title": "للبيع درابزين سلم وشبك واغراض مغطس للبيع",
+      "city": "الرياض",
+      "district": "النخيل",
+      "seller_id": "20195336",
+      "url": "https://haraj.com.sa/11184904980/للبيع_درابزين_سلم_وشبك_واغراض_مغطس_للبيع/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "178194144",
+      "title": "درابزين ستانلس ستيل",
+      "city": "الرياض",
+      "district": "النهضة",
+      "seller_id": "1815923",
+      "url": "https://haraj.com.sa/11178194144/درابزين_ستانلس_ستيل/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "110545459",
+      "title": "درابزين ستانلس ستيل سلم وحواجز استراكشر وجهات",
+      "city": "الرياض",
+      "district": "الربيع",
+      "seller_id": "13917303",
+      "url": "https://haraj.com.sa/11110545459/درابزين_ستانلس_ستيل_سلم_وحواجز_استراكشر_وجهات/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "175850317",
+      "title": "درابزين زجاج  تصميم وتنفيذ. - تصميم وتنفيذ اعمال الدرابزين",
+      "city": "الرياض",
+      "district": "قرطبة",
+      "seller_id": "17033461",
+      "url": "https://haraj.com.sa/11175850317/درابزين_زجاجتصميم_وتنفيذتصميم_وتنفيذ_اعمال_الدرابزين/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "174762152",
+      "title": "درابزين زجاج  درابزين مودرن - تصميم وتنفيذ اعمال الدرابزين",
+      "city": "الرياض",
+      "district": "المونسية",
+      "seller_id": "17033461",
+      "url": "https://haraj.com.sa/11174762152/درابزين_زجاجدرابزين_مودرن_تصميم_وتنفيذ_اعمال_الدرابزين/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "169733664",
+      "title": "ترابزين زجاج سكوريت 12 ملي تفصيل درابزين سلم الرياض",
+      "city": "الرياض",
+      "district": "العود",
+      "seller_id": "24311661",
+      "url": "https://haraj.com.sa/11169733664/ترابزين_زجاج_سكوريت_12_ملي_تفصيل_درابزين_سلم_الرياض/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "135809246",
+      "title": "ستانلس ستيل   درابزين ستانلس   أعمال ستانلس ستيل",
+      "city": "الرياض",
+      "district": "الرائد",
+      "seller_id": "1724438",
+      "url": "https://haraj.com.sa/11135809246/ستانلس_ستيل_درابزين_ستانلس_أعمال_ستانلس_ستيل/",
+      "price_amount": null,
+      "listing_state": "active"
+    },
+    {
+      "id": "175733613",
+      "title": "تركيب وتصنيع درابزين استانلس ستيل اصلي تايواني 304 ضد الصدأ",
+      "city": "الرياض",
+      "district": "الصناعية",
+      "seller_id": "21768689",
+      "url": "https://haraj.com.sa/11175733613/تركيب_وتصنيع_درابزين_استانلس_ستيل_اصلي_تايواني_304_ضد_الصدأ/",
+      "price_amount": 350.0,
+      "listing_state": "active"
+    }
+  ]
+}

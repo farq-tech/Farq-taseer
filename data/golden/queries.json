@@ -1,0 +1,2646 @@
+{
+  "version": 1,
+  "queries": [
+    {
+      "id": "q001",
+      "query": "أبي درابزين ستان ستيل بالرياض",
+      "tags": [
+        "materials",
+        "dialect",
+        "city",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "city": "الرياض",
+        "material": "ستانلس",
+        "result_unit": "hybrid",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q002",
+      "query": "دربزين ستانلس",
+      "tags": [
+        "materials",
+        "spelling",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "material": "ستانلس",
+        "clarification": true,
+        "city": null
+      }
+    },
+    {
+      "id": "q003",
+      "query": "درابزين درج ستانلس جدة",
+      "tags": [
+        "materials",
+        "city"
+      ],
+      "expect": {
+        "city": "جده",
+        "material": "ستانلس",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q004",
+      "query": "تركيب درابزين حديد بالدمام",
+      "tags": [
+        "materials",
+        "services",
+        "city",
+        "location_required"
+      ],
+      "expect": {
+        "city": "الدمام",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q005",
+      "query": "أبي نجار يسوي لي دولاب",
+      "tags": [
+        "trades",
+        "furniture",
+        "dialect",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "carpenter",
+        "clarification": true,
+        "city": null
+      }
+    },
+    {
+      "id": "q006",
+      "query": "نجار بالرياض",
+      "tags": [
+        "trades",
+        "city",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "city": "الرياض",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q007",
+      "query": "نجار موبيليا جدة",
+      "tags": [
+        "trades",
+        "furniture",
+        "city"
+      ],
+      "expect": {
+        "city": "جده",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q008",
+      "query": "فني نجار أبواب الخبر",
+      "tags": [
+        "trades",
+        "city"
+      ],
+      "expect": {
+        "city": "الخبر"
+      }
+    },
+    {
+      "id": "q009",
+      "query": "نقل عفش جدة",
+      "tags": [
+        "services",
+        "city",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "moving",
+        "city": "جده",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q010",
+      "query": "أبي نقل عفش",
+      "tags": [
+        "services",
+        "dialect",
+        "location_required"
+      ],
+      "expect": {
+        "clarification": true,
+        "city": null
+      }
+    },
+    {
+      "id": "q011",
+      "query": "دينه نقل اثاث الدمام",
+      "tags": [
+        "services",
+        "city"
+      ],
+      "expect": {
+        "city": "الدمام"
+      }
+    },
+    {
+      "id": "q012",
+      "query": "مقاول عزل سطح",
+      "tags": [
+        "services",
+        "trades",
+        "materials",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "clarification": true
+      }
+    },
+    {
+      "id": "q013",
+      "query": "عزل اسطح بالرياض",
+      "tags": [
+        "services",
+        "materials",
+        "city"
+      ],
+      "expect": {
+        "city": "الرياض",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q014",
+      "query": "عزل فوم جده",
+      "tags": [
+        "services",
+        "spelling",
+        "city"
+      ],
+      "expect": {
+        "city": "جده"
+      }
+    },
+    {
+      "id": "q015",
+      "query": "كامري 2024 فل كامل مستعملة",
+      "tags": [
+        "vehicles",
+        "used",
+        "model",
+        "dialect",
+        "without_city"
+      ],
+      "expect": {
+        "type": "vehicle",
+        "model": "Camry",
+        "year": 2024,
+        "condition": "used",
+        "city": null
+      }
+    },
+    {
+      "id": "q016",
+      "query": "كامري 24 فل",
+      "tags": [
+        "vehicles",
+        "model",
+        "spelling",
+        "without_city"
+      ],
+      "expect": {
+        "model": "Camry",
+        "year": 2024,
+        "year_confidence_max": 0.7,
+        "city": null
+      }
+    },
+    {
+      "id": "q017",
+      "query": "تويوتا كامري 2020 الرياض",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "city",
+        "model"
+      ],
+      "expect": {
+        "city": "الرياض",
+        "model": "Camry",
+        "year": 2020
+      }
+    },
+    {
+      "id": "q018",
+      "query": "لاندكروزر 2022",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {
+        "model": "Land Cruiser",
+        "year": 2022,
+        "city": null
+      }
+    },
+    {
+      "id": "q019",
+      "query": "سيارة كامري مستعمل",
+      "tags": [
+        "vehicles",
+        "used",
+        "without_city"
+      ],
+      "expect": {
+        "condition": "used",
+        "model": "Camry"
+      }
+    },
+    {
+      "id": "q020",
+      "query": "camry 2024 full",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {
+        "model": "Camry",
+        "year": 2024
+      }
+    },
+    {
+      "id": "q021",
+      "query": "شقة شمال الرياض",
+      "tags": [
+        "property",
+        "city",
+        "dialect"
+      ],
+      "expect": {
+        "type": "property",
+        "city": "الرياض",
+        "district": "شمال",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q022",
+      "query": "شقة للايجار جدة",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {
+        "type": "property",
+        "city": "جده"
+      }
+    },
+    {
+      "id": "q023",
+      "query": "ابي ارض شمال جدة",
+      "tags": [
+        "property",
+        "city",
+        "dialect"
+      ],
+      "expect": {
+        "type": "property",
+        "subcategory": "land",
+        "city": "جده"
+      }
+    },
+    {
+      "id": "q024",
+      "query": "فيلا للبيع الدمام",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {
+        "type": "property",
+        "city": "الدمام"
+      }
+    },
+    {
+      "id": "q025",
+      "query": "شقة",
+      "tags": [
+        "property",
+        "ambiguous",
+        "location_required"
+      ],
+      "expect": {
+        "clarification": true,
+        "city": null
+      }
+    },
+    {
+      "id": "q026",
+      "query": "PS5 نظيف",
+      "tags": [
+        "electronics",
+        "used",
+        "brand_mix",
+        "shippable",
+        "model",
+        "without_city"
+      ],
+      "expect": {
+        "type": "product",
+        "model": "PlayStation 5",
+        "condition": "used",
+        "city": null,
+        "clarification": false
+      }
+    },
+    {
+      "id": "q027",
+      "query": "بلايستيشن 5 مستعمل",
+      "tags": [
+        "electronics",
+        "used",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {
+        "model": "PlayStation 5",
+        "condition": "used"
+      }
+    },
+    {
+      "id": "q028",
+      "query": "playstation 5 جديد",
+      "tags": [
+        "electronics",
+        "new",
+        "brand_mix",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {
+        "condition": "new",
+        "model": "PlayStation 5"
+      }
+    },
+    {
+      "id": "q029",
+      "query": "ايفون برو ماكس",
+      "tags": [
+        "electronics",
+        "brand_mix",
+        "model",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {
+        "model": "iPhone Pro Max",
+        "brand": "Apple",
+        "city": null
+      }
+    },
+    {
+      "id": "q030",
+      "query": "iphone pro max",
+      "tags": [
+        "electronics",
+        "brand_mix",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {
+        "model": "iPhone Pro Max"
+      }
+    },
+    {
+      "id": "q031",
+      "query": "كفرات باترول",
+      "tags": [
+        "parts",
+        "model",
+        "dialect"
+      ],
+      "expect": {
+        "type": "product",
+        "model": "Patrol",
+        "category": "parts",
+        "city": null
+      }
+    },
+    {
+      "id": "q032",
+      "query": "كفرات نيسان باترول الرياض",
+      "tags": [
+        "parts",
+        "city",
+        "model"
+      ],
+      "expect": {
+        "city": "الرياض",
+        "model": "Patrol"
+      }
+    },
+    {
+      "id": "q033",
+      "query": "جنوط باترول",
+      "tags": [
+        "parts",
+        "model"
+      ],
+      "expect": {
+        "model": "Patrol"
+      }
+    },
+    {
+      "id": "q034",
+      "query": "مكيف سبليت",
+      "tags": [
+        "appliances",
+        "shippable",
+        "model",
+        "without_city"
+      ],
+      "expect": {
+        "type": "product",
+        "city": null,
+        "clarification": false
+      }
+    },
+    {
+      "id": "q035",
+      "query": "مكيف اسبليت مستعمل جدة",
+      "tags": [
+        "appliances",
+        "used",
+        "city",
+        "spelling"
+      ],
+      "expect": {
+        "city": "جده",
+        "condition": "used"
+      }
+    },
+    {
+      "id": "q036",
+      "query": "حصان عربي",
+      "tags": [
+        "animals",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {
+        "category": "animals",
+        "type": "other"
+      }
+    },
+    {
+      "id": "q037",
+      "query": "خيل للبيع القصيم",
+      "tags": [
+        "animals",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q038",
+      "query": "دولاب ملابس جديد",
+      "tags": [
+        "furniture",
+        "new",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {
+        "condition": "new"
+      }
+    },
+    {
+      "id": "q039",
+      "query": "خزانة ست قطع",
+      "tags": [
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q040",
+      "query": "مولد كهرباء",
+      "tags": [
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q041",
+      "query": "شيول للايجار",
+      "tags": [
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q042",
+      "query": "معدات ثقيله الدمام",
+      "tags": [
+        "equipment",
+        "city"
+      ],
+      "expect": {
+        "city": "الدمام"
+      }
+    },
+    {
+      "id": "q043",
+      "query": "حديد",
+      "tags": [
+        "ambiguous",
+        "materials"
+      ],
+      "expect": {
+        "clarification": true
+      }
+    },
+    {
+      "id": "q044",
+      "query": "ابي شيء للبيت",
+      "tags": [
+        "ambiguous",
+        "not_specific"
+      ],
+      "expect": {
+        "understood": false
+      }
+    },
+    {
+      "id": "q045",
+      "query": "asdf qqq",
+      "tags": [
+        "not_understood"
+      ],
+      "expect": {
+        "understood": false
+      }
+    },
+    {
+      "id": "q046",
+      "query": "من الرياض الى جدة نقل عفش",
+      "tags": [
+        "ambiguous",
+        "location_ambiguous",
+        "services"
+      ],
+      "expect": {
+        "state_hint": "location_ambiguous"
+      }
+    },
+    {
+      "id": "q047",
+      "query": "هايلكس 2018 مستعمل",
+      "tags": [
+        "vehicles",
+        "used",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q048",
+      "query": "اكورد 2021",
+      "tags": [
+        "vehicles",
+        "model",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q049",
+      "query": "سوناتا 2019 الرياض",
+      "tags": [
+        "vehicles",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q050",
+      "query": "باترول فتك",
+      "tags": [
+        "vehicles",
+        "model",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q051",
+      "query": "جمس يوكن 2020",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q052",
+      "query": "مرسيدس e200",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q053",
+      "query": "لكزس es 2023",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q054",
+      "query": "قطع غيار كامري",
+      "tags": [
+        "parts",
+        "model"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q055",
+      "query": "صدام كامري 2015",
+      "tags": [
+        "parts",
+        "vehicles",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q056",
+      "query": "مكينة باترول",
+      "tags": [
+        "parts",
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q057",
+      "query": "ايباد برو",
+      "tags": [
+        "electronics",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q058",
+      "query": "لابتوب ماك بوك",
+      "tags": [
+        "electronics",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q059",
+      "query": "سماعة سوني",
+      "tags": [
+        "electronics",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q060",
+      "query": "تلفزيون 65 بوصة",
+      "tags": [
+        "electronics",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q061",
+      "query": "ثلاجة سامسونج",
+      "tags": [
+        "appliances",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q062",
+      "query": "غسالة مستعملة",
+      "tags": [
+        "appliances",
+        "used",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q063",
+      "query": "فرن غاز",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q064",
+      "query": "كنب جديد",
+      "tags": [
+        "furniture",
+        "new"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q065",
+      "query": "طاولة طعام",
+      "tags": [
+        "furniture",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q066",
+      "query": "سرير نفر ونص",
+      "tags": [
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q067",
+      "query": "مجلس عربي",
+      "tags": [
+        "furniture",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q068",
+      "query": "باب خشب",
+      "tags": [
+        "materials",
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q069",
+      "query": "رخام أرضيات",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q070",
+      "query": "سيراميك جدران",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q071",
+      "query": "دهان جوتن",
+      "tags": [
+        "materials",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q072",
+      "query": "أسمنت الرياض",
+      "tags": [
+        "materials",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q073",
+      "query": "حديد تسليح",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q074",
+      "query": "بلوك أبيض",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q075",
+      "query": "معلم سباكة",
+      "tags": [
+        "trades",
+        "services",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q076",
+      "query": "كهربائي منازل",
+      "tags": [
+        "trades",
+        "services",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q077",
+      "query": "فني تكييف",
+      "tags": [
+        "trades",
+        "services"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q078",
+      "query": "معلم بلاط",
+      "tags": [
+        "trades",
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q079",
+      "query": "حداد أبواب",
+      "tags": [
+        "trades",
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q080",
+      "query": "ألمنيوم شبابيك",
+      "tags": [
+        "materials",
+        "trades"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q081",
+      "query": "زجاج سيكوريت",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q082",
+      "query": "مظلات وسواتر",
+      "tags": [
+        "services",
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q083",
+      "query": "هناجر حديد",
+      "tags": [
+        "materials",
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q084",
+      "query": "سطحة نقل سيارات",
+      "tags": [
+        "services",
+        "vehicles",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q085",
+      "query": "ونش الرياض",
+      "tags": [
+        "services",
+        "city",
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q086",
+      "query": "تنظيف خزانات",
+      "tags": [
+        "services",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q087",
+      "query": "مكافحة حشرات جدة",
+      "tags": [
+        "services",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q088",
+      "query": "نقل عفش داخل مكة",
+      "tags": [
+        "services",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q089",
+      "query": "شقة عزاب حي النرجس",
+      "tags": [
+        "property",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q090",
+      "query": "ملحق للايجار",
+      "tags": [
+        "property",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q091",
+      "query": "عمارة للبيع الخبر",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q092",
+      "query": "محل تجاري الدمام",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q093",
+      "query": "مزرعة للبيع",
+      "tags": [
+        "property",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q094",
+      "query": "غنم نعيمي",
+      "tags": [
+        "animals",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q095",
+      "query": "إبل للبيع",
+      "tags": [
+        "animals",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q096",
+      "query": "قطط شيرازي",
+      "tags": [
+        "animals",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q097",
+      "query": "كلب جيرمن",
+      "tags": [
+        "animals",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q098",
+      "query": "دراجة نارية",
+      "tags": [
+        "vehicles",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q099",
+      "query": "سكوتر كهربائي",
+      "tags": [
+        "vehicles",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q100",
+      "query": "كفرات هلل 17",
+      "tags": [
+        "parts"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q101",
+      "query": "بطارية سيارة",
+      "tags": [
+        "parts"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q102",
+      "query": "زيت موتر",
+      "tags": [
+        "parts",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q103",
+      "query": "كاميرا كانون",
+      "tags": [
+        "electronics",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q104",
+      "query": "ساعة ابل",
+      "tags": [
+        "electronics",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q105",
+      "query": "بلايستيشن 4 برو",
+      "tags": [
+        "electronics",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q106",
+      "query": "اكس بوكس سيريس",
+      "tags": [
+        "electronics",
+        "brand_mix",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q107",
+      "query": "طاولة زينة",
+      "tags": [
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q108",
+      "query": "غرفة نوم كاملة مستعملة",
+      "tags": [
+        "furniture",
+        "used"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q109",
+      "query": "مكتب دراسة",
+      "tags": [
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q110",
+      "query": "سقالة للايجار",
+      "tags": [
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q111",
+      "query": "خلاطة خرسانة",
+      "tags": [
+        "equipment",
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q112",
+      "query": "كمبروسر هواء",
+      "tags": [
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q113",
+      "query": "عربية اطفال",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q114",
+      "query": "عطر ديور",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q115",
+      "query": "عسل سدر",
+      "tags": [
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q116",
+      "query": "تمر خلاص",
+      "tags": [
+        "long_tail",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q117",
+      "query": "خيمة رحلات",
+      "tags": [
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q118",
+      "query": "مكيف شباك",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q119",
+      "query": "دلة قهوة",
+      "tags": [
+        "long_tail",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q120",
+      "query": "مراوح سقف",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q121",
+      "query": "لمبات ليد",
+      "tags": [
+        "materials",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q122",
+      "query": "سلك كهرباء",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q123",
+      "query": "مفاتيح كهرباء",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q124",
+      "query": "خلاط مطبخ",
+      "tags": [
+        "materials",
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q125",
+      "query": "كرسي مكتب",
+      "tags": [
+        "furniture",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q126",
+      "query": "طابعة ليزر",
+      "tags": [
+        "electronics",
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q127",
+      "query": "راوتر هواوي",
+      "tags": [
+        "electronics",
+        "brand_mix",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q128",
+      "query": "جوال سامسونج جديد",
+      "tags": [
+        "electronics",
+        "new",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q129",
+      "query": "ايفون 13 مستعمل",
+      "tags": [
+        "electronics",
+        "used",
+        "model",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q130",
+      "query": "شاحن لابتوب",
+      "tags": [
+        "electronics",
+        "parts",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q131",
+      "query": "سماعات ايربودز",
+      "tags": [
+        "electronics",
+        "brand_mix",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q132",
+      "query": "بلايستيشن يد",
+      "tags": [
+        "electronics",
+        "parts",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q133",
+      "query": "خروف حري",
+      "tags": [
+        "animals",
+        "dialect",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q134",
+      "query": "دجاج بلدي",
+      "tags": [
+        "animals",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q135",
+      "query": "حوض سمك",
+      "tags": [
+        "animals",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q136",
+      "query": "نجيلة طبيعية",
+      "tags": [
+        "materials",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q137",
+      "query": "عشب صناعي",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q138",
+      "query": "مسبح فيبر جلاس",
+      "tags": [
+        "materials",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q139",
+      "query": "بوابة كراج",
+      "tags": [
+        "materials",
+        "vehicles",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q140",
+      "query": "كفرات بالون",
+      "tags": [
+        "parts",
+        "spelling"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q141",
+      "query": "جنط 18",
+      "tags": [
+        "parts"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q142",
+      "query": "فلتر زيت كامري",
+      "tags": [
+        "parts",
+        "model"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q143",
+      "query": "مساحات كامري",
+      "tags": [
+        "parts",
+        "model"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q144",
+      "query": "شاص 2021",
+      "tags": [
+        "vehicles",
+        "model",
+        "dialect",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q145",
+      "query": "ربع 2024",
+      "tags": [
+        "vehicles",
+        "dialect",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q146",
+      "query": "هايلكس غمارة",
+      "tags": [
+        "vehicles",
+        "dialect",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q147",
+      "query": "دفتر سيارة كامري",
+      "tags": [
+        "vehicles",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q148",
+      "query": "تأمين سيارة",
+      "tags": [
+        "services",
+        "vehicles",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q149",
+      "query": "فحص سيارات متنقل",
+      "tags": [
+        "services",
+        "vehicles",
+        "location_required",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q150",
+      "query": "تلميع سيارات",
+      "tags": [
+        "services",
+        "vehicles",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q151",
+      "query": "غسيل سجاد",
+      "tags": [
+        "services",
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q152",
+      "query": "تركيب ورق جدران",
+      "tags": [
+        "services",
+        "furniture",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q153",
+      "query": "تفصيل كنب",
+      "tags": [
+        "services",
+        "furniture",
+        "trades"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q154",
+      "query": "تفصيل ستائر",
+      "tags": [
+        "services",
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q155",
+      "query": "معلم جبس بورد",
+      "tags": [
+        "trades",
+        "services"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q156",
+      "query": "مقاول ترميم",
+      "tags": [
+        "trades",
+        "services",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q157",
+      "query": "مقاول بناء عظم",
+      "tags": [
+        "trades",
+        "materials",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q158",
+      "query": "عامل يومية",
+      "tags": [
+        "trades",
+        "services",
+        "long_tail",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q159",
+      "query": "حارس مزرعة",
+      "tags": [
+        "services",
+        "long_tail",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q160",
+      "query": "سائق خاص",
+      "tags": [
+        "services",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q161",
+      "query": "مدرّس خصوصي رياضيات",
+      "tags": [
+        "services",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q162",
+      "query": "مصور افراح",
+      "tags": [
+        "services",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q163",
+      "query": "طباخ مندي",
+      "tags": [
+        "services",
+        "dialect",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q164",
+      "query": "تجهيز مناسبات",
+      "tags": [
+        "services"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q165",
+      "query": "استراحة للايجار شمال الرياض",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q166",
+      "query": "شاليه الدمام",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q167",
+      "query": "غرفة سائق",
+      "tags": [
+        "property",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q168",
+      "query": "أرض تجارية مكة",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q169",
+      "query": "بيت شعبي للبيع",
+      "tags": [
+        "property",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q170",
+      "query": "دور للايجار",
+      "tags": [
+        "property",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q171",
+      "query": "روف للايجار",
+      "tags": [
+        "property",
+        "dialect",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q172",
+      "query": "مستودع للايجار جدة",
+      "tags": [
+        "property",
+        "city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q173",
+      "query": "مكتب للايجار",
+      "tags": [
+        "property",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q174",
+      "query": "كامري 2016 فل ابيض",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q175",
+      "query": "لكزس lx570",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q176",
+      "query": "برادو 2020",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q177",
+      "query": "اف جي 2014",
+      "tags": [
+        "vehicles",
+        "model",
+        "dialect",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q178",
+      "query": "كورولا 2024",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q179",
+      "query": "يارس 2022",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q180",
+      "query": "اكسنت 2018",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q181",
+      "query": "النترا 2021 فل",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q182",
+      "query": "ازيرا 2019",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q183",
+      "query": "تاهو 2023",
+      "tags": [
+        "vehicles",
+        "model",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q184",
+      "query": "سييرا 2020",
+      "tags": [
+        "vehicles",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q185",
+      "query": "رام 1500",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q186",
+      "query": "موستنق 2017",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q187",
+      "query": "تشارجر 2019",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q188",
+      "query": "كيا K5 2022",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q189",
+      "query": "هيونداي سوناتا",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q190",
+      "query": "نيسان التيما",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q191",
+      "query": "مازدا 6",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q192",
+      "query": "هوندا سيفيك",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q193",
+      "query": "بي ام 520",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "spelling",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q194",
+      "query": "اودي A6",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q195",
+      "query": "بورش كايين",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q196",
+      "query": "تسلا موديل 3",
+      "tags": [
+        "vehicles",
+        "brand_mix",
+        "model",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q197",
+      "query": "دراجة هوائية",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q198",
+      "query": "سكيت كهربائي",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q199",
+      "query": "نظارة شمسية",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q200",
+      "query": "حذاء نايك",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q201",
+      "query": "شنطة سفر",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q202",
+      "query": "عربية اكل",
+      "tags": [
+        "long_tail",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q203",
+      "query": "مكينة خياطة",
+      "tags": [
+        "equipment",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q204",
+      "query": "منشار خشب",
+      "tags": [
+        "equipment",
+        "trades"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q205",
+      "query": "دريل بوش",
+      "tags": [
+        "equipment",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q206",
+      "query": "سقالات جديدة",
+      "tags": [
+        "equipment",
+        "new",
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q207",
+      "query": "كونتينر مجفف",
+      "tags": [
+        "equipment",
+        "long_tail"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q208",
+      "query": "رافعه شوكية",
+      "tags": [
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q209",
+      "query": "دينا للايجار",
+      "tags": [
+        "services",
+        "equipment",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q210",
+      "query": "تريلا نقل بضائع",
+      "tags": [
+        "services",
+        "equipment"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q211",
+      "query": "نقل اثاث داخل الرياض",
+      "tags": [
+        "services",
+        "city",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q212",
+      "query": "فك وتركيب مكيفات",
+      "tags": [
+        "services",
+        "appliances",
+        "location_required"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q213",
+      "query": "تعبئة فريون",
+      "tags": [
+        "services",
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q214",
+      "query": "صيانة غسالات",
+      "tags": [
+        "services",
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q215",
+      "query": "تصليح جوالات",
+      "tags": [
+        "services",
+        "electronics",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q216",
+      "query": "محل قطع غيار",
+      "tags": [
+        "parts",
+        "services"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q217",
+      "query": "كفرات ميشلان",
+      "tags": [
+        "parts",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q218",
+      "query": "كفرات بريدجستون 265",
+      "tags": [
+        "parts",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q219",
+      "query": "جنوط مرسيدس",
+      "tags": [
+        "parts",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q220",
+      "query": "شمعات كامري",
+      "tags": [
+        "parts",
+        "model"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q221",
+      "query": "مرايا جانبية",
+      "tags": [
+        "parts"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q222",
+      "query": "مسجل شاشة",
+      "tags": [
+        "electronics",
+        "parts",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q223",
+      "query": "داش كام",
+      "tags": [
+        "electronics",
+        "parts",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q224",
+      "query": "جهاز بصمة",
+      "tags": [
+        "electronics",
+        "long_tail",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q225",
+      "query": "كاميرات مراقبة",
+      "tags": [
+        "electronics",
+        "services",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q226",
+      "query": "سيرفر مستعمل",
+      "tags": [
+        "electronics",
+        "used",
+        "equipment",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q227",
+      "query": "شاشة كمبيوتر",
+      "tags": [
+        "electronics",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q228",
+      "query": "كيبورد ميكانيكي",
+      "tags": [
+        "electronics",
+        "shippable",
+        "brand_mix",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q229",
+      "query": "ماوس لاسلكي",
+      "tags": [
+        "electronics",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q230",
+      "query": "طابعة حبر",
+      "tags": [
+        "electronics",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q231",
+      "query": "حبر طابعة hp",
+      "tags": [
+        "electronics",
+        "brand_mix",
+        "parts",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q232",
+      "query": "ورق a4",
+      "tags": [
+        "long_tail",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q233",
+      "query": "مكتب جاهز",
+      "tags": [
+        "furniture",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q234",
+      "query": "كرسي هزاز",
+      "tags": [
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q235",
+      "query": "سجادة تركية",
+      "tags": [
+        "furniture",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q236",
+      "query": "ستارة بلاك اوت",
+      "tags": [
+        "furniture",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q237",
+      "query": "مرتبة طبية",
+      "tags": [
+        "furniture",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q238",
+      "query": "خزانة حمام",
+      "tags": [
+        "furniture"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q239",
+      "query": "رخام صناعي",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q240",
+      "query": "بورسلان اسباني",
+      "tags": [
+        "materials",
+        "brand_mix"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q241",
+      "query": "غراء سيراميك",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q242",
+      "query": "عازل مائي",
+      "tags": [
+        "materials",
+        "services"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q243",
+      "query": "فوم ازرق",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q244",
+      "query": "جبس ديكور",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q245",
+      "query": "خشب سويدي",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q246",
+      "query": "ابلكاش",
+      "tags": [
+        "materials",
+        "dialect"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q247",
+      "query": "مسامير ومفصلات",
+      "tags": [
+        "materials",
+        "parts"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q248",
+      "query": "قفل باب",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q249",
+      "query": "مقبض ذهبي",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q250",
+      "query": "حنفية مغسلة",
+      "tags": [
+        "materials"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q251",
+      "query": "سخان ماء",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q252",
+      "query": "فلتر مياه",
+      "tags": [
+        "appliances",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q253",
+      "query": "برادة ماء",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q254",
+      "query": "مايكرويف",
+      "tags": [
+        "appliances",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q255",
+      "query": "غلاية كهربائية",
+      "tags": [
+        "appliances",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q256",
+      "query": "مكنسة روبوت",
+      "tags": [
+        "appliances",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q257",
+      "query": "مكواة بخار",
+      "tags": [
+        "appliances",
+        "shippable",
+        "without_city"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q258",
+      "query": "مروحة رذاذ",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q259",
+      "query": "دفاية كهرباء",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    },
+    {
+      "id": "q260",
+      "query": "مدفأة غاز",
+      "tags": [
+        "appliances"
+      ],
+      "expect": {}
+    }
+  ]
+}

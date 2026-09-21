@@ -1,0 +1,249 @@
+"""Public Haraj GraphQL search. No internal server key is used."""
+
+from __future__ import annotations
+
+import json
+import re
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+from farq.cities import canonical_city
+from farq.config import SearchConfig
+from farq.contracts import Ad, Seller
+
+ENDPOINT = "https://graphql.haraj.com.sa/?queryName=Search&version=N0.0.1"
+THUMB_CDN = "https://thumbcdn.haraj.com.sa/"
+_IMAGE_NAME = re.compile(r"^[A-Za-z0-9._\-]+\.(?:jpg|jpeg|png|webp)$", re.I)
+SEARCH_QUERY = """
+query Search($search: String!, $page: Int, $limit: Int, $city: String) {
+  search(search: $search, page: $page, limit: $limit, city: $city) {
+    items {
+      id
+      title
+      postDate
+      authorUsername
+      authorId
+      URL
+      bodyTEXT
+      city
+      geoNeighborhood
+      tags
+      thumbURL
+      hasImage
+      status
+      price { formattedPrice inputPrice }
+    }
+    pageInfo { hasNextPage }
+  }
+}
+"""
+
+
+class LiveUnavailable(Exception):
+    pass
+
+
+class LiveTimeout(Exception):
+    pass
+
+
+@dataclass
+class LiveBatch:
+    ads: list[Ad] = field(default_factory=list)
+    pages_fetched: int = 0
+    queries_run: int = 0
+    error: str | None = None
+    timed_out: bool = False
+
+
+@dataclass
+class QueryFetch:
+    ads: list[Ad] = field(default_factory=list)
+    pages: int = 0
+    has_next: bool = False
+    timed_out: bool = False
+    error: str | None = None
+
+
+def image_urls_for(image_ref: str | None) -> list[str]:
+    """Map a Haraj thumbnail file name to URLs that were measured on 2026-09-21.
+
+    `thumbcdn.haraj.com.sa/{file}-400x400.webp` and `...-140x140.webp` returned
+    image bytes. The original file and other sizes returned 403. Empty input
+    stays empty; this does not invent a picture.
+    """
+
+    if not image_ref:
+        return []
+    ref = image_ref.strip()
+    if ref.startswith("https://") and "haraj.com.sa/" in ref:
+        return [ref]
+    name = ref.split("/")[-1].split("?")[0]
+    if not _IMAGE_NAME.match(name):
+        return []
+    base = f"{THUMB_CDN}{name}"
+    return [f"{base}-400x400.webp", f"{base}-140x140.webp"]
+
+
+def _price(raw: dict | None) -> float | None:
+    if not raw:
+        return None
+    text = raw.get("inputPrice") or raw.get("formattedPrice")
+    if text is None:
+        return None
+    digits = "".join(character for character in str(text) if character.isdigit() or character == ".")
+    if not digits:
+        return None
+    try:
+        amount = float(digits)
+    except ValueError:
+        return None
+    # Haraj uses 1 as a contact placeholder. That is not a real price.
+    if amount <= 1:
+        return None
+    return amount
+
+
+def ad_from_item(item: dict) -> Ad:
+    posted = None
+    if item.get("postDate"):
+        posted = datetime.fromtimestamp(int(item["postDate"]), tz=timezone.utc).isoformat()
+    url_path = item.get("URL") or ""
+    url = url_path if str(url_path).startswith("http") else (f"https://haraj.com.sa/{url_path}" if url_path else None)
+    status = item.get("status")
+    listing_state = "active" if status is True else "deleted" if status is False else "unknown"
+    seller = Seller(
+        id=str(item.get("authorId") or ""),
+        name=item.get("authorUsername") or "",
+        city=canonical_city(item.get("city")),
+        district=item.get("geoNeighborhood"),
+        profile_url=None,
+        specialty_evidence=[],
+    )
+    return Ad(
+        id=str(item["id"]),
+        title=item.get("title") or "",
+        description=item.get("bodyTEXT") or None,
+        url=url,
+        city=canonical_city(item.get("city")),
+        district=item.get("geoNeighborhood"),
+        price_amount=_price(item.get("price")),
+        price_currency="SAR" if _price(item.get("price")) is not None else None,
+        posted_at=posted,
+        image_ref=item.get("thumbURL") or None,
+        image_urls=image_urls_for(item.get("thumbURL")),
+        category_tags=list(item.get("tags") or []),
+        listing_state=listing_state,
+        seller=seller,
+    )
+
+
+class HarajLiveClient:
+    def __init__(self, config: SearchConfig, opener=None):
+        self.config = config
+        self._opener = opener or urllib.request.urlopen
+
+    def _post(self, variables: dict) -> dict:
+        body = json.dumps({"query": SEARCH_QUERY, "variables": variables}).encode()
+        request = urllib.request.Request(
+            ENDPOINT,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; FARQ-individuals/1.0)",
+                "Origin": "https://haraj.com.sa",
+                "Referer": "https://haraj.com.sa/",
+            },
+        )
+        try:
+            with self._opener(request, timeout=self.config.live_timeout_seconds) as response:
+                payload = json.loads(response.read().decode())
+        except urllib.error.URLError as exc:
+            reason = str(exc.reason) if getattr(exc, "reason", None) else str(exc)
+            if "timed out" in reason.lower():
+                raise LiveTimeout(reason) from exc
+            raise LiveUnavailable(reason) from exc
+        except TimeoutError as exc:
+            raise LiveTimeout(str(exc)) from exc
+        if payload.get("errors"):
+            raise LiveUnavailable(json.dumps(payload["errors"], ensure_ascii=False)[:300])
+        return payload.get("data", {}).get("search") or {}
+
+    def search_one(self, query: str, city: str | None) -> QueryFetch:
+        ads: list[Ad] = []
+        seen: set[str] = set()
+        pages = 0
+        has_next = False
+        try:
+            for page in range(1, self.config.live_max_pages + 1):
+                search = self._post(
+                    {
+                        "search": query,
+                        "page": page,
+                        "limit": self.config.live_page_size,
+                        "city": city,
+                    }
+                )
+                pages += 1
+                items = search.get("items") or []
+                new_items = 0
+                for item in items:
+                    if not item.get("id"):
+                        continue
+                    ad = ad_from_item(item)
+                    if ad.id in seen:
+                        continue
+                    seen.add(ad.id)
+                    ads.append(ad)
+                    new_items += 1
+                has_next = bool((search.get("pageInfo") or {}).get("hasNextPage"))
+                if not has_next or new_items == 0:
+                    break
+        except LiveTimeout as exc:
+            return QueryFetch(ads=ads, pages=pages, has_next=bool(ads), timed_out=True, error=str(exc))
+        except LiveUnavailable as exc:
+            if ads:
+                return QueryFetch(ads=ads, pages=pages, has_next=False, error=str(exc))
+            raise
+        return QueryFetch(ads=ads, pages=pages, has_next=has_next)
+
+    def search_iter(self, queries: list[str], city: str | None):
+        selected = [query for query in queries if query][: self.config.live_max_queries]
+        if not selected:
+            return
+        workers = max(1, min(self.config.live_concurrency, len(selected)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(self.search_one, query, city) for query in selected]
+            for future in as_completed(futures):
+                try:
+                    yield future.result()
+                except LiveTimeout as exc:
+                    yield QueryFetch(timed_out=True, error=str(exc))
+                except LiveUnavailable as exc:
+                    yield QueryFetch(error=str(exc))
+                except Exception as exc:  # network and parser failures stay visible
+                    yield QueryFetch(error=str(exc))
+
+    def search(self, queries: list[str], city: str | None) -> LiveBatch:
+        batch = LiveBatch()
+        try:
+            for fetch in self.search_iter(queries, city):
+                batch.ads.extend(fetch.ads)
+                batch.pages_fetched += fetch.pages
+                batch.queries_run += 1
+                if fetch.timed_out:
+                    batch.timed_out = True
+                if fetch.error:
+                    batch.error = fetch.error
+        except LiveTimeout as exc:
+            batch.timed_out = True
+            batch.error = str(exc)
+        except LiveUnavailable as exc:
+            batch.error = str(exc)
+        except Exception as exc:  # network and parser failures stay visible
+            batch.error = str(exc)
+        return batch
