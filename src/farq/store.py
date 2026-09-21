@@ -54,6 +54,7 @@ class Store:
               notes text,
               city text,
               attributes_json text not null,
+              reply_token text,
               created_at text not null
             );
             create table if not exists request_recipients (
@@ -77,6 +78,7 @@ class Store:
               request_id text not null,
               sender_role text not null,
               sender_user_id text,
+              seller_id text,
               body text not null,
               offer_amount real,
               offer_currency text,
@@ -101,6 +103,14 @@ class Store:
             """
         )
         self._connection.commit()
+        self._ensure_column("requests", "reply_token", "text")
+        self._ensure_column("messages", "seller_id", "text")
+
+    def _ensure_column(self, table: str, column: str, declaration: str) -> None:
+        names = {row[1] for row in self._connection.execute(f"pragma table_info({table})")}
+        if column not in names:
+            self._connection.execute(f"alter table {table} add column {column} {declaration}")
+            self._connection.commit()
 
     def register(self, email: str, password: str) -> str:
         user_id = uuid4().hex
@@ -123,6 +133,13 @@ class Store:
         )
         self._connection.commit()
         return token
+
+    def start_guest(self) -> dict:
+        email = f"guest-{uuid4().hex}@users.farq.local"
+        password = secrets.token_urlsafe(18)
+        user_id = self.register(email, password)
+        token = self.login(email, password)
+        return {"user_id": user_id, "token": token}
 
     def user_for_token(self, token: str) -> str | None:
         row = self._connection.execute("select user_id from sessions where token = ?", (token,)).fetchone()
@@ -152,9 +169,10 @@ class Store:
         if not recipients:
             raise ValueError("at least one recipient is required")
         request_id = uuid4().hex
+        reply_token = secrets.token_urlsafe(24)
         self._connection.execute(
-            "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, owner_user_id, original_text, need, notes, city, json.dumps(attributes, ensure_ascii=False), _now()),
+            "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, reply_token, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (request_id, owner_user_id, original_text, need, notes, city, json.dumps(attributes, ensure_ascii=False), reply_token, _now()),
         )
         self._connection.executemany(
             "insert into request_recipients (request_id, seller_id, seller_name, ad_id) values (?, ?, ?, ?)",
@@ -185,16 +203,18 @@ class Store:
         body: str,
         offer: Offer | None = None,
         attachment_ids: list[str] | None = None,
+        seller_id: str | None = None,
     ) -> Message:
         message_id = uuid4().hex
         created = _now()
         self._connection.execute(
-            "insert into messages (id, request_id, sender_role, sender_user_id, body, offer_amount, offer_currency, attachment_ids_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert into messages (id, request_id, sender_role, sender_user_id, seller_id, body, offer_amount, offer_currency, attachment_ids_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 message_id,
                 request_id,
                 sender_role,
                 sender_user_id,
+                seller_id,
                 body,
                 None if offer is None else offer.amount,
                 None if offer is None else offer.currency,
@@ -212,6 +232,7 @@ class Store:
             id=message_id,
             request_id=request_id,
             sender_role=sender_role,
+            seller_id=seller_id,
             body=body,
             offer=offer,
             attachment_ids=attachment_ids or [],
@@ -243,6 +264,7 @@ class Store:
                     id=item["id"],
                     request_id=request_id,
                     sender_role=item["sender_role"],
+                    seller_id=item["seller_id"],
                     body=item["body"],
                     offer=offer,
                     attachment_ids=json.loads(item["attachment_ids_json"]),
@@ -260,5 +282,120 @@ class Store:
             recipients=recipients,
             attachments=attachments,
             messages=messages,
+            reply_token=row["reply_token"],
             created_at=row["created_at"],
         )
+
+    def list_requests(self, owner_user_id: str) -> list[dict]:
+        rows = self._connection.execute(
+            "select * from requests where owner_user_id = ? order by created_at desc",
+            (owner_user_id,),
+        ).fetchall()
+        items = []
+        for row in rows:
+            request_id = row["id"]
+            recipient_count = self._connection.execute(
+                "select count(*) as count from request_recipients where request_id = ?",
+                (request_id,),
+            ).fetchone()["count"]
+            messages = self._connection.execute(
+                "select sender_role, seller_id, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
+                (request_id,),
+            ).fetchall()
+            replied: set[str] = set()
+            latest_offer = None
+            for message in messages:
+                if message["sender_role"] == "seller":
+                    replied.add(message["seller_id"] or message["created_at"])
+                    if message["offer_amount"] is not None:
+                        latest_offer = message
+            newest_offer = bool(messages) and messages[-1]["sender_role"] == "seller" and messages[-1]["offer_amount"] is not None
+            items.append(
+                {
+                    "id": request_id,
+                    "original_text": row["original_text"],
+                    "need": row["need"],
+                    "city": row["city"],
+                    "created_at": row["created_at"],
+                    "recipient_count": recipient_count,
+                    "replied_count": len(replied),
+                    "waiting_count": max(0, recipient_count - len(replied)),
+                    "has_new_offer": newest_offer,
+                    "latest_offer_amount": None if latest_offer is None else latest_offer["offer_amount"],
+                    "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
+                }
+            )
+        return items
+
+    def _request_by_token(self, token: str):
+        return self._connection.execute("select * from requests where reply_token = ?", (token,)).fetchone()
+
+    def seller_view(self, token: str) -> dict | None:
+        row = self._request_by_token(token)
+        if row is None:
+            return None
+        recipients = [
+            {"seller_id": item["seller_id"], "seller_name": item["seller_name"], "ad_id": item["ad_id"]}
+            for item in self._connection.execute("select * from request_recipients where request_id = ?", (row["id"],))
+        ]
+        attachments = [
+            {"id": item["id"], "filename": item["filename"], "content_type": item["content_type"], "size_bytes": item["size_bytes"]}
+            for item in self._connection.execute("select * from attachments where request_id = ?", (row["id"],))
+        ]
+        return {
+            "need": row["need"],
+            "original_text": row["original_text"],
+            "notes": row["notes"],
+            "city": row["city"],
+            "recipients": recipients,
+            "attachments": attachments,
+        }
+
+    def add_seller_reply(self, token: str, seller_id: str | None, body: str, offer: Offer | None) -> Message:
+        row = self._request_by_token(token)
+        if row is None:
+            raise ValueError("request not found")
+        recipients = self._connection.execute(
+            "select seller_id from request_recipients where request_id = ?",
+            (row["id"],),
+        ).fetchall()
+        ids = [item["seller_id"] for item in recipients]
+        if seller_id is None:
+            if len(ids) != 1:
+                raise ValueError("seller_id required")
+            seller_id = ids[0]
+        if seller_id not in ids:
+            raise ValueError("unknown seller")
+        text = body.strip() or "عرض سعر"
+        message = self.add_message(row["id"], "seller", None, text, offer, seller_id=seller_id)
+        self._connection.execute(
+            "insert into notifications (id, user_id, request_id, kind, created_at) values (?, ?, ?, ?, ?)",
+            (uuid4().hex, row["owner_user_id"], row["id"], "seller_reply", message.created_at),
+        )
+        self._connection.commit()
+        return message
+
+    def attachment_path(self, request_id: str, attachment_id: str, owner_user_id: str | None = None, reply_token: str | None = None) -> tuple[Path, str, str] | None:
+        if owner_user_id is not None:
+            owner = self._connection.execute(
+                "select id from requests where id = ? and owner_user_id = ?",
+                (request_id, owner_user_id),
+            ).fetchone()
+            if owner is None:
+                return None
+        elif reply_token is not None:
+            owner = self._connection.execute(
+                "select id from requests where id = ? and reply_token = ?",
+                (request_id, reply_token),
+            ).fetchone()
+            if owner is None:
+                return None
+        else:
+            return None
+        row = self._connection.execute(
+            "select * from attachments where id = ? and request_id = ?",
+            (attachment_id, request_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return Path(row["path"]), row["content_type"], row["filename"]

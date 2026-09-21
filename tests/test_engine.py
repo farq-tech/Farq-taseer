@@ -156,3 +156,110 @@ def test_horse_is_not_forced_into_a_construction_category():
 def test_normalization_folds_railing_spellings():
     assert "درابزين" in normalize("دربزين استانلس")
     assert "ستانلس" in normalize("ستان ستيل")
+
+
+def _ad(**overrides):
+    payload = {
+        "id": 1,
+        "title": "درابزين ستانلس ستيل",
+        "postDate": 1750000000,
+        "authorUsername": "ورشة",
+        "authorId": 99,
+        "URL": "111/example/",
+        "bodyTEXT": "تفصيل وتركيب",
+        "city": "الرياض",
+        "geoNeighborhood": "النخيل",
+        "tags": [],
+        "thumbURL": "1350x1800_2CA29BD0-8A1E-4FC5-BEC8-8D6FEDA93472.jpg",
+        "status": True,
+        "price": {"formattedPrice": "2800", "inputPrice": "2800"},
+    }
+    payload.update(overrides)
+    return ad_from_item(payload)
+
+
+def test_sink_railing_is_not_eligible_and_year_mismatch_is_rejected():
+    railing = analyze("أبي درابزين ستانلس بالرياض")
+    sink = _ad(id=2, title="للبيع درابزين سلم وشبك واغراض مغطس للبيع", bodyTEXT="مغسلة")
+    assert decide(railing, sink, sink.seller)[0] is False
+    camry = analyze("كامري 2024 مستعملة")
+    older = _ad(id=3, title="كامري 2019 فل", bodyTEXT="مستعملة", city="جده")
+    assert decide(camry, older, older.seller)[0] is False
+    same = _ad(id=4, title="كامري 2024", bodyTEXT="مستعملة")
+    assert decide(camry, same, same.seller)[0] is True
+    unstated = _ad(id=5, title="كامري فل كامل", bodyTEXT="نظيفة")
+    assert decide(camry, unstated, unstated.seller)[0] is True
+
+
+def test_rejected_live_ads_are_not_called_suitable_results():
+    class Fake:
+        def search(self, queries, city):
+            sink = _ad(id=8, title="درابزين مع مغسلة", bodyTEXT="مغسلة فقط")
+            return LiveBatch(ads=[sink])
+
+    response, _trace = run_search("أبي درابزين ستانلس بالرياض", corpus(), Fake(), SearchConfig(enable_live=True), NOW)
+    assert response.state == SearchState.NO_QUALIFIED_RESULTS
+    assert response.results == []
+
+
+def test_deleted_ads_keep_their_own_state():
+    class Fake:
+        def search(self, queries, city):
+            return LiveBatch(ads=[_ad(id=9, status=False, title="بلايستيشن 5 مستعمل", bodyTEXT="ps5")])
+
+    response, _trace = run_search("PS5 مستعمل", corpus(), Fake(), SearchConfig(enable_live=True), NOW)
+    assert response.state == SearchState.DELETED_AD
+    assert response.results == []
+
+
+def test_timeout_with_a_qualified_ad_stays_partial():
+    class Fake:
+        def search(self, queries, city):
+            posted = int(datetime(2026, 9, 10, tzinfo=timezone.utc).timestamp())
+            return LiveBatch(
+                ads=[_ad(id=10, title="درابزين ستانلس", bodyTEXT="ستانلس", postDate=posted)],
+                timed_out=True,
+                error="timed out",
+            )
+
+    response, _trace = run_search("أبي درابزين ستانلس بالرياض", corpus(), Fake(), SearchConfig(enable_live=True), NOW)
+    assert response.state == SearchState.PARTIAL_RESULTS
+    assert [item.ad.id for item in response.results if item.ad] == ["10"]
+
+
+def test_thumbnail_file_names_use_the_measured_cdn_sizes():
+    ad = _ad()
+    assert ad.image_ref.endswith(".jpg")
+    assert ad.image_urls[0] == "https://thumbcdn.haraj.com.sa/1350x1800_2CA29BD0-8A1E-4FC5-BEC8-8D6FEDA93472.jpg-400x400.webp"
+    assert ad.image_urls[1].endswith("-140x140.webp")
+    empty = _ad(thumbURL=None)
+    assert empty.image_urls == []
+    assert empty.image_ref is None
+
+
+def test_parts_games_and_side_mentions_are_not_the_requested_thing():
+    camry = analyze("كامري 2024 مستعملة بالرياض")
+    rim = _ad(id=21, title="جنوط كامري 2024 مستعمل", bodyTEXT="جنوط وكالة", city="الرياض")
+    car = _ad(id=22, title="تويوتا كامري 2024 استاندر", bodyTEXT="ممشى 40 ألف مستعملة", city="الرياض")
+    newer = _ad(id=27, title="كامري 2025", bodyTEXT="ذكر 2024 في الوصف", city="الرياض")
+    fan = _ad(id=28, title="مروحه تبريد كامري 2024", bodyTEXT="قطعة", city="الرياض")
+    assert decide(camry, rim, rim.seller)[0] is False
+    assert decide(camry, car, car.seller)[0] is True
+    assert decide(camry, newer, newer.seller)[0] is False
+    assert decide(camry, fan, fan.seller)[0] is False
+    ps5 = analyze("PS5 مستعمل")
+    game = _ad(id=23, title="لعبة فيفا PS5", bodyTEXT="لعبة فقط", city="الرياض")
+    fresh = _ad(id=24, title="بلايستيشن 5 جديد", bodyTEXT="جديد بكرتونه", city="الرياض")
+    used = _ad(id=25, title="سوني PS5 مستعمل", bodyTEXT="استخدام خفيف", city="الرياض")
+    assert decide(ps5, game, game.seller)[0] is False
+    assert decide(ps5, fresh, fresh.seller)[0] is False
+    assert decide(ps5, used, used.seller)[0] is True
+    carpenter = analyze("نجار بالرياض")
+    mover = _ad(
+        id=26,
+        title="نقل عفش بالرياض",
+        bodyTEXT="نقل عفش نجار حداد دهان مكيف سباك",
+        city="الرياض",
+    )
+    assert decide(carpenter, mover, mover.seller)[0] is False
+    assert analyze("أبي شقة في الرياض وجدة").clarification_question

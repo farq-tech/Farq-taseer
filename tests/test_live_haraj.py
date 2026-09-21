@@ -14,10 +14,11 @@ def test_sql_stays_on_haraj_sellers_only():
 @pytest.mark.integration
 def test_live_haraj_search_returns_real_pages():
     client = HarajLiveClient(SearchConfig(live_page_size=5, live_max_pages=2, live_max_queries=1, live_timeout_seconds=20))
-    first, pages, _has_next = client.search_one("درابزين ستانلس", None)
-    assert pages >= 1
-    assert first
-    assert all(ad.id.isdigit() and ad.title for ad in first)
+    first = client.search_one("درابزين ستانلس", None)
+    assert first.pages >= 1
+    assert first.ads
+    assert all(ad.id.isdigit() and ad.title for ad in first.ads)
+    assert any(ad.image_urls for ad in first.ads)
     second_batch = client.search(["درابزين ستانلس"], None)
     ids = [ad.id for ad in second_batch.ads]
     assert ids

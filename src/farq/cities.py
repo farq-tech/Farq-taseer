@@ -62,7 +62,7 @@ def find_cities(text: str | None) -> list[str]:
     for canonical, aliases in _ALIASES.items():
         for alias in (canonical, *aliases):
             folded = normalize(alias)
-            match = re.search(rf"(?:^|\s)ب?{re.escape(folded)}(?:\s|$)", normalized)
+            match = re.search(rf"(?:^|\s)و?ب?{re.escape(folded)}(?:\s|$)", normalized)
             if match:
                 found.append((match.start(), canonical))
                 break

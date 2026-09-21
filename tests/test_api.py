@@ -76,3 +76,94 @@ def test_search_trace_is_stored(tmp_path: Path):
     trace = api.get(f"/v1/search/{trace_id}/trace", headers={"Authorization": f"Bearer {token}"})
     assert trace.status_code == 200
     assert trace.json()["state"] == "CLARIFICATION_REQUIRED"
+
+
+def test_guest_request_seller_price_and_activity(tmp_path: Path):
+    api = client(tmp_path)
+    guest = api.post("/v1/auth/guest")
+    assert guest.status_code == 200
+    headers = {"Authorization": f"Bearer {guest.json()['token']}"}
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={
+            "original_text": "أبي درابزين ستانلس بالرياض",
+            "need": "درابزين ستانلس",
+            "notes": "تفصيل وتركيب",
+            "city": "الرياض",
+            "attributes": {},
+            "recipients": [
+                {"seller_id": "1", "seller_name": "لمسة معدن", "ad_id": "10"},
+                {"seller_id": "2", "seller_name": "ورشة السلم", "ad_id": "11"},
+            ],
+        },
+    )
+    assert created.status_code == 200
+    request_id = created.json()["id"]
+    token = created.json()["reply_token"]
+    uploaded = api.post(
+        f"/v1/requests/{request_id}/attachments",
+        headers=headers,
+        files={"file": ("site.jpg", b"image-bytes", "image/jpeg")},
+    )
+    assert uploaded.status_code == 200
+    attachment_id = uploaded.json()["id"]
+    downloaded = api.get(f"/v1/requests/{request_id}/attachments/{attachment_id}", headers=headers)
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"image-bytes"
+    waiting = api.get("/v1/requests", headers=headers).json()["requests"][0]
+    assert waiting["replied_count"] == 0
+    assert waiting["waiting_count"] == 2
+    assert waiting["has_new_offer"] is False
+    reply = api.post(
+        f"/v1/seller/{token}/messages",
+        json={"seller_id": "1", "body": "يشمل التوصيل والتركيب", "offer_amount": 2800, "offer_currency": "SAR"},
+    )
+    assert reply.status_code == 200
+    listed = api.get("/v1/requests", headers=headers).json()["requests"][0]
+    assert listed["replied_count"] == 1
+    assert listed["waiting_count"] == 1
+    assert listed["has_new_offer"] is True
+    assert listed["latest_offer_amount"] == 2800
+    thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
+    assert thread["messages"][0]["offer"]["amount"] == 2800
+    assert thread["messages"][0]["sender_role"] == "seller"
+
+
+def test_search_stream_reports_live_before_the_final_result(tmp_path: Path):
+    from farq.live_haraj import LiveBatch, QueryFetch, ad_from_item
+
+    ad = ad_from_item(
+        {
+            "id": 55,
+            "title": "تويوتا كامري 2024",
+            "postDate": 1750000000,
+            "authorUsername": "معرض",
+            "authorId": 7,
+            "URL": "55/camry/",
+            "bodyTEXT": "كامري 2024 مستعملة",
+            "city": "الرياض",
+            "geoNeighborhood": "العارض",
+            "tags": [],
+            "thumbURL": "1800x1350_CAMRY.jpg",
+            "status": True,
+            "price": {"formattedPrice": "118000", "inputPrice": "118000"},
+        }
+    )
+
+    class Fake:
+        def search_iter(self, queries, city):
+            yield QueryFetch(ads=[ad], pages=1, has_next=False)
+
+        def search(self, queries, city):
+            return LiveBatch(ads=[ad])
+
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    app = create_app(store, MemoryCorpus.from_json(default_sample_path()), Fake(), SearchConfig(enable_live=True))
+    api = TestClient(app)
+    with api.stream("POST", "/v1/search/stream", json={"query": "كامري 2024 بالرياض"}) as response:
+        body = "".join(response.iter_text())
+    assert "LIVE_SEARCHING" in body
+    assert body.index("LIVE_SEARCHING") < body.index('"type": "done"')
+    assert "118000" in body
+    assert "thumbcdn.haraj.com.sa" in body

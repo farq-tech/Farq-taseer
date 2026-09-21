@@ -4,9 +4,9 @@ Recorded 2026-09-21. None of these were papered over as success.
 
 | Blocker | Effect | What still works |
 | --- | --- | --- |
-| Haraj rows are sellers, not ads | Local retrieval cannot return Camry, PS5, or apartment listings from the corpus. Product, vehicle, and property searches call live Haraj because ad text is absent, not because of a tuned score. | Seller-grain evidence for trades when the name actually says the trade. Live search for ads. |
-| No database password in this environment | The full 235,625 sellers are not loaded into the API process. `HARAJ_SELLER_SQL` is the read-only query for a future `DATABASE_URL`. Tests use the real exported sample. | Sample is real rows. Counts in the audit are from the full table. |
-| `lovable/consumer-ui` and `HANDOFF.md` are absent | No UI mapping yet. Consumer screens were not redesigned or copied. | Contracts are version `1` and omit local/live origin from the public search payload. |
+| Haraj rows are sellers, not ads | Local retrieval cannot return Camry, PS5, or apartment listings from the corpus. Product, vehicle, property, and service searches call live Haraj because the local grain has no ad text. | Seller-name evidence is still eligibility-checked. Live search supplies the ads. |
+| No database password in this environment | Checked again on 2026-09-21. `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_DB_URL`, `FARQ_DATABASE_URL`, and `POSTGRES_URL` are unset, so the full 235,625 sellers are still not loaded. This does not block the consumer journey: searches use live Haraj. | Sample rows remain available for seller-grain checks. `scripts/audit_haraj_corpus.sql` is unchanged. |
+| `lovable/consumer-ui` and `HANDOFF.md` are absent | They were not published. The consumer app in `web/` is a new Arabic interface, not a copy of that handoff. | Served by the same API process at `/`. |
 | Railway MCP failed discovery. Render returned unauthorized. | No deploy and no extra corpus from those hosts. | Haraj data was found on Supabase `farq-main`. |
 | Supabase project `farq` is `INACTIVE` | Not restored, so it was not used. | `farq-main` answered read-only queries. |
 | Construction Git repository is not in the `farq-tech` org | Reuse decisions come from the live schema, not from a source checkout. | Procurement tables were not modified. |
