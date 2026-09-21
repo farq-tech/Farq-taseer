@@ -237,10 +237,6 @@ function filePreview() {
     .join("")}</div>`;
 }
 
-function shell(body) {
-  return `<header class="top"><a class="brand-lockup" href="/" data-action="home"><span class="brand-en">FARQ</span><span class="brand-ar">فرق تسعير</span></a><button class="avatar" type="button" data-action="requests" aria-label="طلباتي">ط</button></header><main class="shell">${body}</main>`;
-}
-
 function icon(name, { size = 20, flip = false, label = "" } = {}) {
   return `<img class="${flip ? "flip" : ""}" src="/icons/${name}.svg" width="${size}" height="${size}" alt="${esc(label)}">`;
 }
@@ -250,42 +246,75 @@ function initial(name) {
   return esc(text.charAt(0) || "ف");
 }
 
+function topBar({ title = "فرق تسعير", back = "", end = '<span class="slot" aria-hidden="true"></span>', lined = false } = {}) {
+  const start = back || '<span class="slot" aria-hidden="true"></span>';
+  return `<header class="top-bar${lined ? " lined" : ""}">${end}<a class="brand-title" href="/" data-action="home">${esc(title)}</a>${start}</header>`;
+}
+
+function tabBar(active) {
+  return `<nav class="tab-bar" aria-label="التنقل">
+    <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
+    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests">${icon("briefcase")}<span>طلباتي</span></button>
+    <button class="tab" type="button" disabled aria-disabled="true">${icon("settings")}<span>الإعدادات</span></button>
+  </nav>`;
+}
+
+function shell(body, { bare = false } = {}) {
+  if (bare) return `<main class="shell">${body}</main>`;
+  return `<main class="shell">${body}</main>`;
+}
+
 function renderHome() {
-  const examples = ["أبي تلفزيون سامسونج 65 بوصة", "وأبي كامري 2019 نظيفة", "وأحتاج نجار يسوي لي دولاب غرفة"];
-  return `<section class="home">
+  const chips = ["سباك بالرياض", "كهربائي بجدة", "نقل عفش"];
+  return `${topBar()}
+  <section class="page home">
     <h1>وش تبي نسعّر لك؟</h1>
-    <p class="lede">اكتب طلب واحد أو عدة أشياء حتى لو كانت مختلفة</p>
+    <p class="lede">اكتب اللي تحتاجه وخلنا ندور لك</p>
     <form class="composer" id="composer">
       <div class="field">
         <label class="sr" for="composer-query">وش تبي؟</label>
-        <textarea id="composer-query" name="query" placeholder="أدخل طلباتك هنا...">${esc(state.query)}</textarea>
-        <ul class="examples">${examples.map((idea) => `<li><button type="button" data-action="idea" data-query="${esc(idea)}">- ${esc(idea)}</button></li>`).join("")}</ul>
+        <textarea id="composer-query" name="query" placeholder="مثال: أبي سباك وأبي كهربائي بالرياض">${esc(state.query)}</textarea>
       </div>
-      <button class="primary block" type="submit">سَعِّر طلباتي</button>
+      <div class="suggestions">
+        <span>اقتراحات سريعة</span>
+        <div class="chips">${chips.map((idea) => `<button type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+      </div>
+      <button class="primary block" type="submit">ابحث</button>
     </form>
-    <ol class="steps">
-      <li>${icon("edit")}<strong>١. اكتب</strong><span>اكتب ما تحتاجه بالعامية</span></li>
-      <li>${icon("search")}<strong>٢. نبحث</strong><span>نسعرها من كبار الموردين</span></li>
-      <li>${icon("check-square")}<strong>٣. تختار</strong><span>اختر العرض الأنسب لك</span></li>
-    </ol>
+  </section>
+  ${tabBar("home")}`;
+}
+
+function renderSearching() {
+  return `${topBar()}
+  <section class="page searching" aria-live="polite">
+    <div class="pulse"><div class="pulse-mid"><div class="pulse-core">${icon("search-white", { size: 20 })}</div></div></div>
+    <div><h2>ندور لك...</h2><p class="lede">نبحث في أكثر من 2,000 جهة</p></div>
+    <div class="dots" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
+    <div class="original-card"><span>طلبك الأصلي</span><strong>${esc(state.query)}</strong></div>
   </section>`;
 }
 
 function renderFacts() {
   const items = facts(state.intent);
   if (!items.length) return "";
-  return `<div class="parsed"><span class="tag">فهمنا طلبك</span><div class="facts" aria-label="فهم الطلب">${items.map((item) => `<span>${esc(item)}</span>`).join("")}</div></div>`;
+  const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : "";
+  const need = items.filter((item) => item !== city)[0] || state.intent?.need || state.query;
+  return `<div class="need-card">${city ? `<span class="loc">${esc(cityLabel(city))}</span>` : "<span></span>"}<div class="copy"><div class="glyph">${initial(need)}</div><div><strong>${esc(need)}</strong><em>فهمنا طلبك وجاهزين ندور</em></div></div></div>`;
 }
 
 function renderQuestion() {
   const question = state.clarification || "";
   const aboutCity = question.includes("مدينة");
-  return `<section class="question">
-    <span class="tag">${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</span>
-    <p>${esc(question)}</p>
+  return `<section class="section-head"><h1>${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</h1><p class="lede">${esc(question)}</p></section>
     ${aboutCity ? cityChoices("answer") : ""}
-    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>
-  </section>`;
+    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>`;
+}
+
+function snip(result) {
+  const lines = evidenceLines(result);
+  const text = result.ad?.description || lines[1] || lines[0] || "";
+  return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
 }
 
 function renderCard(result) {
@@ -294,39 +323,37 @@ function renderCard(result) {
   const seller = sellerOf(result);
   const name = result.ad?.title || seller.name || "جهة";
   const price = money(result.ad?.price_amount);
-  const where = place(result);
-  return `<article class="vendor">
+  const city = result.ad?.city || seller.city || "";
+  const blurb = snip(result);
+  const thumb = result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`;
+  return `<article class="vendor${selected ? " is-selected" : ""}">
     <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
-      ${result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`}
+      ${thumb}
       <span class="vendor-copy">
         <strong>${esc(name)}</strong>
-        ${where ? `<span class="meta">${esc(where)}</span>` : ""}
-        ${seller.name && seller.name !== name ? `<span class="meta">${esc(seller.name)}</span>` : ""}
+        <span class="vendor-meta">${seller.name ? `<span>${esc(seller.name)}</span>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
+        ${blurb ? `<span class="snip">${esc(blurb)}</span>` : ""}
+        <span class="price">${esc(price || "السعر عند الطلب")}</span>
       </span>
     </button>
-    <div class="vendor-side">
-      ${price ? `<span class="price">${esc(price)}</span>` : ""}
-      <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 14 }) : ""}</button>
-    </div>
+    <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 12 }) : ""}</button>
   </article>`;
 }
 
 function renderFlow() {
   const asking = state.searchState === "CLARIFICATION_REQUIRED" || state.searchState === "LOCATION_AMBIGUOUS";
   const live = state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS");
-  const products = state.results.length > 0 && state.results.every((item) => item.result_unit === "ad");
   const showEmpty = !asking && !state.partial && state.results.length === 0;
-  return `<section class="flow">
-    <div class="nav">
-      <button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("arrow", { size: 24, flip: true, label: "" })}</button>
-      <div class="nav-title"><h1>${esc(state.intent?.need || state.query || "الطلب")}</h1><p>${asking ? "كمّل الطلب قبل النتائج" : "تصفح الجهات المتاحة"}</p></div>
-      <span class="icon-btn" aria-hidden="true">${icon("search", { size: 24 })}</span>
-    </div>
-    ${renderFacts()}
+  if (live && !state.results.length && !asking) return renderSearching();
+  const need = state.intent?.need || facts(state.intent)[0] || state.query || "النتائج";
+  const back = `<button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: asking ? "فرق تسعير" : "النتائج", back })}
+  <section class="page tight flow">
+    ${asking ? "" : `<div class="group-head"><span>${formatCount(state.results.length)} جهة مطابقة</span><strong>${esc(need)}</strong></div>`}
+    ${asking ? renderFacts() + renderQuestion() : ""}
     <p class="status ${live ? "live" : ""}" aria-live="polite">${esc(showEmpty ? "" : state.notice)}</p>
-    ${asking ? renderQuestion() : ""}
     ${showEmpty ? `<div class="empty"><h2>${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="text-btn" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${state.results.length ? `<div class="cards ${products ? "products" : ""}">${state.results.map(renderCard).join("")}</div>` : ""}
+    ${state.results.length ? `<div class="cards">${state.results.map(renderCard).join("")}</div>` : ""}
     ${dock()}
   </section>`;
 }
@@ -334,8 +361,8 @@ function renderFlow() {
 function dock() {
   const count = state.selected.size;
   if (!count || state.view === "review") return "";
-  const label = count === 1 ? "أرسل إلى جهة واحدة" : `أرسل إلى ${formatCount(count)} جهات`;
-  return `<div class="dock"><button class="primary" type="button" data-action="review">${esc(label)}</button></div>`;
+  const label = count === 1 ? "اطلب السعر من جهة واحدة" : `اطلب السعر من ${formatCount(count)} جهات`;
+  return `<div class="dock"><p class="hint">سنرسل طلبك لكل الجهات المختارة</p><button class="primary compact" type="button" data-action="review">${esc(label)}</button></div>`;
 }
 
 function renderDetail() {
@@ -354,15 +381,13 @@ function renderDetail() {
   const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  return `<article class="detail">
-    <div class="nav">
-      <button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("arrow", { size: 24, flip: true })}</button>
-      <div class="nav-title"><h1>${esc(result.ad?.title || seller.name || "")}</h1><p>${esc(place(result))}</p></div>
-      <span class="mark">${initial(seller.name)}</span>
-    </div>
+  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: "التفاصيل", back })}
+  <article class="page tight detail">
     <div class="gallery">${frames}</div>
-    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">ما فيه سعر معلن</p>`}
-    <p class="meta">${esc(seller.name || "")}</p>
+    <h1 style="font-size:22px">${esc(result.ad?.title || seller.name || "")}</h1>
+    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">السعر عند الطلب</p>`}
+    <p class="meta">${esc(place(result))}${seller.name ? ` · ${esc(seller.name)}` : ""}</p>
     ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
     ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان في حراج</a></p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
@@ -375,13 +400,13 @@ function renderReview() {
   const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: sellerOf(result).name || "بائع" }));
   const city = customerCity();
   const ready = state.selected.size > 0 && Boolean(city);
-  return `<section class="review">
-    <button class="text-btn back" type="button" data-action="back-results">رجوع</button>
-    <span class="tag">طلب عرض سعر</span>
+  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: "طلب عرض سعر", back })}
+  <section class="page tight review">
     <h1>جاهز نرسله؟</h1>
     <p class="summary">${esc(state.query)}</p>
     <ul class="who">${names.map((item) => `<li><span>${esc(item.name)}</span><button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
-    ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="question"><p>في أي مدينة؟</p>${cityChoices("pick-city")}</div>`}
+    ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="section-head"><h1 style="font-size:20px">في أي مدينة؟</h1></div>${cityChoices("pick-city")}`}
     <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
     <p class="optional">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
     <div class="composer-bar">
@@ -394,47 +419,61 @@ function renderReview() {
 }
 
 function renderRequests() {
-  const head = `<div class="nav"><button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("arrow", { size: 24, flip: true })}</button><div class="nav-title"><h1>المحادثات</h1></div><span class="icon-btn" aria-hidden="true"></span></div>`;
-  if (!state.requests.length) return `<section class="requests">${head}<p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>`;
-  return `<section class="requests">${head}${state.requests
+  const logo = `<span class="slot" aria-hidden="true"></span>`;
+  const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
+  const head = `<header class="top-bar lined">${logo}${title}${logo}</header>`;
+  if (!state.requests.length) {
+    return `${head}<section class="page soft requests-page"><p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>${tabBar("requests")}`;
+  }
+  return `${head}<section class="page soft requests-page">${state.requests
     .map((item) => {
-      const title = (item.seller_names || []).filter(Boolean).join(" · ") || item.need || item.original_text;
       const need = item.need || item.original_text;
       const when = ago(item.last_message_at || item.created_at);
-      return `<button class="convo" type="button" data-action="thread" data-id="${esc(item.id)}"><span class="mark round">${initial(title)}</span><span class="convo-copy"><strong>${esc(title)}</strong>${need ? `<span class="badge">${esc(need)}</span>` : ""}${item.last_message ? `<em>${esc(item.last_message)}</em>` : ""}</span><span class="convo-meta">${when ? `<span>${esc(when)}</span>` : ""}${item.has_new_offer ? `<span class="unread" aria-label="عرض جديد"></span>` : ""}</span></button>`;
+      const replied = item.replied_count || 0;
+      const sent = item.recipient_count || 0;
+      const from = item.latest_offer_amount != null ? `من ${money(item.latest_offer_amount)}` : "";
+      return `<button class="request-card" type="button" data-action="thread" data-id="${esc(item.id)}">
+        <div class="row"><span class="when">${esc(when || "")}</span><strong class="title">${esc(need)}</strong></div>
+        <hr>
+        <div class="row">
+          <div class="stats"><strong>${replied ? `وصلت ${formatCount(replied)} أسعار` : "بانتظار الرد"}</strong><span>أرسل إلى ${formatCount(sent)} جهات</span></div>
+          <span class="from">${esc(from || "بانتظار السعر")}</span>
+        </div>
+        ${item.last_message ? `<div class="request-foot"><span>${esc(item.last_message)}</span></div>` : ""}
+      </button>`;
     })
-    .join("")}</section>`;
+    .join("")}</section>${tabBar("requests")}`;
 }
 
 function renderThread() {
   const thread = state.thread;
-  if (!thread) return `<section class="thread"><p>نحمّل المحادثة…</p></section>`;
+  if (!thread) return `<section class="page"><p>نحمّل المحادثة…</p></section>`;
   const who = (thread.recipients || []).map((item) => item.seller_name).join(" · ");
-  return `<section class="chat">
-    <header class="chat-head">
-      <button class="icon-btn" type="button" data-action="requests" aria-label="رجوع">${icon("arrow", { size: 24, flip: true })}</button>
-      <span class="mark round">${initial(who)}</span>
-      <div class="who-line"><strong>${esc(who || "المحادثة")}</strong><span class="meta">${esc(thread.need || thread.original_text || "")}</span></div>
-    </header>
+  const offer = (thread.messages || []).find((item) => item.offer?.amount != null);
+  const back = `<button class="icon-btn" type="button" data-action="requests" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  const phone = `<span class="icon-btn" aria-hidden="true">${icon("phone", { size: 20 })}</span>`;
+  return `<header class="chat-head">${phone}<div class="who-line"><strong>${esc(who || "المحادثة")}</strong><span class="meta">${esc(thread.need || thread.original_text || "")}</span></div>${back}</header>
+  <section class="page soft chat-page">
+    ${offer ? `<div class="quote-card"><div class="row"><span class="tag">عرض</span><strong>الإجمالي: ${esc(money(offer.offer.amount))}</strong></div><p>الطلب: ${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
     <div class="thread"><p class="day">اليوم</p>${bubbles(thread.messages, "user") || `<p class="meta">بانتظار الرد.</p>`}</div>
-    <form class="reply-form" id="user-reply">
-      <label class="icon-btn" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
-      <input name="body" placeholder="اكتب رسالة..." autocomplete="off">
-      <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
-    </form>
-  </section>`;
+  </section>
+  <form class="reply-form" id="user-reply">
+    <label class="icon-btn" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
+    <input name="body" placeholder="اكتب رسالتك هنا..." autocomplete="off">
+    <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
+  </form>`;
 }
 
 function renderSeller() {
   const seller = state.seller;
-  if (!seller) return `<section class="seller"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
+  if (!seller) return `<section class="page"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
   const partner = options[0]?.seller_name || "الجهة";
-  return `<section class="seller">
-    <header class="seller-head">
+  return `<header class="seller-head">
       <span class="mark round">${initial(partner)}</span>
       <div class="who-line"><strong>${esc(partner)}</strong><span class="meta">${esc([seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "))}</span></div>
     </header>
+    <section class="page soft">
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
     <div class="thread"><p class="day">اليوم</p>${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
     <form id="seller-reply">
@@ -444,7 +483,7 @@ function renderSeller() {
       <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
     </form>
     ${state.notice ? `<p class="status">${esc(state.notice)}</p>` : ""}
-  </section>`;
+    </section>`;
 }
 
 function render() {
@@ -459,7 +498,7 @@ function render() {
     seller: renderSeller,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
-  app.innerHTML = state.view === "seller" ? `<main class="shell">${view()}</main>` : shell(view());
+  app.innerHTML = shell(view());
   bindImages(app);
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
