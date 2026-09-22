@@ -18,9 +18,11 @@ from farq.intent import analyze
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.orchestrator import iter_search, run_search
+from farq.payments import MoyasarConfig, apple_pay_association_body, fetch_payment, sar_to_halalas
 from farq.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+ASSOCIATION_PATH = "/.well-known/apple-developer-merchantid-domain-association"
 
 
 class ApiModel(BaseModel):
@@ -65,6 +67,11 @@ class SellerReplyBody(ApiModel):
     offer_currency: str | None = None
 
 
+class ConfirmPaymentBody(ApiModel):
+    moyasar_id: str
+    request_id: str
+
+
 def _intent_state(intent) -> str | None:
     if not intent.understood:
         return "NOT_UNDERSTOOD"
@@ -104,6 +111,7 @@ def _public_event(event: dict) -> dict:
 
 def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient | None, config: SearchConfig) -> FastAPI:
     app = FastAPI(title="FARQ Individuals", version="1")
+    moyasar = MoyasarConfig.from_env()
 
     def current_user(authorization: str | None = Header(default=None)) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -113,9 +121,50 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
             raise HTTPException(status_code=401, detail="invalid session")
         return user_id
 
+    def _latest_offer_amount(record) -> float | None:
+        for message in reversed(record.messages):
+            if message.offer is not None and message.offer.amount is not None:
+                return float(message.offer.amount)
+        return None
+
+    def _request_payload(record) -> dict:
+        payload = record.model_dump(mode="json")
+        payment = store.payment_for_request(record.id, record.owner_user_id)
+        payload["payment"] = payment
+        payload["payable_amount"] = _latest_offer_amount(record)
+        return payload
+
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "contract_version": "1"}
+        return {
+            "status": "ok",
+            "contract_version": "1",
+            "payments": bool(moyasar),
+            "apple_pay_association": bool(apple_pay_association_body()),
+        }
+
+    @app.get(ASSOCIATION_PATH)
+    def apple_pay_domain_association() -> Response:
+        body = apple_pay_association_body()
+        if body is None:
+            raise HTTPException(status_code=404, detail="apple pay association file not configured")
+        return Response(content=body, media_type="text/plain", headers={"Cache-Control": "public, max-age=300"})
+
+    @app.get("/v1/payments/config")
+    def payments_config() -> dict:
+        if moyasar is None:
+            return {"enabled": False, "apple_pay": False}
+        return {
+            "enabled": True,
+            "apple_pay": True,
+            "publishable_key": moyasar.publishable_key,
+            "display_name": moyasar.display_name,
+            "currency": moyasar.currency,
+            "methods": ["applepay", "creditcard"],
+            "supported_networks": ["mada", "visa", "mastercard"],
+            "validate_merchant_url": "https://api.moyasar.com/v1/applepay/initiate",
+            "association_ready": bool(apple_pay_association_body()),
+        }
 
     @app.get("/v1/cities")
     def cities() -> dict:
@@ -219,7 +268,7 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         record = store.get_request(request_id, user_id)
-        return record.model_dump(mode="json")
+        return _request_payload(record)
 
     @app.post("/v1/requests/{request_id}/attachments")
     async def upload(request_id: str, file: UploadFile = File(...), user_id: str = Depends(current_user)) -> dict:
@@ -255,7 +304,45 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
         record = store.get_request(request_id, user_id)
         if record is None:
             raise HTTPException(status_code=404, detail="request not found")
-        return record.model_dump(mode="json")
+        return _request_payload(record)
+
+    @app.post("/v1/payments/confirm")
+    def confirm_payment(body: ConfirmPaymentBody, user_id: str = Depends(current_user)) -> dict:
+        if moyasar is None:
+            raise HTTPException(status_code=503, detail="payments not configured")
+        record = store.get_request(body.request_id, user_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        offer_amount = _latest_offer_amount(record)
+        if offer_amount is None:
+            raise HTTPException(status_code=422, detail="no offer amount to pay")
+        expected = sar_to_halalas(offer_amount)
+        try:
+            payment = fetch_payment(body.moyasar_id.strip(), moyasar.secret_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        status = str(payment.get("status") or "")
+        amount = int(payment.get("amount") or 0)
+        currency = str(payment.get("currency") or "")
+        if currency.upper() != moyasar.currency:
+            raise HTTPException(status_code=422, detail="currency mismatch")
+        if amount != expected:
+            raise HTTPException(status_code=422, detail="amount mismatch")
+        if status != "paid":
+            raise HTTPException(status_code=422, detail=f"payment not paid ({status})")
+        source = payment.get("source") or {}
+        source_type = source.get("type") if isinstance(source, dict) else None
+        saved = store.record_payment(
+            moyasar_id=str(payment.get("id") or body.moyasar_id),
+            request_id=body.request_id,
+            owner_user_id=user_id,
+            amount_halalas=amount,
+            currency=currency.upper(),
+            status=status,
+            source_type=source_type,
+        )
+        refreshed = store.get_request(body.request_id, user_id)
+        return {"payment": saved, "request": _request_payload(refreshed)}
 
     @app.get("/v1/seller/{token}")
     def seller_request(token: str) -> dict:

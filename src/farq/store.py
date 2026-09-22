@@ -101,6 +101,17 @@ class Store:
               trace_json text not null,
               created_at text not null
             );
+            create table if not exists payments (
+              id text primary key,
+              moyasar_id text unique not null,
+              request_id text not null,
+              owner_user_id text not null,
+              amount_halalas integer not null,
+              currency text not null,
+              status text not null,
+              source_type text,
+              created_at text not null
+            );
             """
         )
         self._connection.commit()
@@ -399,6 +410,77 @@ class Store:
         )
         self._connection.commit()
         return message
+
+    def payment_for_request(self, request_id: str, owner_user_id: str) -> dict | None:
+        row = self._connection.execute(
+            "select * from payments where request_id = ? and owner_user_id = ? and status = 'paid' order by created_at desc limit 1",
+            (request_id, owner_user_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "moyasar_id": row["moyasar_id"],
+            "request_id": row["request_id"],
+            "amount_halalas": row["amount_halalas"],
+            "currency": row["currency"],
+            "status": row["status"],
+            "source_type": row["source_type"],
+            "created_at": row["created_at"],
+        }
+
+    def record_payment(
+        self,
+        moyasar_id: str,
+        request_id: str,
+        owner_user_id: str,
+        amount_halalas: int,
+        currency: str,
+        status: str,
+        source_type: str | None,
+    ) -> dict:
+        existing = self._connection.execute(
+            "select * from payments where moyasar_id = ?",
+            (moyasar_id,),
+        ).fetchone()
+        if existing is not None:
+            return {
+                "id": existing["id"],
+                "moyasar_id": existing["moyasar_id"],
+                "request_id": existing["request_id"],
+                "amount_halalas": existing["amount_halalas"],
+                "currency": existing["currency"],
+                "status": existing["status"],
+                "source_type": existing["source_type"],
+                "created_at": existing["created_at"],
+                "already_recorded": True,
+            }
+        payment_id = uuid4().hex
+        created = _now()
+        self._connection.execute(
+            "insert into payments (id, moyasar_id, request_id, owner_user_id, amount_halalas, currency, status, source_type, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payment_id, moyasar_id, request_id, owner_user_id, amount_halalas, currency, status, source_type, created),
+        )
+        if status == "paid":
+            amount_sar = amount_halalas / 100
+            self.add_message(
+                request_id,
+                "system",
+                None,
+                f"تم الدفع عبر Apple Pay / Moyasar بمبلغ {amount_sar:g} {currency}.",
+            )
+        self._connection.commit()
+        return {
+            "id": payment_id,
+            "moyasar_id": moyasar_id,
+            "request_id": request_id,
+            "amount_halalas": amount_halalas,
+            "currency": currency,
+            "status": status,
+            "source_type": source_type,
+            "created_at": created,
+            "already_recorded": False,
+        }
 
     def attachment_path(self, request_id: str, attachment_id: str, owner_user_id: str | None = None, reply_token: str | None = None) -> tuple[Path, str, str] | None:
         if owner_user_id is not None:
