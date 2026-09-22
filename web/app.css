@@ -1847,3 +1847,9 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-rcpt .fq-av { width: 36px; height: 36px; border-radius: 50%; font-size: 14px; }
 .fq-rcpt .fq-av.group { background: var(--fq-deep-green); color: #fff; }
 .fq-rcpt .fq-radio { flex: none; }
+/* C04: once a winner is picked the channel changes colour — the deal is done */
+.fq-chat.won .fq-mine-bub { background: var(--fq-success); }
+.fq-chat.won .fq-bub { background: var(--fq-surface); border: 1px solid var(--fq-line); border-left-width: 2px; }
+.fq-chat.won .fq-av { width: 28px; height: 28px; font-size: 12px; }
+.fq-who.mineName { color: var(--fq-text-2); font-weight: 600; align-self: flex-end; }
+.fq-to-chip { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 4px 8px; border-radius: 999px; background: var(--fq-soft); color: var(--fq-deep-green); font-size: 12px; font-weight: 700; }

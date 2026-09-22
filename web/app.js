@@ -1265,7 +1265,7 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
     const latest = thread.messages?.filter((item) => item.sender_role !== "seller").slice(-1)[0];
     const progress = latest && latest.id === message.id ? deliveryProgress(message) : "";
     return `<div class="fq-msg mine"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
-      ${badge}
+      ${badge}${group ? "" : `<span class="fq-who mineName">أنت (صاحب الطلب)</span>`}
       <div class="fq-mine-bub">${quote}${media}${body ? `<p>${body}</p>` : ""}${progress ? `<span class="fq-time">${esc(progress)}</span>` : ""}${failed}${time}</div>
     </div></div>`;
   }
@@ -1602,7 +1602,7 @@ function renderThread() {
   return `${fqHead({ title, sub, back: backAction, backStart: true, end: menu })}
     ${awardedHead}
     ${pills}
-    <section class="fq-chat" id="chat-wall">
+    <section class="fq-chat${privateWinner ? " won" : ""}" id="chat-wall">
       ${privateWinner ? `<div class="fq-sys">✓ محادثة خاصة مع ${esc(sellerName(thread, awarded))}</div>` : ""}
       ${waMessages(thread, messages, group) || `<div class="fq-sys">بانتظار الرد.</div>`}
     </section>
@@ -1624,6 +1624,7 @@ function renderThread() {
         <button class="fq-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? `<span class="fq-ring spin" style="width:18px;height:18px;--p:60%"></span>` : ic("send", 18)}</button>
         <div class="fq-inputg">
           <button class="fq-iconbtn" type="button" data-action="open-attach" aria-label="إرفاق">${ic("paperclip", 20)}</button>
+          ${one ? `<span class="fq-to-chip">${ic("lock", 10)}<bdi>${esc(sellerName(thread, one))}</bdi></span>` : ""}
           <textarea name="body" rows="1" placeholder="${esc(placeholder)}" ${nonePicked ? "disabled" : ""}></textarea>
           <button class="fq-iconbtn" type="button" data-action="emoji" aria-label="رموز">${ic("smile", 20)}</button>
         </div>
