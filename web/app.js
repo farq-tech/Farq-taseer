@@ -423,6 +423,7 @@ function renderReview() {
       <label class="file-btn">${icon("paperclip")} فيديو<input type="file" accept="video/*" data-action="add-files"></label>
     </div>
     ${filePreview()}
+    ${state.notice ? `<p class="status warn" role="alert">${esc(state.notice)}</p>` : ""}
     <button class="primary block" type="button" data-action="send" ${ready ? "" : "disabled"}>${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
   </section>`;
 }
@@ -467,74 +468,130 @@ function messagePrice(message) {
   return message.offer?.total_price ?? message.offer?.amount ?? null;
 }
 
-function deliveryLabel(thread, message) {
-  const deliveries = message.deliveries || [];
-  if (!deliveries.length) return "";
-  const to = message.scope === "single_seller" && message.seller_id ? `إلى ${sellerName(thread, message.seller_id)} فقط` : `للكل (${formatCount(deliveries.length)})`;
-  const sent = deliveries.filter((item) => item.status === "sent").length;
-  const failed = deliveries.filter((item) => item.status === "failed").length;
-  let status = "بانتظار الإرسال";
-  if (message.delivery_state === "sent") status = "وصلت";
-  else if (message.delivery_state === "partial") status = `وصلت لـ ${formatCount(sent)} · تعذرت ${formatCount(failed)}`;
-  else if (message.delivery_state === "failed") status = "تعذر الإرسال";
-  return `${to} · ${status}`;
+const CHAT_ZONE = "Asia/Riyadh";
+const chatClock = new Intl.DateTimeFormat("ar-SA", { hour: "numeric", minute: "2-digit", timeZone: CHAT_ZONE });
+const chatDate = new Intl.DateTimeFormat("ar-SA", { day: "numeric", month: "long", timeZone: CHAT_ZONE });
+const dayKey = (date) => date.toLocaleDateString("en-CA", { timeZone: CHAT_ZONE });
+
+function chatTime(iso) {
+  const date = new Date(iso || "");
+  return Number.isNaN(date.getTime()) ? "" : chatClock.format(date);
 }
 
-// The customer's conversation for one item. Sellers never see it: each has only their own Haraj
-// conversation, and every message here is routed to or synced from those.
-function threadBubbles(thread, messages) {
+function chatDay(iso) {
+  const date = new Date(iso || "");
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86400000);
+  if (dayKey(date) === dayKey(today)) return "اليوم";
+  if (dayKey(date) === dayKey(yesterday)) return "أمس";
+  return chatDate.format(date);
+}
+
+// Colored sender names in the item conversation, the way a WhatsApp group shows them.
+const NAME_COLORS = ["#1F7AEC", "#C4462C", "#0A8754", "#8E44AD", "#D35400", "#16808A", "#B03A71", "#5B6BC0"];
+function nameColor(sellerId) {
+  let hash = 0;
+  for (const char of String(sellerId || "")) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return NAME_COLORS[hash % NAME_COLORS.length];
+}
+
+const TICK = {
+  queued: '<svg class="wa-tick" viewBox="0 0 16 16" aria-label="بانتظار الإرسال"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>',
+  sent: '<svg class="wa-tick" viewBox="0 0 16 16" aria-label="وصلت"><path d="m3 8.5 3 3 7-7"/></svg>',
+  failed: '<span class="wa-failed" aria-label="ما وصلت">!</span>',
+};
+
+function deliveryTick(message) {
+  if (!(message.deliveries || []).length) return "";
+  if (message.delivery_state === "sent" || message.delivery_state === "partial") return TICK.sent;
+  if (message.delivery_state === "failed") return TICK.failed;
+  return TICK.queued;
+}
+
+function waBubble(thread, message, { group, byId }) {
+  const mine = message.sender_role !== "seller";
+  const body = esc(message.body || "").replace(/\n/g, "<br>");
+  const quoted = message.reply_to ? byId.get(message.reply_to) : null;
+  const quote = quoted
+    ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? nameColor(quoted.seller_id) : "#06CF9C"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
+    : "";
+  const time = `<time>${esc(chatTime(message.created_at))}</time>`;
+  if (mine) {
+    const only = group && message.scope === "single_seller" && message.seller_id ? `<div class="wa-to">إلى ${esc(sellerName(thread, message.seller_id))} فقط</div>` : "";
+    const failed = message.delivery_state === "failed" ? `<div class="wa-to warn">ما وصلت الرسالة</div>` : "";
+    return `<div class="wa-row out"><div class="wa-bubble">${quote}<div class="wa-text">${body}</div>${only}${failed}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
+  }
+  const price = messagePrice(message);
+  const name = group
+    ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${nameColor(message.seller_id)}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
+    : "";
+  return `<div class="wa-row in"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}<div class="wa-text">${body}</div><span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
+}
+
+function waMessages(thread, messages, group) {
   const byId = new Map((thread.messages || []).map((item) => [item.id, item]));
+  let lastDay = "";
   return messages
     .map((message) => {
-      const body = esc(message.body || "").replace(/\n/g, "<br>");
-      const quoted = message.reply_to ? byId.get(message.reply_to) : null;
-      const quote = quoted ? `<span class="bubble-quote">${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}: ${esc(snippet(quoted.body))}</span>` : "";
-      if (message.sender_role !== "seller") {
-        const label = deliveryLabel(thread, message);
-        return `<div class="bubble user">${quote}<div>${body}</div>${label ? `<span class="bubble-to">${esc(label)}</span>` : ""}</div>`;
-      }
-      const price = messagePrice(message);
-      return `<div class="bubble seller">
-        <div class="bubble-head"><button class="bubble-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="bubble-verb">قدّم سعر</span>` : ""}</div>
-        ${price != null ? `<div class="offer"><strong>${esc(money(price))}</strong></div>` : ""}
-        <div>${body}</div>
-        <button class="bubble-reply" type="button" data-action="reply" data-message="${esc(message.id)}">ردّ عليه</button>
-      </div>`;
+      const day = chatDay(message.created_at);
+      const divider = day && day !== lastDay ? `<div class="wa-day"><span>${esc(day)}</span></div>` : "";
+      lastDay = day || lastDay;
+      return divider + waBubble(thread, message, { group, byId });
     })
     .join("");
 }
 
+// The customer's conversation, laid out like WhatsApp. With one seller it is a private chat;
+// with several it is the item's group chat. Sellers never see it: each has only their own Haraj
+// conversation, and every message here is routed to or synced from those.
 function renderThread() {
   const thread = state.thread;
   if (!thread) return `<section class="page"><p>نحمّل المحادثة…</p></section>`;
-  const one = state.activeSeller;
   const recipients = thread.recipients || [];
-  // Tapping a seller only filters this conversation to what went into or came from their Haraj chat.
+  const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
+  const group = !one;
   const messages = (thread.messages || []).filter(
     (message) => !one || message.seller_id === one || (message.scope === "all_sellers" && (message.deliveries || []).some((item) => item.seller_id === one)),
   );
   const offers = (thread.offers || []).filter((item) => item.total_price != null && (!one || item.seller_id === one));
   const best = [...offers].sort((a, b) => a.total_price - b.total_price)[0];
-  const replied = new Set((thread.messages || []).filter((item) => item.sender_role === "seller").map((item) => item.seller_id));
-  const title = one ? sellerName(thread, one) : recipients.map((item) => item.seller_name).join(" · ");
-  const subtitle = one ? "محادثتك معه" : thread.need || thread.original_text || "";
-  const back = `<button class="icon-btn" type="button" data-action="${one ? "all-sellers" : "requests"}" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
-  const phone = `<span class="icon-btn" aria-hidden="true">${icon("phone", { size: 20 })}</span>`;
-  const sync = thread.last_synced_at ? `آخر تحديث ${ago(thread.last_synced_at)}` : "بانتظار أول تحديث";
+  const title = one ? sellerName(thread, one) : thread.need || thread.original_text || "المحادثة";
+  const status = one
+    ? thread.need || thread.original_text || ""
+    : recipients.map((item) => item.seller_name).join("، ");
+  const backAction = state.activeSeller && recipients.length > 1 ? "all-sellers" : "requests";
+  const avatar = one
+    ? `<span class="wa-avatar" style="background:${nameColor(one)}">${initial(title)}</span>`
+    : `<span class="wa-avatar group">${formatCount(recipients.length)}</span>`;
+  const notice = group
+    ? `رسالتك توصل لكل الجهات (${formatCount(recipients.length)}). «ردّ» أو @الاسم توصل له بس.`
+    : `محادثتك مع ${sellerName(thread, one)}. رسايلك توصل له بس.`;
   const target = state.replyTo;
-  return `<header class="chat-head">${phone}<div class="who-line"><strong>${esc(title || "المحادثة")}</strong><span class="meta">${esc(subtitle)}</span></div>${back}</header>
-  <section class="page soft chat-page">
-    ${best ? `<div class="quote-card"><div class="row"><span class="tag">${one ? "عرضه" : "أرخص عرض"}</span><strong>الإجمالي: ${esc(money(best.total_price))}</strong></div><p>${one ? "" : `${esc(best.provider_name || sellerName(thread, best.seller_id))} · `}${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
-    <p class="chat-hint">${one ? "رسايلك هنا توصل له بس." : `${replied.size ? `ردّ ${formatCount(replied.size)} من ${formatCount(recipients.length)} · ` : ""}رسالتك توصل للكل. «ردّ عليه» أو @الاسم توصل له بس.`}</p>
-    <div class="thread"><p class="day">${esc(sync)}</p>${threadBubbles(thread, messages) || `<p class="meta">بانتظار الرد.</p>`}</div>
-  </section>
-  ${target ? `<div class="reply-target"><span>ترد على <strong>${esc(target.name)}</strong>: ${esc(snippet(target.body, 40))}</span><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
-  <div class="mention-list" id="mention-list" hidden></div>
-  <form class="reply-form" id="user-reply">
-    <label class="icon-btn" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
-    <input name="body" placeholder="${one ? "رسالة له بس..." : "اكتب للكل، أو @ لجهة معيّنة..."}" autocomplete="off">
-    <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
-  </form>`;
+  return `<div class="wa-screen">
+    <header class="wa-head">
+      <button class="wa-back" type="button" data-action="${backAction}" aria-label="رجوع">${icon("chevron", { size: 22 })}</button>
+      ${avatar}
+      <div class="wa-who"><strong>${esc(title)}</strong><span>${esc(status)}</span></div>
+    </header>
+    ${best ? `<div class="wa-pinned"><span class="wa-pin">${one ? "عرضه" : "أرخص عرض"}</span><strong>${esc(money(best.total_price))}</strong>${one ? "" : `<span>${esc(best.provider_name || sellerName(thread, best.seller_id))}</span>`}</div>` : ""}
+    <section class="wa-wall" id="chat-wall">
+      <div class="wa-system">${esc(notice)}</div>
+      ${waMessages(thread, messages, group) || `<div class="wa-system">بانتظار الرد.</div>`}
+      <div class="wa-system subtle">${esc(thread.last_synced_at ? `آخر تحديث ${ago(thread.last_synced_at)}` : "بانتظار أول تحديث")}</div>
+    </section>
+    <div class="wa-dock">
+      ${target ? `<div class="wa-replying" style="--who:${nameColor(target.sellerId)}"><div><strong>${esc(target.name)}</strong><span>${esc(snippet(target.body, 60))}</span></div><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
+      <div class="mention-list" id="mention-list" hidden></div>
+      <form class="wa-compose" id="user-reply">
+        <div class="wa-field">
+          <input name="body" placeholder="${group ? "اكتب رسالة للكل" : "اكتب رسالة"}" autocomplete="off">
+          <label class="wa-attach" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
+        </div>
+        <button class="wa-send" type="submit" aria-label="إرسال">${icon("send", { size: 20 })}</button>
+      </form>
+    </div>
+  </div>`;
 }
 
 function renderSeller() {
@@ -616,9 +673,15 @@ function render() {
     subscribe: renderSubscribe,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
+  const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
+  const stick = state.view === "thread" && (state.stickChat || nearBottom);
   app.innerHTML = shell(view());
   bindImages(app);
   if (focused) document.getElementById(focused)?.focus();
+  if (stick) {
+    state.stickChat = false;
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  }
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
   if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
@@ -778,8 +841,15 @@ async function sendRequest() {
     state.busy = false;
     state.files = [];
     state.note = "";
+    state.notice = "";
+    state.selected.clear();
     state.thread = created;
+    state.replyTo = null;
+    // One seller: straight into the chat with him. Several: the item's group chat.
+    state.activeSeller = created.recipients?.length === 1 ? created.recipients[0].seller_id : "";
+    state.stickChat = true;
     state.view = "thread";
+    history.pushState({}, "", "/");
     await loadThread(created.id);
   } catch (_error) {
     state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
@@ -1005,6 +1075,7 @@ document.addEventListener("submit", (event) => {
     api(`/v1/requests/${state.thread.id}/messages`, { method: "POST", json })
       .then(() => {
         state.replyTo = null;
+        state.stickChat = true;
         return loadThread(state.thread.id);
       })
       .catch(() => {});
@@ -1122,18 +1193,21 @@ document.addEventListener("click", (event) => {
   else if (action === "thread") {
     state.activeSeller = "";
     state.replyTo = null;
+    state.stickChat = true;
     loadThread(target.dataset.id).catch(() => {});
   } else if (action === "seller-filter") {
     state.activeSeller = target.dataset.seller || "";
     state.replyTo = null;
+    state.stickChat = true;
     render();
   } else if (action === "all-sellers") {
     state.activeSeller = "";
+    state.stickChat = true;
     render();
   } else if (action === "reply") {
     const message = (state.thread?.messages || []).find((item) => item.id === target.dataset.message);
     if (!message) return;
-    state.replyTo = { id: message.id, name: sellerName(state.thread, message.seller_id), body: message.body };
+    state.replyTo = { id: message.id, sellerId: message.seller_id, name: sellerName(state.thread, message.seller_id), body: message.body };
     render();
     document.querySelector("#user-reply input[name=body]")?.focus();
   } else if (action === "cancel-reply") {
