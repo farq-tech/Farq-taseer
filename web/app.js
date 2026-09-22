@@ -665,7 +665,8 @@ function renderFlow() {
     ${state.results.length ? `<div style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
     ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة بـ ${formatCount(count)} ${count === 1 ? "خيار" : "خيارات"}</button></div>` : ""}
   </section>
-  ${state.view === "detail" ? detailSheet() : ""}`;
+  ${state.view === "detail" ? detailSheet() : ""}
+  ${state.capSheet ? capSheet() : ""}`;
 }
 
 function dock() {
@@ -733,7 +734,8 @@ function renderReview() {
   <section class="fq-body tight">
     <div><h1 class="fq-h2">اختر من تبي نطلب منهم سعر</h1>
       <p class="fq-lead">${esc([state.query, cityLabel(city)].filter(Boolean).join(" · "))}</p></div>
-    <div><span class="fq-tag deep">تم اختيار ${formatCount(chosen.length)}</span></div>
+    <div><span class="fq-tag deep">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
+    ${Number.isFinite(sellerCap()) ? `<p class="fq-meta">يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</p>` : ""}
     <div style="display:flex;flex-direction:column;gap:12px">
       ${chosen
         .map(([key, result]) => {
@@ -771,7 +773,23 @@ function renderReview() {
       : ""}
     ${state.notice ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.notice)}</p>` : ""}
     <div class="fq-sticky"><button class="fq-btn" type="button" data-action="send" ${ready ? "" : "disabled"}>أرسل طلب التسعير</button></div>
-  </section>`;
+  </section>
+  ${state.capSheet ? capSheet() : ""}`;
+}
+
+// FT04_SupplierLimitReached — node 64:611.
+function capSheet() {
+  return `<div class="fq-scrim" data-action="close-cap">
+    <div class="fq-sheet" role="dialog" aria-label="حد التجربة المجانية">
+      <span class="fq-grab" aria-hidden="true"></span>
+      <div><h2>وصلت لحد التجربة المجانية</h2>
+        <p class="fq-lead">التجربة المجانية تسمح لك بإرسال طلب التسعير إلى ${formatCount(TRIAL_SELLERS)} موردين كحد أقصى لكل بند لمقارنة أفضل الأسعار.</p></div>
+      <div class="fq-actions">
+        <button class="fq-btn" type="button" data-action="close-cap">متابعة بـ ${formatCount(TRIAL_SELLERS)} موردين</button>
+        <button class="fq-btn ghost" type="button" data-action="show-plans">عرض الباقات المدفوعة</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 // M09_SendingProcessing — node 85:338.
@@ -1333,7 +1351,8 @@ function renderThread() {
   }
   const recipients = thread.recipients || [];
   const awarded = thread.awarded_seller_id || "";
-  const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
+  // Once a winner is picked the broadcast is over: the item becomes a 1:1 channel with him.
+  const one = state.activeSeller || awarded || (recipients.length === 1 ? recipients[0].seller_id : "");
   const group = !one;
   const privateWinner = Boolean(awarded) && one === awarded;
   const messages = (thread.messages || []).filter(
@@ -1371,7 +1390,7 @@ function renderThread() {
           : "ما اخترت أحد";
   const placeholder = target ? `ردّ على ${target.name}` : group && picked.length === recipients.length ? "اكتب رسالة للجميع..." : "اكتب رسالتك...";
 
-  const pills = group
+  const pills = group && !awarded
     ? `<div class="fq-filters">
         <button class="fq-fpill all${state.activeSeller ? "" : " on"}" type="button" data-action="all-sellers">الكل</button>
         ${recipients
@@ -2019,9 +2038,17 @@ function selectResult(key) {
   if (result && sellerOf(result).id) state.selected.set(key, result);
 }
 
+function sellerCap() {
+  return isSubscribed() ? Infinity : TRIAL_SELLERS;
+}
+
 function toggle(key) {
   if (state.selected.has(key)) state.selected.delete(key);
-  else selectResult(key);
+  else if (state.selected.size >= sellerCap()) {
+    state.capSheet = true;
+    render();
+    return;
+  } else selectResult(key);
   render();
 }
 
@@ -2599,6 +2626,9 @@ document.addEventListener("click", (event) => {
       state.view = "flow";
       state.active = null;
     }
+    render();
+  } else if (action === "close-cap") {
+    state.capSheet = false;
     render();
   } else if (action === "toggle-extra") {
     state.reviewExtra = state.reviewExtra !== true;
