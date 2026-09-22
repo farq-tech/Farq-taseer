@@ -6,7 +6,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -101,11 +101,88 @@ class Store:
               trace_json text not null,
               created_at text not null
             );
+            create table if not exists subscription_plans (
+              code text primary key,
+              name_ar text not null,
+              name_en text not null,
+              description_ar text,
+              price_amount integer not null,
+              currency text not null default 'SAR',
+              duration_days integer not null,
+              features_json text not null default '[]',
+              is_active integer not null default 1,
+              is_placeholder_price integer not null default 0,
+              moyasar_metadata_json text not null default '{}',
+              created_at text not null,
+              updated_at text not null
+            );
+            create table if not exists subscriptions (
+              id text primary key,
+              user_id text not null,
+              plan text not null references subscription_plans(code),
+              status text not null check (status in ('active', 'expired', 'cancelled', 'payment_pending')),
+              starts_at text,
+              expires_at text,
+              created_at text not null,
+              updated_at text not null
+            );
+            create index if not exists subscriptions_user_idx on subscriptions(user_id);
+            create table if not exists payments (
+              id text primary key,
+              user_id text not null,
+              provider text not null default 'moyasar',
+              provider_payment_id text unique,
+              amount integer not null,
+              currency text not null default 'SAR',
+              status text not null,
+              subscription_id text references subscriptions(id),
+              plan text references subscription_plans(code),
+              source_type text,
+              created_at text not null
+            );
+            create index if not exists payments_user_idx on payments(user_id);
+            create table if not exists webhook_events (
+              id text primary key,
+              event_type text not null,
+              provider_payment_id text,
+              processed_at text not null
+            );
             """
         )
         self._connection.commit()
         self._ensure_column("requests", "reply_token", "text")
         self._ensure_column("messages", "seller_id", "text")
+        self._seed_plans()
+
+    def _seed_plans(self) -> None:
+        existing = self._connection.execute("select count(*) as count from subscription_plans").fetchone()["count"]
+        if existing:
+            return
+        now = _now()
+        self._connection.execute(
+            """
+            insert into subscription_plans
+              (code, name_ar, name_en, description_ar, price_amount, currency, duration_days,
+               features_json, is_active, is_placeholder_price, moyasar_metadata_json, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "monthly_placeholder",
+                "الاشتراك الشهري (سعر تجريبي مؤقت)",
+                "Monthly plan (placeholder test price)",
+                "سعر مؤقت لاختبار الدفع في وضع Sandbox فقط. يجب تحديد السعر النهائي قبل الإطلاق.",
+                100,
+                "SAR",
+                30,
+                json.dumps(["ميزات تجريبية سيتم تحديدها لاحقاً"], ensure_ascii=False),
+                1,
+                1,
+                json.dumps({}, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        self._connection.commit()
 
     def _ensure_column(self, table: str, column: str, declaration: str) -> None:
         names = {row[1] for row in self._connection.execute(f"pragma table_info({table})")}
@@ -424,3 +501,180 @@ class Store:
         if row is None:
             return None
         return Path(row["path"]), row["content_type"], row["filename"]
+
+    # -- Subscriptions & payments -------------------------------------------------
+
+    def list_active_plans(self) -> list[dict]:
+        rows = self._connection.execute(
+            "select * from subscription_plans where is_active = 1 order by price_amount asc"
+        ).fetchall()
+        return [self._plan_row(row) for row in rows]
+
+    def get_plan(self, code: str) -> dict | None:
+        row = self._connection.execute("select * from subscription_plans where code = ?", (code,)).fetchone()
+        return None if row is None else self._plan_row(row)
+
+    def _plan_row(self, row) -> dict:
+        return {
+            "code": row["code"],
+            "name_ar": row["name_ar"],
+            "name_en": row["name_en"],
+            "description_ar": row["description_ar"],
+            "price_amount": row["price_amount"],
+            "currency": row["currency"],
+            "duration_days": row["duration_days"],
+            "features": json.loads(row["features_json"]),
+            "is_active": bool(row["is_active"]),
+            "is_placeholder_price": bool(row["is_placeholder_price"]),
+        }
+
+    def _subscription_row(self, row) -> dict:
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "plan": row["plan"],
+            "status": row["status"],
+            "starts_at": row["starts_at"],
+            "expires_at": row["expires_at"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def get_latest_subscription(self, user_id: str) -> dict | None:
+        row = self._connection.execute(
+            "select * from subscriptions where user_id = ? order by created_at desc limit 1",
+            (user_id,),
+        ).fetchone()
+        return None if row is None else self._subscription_row(row)
+
+    def subscription_status(self, user_id: str) -> str:
+        """The user's current entitlement state, computed server-side."""
+        sub = self.get_latest_subscription(user_id)
+        if sub is None:
+            return "none"
+        if sub["status"] == "active":
+            if sub["expires_at"] and sub["expires_at"] < _now():
+                return "expired"
+            return "active"
+        return sub["status"]
+
+    def is_subscribed(self, user_id: str) -> bool:
+        return self.subscription_status(user_id) == "active"
+
+    def create_pending_payment(self, user_id: str, plan_code: str, amount: int, currency: str, source_type: str | None = None) -> dict:
+        plan = self.get_plan(plan_code)
+        if plan is None or not plan["is_active"]:
+            raise ValueError("unknown or inactive plan")
+        payment_id = uuid4().hex
+        created = _now()
+        self._connection.execute(
+            "insert into payments (id, user_id, provider, provider_payment_id, amount, currency, status, subscription_id, plan, source_type, created_at)"
+            " values (?, ?, 'moyasar', null, ?, ?, 'payment_pending', null, ?, ?, ?)",
+            (payment_id, user_id, amount, currency, plan_code, source_type, created),
+        )
+        self._connection.commit()
+        return self.get_payment(payment_id)
+
+    def _payment_row(self, row) -> dict:
+        return {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "provider": row["provider"],
+            "provider_payment_id": row["provider_payment_id"],
+            "amount": row["amount"],
+            "currency": row["currency"],
+            "status": row["status"],
+            "subscription_id": row["subscription_id"],
+            "plan": row["plan"],
+            "created_at": row["created_at"],
+        }
+
+    def get_payment(self, payment_id: str) -> dict | None:
+        row = self._connection.execute("select * from payments where id = ?", (payment_id,)).fetchone()
+        return None if row is None else self._payment_row(row)
+
+    def get_payment_by_provider_id(self, provider_payment_id: str) -> dict | None:
+        row = self._connection.execute(
+            "select * from payments where provider_payment_id = ?", (provider_payment_id,)
+        ).fetchone()
+        return None if row is None else self._payment_row(row)
+
+    def record_webhook_event(self, event_id: str, event_type: str, provider_payment_id: str | None) -> bool:
+        """Insert-if-absent. Returns True the first time an event id is seen."""
+        try:
+            self._connection.execute(
+                "insert into webhook_events (id, event_type, provider_payment_id, processed_at) values (?, ?, ?, ?)",
+                (event_id, event_type, provider_payment_id, _now()),
+            )
+            self._connection.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def settle_payment(self, payment_id: str, provider_payment_id: str, provider_status: str, paid_amount: int, paid_currency: str) -> dict:
+        """Idempotently reconcile a Moyasar-verified payment. Only ever moves a
+        payment out of 'payment_pending'; replaying the same event is a no-op.
+        """
+        payment = self.get_payment(payment_id)
+        if payment is None:
+            return {"ok": False, "reason": "payment_not_found"}
+        if payment["status"] != "payment_pending":
+            # Already settled by an earlier callback/webhook - idempotent no-op.
+            return {"ok": True, "already_processed": True, "status": payment["status"], "subscription": self.get_latest_subscription(payment["user_id"])}
+        if payment["amount"] != paid_amount or payment["currency"] != paid_currency:
+            self._connection.execute(
+                "update payments set status = 'failed', provider_payment_id = ? where id = ?",
+                (provider_payment_id, payment_id),
+            )
+            self._connection.commit()
+            return {"ok": True, "already_processed": False, "status": "failed", "reason": "amount_mismatch"}
+        if provider_status != "paid":
+            self._connection.execute(
+                "update payments set status = ?, provider_payment_id = ? where id = ?",
+                (provider_status, provider_payment_id, payment_id),
+            )
+            self._connection.commit()
+            return {"ok": True, "already_processed": False, "status": provider_status, "activated": False}
+
+        plan = self.get_plan(payment["plan"])
+        if plan is None:
+            self._connection.execute(
+                "update payments set status = 'failed', provider_payment_id = ? where id = ?",
+                (provider_payment_id, payment_id),
+            )
+            self._connection.commit()
+            return {"ok": True, "already_processed": False, "status": "failed", "reason": "unknown_plan"}
+
+        now_iso = _now()
+        latest = self.get_latest_subscription(payment["user_id"])
+        if latest is not None and latest["status"] == "active" and latest["expires_at"] and latest["expires_at"] > now_iso:
+            base = datetime.fromisoformat(latest["expires_at"])
+        else:
+            base = datetime.now(timezone.utc)
+
+        expires_at = (base + timedelta(days=plan["duration_days"])).isoformat()
+
+        if latest is not None and latest["status"] == "active":
+            subscription_id = latest["id"]
+            self._connection.execute(
+                "update subscriptions set plan = ?, status = 'active', expires_at = ?, updated_at = ? where id = ?",
+                (plan["code"], expires_at, now_iso, subscription_id),
+            )
+        else:
+            subscription_id = uuid4().hex
+            self._connection.execute(
+                "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, created_at, updated_at) values (?, ?, ?, 'active', ?, ?, ?, ?)",
+                (subscription_id, payment["user_id"], plan["code"], now_iso, expires_at, now_iso, now_iso),
+            )
+        self._connection.execute(
+            "update payments set status = 'paid', provider_payment_id = ?, subscription_id = ? where id = ?",
+            (provider_payment_id, subscription_id, payment_id),
+        )
+        self._connection.commit()
+        return {
+            "ok": True,
+            "already_processed": False,
+            "status": "paid",
+            "activated": True,
+            "subscription": self.get_latest_subscription(payment["user_id"]),
+        }

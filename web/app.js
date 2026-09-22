@@ -18,6 +18,12 @@ const state = {
   sellerToken: "",
   token: localStorage.getItem("farq.token") || "",
   busy: false,
+  subPlans: [],
+  subStatus: null,
+  subChosenPlan: "",
+  subBusy: false,
+  subError: "",
+  subMounted: false,
   city: "",
   cities: [
     { value: "الرياض", label: "الرياض" },
@@ -255,7 +261,7 @@ function tabBar(active) {
   return `<nav class="tab-bar" aria-label="التنقل">
     <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
     <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests">${icon("briefcase")}<span>طلباتي</span></button>
-    <button class="tab" type="button" disabled aria-disabled="true">${icon("settings")}<span>الإعدادات</span></button>
+    <button class="tab${active === "subscribe" ? " active" : ""}" type="button" data-action="subscribe">${icon("check-square")}<span>الاشتراك</span></button>
   </nav>`;
 }
 
@@ -486,6 +492,43 @@ function renderSeller() {
     </section>`;
 }
 
+function subStatusBanner() {
+  const status = state.subStatus?.status;
+  const sub = state.subStatus?.subscription;
+  if (status === "active") {
+    const until = sub?.expires_at ? new Date(sub.expires_at).toLocaleDateString("ar-SA-u-ca-gregory") : "";
+    return `<div class="sub-banner active">اشتراكك فعّال${until ? ` حتى ${esc(until)}` : ""}</div>`;
+  }
+  if (status === "expired") return `<div class="sub-banner warn">انتهى اشتراكك. جدده لتستمر بالمزايا المدفوعة.</div>`;
+  if (status === "payment_pending") return `<div class="sub-banner warn">هناك عملية دفع قيد المعالجة.</div>`;
+  return "";
+}
+
+function renderPlanCard(plan) {
+  const price = (plan.price_amount / 100).toLocaleString("ar-SA", { maximumFractionDigits: 2 });
+  return `<div class="plan-card${plan.is_placeholder_price ? " is-placeholder" : ""}">
+    <h2 class="plan-name">${esc(plan.name_ar)}</h2>
+    ${plan.is_placeholder_price ? `<p class="plan-note">سعر تجريبي مؤقت لاختبار الدفع - ليس السعر النهائي.</p>` : ""}
+    <div class="plan-price"><strong>${esc(price)}</strong><span>${esc(plan.currency)} / ${esc(String(plan.duration_days))} يوم</span></div>
+    <ul class="plan-features">${(plan.features || []).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>
+    <div class="pay-actions" id="pay-actions" data-plan="${esc(plan.code)}">
+      ${state.subBusy ? `<p class="lede">نجهّز الدفع…</p>` : `<div id="moyasar-form"></div><div id="applepay-slot"></div>`}
+    </div>
+    ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="text-btn" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}
+  </div>`;
+}
+
+function renderSubscribe() {
+  const active = state.subStatus?.status === "active";
+  return `${topBar({ title: "الاشتراك" })}
+  <section class="page tight subscribe-page">
+    <div class="section-head"><h1>اشترك في فرق تسعير</h1><p class="lede">افتح كل المزايا المدفوعة بخطة واحدة بسيطة.</p></div>
+    ${subStatusBanner()}
+    ${active ? "" : state.subPlans.length ? state.subPlans.map(renderPlanCard).join("") : `<p class="lede">لا توجد خطط متاحة حالياً.</p>`}
+  </section>
+  ${tabBar("subscribe")}`;
+}
+
 function render() {
   clearInterval(poll);
   const view = {
@@ -496,6 +539,7 @@ function render() {
     requests: renderRequests,
     thread: renderThread,
     seller: renderSeller,
+    subscribe: renderSubscribe,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
   app.innerHTML = shell(view());
@@ -503,6 +547,7 @@ function render() {
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
+  if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subPlans.length && !state.subMounted) mountPayment();
 }
 
 function rememberFiles(fileList) {
@@ -702,6 +747,87 @@ async function loadSeller(token, silent = false) {
   }
 }
 
+let moyasarScriptPromise = null;
+function loadMoyasarSdk() {
+  if (moyasarScriptPromise) return moyasarScriptPromise;
+  moyasarScriptPromise = new Promise((resolve, reject) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.css";
+    document.head.appendChild(css);
+    const script = document.createElement("script");
+    script.src = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.js";
+    script.onload = () => resolve(window.Moyasar);
+    script.onerror = () => reject(new Error("moyasar-sdk-failed"));
+    document.head.appendChild(script);
+  });
+  return moyasarScriptPromise;
+}
+
+async function loadSubscribe() {
+  await ensureAuth();
+  state.view = "subscribe";
+  state.subError = "";
+  state.subMounted = false;
+  render();
+  try {
+    const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
+    state.subPlans = plans.plans || [];
+    state.subStatus = me;
+  } catch (_error) {
+    state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
+  }
+  render();
+}
+
+async function mountPayment() {
+  const plan = state.subPlans[0];
+  if (!plan || state.subMounted) return;
+  state.subMounted = true;
+  state.subBusy = true;
+  state.subError = "";
+  render();
+  try {
+    const checkout = await api("/v1/subscriptions/checkout", { method: "POST", json: { plan: plan.code } });
+    await loadMoyasarSdk();
+    state.subBusy = false;
+    render();
+    const mount = document.getElementById("moyasar-form");
+    if (!mount || !window.Moyasar) throw new Error("moyasar-unavailable");
+    const methods = ["creditcard"];
+    if (window.ApplePaySession && ApplePaySession.canMakePayments && ApplePaySession.canMakePayments()) methods.push("applepay");
+    window.Moyasar.init({
+      element: "#moyasar-form",
+      amount: checkout.amount,
+      currency: checkout.currency,
+      description: `${plan.name_ar} - فرق تسعير`,
+      publishable_api_key: checkout.publishable_key,
+      callback_url: checkout.callback_url,
+      metadata: checkout.metadata,
+      methods,
+      apple_pay: { label: "فرق تسعير", country: "SA" },
+      language: "ar",
+      on_completed: async (payment) => {
+        try {
+          const result = await api("/v1/subscriptions/verify", {
+            method: "POST",
+            json: { payment_id: checkout.payment_id, moyasar_payment_id: payment.id },
+          });
+          state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
+          state.subError = "";
+        } catch (_error) {
+          state.subError = "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك. جرّب مرة ثانية.";
+        }
+        render();
+      },
+    });
+  } catch (_error) {
+    state.subBusy = false;
+    state.subError = "الدفع غير متاح حالياً. حاول لاحقاً.";
+    render();
+  }
+}
+
 document.addEventListener("submit", (event) => {
   const form = event.target;
   if (form.id === "composer" || form.id === "refine") {
@@ -785,6 +911,12 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "idea") runSearch(target.dataset.query);
   else if (action === "requests") loadRequests().catch(() => {});
+  else if (action === "subscribe") loadSubscribe().catch(() => {});
+  else if (action === "retry-payment") {
+    state.subMounted = false;
+    state.subError = "";
+    render();
+  }
   else if (action === "remove-file") {
     const removed = state.files.splice(Number(target.dataset.index), 1)[0];
     if (removed?.preview) URL.revokeObjectURL(removed.preview);

@@ -6,19 +6,22 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
+from farq import subscriptions
 from farq.cities import city_choices
-from farq.config import SearchConfig
+from farq.config import PaymentsConfig, SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.intent import analyze
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
+from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
 from farq.store import Store
+from farq.subscriptions import SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
@@ -65,6 +68,15 @@ class SellerReplyBody(ApiModel):
     offer_currency: str | None = None
 
 
+class CheckoutBody(ApiModel):
+    plan: str
+
+
+class VerifyBody(ApiModel):
+    payment_id: str
+    moyasar_payment_id: str
+
+
 def _intent_state(intent) -> str | None:
     if not intent.understood:
         return "NOT_UNDERSTOOD"
@@ -102,8 +114,17 @@ def _public_event(event: dict) -> dict:
     return {"type": kind}
 
 
-def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient | None, config: SearchConfig) -> FastAPI:
+def create_app(
+    store: Store,
+    corpus: MemoryCorpus,
+    live_client: HarajLiveClient | None,
+    config: SearchConfig,
+    payments: PaymentsConfig | None = None,
+    moyasar: MoyasarClient | None = None,
+) -> FastAPI:
     app = FastAPI(title="FARQ Individuals", version="1")
+    payments = payments or PaymentsConfig()
+    moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
 
     def current_user(authorization: str | None = Header(default=None)) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -290,6 +311,78 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
         path, content_type, filename = found
         return FileResponse(path, media_type=content_type, filename=filename)
 
+    @app.get("/v1/subscriptions/plans")
+    def subscription_plans() -> dict:
+        return {"plans": subscriptions.list_plans(store)}
+
+    @app.get("/v1/subscriptions/me")
+    def subscription_me(user_id: str = Depends(current_user)) -> dict:
+        return subscriptions.get_status(store, user_id)
+
+    @app.post("/v1/subscriptions/checkout")
+    def subscription_checkout(body: CheckoutBody, user_id: str = Depends(current_user)) -> dict:
+        try:
+            result = subscriptions.start_checkout(
+                store,
+                user_id=user_id,
+                plan_code=body.plan,
+                publishable_key=payments.moyasar_publishable_key,
+                public_base_url=payments.public_base_url,
+            )
+        except SubscriptionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {
+            "payment_id": result.payment_id,
+            "plan": result.plan,
+            "publishable_key": result.publishable_key,
+            "amount": result.amount,
+            "currency": result.currency,
+            "callback_url": result.callback_url,
+            "metadata": result.metadata,
+        }
+
+    @app.post("/v1/subscriptions/verify")
+    def subscription_verify(body: VerifyBody, user_id: str = Depends(current_user)) -> dict:
+        try:
+            result = subscriptions.verify_checkout(
+                store,
+                moyasar,
+                user_id=user_id,
+                payment_id=body.payment_id,
+                moyasar_payment_id=body.moyasar_payment_id,
+            )
+        except SubscriptionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not result.get("ok"):
+            raise HTTPException(status_code=409, detail=result.get("reason", "could not verify payment"))
+        return result
+
+    @app.post("/v1/payments/moyasar/webhook")
+    async def moyasar_webhook(request: Request) -> dict:
+        try:
+            payload = await request.json()
+        except Exception as exc:  # noqa: BLE001 - malformed webhook body
+            raise HTTPException(status_code=400, detail="invalid payload") from exc
+        headers = {key.lower(): value for key, value in request.headers.items()}
+        if not verify_webhook_secret(payload, headers, payments.moyasar_webhook_secret):
+            raise HTTPException(status_code=401, detail="invalid webhook secret")
+        data = payload.get("data") or {}
+        moyasar_payment_id = data.get("id")
+        if not moyasar_payment_id:
+            raise HTTPException(status_code=400, detail="missing payment id")
+        event_type = payload.get("type", "unknown")
+        event_id = payload.get("id") or f"{moyasar_payment_id}:{event_type}:{data.get('updated_at', '')}"
+        metadata = data.get("metadata") or {}
+        result = subscriptions.handle_webhook(
+            store,
+            moyasar,
+            event_id=str(event_id),
+            event_type=str(event_type),
+            moyasar_payment_id=str(moyasar_payment_id),
+            farq_payment_id=metadata.get("farq_payment_id"),
+        )
+        return {"received": True, **result}
+
     if WEB_DIR.is_dir():
 
         @app.get("/")
@@ -319,11 +412,26 @@ def default_data_dir() -> Path:
 def create_default_app() -> FastAPI:
     root = default_data_dir()
     root.mkdir(parents=True, exist_ok=True)
-    store = Store(root / "farq.sqlite3", root / "uploads")
+    payments = PaymentsConfig()
+    if payments.database_url:
+        from farq.store_pg import PgStore
+
+        store = PgStore(payments.database_url, root / "uploads")
+    elif os.environ.get("VERCEL"):
+        # /tmp on a Vercel function is per-instance and wiped on cold start.
+        # Silently falling back here would mean every login, request and paid
+        # subscription vanishes at random - refuse to boot instead.
+        raise RuntimeError(
+            "DATABASE_URL is not set. Refusing to run on Vercel against ephemeral "
+            "/tmp storage - see docs/payments_setup.md for the Supabase connection string."
+        )
+    else:
+        store = Store(root / "farq.sqlite3", root / "uploads")
     corpus = MemoryCorpus.from_json(Path(os.environ.get("FARQ_CORPUS_PATH", default_sample_path())))
     config = SearchConfig()
     live = HarajLiveClient(config) if config.enable_live else None
-    return create_app(store, corpus, live, config)
+    moyasar = MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
+    return create_app(store, corpus, live, config, payments, moyasar)
 
 
 # Vercel imports this object and serves it as ASGI. A zero-argument factory
