@@ -689,31 +689,33 @@ function renderHome() {
   </section>
   ${fqNav("home")}`;
 }
-
-// M04_SearchProgress — node 27:124, with the live banner and counter added in the update.
+// M04_SearchProgress — node 27:124. The banner, the running count and the four steps all
+// live in one card; the skeletons wait below it.
 const SEARCH_STEPS = ["نفهم طلبك", "ندور على الخيارات المناسبة", "نرتب النتائج", "جهزنا لك الخيارات"];
 function renderSearching() {
   const at = state.results.length ? 2 : state.intent ? 1 : 0;
   const seen = state.scanned || 0;
   const card = `<div class="fq-card" style="gap:12px"><div style="display:flex;align-items:center;gap:12px">
-      <span class="fq-skel" style="width:44px;height:44px;border-radius:50%"></span>
-      <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span></div>
+      <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span>
+      <span class="fq-skel" style="width:44px;height:44px;border-radius:50%"></span></div>
     <span class="fq-skel" style="height:14px;width:70%;border-radius:8px"></span>
     <span class="fq-skel" style="height:22px;width:35%;border-radius:8px"></span></div>`;
   return `${fqHead({ title: "ماعليك فرق بيجيب الفرق" })}
   <section class="fq-body" aria-live="polite">
-    <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="fq-card pad" style="gap:14px">
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
         <span style="flex:1">${state.results.length ? `${formatCount(state.results.length)} مورد وصلوا حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
       <div class="fq-live-count">
         <span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>تحديث في الوقت الفعلي</span>
         <span style="flex:1"></span>
-        ${seen ? `<span><b>تم فحص ${formatCount(seen)} عرض</b> حتى الآن</span>` : ""}
+        ${seen ? `<b style="color:var(--fq-success)">تم فحص ${formatCount(seen)} عرض حتى الآن</b>` : ""}
       </div>
       <div class="fq-steps">${SEARCH_STEPS.map((label, index) => {
         const cls = index < at ? "done" : index === at ? "now" : "";
-        return `<div class="fq-step ${cls}"><span class="mark">${index < at ? ic("check", 14) : ""}</span><span>${esc(label)}</span></div>`;
+        return `<div class="fq-step ${cls}"><span class="mark">${index < at ? ic("check", 14) : ""}</span>
+          ${index === at ? `<span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}
+          <span style="flex:1">${esc(label)}</span></div>`;
       }).join("")}</div>
     </div>
     <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${card.repeat(3)}</div>
@@ -878,28 +880,24 @@ function renderReview() {
   <section class="fq-body tight">
     <div><h1 class="fq-h2">اختر من تبي نطلب منهم سعر</h1>
       <p class="fq-lead">${esc([state.query, cityLabel(city)].filter(Boolean).join(" · "))}</p></div>
-    <div><span class="fq-tag deep">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
-    ${Number.isFinite(sellerCap()) ? `<p class="fq-meta">يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</p>` : ""}
+    ${Number.isFinite(sellerCap()) ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</span></div>` : ""}
+    <div><span class="fq-count-pill">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
     <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
       ${chosen
         .map(([key, result]) => {
           const seller = sellerOf(result);
           const name = tidyName(seller.name) || "بائع";
           const price = money(result.ad?.price_amount);
-          return `<article class="fq-card">
-            <div class="fq-row" style="align-items:center">
-              <button class="fq-tick on" type="button" data-action="unselect" data-key="${esc(key)}" aria-pressed="true" aria-label="إزالة ${esc(name)}">${ic("check", 14)}</button>
-              <span style="flex:1;min-width:0;display:flex;align-items:center;gap:12px">
-                <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:18px">${initial(name)}</span>
-                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-                  <strong style="font-size:17px;font-weight:700"><bdi>${esc(name)}</bdi></strong>
-                  <span class="fq-meta">${esc(cityLabel(result.ad?.city || seller.city || "") || "")}</span>
-                </span>
+          return `<article class="fq-card fq-seller">
+            <div class="fq-row" style="align-items:flex-start">
+              <button class="fq-tick round on" type="button" data-action="unselect" data-key="${esc(key)}" aria-pressed="true" aria-label="إزالة ${esc(name)}">${ic("check", 14)}</button>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+                <strong style="font-size:17px;font-weight:700"><bdi>${esc(name)}</bdi></strong>
+                <span class="fq-meta">${esc(cityLabel(result.ad?.city || seller.city || "") || "")}</span>
+                ${price ? `<span class="fq-tag">${esc(price)}</span>` : ""}
+                ${result.score != null ? scoreRing(Math.round(Math.max(0, Math.min(1, result.score)) * 100), "مطابقة") : ""}
               </span>
-            </div>
-            <div class="fq-row">
-              ${price ? `<span class="fq-tag">${esc(price)}</span>` : "<span></span>"}
-              ${result.score != null ? scoreRing(Math.round(Math.max(0, Math.min(1, result.score)) * 100), "مطابقة") : ""}
+              <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:18px">${initial(name)}</span>
             </div>
           </article>`;
         })

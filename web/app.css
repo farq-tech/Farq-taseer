@@ -1811,3 +1811,13 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-result > .fq-row:first-child { direction: ltr; }
 .fq-result > .fq-row:first-child > button[data-action="open"] { direction: ltr; }
 .fq-result > .fq-row:first-child > button[data-action="open"] > span:first-child { direction: rtl; text-align: right; }
+/* M04: the step row reads label-then-mark from the right, with the mark on the left */
+.fq-step { direction: ltr; }
+.fq-step > span:last-child { direction: rtl; text-align: right; }
+.fq-live-count { direction: ltr; }
+.fq-live-count > span:nth-child(2), .fq-live-count b { direction: rtl; }
+/* M07: the tick is a circle on the left, the supplier's mark on the right */
+.fq-tick.round { border-radius: 50%; }
+.fq-seller > .fq-row { direction: ltr; }
+.fq-seller > .fq-row > span { direction: rtl; }
+.fq-count-pill { display: inline-flex; padding: 6px 12px; border-radius: 999px; background: var(--fq-surface); border: 1px solid var(--fq-line); font-size: 13px; font-weight: 700; color: var(--fq-deep-green); box-shadow: var(--fq-shadow-card); }
