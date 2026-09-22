@@ -1705,9 +1705,11 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq-in { animation: fq-pop 480ms var(--fq-spring) both; }
 
 /* the home call to action breathes, so the thumb knows where to go */
+/* The call to action breathes in its glow, not in its size: a tap target that
+   moves is a tap target you can miss. */
 @keyframes fq-breathe {
-  0%, 100% { transform: scale(1); box-shadow: 0 2px 8px -2px rgba(0, 159, 103, 0.15), 0 10px 20px -6px rgba(0, 159, 103, 0.2); }
-  50% { transform: scale(1.015); box-shadow: 0 4px 14px -2px rgba(0, 159, 103, 0.28), 0 14px 28px -6px rgba(0, 159, 103, 0.3); }
+  0%, 100% { box-shadow: 0 2px 8px -2px rgba(0, 159, 103, 0.15), 0 10px 20px -6px rgba(0, 159, 103, 0.2); }
+  50% { box-shadow: 0 4px 18px -2px rgba(0, 159, 103, 0.34), 0 16px 32px -6px rgba(0, 159, 103, 0.34); }
 }
 .fq-btn.breathe { animation: fq-breathe 2.8s var(--fq-ease) 1.2s infinite; }
 
@@ -1796,3 +1798,4 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-editbtn { background: #e6f5ee; border: 1px solid var(--fq-line); border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 700; color: var(--fq-deep-green); }
 .fq-checkbadge { width: 24px; height: 24px; border-radius: 10px; background: #ddf4e8; color: var(--fq-deep-green); display: grid; place-items: center; border: 0; padding: 0; }
 .fq-checkbadge.off { background: transparent; border: 2px solid var(--fq-line); color: transparent; }
+.fq-ibtn.plain { background: none; width: 30px; height: 30px; border-radius: 10px; }

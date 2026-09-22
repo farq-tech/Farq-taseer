@@ -529,18 +529,30 @@ function cueOnce(key, name, pattern) {
 
 // The screen header: deep green, the title in the middle, the brand accent line under it.
 // `back` is the data-action for the chevron; in Arabic it points right, at the start of the line.
-function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = false, auth = false } = {}) {
+// The screen header: a deep-green gradient, the title in the middle, the brand accent under it.
+// The frames put the back chevron on the LEFT and the language control on the RIGHT on every
+// screen except the conversation, which swaps them — `backStart` asks for that swap.
+function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = false, auth = false, backStart = false } = {}) {
   const langBtn = `<button class="fq-lang" type="button" data-action="lang" aria-label="اللغة">${ic("globe", 16)}<span>العربية</span></button>`;
-  const lead = back
-    ? `<button class="fq-ibtn" type="button" data-action="${esc(back)}" aria-label="رجوع">${ic("back", 18)}</button>`
-    : mark
-      ? `<span class="fq-head-mark">فرق</span>`
-      : start || langBtn;
-  const tail = end || (mark || back ? "<span></span>" : "<span></span>");
+  // the standard header draws a bare chevron; the conversation draws it on white
+  const backBtn = back
+    ? `<button class="fq-ibtn ${backStart ? "light" : "plain"}" type="button" data-action="${esc(back)}" aria-label="رجوع">${ic("back", 18)}</button>`
+    : "";
+  const brand = mark ? `<span class="fq-head-mark">فرق</span>` : "";
+  // right slot first: in Arabic the row starts on the right
+  let lead = start || brand || (back && !backStart ? langBtn : "") || (back ? backBtn : langBtn);
+  let tail = end || "";
+  if (back && backStart) {
+    lead = backBtn;
+    tail = end || brand || "";
+  } else if (back) {
+    lead = start || brand || langBtn;
+    tail = end || backBtn;
+  }
   return `<header class="fq-head${auth ? " is-auth" : ""}${back ? " deep" : ""}">
-    <div class="fq-head-row">${lead}
+    <div class="fq-head-row">${lead || "<span></span>"}
       <div class="fq-head-mid"><h1 class="fq-head-title"><bdi>${esc(title)}</bdi></h1>${sub ? `<p class="fq-head-sub"><bdi>${esc(sub)}</bdi></p>` : ""}</div>
-      ${tail}</div>
+      ${tail || "<span></span>"}</div>
     <div class="fq-head-accent"></div>
   </header>`;
 }
@@ -1578,7 +1590,7 @@ function renderThread() {
       </div>`
     : "";
 
-  return `${fqHead({ title, sub, back: backAction, end: menu })}
+  return `${fqHead({ title, sub, back: backAction, backStart: true, end: menu })}
     ${awardedHead}
     ${pills}
     <section class="fq-chat" id="chat-wall">
@@ -1710,7 +1722,7 @@ const NOTIFY_ROWS = [
 function renderNotifySettings() {
   const prefs = state.notifyPrefs || {};
   const on = sound.on;
-  return `${fqHead({ title: "إعدادات الإشعارات", back: "account" })}
+  return `${fqHead({ title: "إعدادات الإشعارات", back: "account", backStart: true })}
   <section class="fq-body tight" style="gap:0;padding:0">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
