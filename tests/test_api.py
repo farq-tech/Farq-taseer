@@ -284,7 +284,7 @@ class FakeHaraj:
 def test_item_conversation_routes_through_haraj(tmp_path: Path):
     haraj = FakeHaraj()
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
-    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), haraj))
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), chat=haraj))
     headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
     created = api.post(
         "/v1/requests",

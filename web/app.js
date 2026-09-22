@@ -20,6 +20,13 @@ const state = {
   sellerToken: "",
   token: localStorage.getItem("farq.token") || "",
   busy: false,
+  subPlans: [],
+  subStatus: null,
+  subActivePlan: "",
+  subMountedPlan: "",
+  subMountFailed: false,
+  subBusy: false,
+  subError: "",
   city: "",
   cities: [
     { value: "الرياض", label: "الرياض" },
@@ -34,6 +41,7 @@ const state = {
 const app = document.querySelector("#app");
 let poll = 0;
 const sellerRoute = location.pathname.match(/^\/s\/([^/]+)\/?$/);
+const subscribeCallback = location.pathname === "/subscribe/callback";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -188,8 +196,8 @@ function bubbles(messages, mine) {
 }
 
 function finalNotice(status, count) {
-  if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث من حراج. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
-  if (status === "LIVE_UNAVAILABLE") return "حراج ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
+  if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
+  if (status === "LIVE_UNAVAILABLE") return "المصدر ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
   if (status === "TIMEOUT") return count ? "البحث طال، وهذي الخيارات اللي وصلت." : "انقطع البحث قبل ما يكتمل. جرّب مرة ثانية.";
   if (status === "NO_QUALIFIED_RESULTS") return "شفت إعلانات، بس ما فيه شيء يطابق طلبك.";
   if (status === "LIVE_EMPTY" || status === "LOCAL_EMPTY") return "ما رجع المصدر إعلان يطابق هذا الطلب.";
@@ -257,7 +265,7 @@ function tabBar(active) {
   return `<nav class="tab-bar" aria-label="التنقل">
     <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
     <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests">${icon("briefcase")}<span>طلباتي</span></button>
-    <button class="tab" type="button" disabled aria-disabled="true">${icon("settings")}<span>الإعدادات</span></button>
+    <button class="tab${active === "subscribe" ? " active" : ""}" type="button" data-action="subscribe">${icon("check-square")}<span>الاشتراك</span></button>
   </nav>`;
 }
 
@@ -391,7 +399,6 @@ function renderDetail() {
     ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">السعر عند الطلب</p>`}
     <p class="meta">${esc(place(result))}${seller.name ? ` · ${esc(seller.name)}` : ""}</p>
     ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
-    ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان في حراج</a></p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
     <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
     ${dock()}
@@ -552,6 +559,50 @@ function renderSeller() {
     </section>`;
 }
 
+function subStatusBanner() {
+  const status = state.subStatus?.status;
+  const sub = state.subStatus?.subscription;
+  if (status === "active") {
+    const until = sub?.expires_at ? new Date(sub.expires_at).toLocaleDateString("ar-SA-u-ca-gregory") : "";
+    return `<div class="sub-banner active">اشتراكك فعّال${until ? ` حتى ${esc(until)}` : ""}</div>`;
+  }
+  if (status === "expired") return `<div class="sub-banner warn">انتهى اشتراكك. جدده لتستمر بالمزايا المدفوعة.</div>`;
+  if (status === "payment_pending") return `<div class="sub-banner warn">هناك عملية دفع قيد المعالجة.</div>`;
+  return "";
+}
+
+function renderPlanCard(plan) {
+  const price = (plan.price_amount / 100).toLocaleString("ar-SA", { maximumFractionDigits: 2 });
+  const chosen = state.subActivePlan === plan.code;
+  const formId = `moyasar-form-${plan.code}`;
+  return `<div class="plan-card${plan.is_placeholder_price ? " is-placeholder" : ""}">
+    <h2 class="plan-name">${esc(plan.name_ar)}</h2>
+    ${plan.is_placeholder_price ? `<p class="plan-note">سعر تجريبي مؤقت لاختبار الدفع - ليس السعر النهائي.</p>` : ""}
+    <div class="plan-price"><strong>${esc(price)}</strong><span>${esc(plan.currency)} / ${esc(String(plan.duration_days))} يوم</span></div>
+    <ul class="plan-features">${(plan.features || []).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>
+    ${
+      chosen
+        ? `<div class="pay-actions" id="pay-actions" data-plan="${esc(plan.code)}">
+            ${state.subBusy ? `<p class="lede">نجهّز الدفع…</p>` : `<div id="${formId}"></div><div id="applepay-slot-${esc(plan.code)}"></div>`}
+          </div>
+          ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="text-btn" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}`
+        : `<button class="primary block" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اشترك بهذه الخطة</button>`
+    }
+  </div>`;
+}
+
+function renderSubscribe() {
+  const active = state.subStatus?.status === "active";
+  return `${topBar({ title: "الاشتراك" })}
+  <section class="page tight subscribe-page">
+    <div class="section-head"><h1>اشترك في فرق تسعير</h1><p class="lede">افتح كل المزايا المدفوعة بخطة واحدة بسيطة.</p></div>
+    ${subStatusBanner()}
+    ${!active && !state.subActivePlan && state.subError ? `<p class="pay-error">${esc(state.subError)}</p>` : ""}
+    ${active ? "" : state.subPlans.length ? state.subPlans.map(renderPlanCard).join("") : `<p class="lede">لا توجد خطط متاحة حالياً.</p>`}
+  </section>
+  ${tabBar("subscribe")}`;
+}
+
 function render() {
   clearInterval(poll);
   const view = {
@@ -562,6 +613,7 @@ function render() {
     requests: renderRequests,
     thread: renderThread,
     seller: renderSeller,
+    subscribe: renderSubscribe,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
   app.innerHTML = shell(view());
@@ -569,6 +621,7 @@ function render() {
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
+  if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
 }
 
 function rememberFiles(fileList) {
@@ -632,7 +685,7 @@ async function runSearch(text) {
       } else if (event.type === "status") {
         state.searchState = event.state;
         state.partial = true;
-        state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور في حراج…";
+        state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
       } else if (event.type === "results") {
         state.results = event.results || [];
         state.partial = true;
@@ -768,6 +821,166 @@ async function loadSeller(token, silent = false) {
   }
 }
 
+let moyasarScriptPromise = null;
+function loadMoyasarSdk() {
+  if (moyasarScriptPromise) return moyasarScriptPromise;
+  moyasarScriptPromise = new Promise((resolve, reject) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.css";
+    document.head.appendChild(css);
+    const script = document.createElement("script");
+    script.src = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.js";
+    script.onload = () => resolve(window.Moyasar);
+    script.onerror = () => {
+      // Don't cache a rejected promise: a transient CDN hiccup would
+      // otherwise fail every future attempt for the rest of the session,
+      // even after the user hits "retry".
+      moyasarScriptPromise = null;
+      reject(new Error("moyasar-sdk-failed"));
+    };
+    document.head.appendChild(script);
+  });
+  return moyasarScriptPromise;
+}
+
+async function loadSubscribe() {
+  await ensureAuth();
+  state.view = "subscribe";
+  state.subError = "";
+  state.subActivePlan = "";
+  state.subMountedPlan = "";
+  state.subMountFailed = false;
+  render();
+  try {
+    const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
+    state.subPlans = plans.plans || [];
+    state.subStatus = me;
+    if (state.subPlans.length === 1) state.subActivePlan = state.subPlans[0].code;
+  } catch (_error) {
+    state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
+  }
+  render();
+}
+
+async function handleSubscribeCallback() {
+  // mada/3DS cards leave the app entirely and Moyasar redirects the whole
+  // page back to callback_url (?id=<moyasar_payment_id>...) instead of
+  // firing Moyasar.js's on_completed - without this, that flow silently
+  // never verifies and the user lands looking subscribed to nothing.
+  //
+  // This deliberately does NOT reuse loadSubscribe(): that sets
+  // subActivePlan for a single-plan catalog, and render()'s auto-mount hook
+  // would then start a *fresh* checkout concurrently with the verify call
+  // below, racing over the same localStorage pending-payment entry.
+  const params = new URLSearchParams(location.search);
+  const moyasarPaymentId = params.get("id") || params.get("payment_id");
+  let pending = null;
+  try {
+    pending = JSON.parse(localStorage.getItem("farq.pendingPayment") || "null");
+  } catch (_error) {
+    pending = null;
+  }
+  history.replaceState({}, "", "/subscribe");
+
+  await ensureAuth();
+  state.view = "subscribe";
+  state.subError = "";
+  state.subActivePlan = "";
+  state.subMountedPlan = "";
+  state.subMountFailed = false;
+  render();
+
+  try {
+    const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
+    state.subPlans = plans.plans || [];
+    state.subStatus = me;
+  } catch (_error) {
+    state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
+  }
+
+  if (moyasarPaymentId && pending?.payment_id) {
+    try {
+      const result = await api("/v1/subscriptions/verify", {
+        method: "POST",
+        json: { payment_id: pending.payment_id, moyasar_payment_id: moyasarPaymentId },
+      });
+      localStorage.removeItem("farq.pendingPayment");
+      state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
+      state.subError = result.activated ? "" : "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك.";
+    } catch (_error) {
+      state.subError = "ما قدرنا نتحقق من الدفع. جرّب مرة ثانية من صفحة الاشتراك.";
+    }
+  }
+
+  // Only auto-select/auto-mount the single plan when this load never
+  // attempted a verification (someone just landed on /subscribe/callback
+  // directly). When a verify was attempted, auto-mounting here would
+  // immediately overwrite the success/failure message above with a fresh
+  // checkout attempt - leave the plan list showing an explicit "try again"
+  // button instead.
+  const verifyAttempted = Boolean(moyasarPaymentId && pending?.payment_id);
+  if (!verifyAttempted && state.subStatus?.status !== "active" && state.subPlans.length === 1) {
+    state.subActivePlan = state.subPlans[0].code;
+  }
+  render();
+}
+
+async function mountPayment(planCode) {
+  const plan = state.subPlans.find((item) => item.code === planCode);
+  if (!plan || state.subMountedPlan === planCode) return;
+  state.subMountedPlan = planCode;
+  state.subBusy = true;
+  state.subError = "";
+  render();
+  try {
+    const checkout = await api("/v1/subscriptions/checkout", { method: "POST", json: { plan: plan.code } });
+    // mada/3DS cards redirect the whole page away and back to callback_url
+    // instead of firing on_completed - stash our payment_id so the page
+    // that reloads at /subscribe/callback can still verify it.
+    localStorage.setItem("farq.pendingPayment", JSON.stringify({ payment_id: checkout.payment_id, plan: plan.code }));
+    await loadMoyasarSdk();
+    state.subBusy = false;
+    render();
+    const formId = `moyasar-form-${plan.code}`;
+    const mount = document.getElementById(formId);
+    if (!mount || !window.Moyasar) throw new Error("moyasar-unavailable");
+    const methods = ["creditcard"];
+    if (window.ApplePaySession && ApplePaySession.canMakePayments && ApplePaySession.canMakePayments()) methods.push("applepay");
+    window.Moyasar.init({
+      element: `#${formId}`,
+      amount: checkout.amount,
+      currency: checkout.currency,
+      description: `${plan.name_ar} - فرق تسعير`,
+      publishable_api_key: checkout.publishable_key,
+      callback_url: checkout.callback_url,
+      metadata: checkout.metadata,
+      methods,
+      apple_pay: { label: "فرق تسعير", country: "SA" },
+      language: "ar",
+      on_completed: async (payment) => {
+        try {
+          const result = await api("/v1/subscriptions/verify", {
+            method: "POST",
+            json: { payment_id: checkout.payment_id, moyasar_payment_id: payment.id },
+          });
+          localStorage.removeItem("farq.pendingPayment");
+          state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
+          state.subError = "";
+        } catch (_error) {
+          state.subError = "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك. جرّب مرة ثانية.";
+        }
+        render();
+      },
+    });
+  } catch (_error) {
+    state.subMountFailed = true;
+    state.subBusy = false;
+    state.subError = "الدفع غير متاح حالياً. حاول لاحقاً.";
+    render();
+  }
+}
+
 document.addEventListener("submit", (event) => {
   const form = event.target;
   if (form.id === "composer" || form.id === "refine") {
@@ -871,6 +1084,19 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "idea") runSearch(target.dataset.query);
   else if (action === "requests") loadRequests().catch(() => {});
+  else if (action === "subscribe") loadSubscribe().catch(() => {});
+  else if (action === "choose-plan") {
+    state.subActivePlan = target.dataset.plan;
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
+    state.subError = "";
+    render();
+  } else if (action === "retry-payment") {
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
+    state.subError = "";
+    render();
+  }
   else if (action === "remove-file") {
     const removed = state.files.splice(Number(target.dataset.index), 1)[0];
     if (removed?.preview) URL.revokeObjectURL(removed.preview);
@@ -929,6 +1155,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
+else if (subscribeCallback) handleSubscribeCallback().catch(() => render());
 else render();
 
 api("/v1/cities", { skipAuth: true })

@@ -675,3 +675,50 @@ h1 {
 @media (min-width: 900px) {
   .shell { box-shadow: 0 0 0 1px var(--line); min-height: calc(100dvh - 48px); margin-top: 24px; border-radius: 24px; overflow: clip; }
 }
+
+/* -- Subscription -- */
+.sub-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--subtle);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--secondary);
+}
+.sub-banner.active { background: rgba(131, 241, 177, 0.18); border-color: var(--accent); color: var(--brand); }
+.sub-banner.warn { background: rgba(220, 110, 65, 0.1); border-color: var(--warn); color: var(--warn); }
+
+.plan-card {
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.plan-card.is-placeholder { border-style: dashed; }
+.plan-name { font-size: 18px; font-weight: 800; margin: 0 0 4px; }
+.plan-note { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+.plan-price { display: flex; align-items: baseline; gap: 6px; margin-bottom: 14px; }
+.plan-price strong { font-size: 32px; font-weight: 900; color: var(--brand); }
+.plan-price span { color: var(--secondary); font-size: 13px; font-weight: 600; }
+.plan-features { list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 10px; }
+.plan-features li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+.plan-features li::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--brand); flex: none; }
+
+.pay-actions { display: flex; flex-direction: column; gap: 10px; }
+.pay-error { color: var(--warn); font-size: 13px; font-weight: 700; text-align: center; margin-top: 8px; }
+#moyasar-form { margin-top: 4px; }
+
+apple-pay-button {
+  --apple-pay-button-width: 100%;
+  --apple-pay-button-height: 52px;
+  --apple-pay-button-border-radius: 14px;
+  --apple-pay-button-padding: 0;
+  display: block;
+}
