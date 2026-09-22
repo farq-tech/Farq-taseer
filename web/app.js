@@ -742,7 +742,8 @@ function snip(result) {
   return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
 }
 
-// M05_SearchResults result card — node 27:180.
+// M05_SearchResults result card — node 27:180. The tick sits on the left, the supplier's
+// mark on the right, and a bar down the left edge carries the saving's colour.
 let newCardsInBatch = 0;
 function renderCard(result) {
   const key = resultKey(result);
@@ -755,30 +756,33 @@ function renderCard(result) {
   const price = money(result.ad?.price_amount);
   const where = cityLabel(result.ad?.city || seller.city || "");
   const blurb = snip(result);
-  // How far this price sits below the dearest result on screen — the «وفّر» ring.
   const amounts = state.results.map((item) => item.ad?.price_amount).filter((value) => value != null);
   const top = amounts.length > 1 ? Math.max(...amounts) : null;
+  const low = amounts.length ? Math.min(...amounts) : null;
   const mine = result.ad?.price_amount;
   const saving = top && mine != null && top > 0 ? Math.round(((top - mine) / top) * 100) : null;
+  const cheapest = low != null && mine === low && amounts.length > 1;
+  const bar = saving == null ? "var(--fq-line)" : saving >= 55 ? "var(--fq-success)" : saving >= 30 ? "#4bb58f" : "var(--fq-warning)";
   const photo = result.ad && imageSources(result.ad).length;
   const avatar = photo
     ? `<span class="fq-av" style="width:40px;height:40px;border-radius:20px;overflow:hidden"><img alt="" data-src="${esc(imageSources(result.ad).join("|"))}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>`
     : `<span class="fq-av" style="width:40px;height:40px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:16px">${initial(name)}</span>`;
-  return `<article class="fq-card${animated ? " fq-in" : ""}"${animated ? ` style="animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ""}>
+  return `<article class="fq-card fq-result${animated ? " fq-in" : ""}"${animated ? ` style="--bar:${bar};animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ` style="--bar:${bar}"`}>
     <div class="fq-row" style="align-items:flex-start">
       <button class="fq-tick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? ic("check", 14) : ""}</button>
       <button type="button" data-action="open" data-key="${esc(key)}" style="flex:1;min-width:0;display:flex;gap:12px;align-items:center;background:none;border:0;padding:0;font:inherit;text-align:start">
-        ${avatar}
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-          <strong style="font-size:17px;font-weight:700;color:var(--fq-text);display:flex;align-items:center;gap:6px">${ic("award", 14)}<bdi>${esc(name)}</bdi></strong>
+          <strong style="font-size:17px;font-weight:700;color:var(--fq-text);display:flex;align-items:center;gap:6px"><bdi>${esc(name)}</bdi>${ic("award", 14)}</strong>
           ${where ? `<span class="fq-meta">${esc(where)}</span>` : ""}
         </span>
+        ${avatar}
       </button>
     </div>
     ${blurb ? `<p class="fq-small" style="margin:0"><bdi>${esc(blurb)}</bdi></p>` : ""}
     <div class="fq-row">${price
       ? `<span class="fq-price" style="font-size:24px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>`
       : `<span class="fq-meta">تواصل للحصول على سعر</span>`}
+      ${cheapest ? `<span class="fq-best">أقل سعر</span>` : ""}
       ${saving != null ? scoreRing(saving, "وفّر") : ""}</div>
   </article>`;
 }
@@ -794,9 +798,11 @@ function renderFlow() {
   return `${fqHead({ title: "نتائج البحث", back: "back-understand" })}
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
-    ${tabs.length > 1 ? `<div class="fq-pills"><button class="fq-pill on" type="button">الكل</button>${tabs.map((name) => `<button class="fq-pill" type="button" data-action="filter-need" data-name="${esc(name)}">${esc(name)}</button>`).join("")}</div>` : ""}
-    ${asking || !state.results.length ? "" : `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
-      <span>${formatCount(state.results.length)} مورد تم العثور عليهم${state.partial ? " • البحث مستمر" : ""}</span></div>`}
+    ${asking || !state.results.length ? "" : `<div class="fq-filters-row">
+      <div class="fq-live"><span class="fq-pulse" aria-hidden="true"></span>
+        <span>${formatCount(state.results.length)} مورد تم العثور عليهم${state.partial ? " • البحث مستمر" : ""}</span></div>
+      ${tabs.length > 1 ? `<button class="fq-fpill all on" type="button">الكل</button>${tabs.map((name) => `<button class="fq-fpill" type="button" data-action="filter-need" data-name="${esc(name)}">${esc(name)}</button>`).join("")}` : ""}
+    </div>`}
     ${asking ? "" : `<p class="fq-small" data-count="${state.results.length}" style="font-weight:600">تم العثور على ${formatCount(state.shownCount || state.results.length)} نتيجة</p>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
     ${showEmpty ? `<div class="fq-body center" style="padding:24px 0"><div class="fq-blob warn">${ic("search", 48)}</div><h2 class="fq-h2">${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="fq-link" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
@@ -2077,14 +2083,14 @@ function bindCounter(root) {
   if (from === target) return;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     state.shownCount = target;
-    node.textContent = `${formatCount(target)} جهة مطابقة`;
+    node.textContent = `تم العثور على ${formatCount(target)} نتيجة`;
     return;
   }
   const started = performance.now();
   const step = (now) => {
     const ratio = Math.min(1, (now - started) / 200);
     const value = Math.round(from + (target - from) * ratio);
-    node.textContent = `${formatCount(value)} جهة مطابقة`;
+    node.textContent = `تم العثور على ${formatCount(value)} نتيجة`;
     state.shownCount = value;
     if (ratio < 1) requestAnimationFrame(step);
   };

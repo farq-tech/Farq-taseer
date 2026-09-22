@@ -1799,3 +1799,15 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-checkbadge { width: 24px; height: 24px; border-radius: 10px; background: #ddf4e8; color: var(--fq-deep-green); display: grid; place-items: center; border: 0; padding: 0; }
 .fq-checkbadge.off { background: transparent; border: 2px solid var(--fq-line); color: transparent; }
 .fq-ibtn.plain { background: none; width: 30px; height: 30px; border-radius: 10px; }
+/* M05: the filter row holds the live pill and the category chips together */
+.fq-filters-row { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.fq-filters-row::-webkit-scrollbar { display: none; }
+.fq-filters-row .fq-live { flex: none; max-width: 140px; }
+.fq-filters-row .fq-fpill { align-self: center; }
+/* the bar down a result's left edge carries the colour of what it saves */
+.fq-result { position: relative; overflow: hidden; }
+.fq-result::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--bar, var(--fq-line)); }
+/* M05: the tick on the left, the supplier's mark on the right, the name beside it */
+.fq-result > .fq-row:first-child { direction: ltr; }
+.fq-result > .fq-row:first-child > button[data-action="open"] { direction: ltr; }
+.fq-result > .fq-row:first-child > button[data-action="open"] > span:first-child { direction: rtl; text-align: right; }
