@@ -25,7 +25,9 @@ from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 from farq.store import (
+    SINGLE_SELLER,
     _delivery_state,
+    media_entry,
     invite_text,
     mark_cheapest,
     priced_offer,
@@ -63,14 +65,14 @@ class PgStore:
 
     # -- auth -----------------------------------------------------------------
 
-    def register(self, email: str, password: str) -> str:
+    def register(self, email: str, password: str, name: str | None = None) -> str:
         user_id = uuid4().hex
         salt = secrets.token_hex(16)
         with self._pool.connection() as conn:
             try:
                 conn.execute(
-                    "insert into users (id, email, password_hash, salt, created_at) values (%s, %s, %s, %s, %s)",
-                    (user_id, email.lower().strip(), _hash_password(password, salt), salt, _now()),
+                    "insert into users (id, email, password_hash, salt, name, created_at) values (%s, %s, %s, %s, %s, %s)",
+                    (user_id, email.lower().strip(), _hash_password(password, salt), salt, name, _now()),
                 )
             except psycopg.errors.UniqueViolation as exc:
                 raise ValueError("email already registered") from exc
@@ -99,6 +101,17 @@ class PgStore:
         with self._pool.connection() as conn:
             row = conn.execute("select user_id from sessions where token = %s", (token,)).fetchone()
             return None if row is None else row["user_id"]
+
+    def account_for_token(self, token: str) -> dict | None:
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select u.id, u.email, u.name from sessions s join users u on u.id = s.user_id where s.token = %s", (token,)
+            ).fetchone()
+        return None if row is None else dict(row)
+
+    def logout(self, token: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("delete from sessions where token = %s", (token,))
 
     # -- search journeys --------------------------------------------------------
 
@@ -204,13 +217,14 @@ class PgStore:
         haraj_conversation_id: str | None = None,
         haraj_message_id: str | None = None,
         haraj_text: str | None = None,
+        media: list[dict] | None = None,
     ) -> Message:
         message_id = uuid4().hex
         created = created_at or _now()
         conn.execute(
             "insert into messages (id, request_id, sender_role, sender_user_id, seller_id, need, reply_to, scope,"
-            " haraj_conversation_id, haraj_message_id, haraj_text, body, offer_amount, offer_currency, attachment_ids, created_at)"
-            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " haraj_conversation_id, haraj_message_id, haraj_text, body, offer_amount, offer_currency, attachment_ids, media, created_at)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 message_id,
                 request_id,
@@ -227,6 +241,7 @@ class PgStore:
                 None if offer is None else offer.amount,
                 None if offer is None else offer.currency,
                 Jsonb([]),
+                Jsonb(media or []),
                 created,
             ),
         )
@@ -248,6 +263,7 @@ class PgStore:
             body=body,
             offer=offer,
             created_at=created,
+            media=media or [],
         )
 
     def add_message(
@@ -322,6 +338,7 @@ class PgStore:
                     created_at=_iso(item["created_at"]),
                     delivery_state=_delivery_state(routed) if routed else None,
                     deliveries=routed,
+                    media=item["media"] or [],
                 )
             )
         return messages
@@ -471,11 +488,16 @@ class PgStore:
         reply_to: str | None,
         owner_user_id: str | None = None,
         haraj_text: str | None = None,
+        seller_ids=None,
+        media: list[dict] | None = None,
     ) -> Message:
         recipients = conn.execute("select * from request_recipients where request_id = %s order by id", (request_id,)).fetchall()
         default_need = conn.execute("select need from requests where id = %s", (request_id,)).fetchone()["need"]
-        targets, need, scope = route_targets(recipients, default_need, need, seller_id)
-        message = self._insert_message(conn, request_id, "user", owner_user_id, body, None, seller_id=seller_id, need=need, reply_to=reply_to, scope=scope, haraj_text=haraj_text)
+        targets, need, scope = route_targets(recipients, default_need, need, seller_id, seller_ids)
+        single = targets[0]["seller_id"] if scope == SINGLE_SELLER else None
+        message = self._insert_message(
+            conn, request_id, "user", owner_user_id, body, None, seller_id=single, need=need, reply_to=reply_to, scope=scope, haraj_text=haraj_text, media=media
+        )
         created = _now()
         for row in targets:
             item_need = row["need"] or default_need or ""
@@ -497,11 +519,24 @@ class PgStore:
         need: str | None = None,
         seller_id: str | None = None,
         reply_to: str | None = None,
+        seller_ids=None,
+        media_ids=None,
     ) -> Message:
-        """Everyone on the item by default; one seller when replying to them or when picked explicitly."""
+        """Everyone on the item by default; the suppliers picked; or one when replying to him."""
         with self._pool.connection() as conn:
             if conn.execute("select 1 from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone() is None:
                 raise LookupError("request not found")
+            media = []
+            for file_id in media_ids or []:
+                row = conn.execute(
+                    "select id, content_type, filename, size_bytes, width, height from files where id = %s and owner_user_id = %s and request_id = %s",
+                    (file_id, owner_user_id, request_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("unknown file")
+                media.append(media_entry(row))
+            if not body.strip() and not media:
+                raise ValueError("message is required")
             if reply_to:
                 quoted = conn.execute("select * from messages where id = %s and request_id = %s", (reply_to, request_id)).fetchone()
                 if quoted is None:
@@ -509,8 +544,26 @@ class PgStore:
                 if quoted["seller_id"]:
                     seller_id = quoted["seller_id"]
                 need = need or quoted["need"]
-            message = self._enqueue(conn, request_id, body, need, seller_id, reply_to, owner_user_id)
+                seller_ids = None
+            message = self._enqueue(conn, request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
             return next(item for item in self._messages(conn, request_id) if item.id == message.id)
+
+    def save_file(self, owner_user_id: str, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
+        file_id = uuid4().hex
+        name = Path(filename).name or "file"
+        with self._pool.connection() as conn:
+            if conn.execute("select 1 from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone() is None:
+                raise LookupError("request not found")
+            conn.execute(
+                "insert into files (id, owner_user_id, request_id, content_type, filename, size_bytes, width, height, data) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (file_id, owner_user_id, request_id, content_type, name, len(data), width, height, data),
+            )
+        return media_entry({"id": file_id, "content_type": content_type, "filename": name, "size_bytes": len(data), "width": width, "height": height})
+
+    def get_file(self, file_id: str) -> dict | None:
+        with self._pool.connection() as conn:
+            row = conn.execute("select * from files where id = %s", (file_id,)).fetchone()
+        return None if row is None else {**dict(row), "data": bytes(row["data"])}
 
     def claim_deliveries(self, limit: int = 50) -> list[dict]:
         # SKIP LOCKED: two instances never claim the same delivery.
@@ -529,7 +582,7 @@ class PgStore:
             for row in sorted(rows, key=lambda item: item["created_at"]):
                 detail = conn.execute(
                     """
-                    select coalesce(m.haraj_text, m.body) as body, t.ad_id, t.haraj_conversation_id,
+                    select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id,
                       (select r.reply_token from request_recipients r where r.request_id = %s and r.seller_id = %s
                        order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token
                     from messages m join haraj_threads t on t.request_id = %s and t.seller_id = %s and t.need = %s
@@ -660,6 +713,7 @@ class PgStore:
                 created_at=inbound.sent_at,
                 haraj_conversation_id=thread["haraj_conversation_id"],
                 haraj_message_id=inbound.haraj_message_id,
+                media=list(inbound.media),
             )
             owner = conn.execute("select owner_user_id from requests where id = %s", (request_id,)).fetchone()
             conn.execute(

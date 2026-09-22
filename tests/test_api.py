@@ -11,6 +11,17 @@ from farq.store import Store
 from farq.worker import poll_once
 
 
+_account = iter(range(1, 1_000_000))
+
+
+def signed_in(api: TestClient) -> dict:
+    """A registered Taseer account; every customer signs in before using the app."""
+    email = f"customer-{next(_account)}@example.com"
+    response = api.post("/v1/auth/register", json={"email": email, "password": "secret-pass", "name": "عميل تجريبي"})
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['token']}"}
+
+
 def client(tmp_path: Path) -> TestClient:
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
     corpus = MemoryCorpus.from_json(default_sample_path())
@@ -20,7 +31,7 @@ def client(tmp_path: Path) -> TestClient:
 
 def test_request_message_and_attachment_round_trip(tmp_path: Path):
     api = client(tmp_path)
-    registered = api.post("/v1/auth/register", json={"email": "user@example.com", "password": "secret-pass"})
+    registered = api.post("/v1/auth/register", json={"email": "user@example.com", "password": "secret-pass", "name": "عميل"})
     assert registered.status_code == 200
     token = registered.json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -53,10 +64,13 @@ def test_request_message_and_attachment_round_trip(tmp_path: Path):
     assert message.status_code == 200
     fetched = api.get(f"/v1/requests/{request_id}", headers=headers)
     body = fetched.json()
-    assert body["attachments"]
+    # The photo went out as its own message to the supplier, stored in the database.
+    photo = next(item for item in body["messages"] if item["media"])
+    assert photo["media"][0]["type"] == "image/jpeg" and photo["delivery_state"] == "queued"
+    assert api.get(photo["media"][0]["url"]).content == b"fake-image"
     quote = body["messages"][0]
     assert quote["body"].startswith("طلب عرض سعر")
-    assert body["messages"][1]["body"] == "كم السعر؟"
+    assert body["messages"][-1]["body"] == "كم السعر؟"
     assert {item["delivery_state"] for item in body["messages"]} == {"queued"}
     assert body["recipients"][0]["send_status"] == "queued"
     assert "rfq" not in fetched.text.lower()
@@ -64,7 +78,7 @@ def test_request_message_and_attachment_round_trip(tmp_path: Path):
 
 def test_empty_recipient_is_rejected(tmp_path: Path):
     api = client(tmp_path)
-    token = api.post("/v1/auth/register", json={"email": "a@example.com", "password": "secret-pass"}).json()["token"]
+    token = api.post("/v1/auth/register", json={"email": "a@example.com", "password": "secret-pass", "name": "عميل"}).json()["token"]
     response = api.post(
         "/v1/requests",
         headers={"Authorization": f"Bearer {token}"},
@@ -75,7 +89,7 @@ def test_empty_recipient_is_rejected(tmp_path: Path):
 
 def test_search_trace_is_stored(tmp_path: Path):
     api = client(tmp_path)
-    token = api.post("/v1/auth/register", json={"email": "b@example.com", "password": "secret-pass"}).json()["token"]
+    token = api.post("/v1/auth/register", json={"email": "b@example.com", "password": "secret-pass", "name": "عميل"}).json()["token"]
     search = api.post("/v1/search", json={"query": "أبي نجار"})
     assert search.status_code == 200
     assert search.json()["state"] == "CLARIFICATION_REQUIRED"
@@ -87,9 +101,7 @@ def test_search_trace_is_stored(tmp_path: Path):
 
 def test_guest_request_seller_price_and_activity(tmp_path: Path):
     api = client(tmp_path)
-    guest = api.post("/v1/auth/guest")
-    assert guest.status_code == 200
-    headers = {"Authorization": f"Bearer {guest.json()['token']}"}
+    headers = signed_in(api)
     created = api.post(
         "/v1/requests",
         headers=headers,
@@ -114,10 +126,10 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
         files={"file": ("site.jpg", b"image-bytes", "image/jpeg")},
     )
     assert uploaded.status_code == 200
-    attachment_id = uploaded.json()["id"]
-    downloaded = api.get(f"/v1/requests/{request_id}/attachments/{attachment_id}", headers=headers)
+    downloaded = api.get(uploaded.json()["url"])
     assert downloaded.status_code == 200
     assert downloaded.content == b"image-bytes"
+    assert api.post(f"/v1/requests/{request_id}/attachments", headers=headers, files={"file": ("x.exe", b"MZ", "application/x-msdownload")}).status_code == 415
     waiting = api.get("/v1/requests", headers=headers).json()["requests"][0]
     assert waiting["replied_count"] == 0
     assert waiting["waiting_count"] == 2
@@ -139,7 +151,7 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
     assert thread["messages"][0]["body"].startswith("طلب عرض سعر")
     assert thread["messages"][0]["sender_role"] == "user"
     assert "الرياض" in thread["messages"][0]["body"]
-    offer = thread["messages"][1]
+    offer = next(item for item in thread["messages"] if item["sender_role"] == "seller")
     assert offer["offer"]["amount"] == 2800
     assert offer["sender_role"] == "seller"
     seller = api.get(f"/v1/seller/{token}")
@@ -165,8 +177,7 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
 
 def test_quote_requires_a_city(tmp_path: Path):
     api = client(tmp_path)
-    token = api.post("/v1/auth/guest").json()["token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = signed_in(api)
     missing = api.post(
         "/v1/requests",
         headers=headers,
@@ -184,7 +195,7 @@ def test_quote_requires_a_city(tmp_path: Path):
 
 def test_unique_reply_tokens_and_delivery_total(tmp_path: Path):
     api = client(tmp_path)
-    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    headers = signed_in(api)
     created = api.post(
         "/v1/requests",
         headers=headers,
@@ -274,10 +285,11 @@ class FakeHaraj:
         self.inbox: dict[str, list[InboundMessage]] = {}
         self.seq = 0
 
-    def send(self, *, conversation_id, seller_id, ad_id, body):
+    def send(self, *, conversation_id, seller_id, ad_id, body, attachments=None):
         conversation = conversation_id or f"p2p1_{seller_id}"
         self.seq += 1
         self.sent.append((conversation, seller_id, body))
+        self.attachments = getattr(self, "attachments", []) + [(seller_id, item["content_type"], item["data"]) for item in attachments or []]
         return SentMessage(haraj_conversation_id=conversation, haraj_message_id=f"{conversation}:{self.seq}", seq=self.seq)
 
     def fetch(self, *, conversation_id, seller_id, after_seq):
@@ -301,7 +313,7 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     run = lambda: poll_once(store, haraj, budget_seconds=600, sleep=clock.sleep, clock=clock)
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
     api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), chat=haraj))
-    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    headers = signed_in(api)
     created = api.post(
         "/v1/requests",
         headers=headers,
@@ -376,7 +388,7 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
 def test_not_connected_keeps_messages_queued(tmp_path: Path):
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
     api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
-    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    headers = signed_in(api)
     created = api.post(
         "/v1/requests",
         headers=headers,
@@ -413,7 +425,7 @@ def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(pywebpush, "webpush", lambda **kwargs: sent.append(kwargs))
     api = client(tmp_path)
-    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    headers = signed_in(api)
     created = api.post(
         "/v1/requests",
         headers=headers,
@@ -435,3 +447,60 @@ def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):
 
     api.get(f"/v1/requests/{created['id']}", headers=headers)  # opening the chat reads it
     assert api.get("/v1/requests", headers=headers).json()["requests"][0]["unread_count"] == 0
+
+
+def test_every_customer_signs_in_and_sees_only_their_requests(tmp_path: Path):
+    api = client(tmp_path)
+    assert api.post("/v1/auth/guest").status_code in (404, 405)
+    assert api.post("/v1/auth/register", json={"email": "bad", "password": "secret-pass", "name": "سعد"}).status_code == 422
+    assert api.post("/v1/auth/register", json={"email": "s@example.com", "password": "short", "name": "سعد"}).status_code == 422
+    assert api.post("/v1/auth/register", json={"email": "s@example.com", "password": "secret-pass"}).status_code == 422
+    first = api.post("/v1/auth/register", json={"email": "S@Example.com", "password": "secret-pass", "name": "سعد"})
+    assert first.status_code == 200 and first.json()["name"] == "سعد"
+    assert api.post("/v1/auth/register", json={"email": "s@example.com", "password": "secret-pass", "name": "سعد"}).status_code == 409
+    assert api.post("/v1/auth/login", json={"email": "s@example.com", "password": "wrong-pass"}).status_code == 401
+    login = api.post("/v1/auth/login", json={"email": "s@example.com", "password": "secret-pass"}).json()
+    saad = {"Authorization": f"Bearer {login['token']}"}
+    assert api.get("/v1/auth/me", headers=saad).json() == {"email": "s@example.com", "name": "سعد"}
+
+    other = signed_in(api)
+    body = {"original_text": "سباك", "need": "سباك", "city": "الرياض", "recipients": [{"seller_id": "11", "seller_name": "محمد"}]}
+    mine = api.post("/v1/requests", headers=saad, json=body).json()
+    assert [item["id"] for item in api.get("/v1/requests", headers=saad).json()["requests"]] == [mine["id"]]
+    assert api.get("/v1/requests", headers=other).json()["requests"] == []
+    assert api.get(f"/v1/requests/{mine['id']}", headers=other).status_code == 404
+    assert api.post("/v1/requests", json=body).status_code == 401
+
+    api.post("/v1/auth/logout", headers=saad)
+    assert api.get("/v1/requests", headers=saad).status_code == 401
+
+
+def test_picked_suppliers_only_and_photos_reach_haraj(tmp_path: Path):
+    haraj = FakeHaraj()
+    clock = Clock()
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), chat=haraj))
+    headers = signed_in(api)
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={"original_text": "سباك", "need": "سباك", "city": "الرياض", "recipients": [
+            {"seller_id": "11", "seller_name": "محمد"}, {"seller_id": "12", "seller_name": "خالد"}, {"seller_id": "13", "seller_name": "سعد"}]},
+    ).json()
+    url = f"/v1/requests/{created['id']}/messages"
+    run = lambda: poll_once(store, haraj, budget_seconds=600, sleep=clock.sleep, clock=clock)
+    run()
+    haraj.sent.clear()
+
+    photo = api.post(f"/v1/requests/{created['id']}/files", headers=headers, files={"file": ("p.jpg", b"jpeg", "image/jpeg")}, data={"width": "4", "height": "3"}).json()
+    assert photo["type"] == "image/jpeg" and photo["width"] == 4
+    two = api.post(url, headers=headers, json={"body": "مثل هذا", "seller_ids": ["11", "13"], "media_ids": [photo["file_id"]]}).json()
+    everyone = api.post(url, headers=headers, json={"body": "للكل", "seller_ids": ["11", "12", "13"]}).json()
+    assert (two["scope"], two["seller_id"], two["media"][0]["url"]) == ("some_sellers", None, photo["url"])
+    assert everyone["scope"] == "all_sellers"
+    assert api.post(url, headers=headers, json={"body": "x", "seller_ids": ["99"]}).status_code == 422
+    assert api.post(url, headers=headers, json={"body": "", "seller_ids": ["11"]}).status_code == 422
+    clock.sleep(60)
+    run()
+    assert [(seller, body) for _c, seller, body in haraj.sent] == [("11", "مثل هذا"), ("13", "مثل هذا"), ("11", "للكل"), ("12", "للكل"), ("13", "للكل")]
+    assert haraj.attachments == [("11", "image/jpeg", b"jpeg"), ("13", "image/jpeg", b"jpeg")]

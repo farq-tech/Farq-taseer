@@ -996,3 +996,63 @@ button, .chat-row, .request-card, .vendor-body, .tab { -webkit-tap-highlight-col
 @media (prefers-reduced-motion: reduce) {
   .view-enter, .skeleton, html.is-busy body::before { animation: none; }
 }
+
+/* Sign in */
+.page.auth { max-width: 440px; margin: 0 auto; padding-top: 28px; }
+.auth-mark { display: grid; place-items: center; margin-bottom: 14px; }
+.auth-mark img { border-radius: 18px; box-shadow: var(--shadow-card); }
+.page.auth h1 { text-align: center; margin: 0 0 6px; }
+.page.auth .lede { text-align: center; margin: 0 0 22px; }
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.field-line { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--secondary); }
+.field-line input {
+  min-height: 52px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-control);
+  background: var(--white); color: var(--ink); font-size: 16px;
+}
+.field-line input:focus { outline: 2px solid var(--mint-500); outline-offset: 1px; border-color: transparent; }
+.field-line input[dir="ltr"] { text-align: left; }
+.auth-switch { text-align: center; color: var(--secondary); font-size: 14px; margin-top: 18px; }
+.auth-switch .text-btn { color: var(--brand-700); font-weight: 800; }
+.account-chip {
+  border: 1px solid var(--line); background: var(--white); border-radius: var(--radius-full);
+  padding: 6px 12px; font: inherit; font-size: 12.5px; color: var(--secondary); cursor: pointer; white-space: nowrap;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Who the message goes to */
+.wa-recipients {
+  display: flex; align-items: center; gap: 6px; overflow-x: auto; margin: 0 8px; padding: 8px 10px;
+  background: var(--white); border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0;
+  scrollbar-width: none;
+}
+.wa-recipients::-webkit-scrollbar { display: none; }
+.wa-recipients-label { flex: none; font-size: 12.5px; font-weight: 800; color: var(--secondary); }
+.wa-recipient {
+  flex: none; padding: 6px 12px; border-radius: var(--radius-full); font: inherit; font-size: 13px; cursor: pointer;
+  border: 1.5px solid color-mix(in srgb, var(--seller) 40%, transparent); background: var(--white); color: var(--secondary);
+  transition: background var(--duration-fast), color var(--duration-fast), transform var(--duration-fast);
+}
+.wa-recipient.is-on { background: color-mix(in srgb, var(--seller) 14%, var(--white)); border-color: var(--seller); color: var(--seller); font-weight: 800; }
+.wa-recipient:active { transform: scale(0.96); }
+
+/* Files before sending */
+.wa-files { display: flex; gap: 8px; overflow-x: auto; margin: 0 8px; padding: 8px 10px; background: var(--white); border: 1px solid var(--line); border-bottom: 0; }
+.wa-file-chip { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; font-size: 11px; color: var(--secondary); }
+.wa-file-chip img, .wa-file-chip .wa-file-icon { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; }
+.wa-file-chip button { position: absolute; top: -4px; inset-inline-end: 0; width: 22px; height: 22px; border: 0; border-radius: var(--radius-full); background: var(--brand-900); color: var(--white); font-size: 11px; cursor: pointer; }
+.wa-file-icon { display: grid; place-items: center; background: var(--coral-600); color: var(--white); font-weight: 800; font-size: 12px; border-radius: 8px; }
+
+/* Photos and files in the conversation */
+.wa-photo { display: block; margin: 2px 0 4px; border-radius: 10px; overflow: hidden; background: var(--neutral-200); }
+.wa-photo img { display: block; width: 100%; max-width: 260px; max-height: 320px; object-fit: cover; }
+.wa-bubble.media-only { padding: 4px 4px 20px; }
+.wa-doc { display: flex; align-items: center; gap: 10px; margin: 2px 0 4px; padding: 8px; border-radius: 10px; background: rgba(11, 20, 26, 0.05); color: inherit; text-decoration: none; font-size: 13px; }
+.wa-doc .wa-file-icon { width: 36px; height: 44px; flex: none; }
+.wa-row.out .wa-doc { background: rgba(255, 255, 255, 0.1); }
+.wa-video, .wa-audio { display: block; max-width: 260px; width: 100%; margin: 2px 0 4px; border-radius: 10px; }
+.wa-send:disabled { opacity: 0.5; }
+.wa-field input:disabled { opacity: 0.6; }
+.wa-spinner { width: 20px; height: 20px; border: 2.5px solid color-mix(in srgb, var(--brand-900) 25%, transparent); border-top-color: var(--brand-900); border-radius: 50%; animation: spin 700ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.wa-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 8px 6px; padding: 8px 12px; border-radius: 12px; background: var(--feedback-danger-bg); color: var(--feedback-danger-fg); font-size: 13px; font-weight: 700; }
+.wa-notice button { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }

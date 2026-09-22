@@ -17,6 +17,9 @@ from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 
 ALL_SELLERS = "all_sellers"
 SINGLE_SELLER = "single_seller"
+SOME_SELLERS = "some_sellers"
+MEDIA_TYPES = {"image/jpeg", "application/pdf"}
+MAX_FILE_BYTES = 4 * 1024 * 1024
 
 
 def _now() -> str:
@@ -69,9 +72,25 @@ def _stamp(value) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
-def route_targets(recipients, default_need: str | None, need: str | None, seller_id: str | None):
-    """Who a customer message goes to: one seller, or every seller on the item. Returns (targets, need, scope)."""
+def route_targets(recipients, default_need: str | None, need: str | None, seller_id: str | None, seller_ids=None):
+    """Who a customer message goes to: the suppliers picked, one supplier, or every supplier on the item.
+    Returns (targets, need, scope)."""
     item_of = lambda row: row["need"] or default_need or ""
+    if seller_ids:
+        picked = list(dict.fromkeys(str(item) for item in seller_ids))
+        targets = []
+        for picked_id in picked:
+            match = [row for row in recipients if row["seller_id"] == picked_id and (need is None or item_of(row) == need)]
+            if not match:
+                raise ValueError("unknown seller")
+            targets.append(match[0])
+        item = item_of(targets[0])
+        if any(item_of(row) != item for row in targets):
+            raise ValueError("pick suppliers from one item")
+        on_item = {row["seller_id"] for row in recipients if item_of(row) == item}
+        if len(targets) == 1:
+            return targets, item or None, SINGLE_SELLER
+        return targets, item or None, ALL_SELLERS if {row["seller_id"] for row in targets} == on_item else SOME_SELLERS
     if seller_id is not None:
         targets = [row for row in recipients if row["seller_id"] == seller_id and (need is None or item_of(row) == need)]
         if not targets:
@@ -83,6 +102,19 @@ def route_targets(recipients, default_need: str | None, need: str | None, seller
     if not targets:
         raise ValueError("unknown item")
     return targets, need, ALL_SELLERS
+
+
+def media_entry(file_row) -> dict:
+    """What the conversation shows for a customer's file; the bytes stay in the files table."""
+    return {
+        "type": file_row["content_type"],
+        "file_id": file_row["id"],
+        "url": f"/v1/files/{file_row['id']}",
+        "name": file_row["filename"],
+        "size": file_row["size_bytes"],
+        "width": file_row["width"],
+        "height": file_row["height"],
+    }
 
 
 def mark_cheapest(offers: list[Offer]) -> list[Offer]:
@@ -323,6 +355,12 @@ class Store:
         self._ensure_column("messages", "haraj_message_id", "text")
         self._ensure_column("messages", "haraj_text", "text")
         self._ensure_column("requests", "customer_read_at", "text")
+        self._ensure_column("messages", "media_json", "text")
+        self._ensure_column("users", "name", "text")
+        self._connection.execute(
+            "create table if not exists files (id text primary key, owner_user_id text not null, request_id text, content_type text not null,"
+            " filename text not null, size_bytes integer not null, width integer, height integer, data blob not null, created_at text not null)"
+        )
         self._connection.execute(
             "create table if not exists push_subscriptions (endpoint text primary key, user_id text not null, p256dh text not null, auth text not null, created_at text not null)"
         )
@@ -426,13 +464,16 @@ class Store:
             self._connection.execute(f"alter table {table} add column {column} {declaration}")
             self._connection.commit()
 
-    def register(self, email: str, password: str) -> str:
+    def register(self, email: str, password: str, name: str | None = None) -> str:
         user_id = uuid4().hex
         salt = secrets.token_hex(16)
-        self._connection.execute(
-            "insert into users (id, email, password_hash, salt, created_at) values (?, ?, ?, ?, ?)",
-            (user_id, email.lower().strip(), _hash_password(password, salt), salt, _now()),
-        )
+        try:
+            self._connection.execute(
+                "insert into users (id, email, password_hash, salt, name, created_at) values (?, ?, ?, ?, ?, ?)",
+                (user_id, email.lower().strip(), _hash_password(password, salt), salt, name, _now()),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("email already registered") from exc
         self._connection.commit()
         return user_id
 
@@ -458,6 +499,16 @@ class Store:
     def user_for_token(self, token: str) -> str | None:
         row = self._connection.execute("select user_id from sessions where token = ?", (token,)).fetchone()
         return None if row is None else row["user_id"]
+
+    def account_for_token(self, token: str) -> dict | None:
+        row = self._connection.execute(
+            "select u.id, u.email, u.name from sessions s join users u on u.id = s.user_id where s.token = ?", (token,)
+        ).fetchone()
+        return None if row is None else dict(row)
+
+    def logout(self, token: str) -> None:
+        self._connection.execute("delete from sessions where token = ?", (token,))
+        self._connection.commit()
 
     def record_journey(self, trace_id: str, user_id: str | None, query: str, state: str, trace: dict) -> None:
         self._connection.execute(
@@ -656,6 +707,7 @@ class Store:
                     created_at=item["created_at"],
                     delivery_state=_delivery_state(routed) if routed else None,
                     deliveries=routed,
+                    media=json.loads(item["media_json"]) if item["media_json"] else [],
                 )
             )
         return messages
@@ -671,14 +723,19 @@ class Store:
         reply_to: str | None,
         owner_user_id: str | None = None,
         haraj_text: str | None = None,
+        seller_ids=None,
+        media: list[dict] | None = None,
     ) -> Message:
         recipients = self._connection.execute("select * from request_recipients where request_id = ?", (request_id,)).fetchall()
         default_need = self._connection.execute("select need from requests where id = ?", (request_id,)).fetchone()["need"]
         item_of = lambda row: row["need"] or default_need or ""
-        targets, need, scope = route_targets(recipients, default_need, need, seller_id)
-        message = self.add_message(request_id, "user", owner_user_id, body, None, seller_id=seller_id, need=need, reply_to=reply_to, scope=scope)
+        targets, need, scope = route_targets(recipients, default_need, need, seller_id, seller_ids)
+        single = targets[0]["seller_id"] if scope == SINGLE_SELLER else None
+        message = self.add_message(request_id, "user", owner_user_id, body, None, seller_id=single, need=need, reply_to=reply_to, scope=scope)
         if haraj_text is not None:
             self._connection.execute("update messages set haraj_text = ? where id = ?", (haraj_text, message.id))
+        if media:
+            self._connection.execute("update messages set media_json = ? where id = ?", (json.dumps(media, ensure_ascii=False), message.id))
         created = _now()
         for row in targets:
             self._connection.execute(
@@ -700,10 +757,23 @@ class Store:
         need: str | None = None,
         seller_id: str | None = None,
         reply_to: str | None = None,
+        seller_ids=None,
+        media_ids=None,
     ) -> Message:
-        """Everyone on the item by default; one seller when replying to them or when picked explicitly."""
+        """Everyone on the item by default; the suppliers picked; or one when replying to him."""
         if self._connection.execute("select 1 from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone() is None:
             raise LookupError("request not found")
+        media = []
+        for file_id in media_ids or []:
+            row = self._connection.execute(
+                "select id, content_type, filename, size_bytes, width, height from files where id = ? and owner_user_id = ? and request_id = ?",
+                (file_id, owner_user_id, request_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("unknown file")
+            media.append(media_entry(row))
+        if not body.strip() and not media:
+            raise ValueError("message is required")
         if reply_to:
             quoted = self._connection.execute("select * from messages where id = ? and request_id = ?", (reply_to, request_id)).fetchone()
             if quoted is None:
@@ -711,12 +781,28 @@ class Store:
             if quoted["seller_id"]:
                 seller_id = quoted["seller_id"]
             need = need or quoted["need"]
-        return self._enqueue(request_id, body, need, seller_id, reply_to, owner_user_id)
+            seller_ids = None
+        return self._enqueue(request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
+
+    def save_file(self, owner_user_id: str, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
+        if self._connection.execute("select 1 from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone() is None:
+            raise LookupError("request not found")
+        file_id = uuid4().hex
+        self._connection.execute(
+            "insert into files (id, owner_user_id, request_id, content_type, filename, size_bytes, width, height, data, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (file_id, owner_user_id, request_id, content_type, Path(filename).name or "file", len(data), width, height, data, _now()),
+        )
+        self._connection.commit()
+        return media_entry({"id": file_id, "content_type": content_type, "filename": Path(filename).name or "file", "size_bytes": len(data), "width": width, "height": height})
+
+    def get_file(self, file_id: str) -> dict | None:
+        row = self._connection.execute("select * from files where id = ?", (file_id,)).fetchone()
+        return None if row is None else {**dict(row), "data": bytes(row["data"])}
 
     def claim_deliveries(self, limit: int = 50) -> list[dict]:
         rows = self._connection.execute(
             """
-            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, t.ad_id, t.haraj_conversation_id,
+            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id,
               (select r.reply_token from request_recipients r where r.request_id = d.request_id and r.seller_id = d.seller_id
                order by coalesce(r.need, '') = d.need desc limit 1) as reply_token
             from message_deliveries d
@@ -731,7 +817,7 @@ class Store:
         for row in rows:
             self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1, last_attempt_at = ? where id = ?", (_now(), row["id"]))
         self._connection.commit()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "media": json.loads(row["media"]) if row["media"] else []} for row in rows]
 
     def finish_delivery(self, delivery_id: str, sent: SentMessage | None = None, error: str | None = None, retry: bool = False) -> None:
         row = self._connection.execute("select * from message_deliveries where id = ?", (delivery_id,)).fetchone()
@@ -855,6 +941,9 @@ class Store:
             haraj_conversation_id=thread["haraj_conversation_id"],
             haraj_message_id=inbound.haraj_message_id,
         )
+        if inbound.media:
+            self._connection.execute("update messages set media_json = ? where id = ?", (json.dumps(list(inbound.media), ensure_ascii=False), message.id))
+            message.media = list(inbound.media)
         owner = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
         self._connection.execute(
             "insert into notifications (id, user_id, request_id, kind, created_at) values (?, ?, ?, ?, ?)",

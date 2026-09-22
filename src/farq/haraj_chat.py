@@ -89,18 +89,20 @@ class InboundMessage:
     body: str
     sent_at: str
     seq: int = 0
+    media: tuple = ()
 
 
 class HarajChat(Protocol):
-    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str) -> SentMessage:
-        """Send into the seller's Haraj conversation, opening it when conversation_id is None."""
+    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
+        """Send into the seller's Haraj conversation, opening it when conversation_id is None.
+        attachments: [{content_type, data, name, width, height}] go first, each as its own Haraj message."""
 
     def fetch(self, *, conversation_id: str, seller_id: str, after_seq: int) -> list[InboundMessage]:
         """The seller's messages in this conversation with seq greater than after_seq, oldest first."""
 
 
 class NotConnectedChat:
-    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str) -> SentMessage:
+    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
         raise HarajChatUnavailable("NOT_SENT_CONFIGURATION_REQUIRED")
 
     def fetch(self, *, conversation_id: str, seller_id: str, after_seq: int) -> list[InboundMessage]:
@@ -323,7 +325,7 @@ class HarajChatClient:
             raise HarajNotSent("NO_TOPIC_ID")
         return str(topic)
 
-    def _send_text(self, token: str, topic: str, text: str) -> SentMessage:
+    def _send_content(self, token: str, topic: str, content: dict) -> SentMessage:
         socket = session_id = None
         # Reconnect only before publishing.
         for attempt in range(2):
@@ -339,7 +341,7 @@ class HarajChatClient:
             response = self._http.post(
                 f"{CHAT_ENDPOINT}/chat/users/{self.user_id}/topics/{topic}/messages",
                 headers={"content-type": "application/json; charset=utf-8", "authorization": f"Bearer {token}"},
-                content=json.dumps({"content": {"type": "text/plain", "payload": {"text": text}}, "session_id": session_id}, ensure_ascii=False).encode(),
+                content=json.dumps({"content": content, "session_id": session_id}, ensure_ascii=False).encode(),
             )
         except httpx.HTTPError as exc:
             # The POST may have reached Haraj. It is never replayed.
@@ -357,25 +359,68 @@ class HarajChatClient:
         # seq_id is topic-local: the receipt keeps its topic.
         return SentMessage(haraj_conversation_id=topic, haraj_message_id=f"{topic}:{seq}", seq=int(seq) if str(seq).isdigit() else None)
 
-    def _attempt(self, conversation_id: str | None, author: str, body: str) -> SentMessage:
+    def _send_text(self, token: str, topic: str, text: str) -> SentMessage:
+        return self._send_content(token, topic, {"type": "text/plain", "payload": {"text": text}})
+
+    def _upload(self, token: str, attachment: dict) -> str:
+        """Haraj's web client: ask chat/uploads for a URL, PUT the bytes there, then send that URL."""
+        data = attachment["data"]
+        grant = self._post(token, "/chat/uploads", {"mime_type": attachment["content_type"], "file_size": len(data)})
+        url = grant.get("url")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise HarajNotSent("NO_UPLOAD_URL")
+        try:
+            put = self._http.put(url, content=data, headers={"content-type": attachment["content_type"]})
+        except httpx.HTTPError as exc:
+            raise HarajNotSent("UPLOAD_FAILED") from exc
+        if not put.is_success:
+            raise HarajNotSent(f"UPLOAD_{put.status_code}")
+        return url
+
+    def _media_content(self, token: str, attachment: dict) -> dict:
+        url = self._upload(token, attachment)
+        size = len(attachment["data"])
+        if attachment["content_type"] == "application/pdf":
+            return {"type": "application/pdf", "payload": {"url": url, "file_size": size, "file_name": attachment.get("name") or "file.pdf"}}
+        return {
+            "type": "image/jpeg",
+            "payload": {"url": url, "file_size": size, "height": int(attachment.get("height") or 0), "width": int(attachment.get("width") or 0)},
+        }
+
+    def _attempt(self, conversation_id: str | None, author: str, body: str, attachments: list[dict]) -> SentMessage:
         token = self.session.access_token()
         topic = conversation_id or self._open_topic(token, author)
-        return self._send_text(token, topic, body)
+        contents = [self._media_content(token, item) for item in attachments]
+        if body.strip():
+            contents.append({"type": "text/plain", "payload": {"text": body}})
+        receipt = None
+        for index, content in enumerate(contents):
+            try:
+                receipt = self._send_content(token, topic, content)
+            except (HarajRefused, HarajNotSent):
+                # Part of this message is already in the seller's chat: never send it all again.
+                if index:
+                    raise HarajSendUncertain("PARTIAL")
+                raise
+        if receipt is None:
+            raise HarajSendUncertain("EMPTY_MESSAGE")
+        return receipt
 
-    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str) -> SentMessage:
+    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
         if not self.send_enabled:
             raise HarajChatUnavailable("NOT_SENT_CONFIGURATION_REQUIRED")
         author = author_id(seller_id)
         if author is None:
             raise HarajSendUncertain("SKIPPED_NO_RECIPIENT")
+        attachments = attachments or []
         try:
-            return self._attempt(conversation_id, author, body)
+            return self._attempt(conversation_id, author, body, attachments)
         except HarajRefused as exc:
             # A rejected token is renewed and the message tried once more; nothing was posted.
             if exc.status not in (401, 403) or not self.session.renewable:
                 raise
             self.session.invalidate()
-            return self._attempt(conversation_id, author, body)
+            return self._attempt(conversation_id, author, body, attachments)
 
     # -- reading -----------------------------------------------------------
 
@@ -427,17 +472,36 @@ class HarajChatClient:
                     continue
                 if str(item.get("from_id")) != author or item.get("is_deleted"):
                     continue
-                content = item.get("content") or {}
-                text = (content.get("payload") or {}).get("text") if content.get("type") == "text/plain" else UNREADABLE
-                if not isinstance(text, str):
-                    raise HarajChatUnavailable("INVALID_CONTENT")
-                found[seq] = InboundMessage(haraj_message_id=f"{conversation_id}:{seq}", body=text, sent_at=_timestamp(item.get("ts")), seq=seq)
+                text, media = _read_content(item.get("content") or {})
+                found[seq] = InboundMessage(haraj_message_id=f"{conversation_id}:{seq}", body=text, sent_at=_timestamp(item.get("ts")), seq=seq, media=media)
             cursor = data.get("last_key") or None
             if reached or not cursor:
                 break
             if not isinstance(cursor, str) or len(cursor) > 2000:
                 raise HarajChatUnavailable("INVALID_CURSOR")
         return [found[seq] for seq in sorted(found)]
+
+
+def _read_content(content: dict) -> tuple[str, tuple]:
+    """A Haraj chat message as (text, media). Photos, videos, PDFs and voice notes carry a URL."""
+    kind = content.get("type")
+    payload = content.get("payload") or {}
+    if kind == "text/plain":
+        text = payload.get("text")
+        if not isinstance(text, str):
+            raise HarajChatUnavailable("INVALID_CONTENT")
+        return text, ()
+    url = payload.get("url")
+    if isinstance(kind, str) and isinstance(url, str) and url.startswith("https://") and kind in ("image/jpeg", "image/png", "image/webp", "video/mp4", "application/pdf", "audio/aac"):
+        entry = {"type": kind, "url": url, "size": payload.get("file_size")}
+        if kind.startswith("image/"):
+            entry.update(width=payload.get("width"), height=payload.get("height"))
+        if kind == "application/pdf":
+            entry["name"] = payload.get("file_name") or "ملف.pdf"
+        if kind == "audio/aac":
+            entry["duration"] = payload.get("duration")
+        return "", (entry,)
+    return UNREADABLE, ()
 
 
 def _timestamp(value) -> str:

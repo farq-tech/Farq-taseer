@@ -34,6 +34,17 @@ from farq.haraj_chat import (
 MAX_ATTEMPTS = 5
 
 
+def media_label(media) -> str:
+    kinds = {entry.get("type", "") for entry in media or ()}
+    if any(kind.startswith("image/") for kind in kinds):
+        return "📷 صورة"
+    if "application/pdf" in kinds:
+        return "📄 ملف"
+    if "video/mp4" in kinds:
+        return "🎬 فيديو"
+    return "رسالة جديدة"
+
+
 def public_base_url() -> str:
     return os.environ.get("PUBLIC_BASE_URL", "https://taseer.farq.sa").rstrip("/")
 
@@ -78,6 +89,13 @@ def dispatch_pending(
                     store.finish_delivery(item["id"], error="NO_QUOTE_LINK", retry=False)
                     continue
                 body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
+            attachments = []
+            for entry in item.get("media") or []:
+                stored = store.get_file(entry["file_id"]) if entry.get("file_id") else None
+                if stored is not None:
+                    attachments.append(
+                        {"content_type": stored["content_type"], "data": stored["data"], "name": stored["filename"], "width": stored["width"], "height": stored["height"]}
+                    )
             sleep(max(0.0, slot - clock()))
             try:
                 result = chat.send(
@@ -85,6 +103,7 @@ def dispatch_pending(
                     seller_id=item["seller_id"],
                     ad_id=item["ad_id"],
                     body=body,
+                    attachments=attachments,
                 )
             except HarajChatUnavailable as exc:
                 store.release_send_slot(slot, SEND_SPACING_SECONDS)
@@ -147,7 +166,7 @@ def sync_replies(
         for item in inbound:
             if store.record_inbound(thread, item) is not None:
                 received += 1
-                notify_reply(store, thread["request_id"], thread["seller_id"], item.body)
+                notify_reply(store, thread["request_id"], thread["seller_id"], item.body or media_label(item.media))
         store.thread_checked(thread, now=clock())
         synced.add(thread["request_id"])
     for request_id in synced:

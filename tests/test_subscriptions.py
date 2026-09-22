@@ -71,7 +71,7 @@ def client(tmp_path: Path, moyasar: FakeMoyasar, publishable_key: str = "pk_test
 
 def register(api: TestClient) -> dict:
     email = f"user-{next(_email_seq)}@example.com"
-    resp = api.post("/v1/auth/register", json={"email": email, "password": "secret-pass"})
+    resp = api.post("/v1/auth/register", json={"email": email, "password": "secret-pass", "name": "عميل"})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['token']}"}
 

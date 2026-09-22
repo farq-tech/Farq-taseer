@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from urllib.parse import quote
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -22,7 +24,7 @@ from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
-from farq.store import Store
+from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, Store
 from farq.subscriptions import SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -35,6 +37,11 @@ class ApiModel(BaseModel):
 class RegisterBody(ApiModel):
     email: str
     password: str
+    name: str | None = None
+
+
+EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
+GUEST_DOMAIN = "@users.farq.local"
 
 
 class SearchBody(ApiModel):
@@ -59,9 +66,11 @@ class RequestBody(ApiModel):
 
 
 class MessageBody(ApiModel):
-    body: str
+    body: str = ""
     sender_role: str = "user"
     seller_id: str | None = None
+    seller_ids: list[str] | None = None
+    media_ids: list[str] | None = None
     need: str | None = None
     reply_to: str | None = None
 
@@ -155,13 +164,17 @@ def create_app(
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
 
-    def current_user(authorization: str | None = Header(default=None)) -> str:
+    def current_account(authorization: str | None = Header(default=None)) -> dict:
+        # Everyone signs in with a Taseer account; the old anonymous guest sessions no longer count.
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="authentication required")
-        user_id = store.user_for_token(authorization.removeprefix("Bearer ").strip())
-        if user_id is None:
+        account = store.account_for_token(authorization.removeprefix("Bearer ").strip())
+        if account is None or str(account["email"]).endswith(GUEST_DOMAIN):
             raise HTTPException(status_code=401, detail="invalid session")
-        return user_id
+        return account
+
+    def current_user(account: dict = Depends(current_account)) -> str:
+        return account["id"]
 
     @app.get("/health")
     def health() -> dict:
@@ -173,23 +186,38 @@ def create_app(
 
     @app.post("/v1/auth/register")
     def register(body: RegisterBody) -> dict:
+        email = body.email.strip().lower()
+        name = (body.name or "").strip()
+        if not EMAIL.match(email) or email.endswith(GUEST_DOMAIN):
+            raise HTTPException(status_code=422, detail="invalid email")
+        if len(body.password) < 8:
+            raise HTTPException(status_code=422, detail="password too short")
+        if not 2 <= len(name) <= 60:
+            raise HTTPException(status_code=422, detail="name required")
         try:
-            user_id = store.register(body.email, body.password)
-        except Exception as exc:
-            raise HTTPException(status_code=409, detail="could not register") from exc
-        token = store.login(body.email, body.password)
-        return {"user_id": user_id, "token": token}
+            user_id = store.register(email, body.password, name)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="email already registered") from exc
+        token = store.login(email, body.password)
+        return {"user_id": user_id, "token": token, "name": name, "email": email}
 
     @app.post("/v1/auth/login")
     def login(body: RegisterBody) -> dict:
         token = store.login(body.email, body.password)
-        if token is None:
+        account = store.account_for_token(token) if token else None
+        if account is None or str(account["email"]).endswith(GUEST_DOMAIN):
             raise HTTPException(status_code=401, detail="invalid credentials")
-        return {"token": token}
+        return {"token": token, "name": account.get("name"), "email": account["email"]}
 
-    @app.post("/v1/auth/guest")
-    def guest() -> dict:
-        return store.start_guest()
+    @app.get("/v1/auth/me")
+    def me(account: dict = Depends(current_account)) -> dict:
+        return {"email": account["email"], "name": account.get("name")}
+
+    @app.post("/v1/auth/logout")
+    def logout(authorization: str | None = Header(default=None)) -> dict:
+        if authorization and authorization.startswith("Bearer "):
+            store.logout(authorization.removeprefix("Bearer ").strip())
+        return {"signed_out": True}
 
     @app.post("/v1/intent")
     def intent_only(body: SearchBody) -> dict:
@@ -283,29 +311,66 @@ def create_app(
         record = store.get_request(request_id, user_id)
         return record.model_dump(mode="json")
 
-    @app.post("/v1/requests/{request_id}/attachments")
-    async def upload(request_id: str, file: UploadFile = File(...), user_id: str = Depends(current_user)) -> dict:
-        if store.get_request(request_id, user_id) is None:
-            raise HTTPException(status_code=404, detail="request not found")
-        content = await file.read()
+    async def read_upload(file: UploadFile) -> tuple[str, bytes]:
+        data = await file.read()
+        content_type = (file.content_type or "").split(";")[0].strip()
+        # Haraj's chat takes photos as JPEG and documents as PDF; the app converts photos before upload.
+        if content_type not in MEDIA_TYPES:
+            raise HTTPException(status_code=415, detail="send a photo or a PDF")
+        if not data:
+            raise HTTPException(status_code=422, detail="empty file")
+        if len(data) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="file too large")
+        return content_type, data
+
+    @app.post("/v1/requests/{request_id}/files")
+    async def upload_file(
+        request_id: str,
+        file: UploadFile = File(...),
+        width: int | None = Form(default=None),
+        height: int | None = Form(default=None),
+        user_id: str = Depends(current_user),
+    ) -> dict:
+        content_type, data = await read_upload(file)
         try:
-            attachment = store.add_attachment(request_id, user_id, file.filename or "file", file.content_type or "application/octet-stream", content)
+            return store.save_file(user_id, request_id, content_type, file.filename or "file", data, width, height)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
+
+    @app.get("/v1/files/{file_id}")
+    def download_file(file_id: str) -> Response:
+        # The id is a random 128-bit capability, like a chat app's media link.
+        found = store.get_file(file_id) if re.fullmatch(r"[0-9a-f]{32}", file_id) else None
+        if found is None:
+            raise HTTPException(status_code=404, detail="file not found")
+        disposition = "inline" if found["content_type"].startswith("image/") else f"inline; filename*=UTF-8''{quote(found['filename'])}"
+        return Response(
+            found["data"],
+            media_type=found["content_type"],
+            headers={"Cache-Control": "private, max-age=31536000, immutable", "Content-Disposition": disposition},
+        )
+
+    @app.post("/v1/requests/{request_id}/attachments")
+    async def upload(request_id: str, background: BackgroundTasks, file: UploadFile = File(...), user_id: str = Depends(current_user)) -> dict:
+        """Photos added on the review screen go to every supplier on the request, like any other message."""
+        content_type, data = await read_upload(file)
+        try:
+            saved = store.save_file(user_id, request_id, content_type, file.filename or "file", data)
+            store.route_customer_message(request_id, user_id, "", media_ids=[saved["file_id"]], need=_single_need(request_id, user_id))
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return attachment.model_dump(mode="json")
+        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        return {"id": saved["file_id"], "filename": saved["name"], "content_type": content_type, "size_bytes": saved["size"], "url": saved["url"]}
 
-    @app.get("/v1/requests/{request_id}/attachments/{attachment_id}")
-    def download_attachment(request_id: str, attachment_id: str, user_id: str = Depends(current_user)) -> FileResponse:
-        found = store.attachment_path(request_id, attachment_id, owner_user_id=user_id)
-        if found is None:
-            raise HTTPException(status_code=404, detail="attachment not found")
-        path, content_type, filename = found
-        return FileResponse(path, media_type=content_type, filename=filename)
+    def _single_need(request_id: str, user_id: str) -> str | None:
+        record = store.get_request(request_id, user_id)
+        needs = {item.need for item in (record.recipients if record else [])}
+        return next(iter(needs)) if len(needs) == 1 else None
 
     @app.post("/v1/requests/{request_id}/messages")
     def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
-        if not body.body.strip():
-            raise HTTPException(status_code=422, detail="message is required")
         try:
             created = store.route_customer_message(
                 request_id,
@@ -314,6 +379,8 @@ def create_app(
                 need=body.need,
                 seller_id=body.seller_id,
                 reply_to=body.reply_to,
+                seller_ids=body.seller_ids,
+                media_ids=body.media_ids,
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail="request not found") from exc

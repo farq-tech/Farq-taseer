@@ -42,6 +42,7 @@ class FakeHaraj:
         self.drop_message_post = False
         self.omit_seq = False
         self.pages: list[dict] = []
+        self.uploaded: list[bytes] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(request)
@@ -59,6 +60,11 @@ class FakeHaraj:
                 return httpx.Response(status)
             message = {} if self.omit_seq else {"seq_id": 41}
             return httpx.Response(200, json={"status": 200, "data": {"message": message}})
+        if request.method == "POST" and url.startswith("https://api-chat.haraj.com.sa/chat/uploads"):
+            return httpx.Response(200, json={"status": 200, "data": {"url": "https://chat-media.haraj.test/u/1.jpg"}})
+        if request.method == "PUT" and url.startswith("https://chat-media.haraj.test/"):
+            self.uploaded.append(request.content)
+            return httpx.Response(200)
         if request.method == "GET":
             return httpx.Response(200, json=self.pages.pop(0))
         return httpx.Response(404)
@@ -196,7 +202,7 @@ class ScriptedChat:
         self.outcomes = list(outcomes)
         self.bodies: list[str] = []
 
-    def send(self, *, conversation_id, seller_id, ad_id, body):
+    def send(self, *, conversation_id, seller_id, ad_id, body, attachments=None):
         self.bodies.append(body)
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
@@ -265,3 +271,36 @@ def test_send_slots_are_shared_by_every_instance(tmp_path: Path):
     assert store.reserve_send_slot(20, 1000.0, 1030.0) is None
     store.release_send_slot(1020.0, 20)
     assert store.reserve_send_slot(20, 1001.0, 1100.0) == 1020.0
+
+
+def test_a_photo_goes_through_harajs_upload_then_the_caption():
+    haraj = FakeHaraj()
+    client, sockets = make_client(haraj)
+    photo = {"content_type": "image/jpeg", "data": b"jpeg-bytes", "name": "p.jpg", "width": 800, "height": 600}
+    sent = client.send(conversation_id="p2p7_19676360", seller_id="19676360", ad_id=None, body="هذا المطلوب", attachments=[photo])
+    assert sent.haraj_message_id == "p2p7_19676360:41"
+    grant = next(call for call in haraj.calls if str(call.url).endswith("/chat/uploads"))
+    assert json.loads(grant.content) == {"mime_type": "image/jpeg", "file_size": len(b"jpeg-bytes")}
+    assert haraj.uploaded == [b"jpeg-bytes"]
+    posts = [json.loads(call.content)["content"] for call in haraj.calls if str(call.url).endswith("/messages")]
+    assert posts == [
+        {"type": "image/jpeg", "payload": {"url": "https://chat-media.haraj.test/u/1.jpg", "file_size": 10, "height": 600, "width": 800}},
+        {"type": "text/plain", "payload": {"text": "هذا المطلوب"}},
+    ]
+    assert len(sockets) == 2  # a fresh socket per message
+
+
+def test_the_seller_can_send_photos_and_pdfs_back():
+    haraj = FakeHaraj()
+    haraj.pages = [
+        page([
+            {**message(52), "content": {"type": "application/pdf", "payload": {"url": "https://chat-media.haraj.test/q.pdf", "file_size": 900, "file_name": "عرض.pdf"}}},
+            {**message(51), "content": {"type": "image/jpeg", "payload": {"url": "https://chat-media.haraj.test/a.jpg", "file_size": 5, "width": 10, "height": 20}}},
+        ])
+    ]
+    client, _ = make_client(haraj)
+    found = client.fetch(conversation_id="p2p7_19676360", seller_id="19676360", after_seq=0)
+    assert [(item.body, item.media) for item in found] == [
+        ("", ({"type": "image/jpeg", "url": "https://chat-media.haraj.test/a.jpg", "size": 5, "width": 10, "height": 20},)),
+        ("", ({"type": "application/pdf", "url": "https://chat-media.haraj.test/q.pdf", "size": 900, "name": "عرض.pdf"},)),
+    ]

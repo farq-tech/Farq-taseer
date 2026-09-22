@@ -70,6 +70,8 @@ def _run(module, name, tmp_path, monkeypatch, make):
         "test_item_conversation_routes_through_haraj",
         "test_not_connected_keeps_messages_queued",
         "test_unread_replies_and_phone_notifications",
+        "test_every_customer_signs_in_and_sees_only_their_requests",
+        "test_picked_suppliers_only_and_photos_reach_haraj",
     ],
 )
 def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):

@@ -16,6 +16,12 @@ const state = {
   thread: null,
   activeSeller: "",
   replyTo: null,
+  account: null,
+  authMode: "login",
+  authError: "",
+  returnView: "home",
+  picked: null,
+  chatFiles: [],
   unreadTotal: 0,
   pushState: "",
   pushDismissed: (() => {
@@ -104,11 +110,10 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
     body = JSON.stringify(json);
   } else if (form) body = form;
   const response = await fetch(path, { method, headers, body });
-  if (response.status === 401 && state.token && !skipAuth) {
-    state.token = "";
-    localStorage.removeItem("farq.token");
-    await ensureAuth();
-    return request(path, { method, json, form, quiet });
+  if (response.status === 401 && !skipAuth) {
+    signOutLocally();
+    requireSignIn();
+    throw new Error("sign-in required");
   }
   if (!response.ok) {
     const error = new Error("request failed");
@@ -119,11 +124,31 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
   return type.includes("json") ? response.json() : response;
 }
 
+// Everyone signs in with a Taseer account before using the app; requests belong to that account.
+function requireSignIn() {
+  if (state.view !== "auth") state.returnView = state.view === "seller" ? "home" : state.view;
+  state.view = "auth";
+  state.authError = "";
+  render();
+}
+
 async function ensureAuth() {
   if (state.token) return;
-  const data = await api("/v1/auth/guest", { method: "POST", skipAuth: true });
-  state.token = data.token;
-  localStorage.setItem("farq.token", state.token);
+  requireSignIn();
+  throw new Error("sign-in required");
+}
+
+function signOutLocally() {
+  state.token = "";
+  state.account = null;
+  state.requests = [];
+  state.requestsLoaded = false;
+  state.thread = null;
+  state.unreadTotal = 0;
+  threadCache.clear();
+  try {
+    localStorage.removeItem("farq.token");
+  } catch (_error) {}
 }
 
 function imageSources(ad) {
@@ -300,6 +325,59 @@ function shell(body, { bare = false } = {}) {
   return `<main class="shell">${body}</main>`;
 }
 
+function renderAuth() {
+  const register = state.authMode === "register";
+  return `<header class="top-bar lined"><span class="slot" aria-hidden="true"></span><span class="brand-title">فرق تسعير</span><span class="slot" aria-hidden="true"></span></header>
+  <section class="page auth">
+    <div class="auth-mark" aria-hidden="true"><img src="/icons/app-192.png" alt="" width="72" height="72"></div>
+    <h1>${register ? "أنشئ حسابك" : "سجّل دخولك"}</h1>
+    <p class="lede">${register ? "حساب واحد تتابع فيه كل طلباتك ومحادثاتك مع البائعين." : "لازم تسجّل دخول عشان تطلب أسعار وتراسل البائعين."}</p>
+    <form id="auth-form" class="auth-form" novalidate>
+      ${register ? `<label class="field-line"><span>الاسم</span><input name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="اسمك"></label>` : ""}
+      <label class="field-line"><span>البريد الإلكتروني</span><input name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required placeholder="name@example.com"></label>
+      <label class="field-line"><span>كلمة السر</span><input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="${register ? "٨ أحرف أو أكثر" : ""}"></label>
+      ${state.authError ? `<p class="status warn" role="alert">${esc(state.authError)}</p>` : ""}
+      <button class="primary block" type="submit" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : register ? "إنشاء الحساب" : "دخول"}</button>
+    </form>
+    <p class="auth-switch">${register ? "عندك حساب؟" : "ما عندك حساب؟"} <button class="text-btn" type="button" data-action="auth-mode">${register ? "سجّل دخول" : "أنشئ حساب"}</button></p>
+  </section>`;
+}
+
+async function submitAuth(form) {
+  const data = new FormData(form);
+  const register = state.authMode === "register";
+  const json = { email: String(data.get("email") || "").trim(), password: String(data.get("password") || "") };
+  if (register) json.name = String(data.get("name") || "").trim();
+  if (register && json.name.length < 2) return showAuthError("اكتب اسمك");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(json.email)) return showAuthError("اكتب بريد إلكتروني صحيح");
+  if (json.password.length < 8) return showAuthError("كلمة السر لازم تكون ٨ أحرف أو أكثر");
+  state.busy = true;
+  render();
+  try {
+    const result = await api(register ? "/v1/auth/register" : "/v1/auth/login", { method: "POST", json, skipAuth: true });
+    state.token = result.token;
+    state.account = { name: result.name, email: result.email };
+    try {
+      localStorage.setItem("farq.token", state.token);
+    } catch (_error) {}
+    state.busy = false;
+    state.view = state.returnView && state.returnView !== "auth" ? state.returnView : "home";
+    if (state.view === "requests") loadRequests().catch(() => {});
+    else render();
+    refreshUnread();
+  } catch (error) {
+    state.busy = false;
+    const messages = { 401: "البريد أو كلمة السر غير صحيحة", 409: "هذا البريد مسجّل من قبل، سجّل دخول", 422: "تأكد من البيانات" };
+    showAuthError(messages[error.status] || "ما قدرنا نكمل، جرّب مرة ثانية");
+  }
+}
+
+function showAuthError(message) {
+  state.authError = message;
+  render();
+  return null;
+}
+
 function renderHome() {
   const chips = ["سباك بالرياض", "كهربائي بجدة", "نقل عفش"];
   return `${topBar()}
@@ -446,7 +524,7 @@ function renderReview() {
     <p class="optional">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
     <div class="composer-bar">
       <label class="file-btn">${icon("camera")} صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">${icon("paperclip")} فيديو<input type="file" accept="video/*" data-action="add-files"></label>
+      <label class="file-btn">${icon("paperclip")} ملف PDF<input type="file" accept="application/pdf" data-action="add-files"></label>
     </div>
     ${filePreview()}
     ${state.notice ? `<p class="status warn" role="alert">${esc(state.notice)}</p>` : ""}
@@ -513,7 +591,8 @@ async function refreshUnread() {
 function renderRequests() {
   const logo = `<span class="slot" aria-hidden="true"></span>`;
   const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
-  const head = `<header class="top-bar lined">${logo}${title}${logo}</header>`;
+  const account = `<button class="account-chip" type="button" data-action="sign-out" aria-label="تسجيل خروج">${state.account?.name ? `${esc(state.account.name)} · ` : ""}خروج</button>`;
+  const head = `<header class="top-bar lined">${account}${title}${logo}</header>`;
   if (state.requestsLoading && !state.requests.length) {
     const row = `<div class="chat-row"><span class="chat-avatar skeleton"></span><span class="chat-main"><span class="skeleton line" style="width:55%"></span><span class="skeleton line" style="width:80%"></span><span class="skeleton line" style="width:35%"></span></span></div>`;
     return `${head}<section class="page soft requests-page" aria-busy="true"><div class="chat-list">${row.repeat(4)}</div></section>${tabBar("requests")}`;
@@ -618,25 +697,46 @@ function deliveryProgress(message) {
   return `وصلت لـ ${formatCount(sent)} من ${formatCount(deliveries.length)} · الباقي خلال ${formatCount(Math.max(1, Math.ceil((waiting * 20) / 60)))} د`;
 }
 
+function mediaHtml(media) {
+  return (media || [])
+    .map((item) => {
+      const url = esc(item.url || "");
+      if (String(item.type || "").startsWith("image/")) {
+        const ratio = item.width && item.height ? ` style="aspect-ratio:${Number(item.width)}/${Number(item.height)}"` : "";
+        return `<a class="wa-photo" href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="صورة" loading="lazy"${ratio}></a>`;
+      }
+      if (item.type === "application/pdf") {
+        const size = item.size ? ` · ${formatCount(Math.max(1, Math.round(item.size / 1024)))} ك.ب` : "";
+        return `<a class="wa-doc" href="${url}" target="_blank" rel="noopener"><span class="wa-file-icon">PDF</span><span>${esc(item.name || "ملف")}${size}</span></a>`;
+      }
+      if (item.type === "video/mp4") return `<video class="wa-video" src="${url}" controls preload="metadata"></video>`;
+      if (item.type === "audio/aac") return `<audio class="wa-audio" src="${url}" controls preload="none"></audio>`;
+      return "";
+    })
+    .join("");
+}
+
 function waBubble(thread, message, { group, byId }) {
   const mine = message.sender_role !== "seller";
   const body = esc(message.body || "").replace(/\n/g, "<br>");
+  const media = mediaHtml(message.media);
   const quoted = message.reply_to ? byId.get(message.reply_to) : null;
   const quote = quoted
     ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#83F1B1"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
     : "";
   const time = `<time>${esc(chatTime(message.created_at))}</time>`;
   if (mine) {
-    const only = group && message.scope === "single_seller" && message.seller_id ? `<div class="wa-to">إلى ${esc(sellerName(thread, message.seller_id))} فقط</div>` : "";
+    const some = message.scope === "some_sellers" ? (message.deliveries || []).map((item) => sellerName(thread, item.seller_id)).join("، ") : "";
+    const only = group && message.scope === "single_seller" && message.seller_id ? `<div class="wa-to">إلى ${esc(sellerName(thread, message.seller_id))} فقط</div>` : group && some ? `<div class="wa-to">إلى ${esc(some)}</div>` : "";
     const failed = message.delivery_state === "failed" ? `<div class="wa-to warn">ما وصلت الرسالة</div>` : "";
     const progress = deliveryProgress(message);
-    return `<div class="wa-row out"><div class="wa-bubble">${quote}<div class="wa-text">${body}</div>${only}${failed}${progress ? `<div class="wa-to">${esc(progress)}</div>` : ""}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
+    return `<div class="wa-row out"><div class="wa-bubble${media && !body ? " media-only" : ""}">${quote}${media}${body ? `<div class="wa-text">${body}</div>` : ""}${only}${failed}${progress ? `<div class="wa-to">${esc(progress)}</div>` : ""}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
   }
   const price = messagePrice(message);
   const name = group
     ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${sellerColor(thread, message.seller_id)}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
     : "";
-  return `<div class="wa-row in" style="--seller:${sellerColor(thread, message.seller_id)}"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}<div class="wa-text">${body}</div><span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
+  return `<div class="wa-row in" style="--seller:${sellerColor(thread, message.seller_id)}"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}${media}${body ? `<div class="wa-text">${body}</div>` : ""}<span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
 }
 
 function waMessages(thread, messages, group) {
@@ -678,7 +778,7 @@ function renderThread() {
   const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
   const group = !one;
   const messages = (thread.messages || []).filter(
-    (message) => !one || message.seller_id === one || (message.scope === "all_sellers" && (message.deliveries || []).some((item) => item.seller_id === one)),
+    (message) => !one || message.seller_id === one || (message.deliveries || []).some((item) => item.seller_id === one),
   );
   const offers = (thread.offers || []).filter((item) => item.total_price != null && (!one || item.seller_id === one));
   const best = [...offers].sort((a, b) => a.total_price - b.total_price)[0];
@@ -694,6 +794,33 @@ function renderThread() {
     ? `رسالتك توصل لكل الجهات (${formatCount(recipients.length)}). «ردّ» أو @الاسم توصل له بس.`
     : `محادثتك مع ${sellerName(thread, one)}. رسايلك توصل له بس.`;
   const target = state.replyTo;
+  // Who this message goes to: everyone ticked by default; untick anyone before sending.
+  const pickable = group && !target;
+  if (pickable && (!state.picked || state.pickedFor !== thread.id)) {
+    state.picked = new Set(recipients.map((item) => item.seller_id));
+    state.pickedFor = thread.id;
+  }
+  const picked = pickable ? recipients.filter((item) => state.picked.has(item.seller_id)) : [];
+  const picker = pickable
+    ? `<div class="wa-recipients" role="group" aria-label="المستلمين">
+        <span class="wa-recipients-label">إلى:</span>
+        ${recipients
+          .map((item) => {
+            const on = state.picked.has(item.seller_id);
+            return `<button type="button" class="wa-recipient${on ? " is-on" : ""}" style="--seller:${sellerColor(thread, item.seller_id)}" data-action="toggle-recipient" data-seller="${esc(item.seller_id)}" aria-pressed="${on}">${on ? "✓ " : ""}${esc(item.seller_name)}</button>`;
+          })
+          .join("")}
+      </div>`
+    : "";
+  const files = state.chatFiles.length
+    ? `<div class="wa-files">${state.chatFiles
+        .map(
+          (item, index) => `<div class="wa-file-chip">${item.preview ? `<img src="${item.preview}" alt="">` : `<span class="wa-file-icon">PDF</span>`}<span>${esc(snippet(item.name, 18))}</span><button type="button" data-action="remove-chat-file" data-index="${index}" aria-label="إزالة">✕</button></div>`,
+        )
+        .join("")}</div>`
+    : "";
+  const nonePicked = pickable && !picked.length;
+  const placeholder = target ? `ردّ على ${target.name}` : !group ? "اكتب رسالة" : picked.length === recipients.length ? "اكتب رسالة للكل" : picked.length ? `اكتب رسالة لـ ${picked.length === 1 ? picked[0].seller_name : `${formatCount(picked.length)} بائعين`}` : "اختر بائع واحد على الأقل";
   return `<div class="wa-screen">
     <header class="wa-head">
       <button class="wa-back" type="button" data-action="${backAction}" aria-label="رجوع">${icon("chevron", { size: 22 })}</button>
@@ -708,13 +835,15 @@ function renderThread() {
     </section>
     <div class="wa-dock">
       ${target ? `<div class="wa-replying" style="--who:${sellerColor(state.thread, target.sellerId)}"><div><strong>${esc(target.name)}</strong><span>${esc(snippet(target.body, 60))}</span></div><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
-      <div class="mention-list" id="mention-list" hidden></div>
+      ${state.notice ? `<div class="wa-notice" role="alert">${esc(state.notice)}<button type="button" data-action="clear-notice" aria-label="إغلاق">✕</button></div>` : ""}
+      ${picker}
+      ${files}
       <form class="wa-compose" id="user-reply">
         <div class="wa-field">
-          <input name="body" placeholder="${group ? "اكتب رسالة للكل" : "اكتب رسالة"}" autocomplete="off">
-          <label class="wa-attach" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
+          <input name="body" placeholder="${esc(placeholder)}" autocomplete="off" ${nonePicked ? "disabled" : ""}>
+          <label class="wa-attach" aria-label="أرفق صورة أو ملف PDF">${icon("paperclip")}<input type="file" accept="image/*,application/pdf" multiple data-action="chat-files"></label>
         </div>
-        <button class="wa-send" type="submit" aria-label="إرسال">${icon("send", { size: 20 })}</button>
+        <button class="wa-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? '<span class="wa-spinner" aria-hidden="true"></span>' : icon("send", { size: 20 })}</button>
       </form>
     </div>
   </div>`;
@@ -798,6 +927,7 @@ function render() {
     thread: renderThread,
     seller: renderSeller,
     subscribe: renderSubscribe,
+    auth: renderAuth,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
   const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
@@ -966,8 +1096,13 @@ async function sendRequest() {
     });
     for (const item of state.files) {
       const form = new FormData();
-      form.append("file", item.file);
-      await api(`/v1/requests/${created.id}/attachments`, { method: "POST", form });
+      if (item.file.type === "application/pdf") form.append("file", item.file);
+      else {
+        const photo = await preparePhoto(item.file).catch(() => null);
+        if (!photo) continue;
+        form.append("file", photo.blob, photo.name);
+      }
+      await api(`/v1/requests/${created.id}/attachments`, { method: "POST", form }).catch(() => {});
     }
     state.busy = false;
     state.files = [];
@@ -993,6 +1128,78 @@ async function sendRequest() {
 
 // Screens switch at once: what we already have (or a placeholder) shows while the server answers.
 const threadCache = new Map();
+
+async function sendChatMessage(body) {
+  const thread = state.thread;
+  const recipients = thread.recipients || [];
+  const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
+  const json = { body, need: thread.need || null };
+  if (state.replyTo) json.reply_to = state.replyTo.id;
+  else if (one) json.seller_id = one;
+  else {
+    const picked = recipients.filter((item) => state.picked?.has(item.seller_id)).map((item) => item.seller_id);
+    if (!picked.length) return;
+    json.seller_ids = picked;
+  }
+  state.sending = true;
+  render();
+  try {
+    if (state.chatFiles.length) {
+      json.media_ids = [];
+      for (const item of state.chatFiles) {
+        const form = new FormData();
+        form.append("file", item.blob, item.name);
+        if (item.width) form.append("width", String(item.width));
+        if (item.height) form.append("height", String(item.height));
+        json.media_ids.push((await api(`/v1/requests/${thread.id}/files`, { method: "POST", form })).file_id);
+      }
+    }
+    await api(`/v1/requests/${thread.id}/messages`, { method: "POST", json });
+    state.chatFiles.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
+    state.chatFiles = [];
+    state.replyTo = null;
+    state.stickChat = true;
+    state.sending = false;
+    await loadThread(thread.id, true);
+    render();
+  } catch (error) {
+    state.sending = false;
+    state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : "ما انرسلت الرسالة، جرّب مرة ثانية";
+    render();
+  }
+}
+
+// Photos leave the phone as JPEG (what Haraj's chat takes), at most 1600 px and about 1 MB.
+async function preparePhoto(file) {
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) throw new Error("unreadable image");
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+  return { blob, width, height, name: `${(file.name || "photo").replace(/\.[^.]+$/, "")}.jpg`, type: "image/jpeg", preview: URL.createObjectURL(blob) };
+}
+
+async function prepareChatFiles(files) {
+  for (const file of files) {
+    if (state.chatFiles.length >= 6) break;
+    try {
+      if (file.type === "application/pdf") {
+        if (file.size > 4 * 1024 * 1024) throw new Error("too large");
+        state.chatFiles.push({ blob: file, name: file.name || "ملف.pdf", type: "application/pdf" });
+      } else if (file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name || "")) {
+        state.chatFiles.push(await preparePhoto(file));
+      }
+    } catch (_error) {
+      state.notice = "ما قدرنا نرفق هذا الملف";
+    }
+  }
+  render();
+}
 
 async function loadRequests() {
   state.view = "requests";
@@ -1209,25 +1416,14 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     const value = new FormData(form).get("value");
     if (value) runSearch(`${state.query} ${value}`);
+  } else if (form.id === "auth-form") {
+    event.preventDefault();
+    submitAuth(form);
   } else if (form.id === "user-reply") {
     event.preventDefault();
     const body = String(new FormData(form).get("body") || "").trim();
-    if (!body || !state.thread) return;
-    const recipients = state.thread.recipients || [];
-    const json = { body, need: state.thread.need || null };
-    if (state.activeSeller) json.seller_id = state.activeSeller;
-    else if (state.replyTo) json.reply_to = state.replyTo.id;
-    else {
-      const named = recipients.filter((item) => item.seller_name && body.includes(`@${item.seller_name}`));
-      json.seller_id = named.sort((a, b) => b.seller_name.length - a.seller_name.length)[0]?.seller_id || null;
-    }
-    api(`/v1/requests/${state.thread.id}/messages`, { method: "POST", json })
-      .then(() => {
-        state.replyTo = null;
-        state.stickChat = true;
-        return loadThread(state.thread.id);
-      })
-      .catch(() => {});
+    if ((!body && !state.chatFiles.length) || !state.thread || state.sending) return;
+    sendChatMessage(body);
   } else if (form.id === "seller-reply") {
     event.preventDefault();
     const data = new FormData(form);
@@ -1265,6 +1461,12 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  if (event.target.dataset.action === "chat-files") {
+    const files = [...(event.target.files || [])];
+    event.target.value = "";
+    if (files.length) prepareChatFiles(files);
+    return;
+  }
   if (event.target.dataset.action !== "add-files") return;
   const files = [...(event.target.files || [])];
   if (!files.length) return;
@@ -1339,7 +1541,30 @@ document.addEventListener("click", (event) => {
   } else if (action === "retry") runSearch(state.query);
   else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`);
   else if (action === "send") sendRequest();
-  else if (action === "enable-notify") {
+  else if (action === "clear-notice") {
+    state.notice = "";
+    render();
+  } else if (action === "auth-mode") {
+    state.authMode = state.authMode === "register" ? "login" : "register";
+    state.authError = "";
+    render();
+  } else if (action === "sign-out") {
+    api("/v1/auth/logout", { method: "POST" }).catch(() => {});
+    signOutLocally();
+    state.returnView = "home";
+    state.authMode = "login";
+    requireSignIn();
+  } else if (action === "toggle-recipient") {
+    const id = target.dataset.seller;
+    if (!state.picked) return;
+    if (state.picked.has(id)) state.picked.delete(id);
+    else state.picked.add(id);
+    render();
+  } else if (action === "remove-chat-file") {
+    const [removed] = state.chatFiles.splice(Number(target.dataset.index), 1);
+    if (removed?.preview) URL.revokeObjectURL(removed.preview);
+    render();
+  } else if (action === "enable-notify") {
     enableNotifications(true)
       .catch(() => {
         state.pushState = "off";
@@ -1354,6 +1579,8 @@ document.addEventListener("click", (event) => {
   } else if (action === "thread") {
     state.activeSeller = "";
     state.replyTo = null;
+    state.picked = null;
+    state.chatFiles = [];
     state.stickChat = true;
     loadThread(target.dataset.id).catch(() => {});
   } else if (action === "seller-filter") {
@@ -1390,7 +1617,19 @@ document.addEventListener("visibilitychange", () => {
 });
 
 const openRequest = new URLSearchParams(location.search).get("r");
+if (!sellerRoute && !state.token) {
+  state.view = "auth";
+  if (openRequest) state.returnView = "requests";
+} else if (!sellerRoute) {
+  api("/v1/auth/me", { quiet: true })
+    .then((account) => {
+      state.account = account;
+      if (state.view === "requests") render();
+    })
+    .catch(() => {});
+}
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
+else if (!state.token) render();
 else if (subscribeCallback) handleSubscribeCallback().catch(() => render());
 else if (openRequest) {
   // Opened from a notification: straight into that conversation.

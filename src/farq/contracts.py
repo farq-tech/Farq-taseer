@@ -180,6 +180,7 @@ class Message(ContractModel):
     created_at: str
     delivery_state: str | None = None
     deliveries: list[dict[str, Any]] = Field(default_factory=list)
+    media: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RequestRecipient(ContractModel):
