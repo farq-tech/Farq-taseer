@@ -39,6 +39,7 @@ const state = {
 const app = document.querySelector("#app");
 let poll = 0;
 const sellerRoute = location.pathname.match(/^\/s\/([^/]+)\/?$/);
+const subscribeCallback = location.pathname === "/subscribe/callback";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -530,6 +531,7 @@ function renderSubscribe() {
   <section class="page tight subscribe-page">
     <div class="section-head"><h1>اشترك في فرق تسعير</h1><p class="lede">افتح كل المزايا المدفوعة بخطة واحدة بسيطة.</p></div>
     ${subStatusBanner()}
+    ${!active && !state.subActivePlan && state.subError ? `<p class="pay-error">${esc(state.subError)}</p>` : ""}
     ${active ? "" : state.subPlans.length ? state.subPlans.map(renderPlanCard).join("") : `<p class="lede">لا توجد خطط متاحة حالياً.</p>`}
   </section>
   ${tabBar("subscribe")}`;
@@ -795,6 +797,69 @@ async function loadSubscribe() {
   render();
 }
 
+async function handleSubscribeCallback() {
+  // mada/3DS cards leave the app entirely and Moyasar redirects the whole
+  // page back to callback_url (?id=<moyasar_payment_id>...) instead of
+  // firing Moyasar.js's on_completed - without this, that flow silently
+  // never verifies and the user lands looking subscribed to nothing.
+  //
+  // This deliberately does NOT reuse loadSubscribe(): that sets
+  // subActivePlan for a single-plan catalog, and render()'s auto-mount hook
+  // would then start a *fresh* checkout concurrently with the verify call
+  // below, racing over the same localStorage pending-payment entry.
+  const params = new URLSearchParams(location.search);
+  const moyasarPaymentId = params.get("id") || params.get("payment_id");
+  let pending = null;
+  try {
+    pending = JSON.parse(localStorage.getItem("farq.pendingPayment") || "null");
+  } catch (_error) {
+    pending = null;
+  }
+  history.replaceState({}, "", "/subscribe");
+
+  await ensureAuth();
+  state.view = "subscribe";
+  state.subError = "";
+  state.subActivePlan = "";
+  state.subMountedPlan = "";
+  state.subMountFailed = false;
+  render();
+
+  try {
+    const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
+    state.subPlans = plans.plans || [];
+    state.subStatus = me;
+  } catch (_error) {
+    state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
+  }
+
+  if (moyasarPaymentId && pending?.payment_id) {
+    try {
+      const result = await api("/v1/subscriptions/verify", {
+        method: "POST",
+        json: { payment_id: pending.payment_id, moyasar_payment_id: moyasarPaymentId },
+      });
+      localStorage.removeItem("farq.pendingPayment");
+      state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
+      state.subError = result.activated ? "" : "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك.";
+    } catch (_error) {
+      state.subError = "ما قدرنا نتحقق من الدفع. جرّب مرة ثانية من صفحة الاشتراك.";
+    }
+  }
+
+  // Only auto-select/auto-mount the single plan when this load never
+  // attempted a verification (someone just landed on /subscribe/callback
+  // directly). When a verify was attempted, auto-mounting here would
+  // immediately overwrite the success/failure message above with a fresh
+  // checkout attempt - leave the plan list showing an explicit "try again"
+  // button instead.
+  const verifyAttempted = Boolean(moyasarPaymentId && pending?.payment_id);
+  if (!verifyAttempted && state.subStatus?.status !== "active" && state.subPlans.length === 1) {
+    state.subActivePlan = state.subPlans[0].code;
+  }
+  render();
+}
+
 async function mountPayment(planCode) {
   const plan = state.subPlans.find((item) => item.code === planCode);
   if (!plan || state.subMountedPlan === planCode) return;
@@ -804,6 +869,10 @@ async function mountPayment(planCode) {
   render();
   try {
     const checkout = await api("/v1/subscriptions/checkout", { method: "POST", json: { plan: plan.code } });
+    // mada/3DS cards redirect the whole page away and back to callback_url
+    // instead of firing on_completed - stash our payment_id so the page
+    // that reloads at /subscribe/callback can still verify it.
+    localStorage.setItem("farq.pendingPayment", JSON.stringify({ payment_id: checkout.payment_id, plan: plan.code }));
     await loadMoyasarSdk();
     state.subBusy = false;
     render();
@@ -829,6 +898,7 @@ async function mountPayment(planCode) {
             method: "POST",
             json: { payment_id: checkout.payment_id, moyasar_payment_id: payment.id },
           });
+          localStorage.removeItem("farq.pendingPayment");
           state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
           state.subError = "";
         } catch (_error) {
@@ -973,6 +1043,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
+else if (subscribeCallback) handleSubscribeCallback().catch(() => render());
 else render();
 
 api("/v1/cities", { skipAuth: true })
