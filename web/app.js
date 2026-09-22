@@ -982,7 +982,7 @@ function renderRequests() {
               <strong style="font-size:15px;font-weight:700"><bdi>${esc(need)}</bdi></strong>
               <span class="fq-meta" style="font-size:11px;color:var(--fq-muted)">${esc(ago(item.last_message_at || item.created_at))}</span>
             </span>
-            <span style="color:var(--fq-muted);display:grid;place-items:center">${ic("back", 16)}</span>
+            <span style="color:var(--fq-muted);display:grid;place-items:center">${ic("forward", 16)}</span>
           </div>
           <div class="fq-row">
             <span class="fq-tag ${status.tone}">${esc(status.label)}</span>
@@ -1209,13 +1209,16 @@ function waMessages(thread, messages, group) {
 // conversation, and every message here is routed to or synced from those.
 // The offers, side by side: sorted by price, each with the gap to the cheapest, and one tap to pick a winner.
 // O01_CompareOffers — node 39:180. Its own screen, reached from the conversation.
+// O01_CompareOffers — node 39:180, with the savings ring, the gap chip and the badges
+// the September update added.
 function renderCompare() {
   const thread = state.thread;
   if (!thread) return renderRequests();
   const offers = (thread.offers || []).filter((item) => item.total_price != null).sort((a, b) => a.total_price - b.total_price);
   const cheapest = offers[0]?.total_price ?? 0;
+  const dearest = offers[offers.length - 1]?.total_price ?? 0;
   const awarded = thread.awarded_seller_id;
-  const chat = `<button class="fq-ibtn" type="button" data-action="all-sellers" aria-label="المحادثة">${ic("message-circle", 20)}</button>`;
+  const chat = `<button class="fq-ibtn light" type="button" data-action="all-sellers" aria-label="المحادثة">${ic("message-circle", 20)}</button>`;
   return `${fqHead({ title: "قارن العروض", sub: `${formatCount(offers.length)} عروض · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat })}
   <section class="fq-body tight">
     ${offers.length ? "" : `<div class="fq-body center"><div class="fq-blob warn">${ic("tag", 48)}</div><h2 class="fq-h2">ما وصلت عروض بأسعار بعد</h2><p class="fq-lead">أول ما يرسل مورد سعرًا يظهر هنا للمقارنة.</p></div>`}
@@ -1223,34 +1226,39 @@ function renderCompare() {
       .map((offer, index) => {
         const won = awarded && awarded === offer.seller_id;
         const gap = offer.total_price - cheapest;
-        const dearestOffer = offers[offers.length - 1]?.total_price || offer.total_price;
-        const saving = dearestOffer > 0 ? Math.round(((dearestOffer - offer.total_price) / dearestOffer) * 100) : 0;
-        return `<article class="fq-cmp-card${index === 0 ? " best" : ""}">
+        const saving = dearest > 0 ? Math.round(((dearest - offer.total_price) / dearest) * 100) : 0;
+        const best = index === 0;
+        return `<article class="fq-cmp-card${best ? " best" : ""}">
+          ${best ? `<span class="fq-valuetag">أفضل قيمة</span>` : ""}
           <div class="top">
-            <span style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+            <span style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
               <span class="amount">${esc(money(offer.total_price))}</span>
-              ${index === 0
-                ? offers.length > 1 ? `<span class="fq-delta">أوفر بـ ${esc(money(dearestOffer - offer.total_price))}</span>` : ""
-                : `<span class="fq-delta up">+${esc(money(gap))}</span>`}
+              <span style="display:flex;align-items:center;gap:6px">
+                ${best
+                  ? offers.length > 1 ? `<span class="fq-delta">أوفر بـ ${esc(money(dearest - offer.total_price))}</span><span class="fq-tag deep">الأقل</span>` : ""
+                  : `<span class="fq-delta up">+${esc(money(gap))}</span>`}
+              </span>
+              ${scoreRing(saving, "وفّر")}
             </span>
-            ${scoreRing(saving, "وفّر")}
             <span style="display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end">
-              ${index === 0 ? `<span class="fq-best">أفضل سعر</span>` : ""}
+              ${best ? `<span class="fq-best">أفضل سعر</span>` : ""}
               ${won ? `<span class="fq-tag ok">الفائز</span>` : ""}
               <span class="who"><bdi>${esc(sellerName(thread, offer.seller_id))}</bdi></span>
             </span>
           </div>
           <hr class="fq-line">
           <div class="fq-inc">
-            <span><span class="${index === 0 ? "y" : "n"}">${index === 0 ? "✓" : "•"}</span>${index === 0 ? "أقل عرض وصل" : `أغلى بـ ${esc(money(gap))} عن الأقل`}</span>
-            ${offer.currency ? `<span><span class="y">✓</span>العملة ${esc(offer.currency === "SAR" ? "ريال سعودي" : offer.currency)}</span>` : ""}
-            <span><span class="y">✓</span>وصل ${esc(ago(offer.created_at) || "")}</span>
+            <span><span class="y">✓</span>${best ? "أقل عرض وصل" : `أغلى بـ ${esc(money(gap))} عن الأقل`}</span>
+            ${offer.delivery_included ? `<span><span class="y">✓</span>شامل التوصيل</span>` : ""}
+            ${offer.note ? `<span><span class="y">✓</span><bdi>${esc(snippet(offer.note, 42))}</bdi></span>` : ""}
           </div>
           <hr class="fq-line">
+          <div class="fq-row"><span class="fq-meta">${esc(ago(offer.created_at) ? `وصل ${ago(offer.created_at)}` : "")}</span>
+            <span class="fq-meta">${offer.currency && offer.currency !== "SAR" ? esc(offer.currency) : ""}</span></div>
           <div class="fq-cmp-actions">
             ${won
               ? `<button class="fq-btn ghost" type="button" disabled>تمت الترسية</button>`
-              : `<button class="fq-btn" type="button" data-action="pick-winner" data-seller="${esc(offer.seller_id)}" data-price="${esc(String(offer.total_price))}">اختيار هذا العرض</button>`}
+              : `<button class="fq-btn success" type="button" data-action="pick-winner" data-seller="${esc(offer.seller_id)}" data-price="${esc(String(offer.total_price))}">اختيار هذا العرض</button>`}
             <button class="fq-btn ghost" type="button" data-action="seller-filter" data-seller="${esc(offer.seller_id)}">مراسلته</button>
           </div>
         </article>`;
@@ -1514,30 +1522,34 @@ function renderThread() {
 }
 
 // AC01_Account — node 85:438.
+// AC01_Account — node 85:438. The profile sits on a deep-green banner, each entry is its own
+// card, and signing out is drawn in red.
 function renderAccount() {
   const name = state.account?.name || "حسابي";
-  const email = state.account?.email || "";
-  const plan = state.subStatus?.status === "active" ? state.subStatus?.subscription?.plan || "" : "";
-  const item = (label, action, badge = "") =>
-    `<button class="fq-item" type="button" data-action="${action}">
-      <span class="lead">${esc(label)}${badge ? `<span class="fq-tag deep">${esc(badge)}</span>` : ""}</span>${ic("back", 16)}</button>`;
-  return `${fqHead({ title: "حسابي" })}
-  <section class="fq-body">
-    <div class="fq-profile">
-      <span class="pic">${initial(name)}</span>
-      <span><b><bdi>${esc(name)}</bdi></b><span dir="ltr">${esc(email)}</span></span>
-    </div>
-    <div class="fq-list">
-      ${item("بياناتي", "profile")}
-      ${item("اشتراكي", "subscribe", plan ? planName(plan) : trialLabel())}
-      ${item("الإشعارات", "notifications")}
-      ${item("إعدادات الإشعارات", "notify-settings")}
-      ${item("الدعم والمساعدة", "support")}
-      ${item("سياسة الخصوصية", "privacy")}
-      ${item("الشروط والأحكام", "terms")}
-      ${item("تسجيل الخروج", "sign-out")}
-    </div>
-    <p style="text-align:center;margin:0"><span class="fq-chip-version">الإصدار 1.0.0</span></p>
+  const contact = state.account?.email || "";
+  const plan = isSubscribed() ? planName(state.subStatus?.subscription?.plan || "") : trialLabel();
+  const item = (label, action, badge = "", danger = false) =>
+    `<button class="fq-entry${danger ? " danger" : ""}" type="button" data-action="${action}">
+      <span class="lead">${esc(label)}</span>
+      ${badge ? `<span class="fq-tag deep">${esc(badge)}</span>` : ""}
+      <span class="go">${ic("forward", 16)}</span></button>`;
+  const right = `<span style="display:flex;align-items:center;gap:10px"><span class="fq-head-mark">فرق</span>
+    <button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button></span>`;
+  return `${fqHead({ title: "حسابي", start: right })}
+  <div class="fq-profile-banner">
+    <span class="pic">${initial(name)}</span>
+    <span><b><bdi>${esc(name)}</bdi></b><span dir="ltr">${esc(contact)}</span></span>
+  </div>
+  <section class="fq-body tight">
+    ${item("بياناتي", "profile")}
+    ${item("اشتراكي", "subscribe", plan)}
+    ${item("الإشعارات", "notifications")}
+    ${item("إعدادات الإشعارات", "notify-settings")}
+    ${item("الدعم والمساعدة", "support")}
+    ${item("سياسة الخصوصية", "privacy")}
+    ${item("الشروط والأحكام", "terms")}
+    ${item("تسجيل الخروج", "sign-out", "", true)}
+    <p style="text-align:center;margin:8px 0 0"><span class="fq-chip-version">الإصدار 1.0.0</span></p>
   </section>
   ${fqNav("account")}`;
 }

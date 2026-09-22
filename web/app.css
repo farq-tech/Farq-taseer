@@ -1621,3 +1621,25 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq-tag, .fq-unread, .fq-delta, .fq-best { white-space: nowrap; }
 .fq-unread { font-size: 10px; padding: 3px 8px; }
 .fq-card .fq-row { gap: 10px; }
+.fq-cmp-card { position: relative; }
+.fq-valuetag { position: absolute; top: -1px; inset-inline-end: 16px; background: var(--fq-soft); color: var(--fq-deep-green); border-radius: 0 0 10px 10px; padding: 4px 10px; font-size: 11px; font-weight: 700; }
+.fq-cmp-card.best { border-color: var(--fq-success); border-top-width: 3px; }
+.fq-best { background: var(--fq-success); }
+.fq-delta.up { background: var(--fq-app-bg); color: var(--fq-text-2); }
+.fq-cmp-actions { direction: ltr; }
+.fq-cmp-actions .fq-btn { direction: rtl; }
+.fq-valuetag { inset-inline-end: auto; right: 16px; }
+.fq-cmp-card .top { align-items: flex-start; }
+.fq-cmp-card .who { white-space: nowrap; }
+.fq-cmp-card.best { border-color: var(--fq-line); border-top: 3px solid var(--fq-success); }
+
+/* AC01: the profile banner and the one-card-per-entry list. */
+.fq-profile-banner { display: flex; align-items: center; gap: 14px; padding: 20px; background: var(--fq-deep-green); }
+.fq-profile-banner .pic { width: 64px; height: 64px; border-radius: 50%; background: var(--fq-mint); color: var(--fq-deep-green); display: grid; place-items: center; font-size: 24px; font-weight: 800; flex: none; }
+.fq-profile-banner b { display: block; font-size: 20px; font-weight: 800; color: #fff; }
+.fq-profile-banner span span { font-size: 14px; color: #cfe6dd; }
+.fq-entry { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 60px; padding: 0 16px; background: var(--fq-surface); border: 1.5px solid var(--fq-line); border-radius: var(--fq-r-card); box-shadow: var(--fq-shadow-card); font: inherit; font-size: 15px; font-weight: 600; color: var(--fq-text); text-align: start; }
+.fq-entry .lead { flex: 1; min-width: 0; }
+.fq-entry .go { color: var(--fq-muted); display: grid; place-items: center; order: -1; }
+.fq-entry.danger { color: #c0392b; }
+.fq-entry.danger .go { color: #c0392b; }
