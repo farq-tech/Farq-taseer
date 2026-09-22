@@ -1,3 +1,4 @@
+-- Applied to farq-main on 2026-09-22 as version 20260922140456. Do not re-apply.
 -- Item conversations routed through Haraj chat. Additive only: no existing row is changed.
 -- Target: farq-main (mpgbvtaguerncgbzvpwg), schema taseer.
 
