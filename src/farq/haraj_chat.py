@@ -43,7 +43,8 @@ READ_SPACING_SECONDS = 2
 READ_PAUSE_SECONDS = 15 * 60
 RENEW_BEFORE_SECONDS = 24 * 3600
 TIMEOUT_SECONDS = 15
-UNREADABLE = "رسالة حراج غير نصية"
+# Shown to the customer, so it does not name Haraj (Farq's staff inbox says «رسالة حراج غير نصية»).
+UNREADABLE = "رسالة غير نصية"
 
 
 class HarajChatUnavailable(Exception):

@@ -180,7 +180,7 @@ def test_fetch_refuses_topics_and_answers_that_are_not_ours():
     assert mismatch.value.code == "INVALID_RESPONSE"
     haraj.pages = [page([{**message(51), "content": {"type": "image/jpeg"}}])]
     found = client.fetch(conversation_id="p2p7_19676360", seller_id="19676360", after_seq=0)
-    assert found[0].body == "رسالة حراج غير نصية"
+    assert found[0].body == "رسالة غير نصية"
 
 
 def test_nothing_is_sent_without_the_server_switches():

@@ -473,8 +473,8 @@ function deliveryLabel(thread, message) {
   const to = message.scope === "single_seller" && message.seller_id ? `إلى ${sellerName(thread, message.seller_id)} فقط` : `للكل (${formatCount(deliveries.length)})`;
   const sent = deliveries.filter((item) => item.status === "sent").length;
   const failed = deliveries.filter((item) => item.status === "failed").length;
-  let status = "بانتظار الإرسال لحراج";
-  if (message.delivery_state === "sent") status = "وصلت في حراج";
+  let status = "بانتظار الإرسال";
+  if (message.delivery_state === "sent") status = "وصلت";
   else if (message.delivery_state === "partial") status = `وصلت لـ ${formatCount(sent)} · تعذرت ${formatCount(failed)}`;
   else if (message.delivery_state === "failed") status = "تعذر الإرسال";
   return `${to} · ${status}`;
@@ -517,15 +517,15 @@ function renderThread() {
   const best = [...offers].sort((a, b) => a.total_price - b.total_price)[0];
   const replied = new Set((thread.messages || []).filter((item) => item.sender_role === "seller").map((item) => item.seller_id));
   const title = one ? sellerName(thread, one) : recipients.map((item) => item.seller_name).join(" · ");
-  const subtitle = one ? "محادثته في حراج" : thread.need || thread.original_text || "";
+  const subtitle = one ? "محادثتك معه" : thread.need || thread.original_text || "";
   const back = `<button class="icon-btn" type="button" data-action="${one ? "all-sellers" : "requests"}" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
   const phone = `<span class="icon-btn" aria-hidden="true">${icon("phone", { size: 20 })}</span>`;
-  const sync = thread.last_synced_at ? `آخر مزامنة مع حراج ${ago(thread.last_synced_at)}` : "ما تمت مزامنة حراج بعد";
+  const sync = thread.last_synced_at ? `آخر تحديث ${ago(thread.last_synced_at)}` : "بانتظار أول تحديث";
   const target = state.replyTo;
   return `<header class="chat-head">${phone}<div class="who-line"><strong>${esc(title || "المحادثة")}</strong><span class="meta">${esc(subtitle)}</span></div>${back}</header>
   <section class="page soft chat-page">
     ${best ? `<div class="quote-card"><div class="row"><span class="tag">${one ? "عرضه" : "أرخص عرض"}</span><strong>الإجمالي: ${esc(money(best.total_price))}</strong></div><p>${one ? "" : `${esc(best.provider_name || sellerName(thread, best.seller_id))} · `}${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
-    <p class="chat-hint">${one ? "رسايلك هنا توصل له بس." : `${replied.size ? `ردّ ${formatCount(replied.size)} من ${formatCount(recipients.length)} · ` : ""}رسالتك توصل للكل في حراج. «ردّ عليه» أو @الاسم توصل له بس.`}</p>
+    <p class="chat-hint">${one ? "رسايلك هنا توصل له بس." : `${replied.size ? `ردّ ${formatCount(replied.size)} من ${formatCount(recipients.length)} · ` : ""}رسالتك توصل للكل. «ردّ عليه» أو @الاسم توصل له بس.`}</p>
     <div class="thread"><p class="day">${esc(sync)}</p>${threadBubbles(thread, messages) || `<p class="meta">بانتظار الرد.</p>`}</div>
   </section>
   ${target ? `<div class="reply-target"><span>ترد على <strong>${esc(target.name)}</strong>: ${esc(snippet(target.body, 40))}</span><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
