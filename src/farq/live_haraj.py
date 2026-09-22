@@ -6,7 +6,8 @@ import json
 import re
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import queue
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -173,60 +174,79 @@ class HarajLiveClient:
             raise LiveUnavailable(json.dumps(payload["errors"], ensure_ascii=False)[:300])
         return payload.get("data", {}).get("search") or {}
 
-    def search_one(self, query: str, city: str | None) -> QueryFetch:
-        ads: list[Ad] = []
+    def search_one_iter(self, query: str, city: str | None):
+        """One page at a time, so the customer sees the first ads while the rest are still loading."""
         seen: set[str] = set()
-        pages = 0
-        has_next = False
         try:
             for page in range(1, self.config.live_max_pages + 1):
-                search = self._post(
-                    {
-                        "search": query,
-                        "page": page,
-                        "limit": self.config.live_page_size,
-                        "city": city,
-                    }
-                )
-                pages += 1
-                items = search.get("items") or []
-                new_items = 0
-                for item in items:
+                search = self._post({"search": query, "page": page, "limit": self.config.live_page_size, "city": city})
+                fresh: list[Ad] = []
+                for item in search.get("items") or []:
                     if not item.get("id"):
                         continue
                     ad = ad_from_item(item)
                     if ad.id in seen:
                         continue
                     seen.add(ad.id)
-                    ads.append(ad)
-                    new_items += 1
+                    fresh.append(ad)
                 has_next = bool((search.get("pageInfo") or {}).get("hasNextPage"))
-                if not has_next or new_items == 0:
-                    break
+                last = not has_next or not fresh
+                yield QueryFetch(ads=fresh, pages=1, has_next=has_next and not last)
+                if last:
+                    return
         except LiveTimeout as exc:
-            return QueryFetch(ads=ads, pages=pages, has_next=bool(ads), timed_out=True, error=str(exc))
+            yield QueryFetch(pages=0, has_next=bool(seen), timed_out=True, error=str(exc))
         except LiveUnavailable as exc:
-            if ads:
-                return QueryFetch(ads=ads, pages=pages, has_next=False, error=str(exc))
+            if seen:
+                yield QueryFetch(pages=0, has_next=False, error=str(exc))
+                return
             raise
-        return QueryFetch(ads=ads, pages=pages, has_next=has_next)
+
+    def search_one(self, query: str, city: str | None) -> QueryFetch:
+        ads: list[Ad] = []
+        pages = 0
+        has_next = False
+        timed_out = False
+        error = None
+        for fetch in self.search_one_iter(query, city):
+            ads.extend(fetch.ads)
+            pages += fetch.pages
+            has_next = fetch.has_next
+            timed_out = timed_out or fetch.timed_out
+            error = fetch.error or error
+        return QueryFetch(ads=ads, pages=pages, has_next=has_next, timed_out=timed_out, error=error)
 
     def search_iter(self, queries: list[str], city: str | None):
+        """Every page from every query, handed over the moment it arrives."""
         selected = [query for query in queries if query][: self.config.live_max_queries]
         if not selected:
             return
         workers = max(1, min(self.config.live_concurrency, len(selected)))
+        pages: "queue.Queue[QueryFetch | None]" = queue.Queue()
+
+        def work(query: str) -> None:
+            try:
+                for fetch in self.search_one_iter(query, city):
+                    pages.put(fetch)
+            except LiveTimeout as exc:
+                pages.put(QueryFetch(timed_out=True, error=str(exc)))
+            except LiveUnavailable as exc:
+                pages.put(QueryFetch(error=str(exc)))
+            except Exception as exc:  # network and parser failures stay visible
+                pages.put(QueryFetch(error=str(exc)))
+            finally:
+                pages.put(None)
+
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(self.search_one, query, city) for query in selected]
-            for future in as_completed(futures):
-                try:
-                    yield future.result()
-                except LiveTimeout as exc:
-                    yield QueryFetch(timed_out=True, error=str(exc))
-                except LiveUnavailable as exc:
-                    yield QueryFetch(error=str(exc))
-                except Exception as exc:  # network and parser failures stay visible
-                    yield QueryFetch(error=str(exc))
+            for query in selected:
+                pool.submit(work, query)
+            finished = 0
+            while finished < len(selected):
+                fetch = pages.get()
+                if fetch is None:
+                    finished += 1
+                    continue
+                yield fetch
 
     def search(self, queries: list[str], city: str | None) -> LiveBatch:
         batch = LiveBatch()

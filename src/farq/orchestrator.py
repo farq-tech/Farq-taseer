@@ -147,9 +147,10 @@ def _search_need(
     live_client: HarajLiveClient | None,
     config: SearchConfig,
     now: datetime,
-    yield_event,
     trace_id: str,
-) -> tuple[SearchState, list[SearchResult], list[dict]]:
+):
+    """Yields events while it searches, then one {"type": "need_done", ...} with the outcome.
+    Being a generator is the point: the customer sees each batch as it lands, not all of them at the end."""
     stages: list[dict] = []
     city = intent.location_city.value if intent.location_sensitivity.value == "required" else None
     city_filter = city if isinstance(city, str) else None
@@ -174,19 +175,17 @@ def _search_need(
     live_rejected = 0
     if reasons and live_client is not None:
         stages.append({"stage": "live_retrieval", "need": intent.need, "status": SearchState.LIVE_SEARCHING.value})
-        yield_event({"type": "status", "state": SearchState.LIVE_SEARCHING.value, "trace_id": trace_id})
+        yield {"type": "status", "state": SearchState.LIVE_SEARCHING.value, "trace_id": trace_id}
         if local_results:
             ordered, _removed = _ordered(intent, local_results, [], config, now)
-            yield_event(
-                {
-                    "type": "results",
-                    "state": SearchState.PARTIAL_RESULTS,
-                    "results": ordered,
-                    "trace_id": trace_id,
-                    "partial": True,
-                    "need": intent.need,
-                }
-            )
+            yield {
+                "type": "results",
+                "state": SearchState.PARTIAL_RESULTS,
+                "results": ordered,
+                "trace_id": trace_id,
+                "partial": True,
+                "need": intent.need,
+            }
         live_batch = LiveBatch()
         accumulated: list = []
         city_value = intent.location_city.value if isinstance(intent.location_city.value, str) else None
@@ -222,16 +221,14 @@ def _search_need(
             live_results, live_rejected, live_reasons = _live_results(intent, snapshot, config, now)
             ordered, _removed = _ordered(intent, local_results, live_results, config, now)
             if ordered:
-                yield_event(
-                    {
-                        "type": "results",
-                        "state": SearchState.PARTIAL_RESULTS,
-                        "results": ordered,
-                        "trace_id": trace_id,
-                        "partial": True,
-                        "need": intent.need,
-                    }
-                )
+                yield {
+                    "type": "results",
+                    "state": SearchState.PARTIAL_RESULTS,
+                    "results": ordered,
+                    "trace_id": trace_id,
+                    "partial": True,
+                    "need": intent.need,
+                }
         stages.append(
             {
                 "stage": "live_retrieval",
@@ -254,7 +251,7 @@ def _search_need(
         rejection_reasons=local_reasons + live_reasons,
     )
     stages.append({"stage": "response", "need": intent.need, "state": state.value, "results": len(ordered)})
-    return state, ordered, stages
+    yield {"type": "need_done", "state": state, "results": ordered, "stages": stages}
 
 
 def iter_search(
@@ -280,11 +277,6 @@ def iter_search(
         }
     )
     yield {"type": "intent", "intent": intent, "intents": needs, "trace_id": trace_id, "clarification_question": intent.clarification_question}
-
-    pending: list[dict] = []
-
-    def yield_event(event: dict) -> None:
-        pending.append(event)
 
     def finish(
         state: SearchState,
@@ -320,11 +312,14 @@ def iter_search(
     groups: list[NeedGroup] = []
     flat: list[SearchResult] = []
     for need_intent in needs:
-        state, ordered, need_stages = _search_need(need_intent, corpus, live_client, config, now, yield_event, trace_id)
-        stages.extend(need_stages)
-        for event in pending:
-            yield event
-        pending.clear()
+        state = SearchState.NO_QUALIFIED_RESULTS
+        ordered: list[SearchResult] = []
+        for event in _search_need(need_intent, corpus, live_client, config, now, trace_id):
+            if event["type"] != "need_done":
+                yield event
+                continue
+            state, ordered, need_stages = event["state"], event["results"], event["stages"]
+            stages.extend(need_stages)
         label = need_intent.need or need_intent.original_query
         groups.append(NeedGroup(need=label, intent=need_intent, results=ordered, state=state))
         seen = {(item.ad.id if item.ad else None, item.seller.id if item.seller else None) for item in flat}

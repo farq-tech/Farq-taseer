@@ -545,3 +545,49 @@ def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tm
     photo = next(m for m in two["messages"] if m["sender_role"] == "seller")
     assert photo["media"][0]["url"].startswith("/v1/files/")
     assert api.get(photo["media"][0]["url"]).content == b"haraj-photo-bytes"
+
+
+def test_results_reach_the_customer_while_the_search_is_still_running(tmp_path: Path):
+    """Each batch must leave the server as it lands, not all of them once the search ends."""
+    import threading
+
+    from farq.live_haraj import QueryFetch, ad_from_item
+    from farq.orchestrator import iter_search
+
+    def ad(number):
+        return ad_from_item(
+            {
+                "id": number,
+                "title": f"سباك معتمد {number}",
+                "postDate": 1780000000,
+                "authorUsername": f"مؤسسة {number}",
+                "authorId": 100 + number,
+                "URL": f"{number}/plumber/",
+                "bodyTEXT": "سباك خبرة في الرياض",
+                "city": "الرياض",
+                "tags": [],
+                "status": True,
+                "price": {"formattedPrice": "150", "inputPrice": "150"},
+            }
+        )
+
+    second_page = threading.Event()
+
+    class SlowHaraj:
+        def search_iter(self, queries, city):
+            yield QueryFetch(ads=[ad(1), ad(2)], pages=1, has_next=True)
+            second_page.wait(5)
+            yield QueryFetch(ads=[ad(3)], pages=1, has_next=False)
+
+    events = []
+    stream = iter_search("أبي سباك بالرياض", MemoryCorpus.from_json(default_sample_path()), SlowHaraj(), SearchConfig(enable_live=True))
+    for event in stream:
+        events.append(event)
+        if event["type"] == "results" and len(event["results"]) >= 2:
+            break  # the first batch arrived while the second page is still pending
+    assert not second_page.is_set()
+    assert [item["type"] for item in events][:2] == ["intent", "status"]
+    second_page.set()
+    rest = list(stream)
+    assert rest[-1]["type"] == "done"
+    assert len(rest[-1]["response"].results) >= 3
