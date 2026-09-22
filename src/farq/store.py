@@ -851,7 +851,7 @@ class Store:
 
     # --- Sync: Haraj -> item conversation ---------------------------------------------------------
 
-    def threads_to_sync(self, limit: int = 20, now: float | None = None) -> list[dict]:
+    def threads_to_sync(self, limit: int = 200, now: float | None = None) -> list[dict]:
         stamp = datetime.fromtimestamp(now, tz=timezone.utc).isoformat() if now is not None else _now()
         rows = self._connection.execute(
             "select * from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?) order by checked_at is not null, checked_at limit ?",
@@ -866,6 +866,36 @@ class Store:
             (now.isoformat(), (now + timedelta(seconds=retry_seconds)).isoformat(), failure_code, thread["request_id"], thread["seller_id"], thread["need"]),
         )
         self._connection.commit()
+
+    def thread_for_inbound(self, conversation_id: str, sent_at: str) -> dict | None:
+        """Haraj keeps one conversation per supplier. A reply belongs to the latest request we sent him
+        something for before the reply was written (Farq's rule), else to the newest request."""
+        row = self._connection.execute(
+            "select t.* from haraj_threads t join message_deliveries d on d.request_id = t.request_id and d.seller_id = t.seller_id and d.need = t.need"
+            " where t.haraj_conversation_id = ? and d.delivery_status = 'sent' and julianday(d.sent_at) <= julianday(?) order by julianday(d.sent_at) desc limit 1",
+            (conversation_id, sent_at),
+        ).fetchone()
+        if row is None:
+            row = self._connection.execute(
+                "select t.* from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ? order by r.created_at desc limit 1",
+                (conversation_id,),
+            ).fetchone()
+        return None if row is None else dict(row)
+
+    def conversation_checked(self, conversation_id: str, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int | None = None) -> None:
+        moment = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
+        self._connection.execute(
+            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ?, high_water = max(coalesce(high_water, 0), ?) where haraj_conversation_id = ?",
+            (moment.isoformat(), (moment + timedelta(seconds=retry_seconds)).isoformat(), failure_code, high_water or 0, conversation_id),
+        )
+        self._connection.commit()
+
+    def has_haraj_message(self, haraj_message_id: str) -> bool:
+        return self._connection.execute("select 1 from messages where haraj_message_id = ?", (haraj_message_id,)).fetchone() is not None
+
+    def save_file_for_request(self, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
+        owner = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
+        return self.save_file(owner["owner_user_id"], request_id, content_type, filename, data, width, height)
 
     # --- Channel state shared by every instance: session tokens, pauses, pacing ------------------
 

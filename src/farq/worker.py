@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from dataclasses import replace
 from typing import Callable
 
 from farq.push import notify_reply
@@ -128,6 +129,42 @@ def dispatch_pending(
     return sent
 
 
+MEDIA_COPY_LIMIT = 10 * 1024 * 1024
+
+
+def keep_media(store, request_id: str, media, fetch=None) -> tuple:
+    """Haraj hands out media links that expire after a day; keep our own copy in the files table."""
+    kept = []
+    for entry in media or ():
+        entry = dict(entry)
+        url = entry.get("url") or ""
+        if url.startswith("https://"):
+            try:
+                response = (fetch or _download)(url)
+                if response is not None and len(response) <= MEDIA_COPY_LIMIT:
+                    name = entry.get("name") or ("photo.jpg" if str(entry.get("type", "")).startswith("image/") else "file")
+                    saved = store.save_file_for_request(request_id, entry["type"], name, response, entry.get("width"), entry.get("height"))
+                    entry.update(url=saved["url"], file_id=saved["file_id"], size=saved["size"])
+            except Exception:  # noqa: BLE001 - the Haraj link still works for a day
+                pass
+        kept.append(entry)
+    return tuple(kept)
+
+
+def _download(url: str) -> bytes | None:
+    import httpx
+
+    with httpx.stream("GET", url, timeout=20, follow_redirects=True) as response:
+        if not response.is_success:
+            return None
+        data = bytearray()
+        for chunk in response.iter_bytes():
+            data.extend(chunk)
+            if len(data) > MEDIA_COPY_LIMIT:
+                return None
+        return bytes(data)
+
+
 def sync_replies(
     store,
     chat: HarajChat,
@@ -135,40 +172,53 @@ def sync_replies(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.time,
 ) -> int:
+    """Read each supplier's Haraj conversation once, and file every reply under the right request."""
     if isinstance(chat, NotConnectedChat) or _paused(store, "inbox_paused_until", clock()):
         return 0
     received = 0
     deadline = clock() + budget_seconds
     synced: set[str] = set()
-    for index, thread in enumerate(store.threads_to_sync(now=clock())):
+    conversations: dict[str, list[dict]] = {}
+    for thread in store.threads_to_sync(now=clock()):
+        conversations.setdefault(thread["haraj_conversation_id"], []).append(thread)
+    for index, (conversation, threads) in enumerate(conversations.items()):
         if clock() + READ_SPACING_SECONDS > deadline:
             break
         if index:
             sleep(READ_SPACING_SECONDS)
+        seller_id = threads[0]["seller_id"]
         try:
             inbound = chat.fetch(
-                conversation_id=thread["haraj_conversation_id"],
-                seller_id=thread["seller_id"],
-                after_seq=int(thread.get("high_water") or 0),
+                conversation_id=conversation,
+                seller_id=seller_id,
+                after_seq=min(int(item.get("high_water") or 0) for item in threads),
             )
         except HarajRefused as exc:
-            store.thread_checked(thread, f"HTTP_{exc.status}", READ_PAUSE_SECONDS if exc.hard_stop else 60, now=clock())
+            store.conversation_checked(conversation, f"HTTP_{exc.status}", READ_PAUSE_SECONDS if exc.hard_stop else 60, now=clock())
             if exc.hard_stop:
                 store.set_value("inbox_paused_until", str(clock() + READ_PAUSE_SECONDS))
             break
         except HarajChatUnavailable as exc:
             if exc.code in ("DISABLED", "CONFIGURATION_REQUIRED"):
                 break
-            store.thread_checked(thread, exc.code, 3600 if exc.code == "AMBIGUOUS" else 60, now=clock())
+            store.conversation_checked(conversation, exc.code, 3600 if exc.code == "AMBIGUOUS" else 60, now=clock())
             if exc.code == "AMBIGUOUS":
                 continue
             break
+        highest = 0
         for item in inbound:
+            highest = max(highest, item.seq)
+            if store.has_haraj_message(item.haraj_message_id):
+                continue
+            thread = store.thread_for_inbound(conversation, item.sent_at) or threads[0]
+            if item.media:
+                item = replace(item, media=keep_media(store, thread["request_id"], item.media))
             if store.record_inbound(thread, item) is not None:
                 received += 1
+                synced.add(thread["request_id"])
                 notify_reply(store, thread["request_id"], thread["seller_id"], item.body or media_label(item.media))
-        store.thread_checked(thread, now=clock())
-        synced.add(thread["request_id"])
+        store.conversation_checked(conversation, now=clock(), high_water=highest)
+        synced.update(item["request_id"] for item in threads)
     for request_id in synced:
         store.mark_synced(request_id)
     return received

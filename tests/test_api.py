@@ -504,3 +504,44 @@ def test_picked_suppliers_only_and_photos_reach_haraj(tmp_path: Path):
     run()
     assert [(seller, body) for _c, seller, body in haraj.sent] == [("11", "مثل هذا"), ("13", "مثل هذا"), ("11", "للكل"), ("12", "للكل"), ("13", "للكل")]
     assert haraj.attachments == [("11", "image/jpeg", b"jpeg"), ("13", "image/jpeg", b"jpeg")]
+
+
+def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tmp_path: Path, monkeypatch):
+    import farq.worker as worker
+
+    monkeypatch.setattr(worker, "_download", lambda url: b"haraj-photo-bytes")
+    haraj = FakeHaraj()
+    clock = Clock()
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), chat=haraj))
+    headers = signed_in(api)
+    body = lambda need: {"original_text": need, "need": need, "city": "الرياض", "recipients": [{"seller_id": "11", "seller_name": "محمد"}]}
+    run = lambda: poll_once(store, haraj, budget_seconds=600, sleep=clock.sleep, clock=clock)
+    first = api.post("/v1/requests", headers=headers, json=body("سباك")).json()
+    run()
+    time.sleep(0.01)
+    second = api.post("/v1/requests", headers=headers, json=body("كهربائي")).json()
+    clock.sleep(60)
+    run()
+
+    def sent_at(request):
+        fresh = api.get(f"/v1/requests/{request['id']}", headers=headers).json()
+        return fresh["messages"][0]["deliveries"][0]["sent_at"]
+
+    between, after = sent_at(first), sent_at(second)
+    assert between < after
+    # Haraj keeps one conversation per supplier, shared by both requests.
+    haraj.inbox["p2p1_11"] = [
+        InboundMessage("p2p1_11:90", "عن السباكة", between, 90),
+        InboundMessage("p2p1_11:91", "", after, 91, ({"type": "image/jpeg", "url": "https://harajchat-media.example/a.jpg?X-Amz-Expires=86400"},)),
+    ]
+    clock.sleep(60)
+    assert run() == (0, 2)
+    clock.sleep(60)
+    assert run() == (0, 0)
+    one = api.get(f"/v1/requests/{first['id']}", headers=headers).json()
+    two = api.get(f"/v1/requests/{second['id']}", headers=headers).json()
+    assert [m["body"] for m in one["messages"] if m["sender_role"] == "seller"] == ["عن السباكة"]
+    photo = next(m for m in two["messages"] if m["sender_role"] == "seller")
+    assert photo["media"][0]["url"].startswith("/v1/files/")
+    assert api.get(photo["media"][0]["url"]).content == b"haraj-photo-bytes"

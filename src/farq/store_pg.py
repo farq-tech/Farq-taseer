@@ -626,7 +626,7 @@ class PgStore:
 
     # -- sync: Haraj -> item conversation ---------------------------------------
 
-    def threads_to_sync(self, limit: int = 20, now: float | None = None) -> list[dict]:
+    def threads_to_sync(self, limit: int = 200, now: float | None = None) -> list[dict]:
         with self._pool.connection() as conn:
             rows = conn.execute(
                 "select * from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
@@ -661,6 +661,37 @@ class PgStore:
                 "update haraj_channel set value = %s::text where key = 'next_send_at' and value::float8 = %s",
                 (slot, slot + spacing),
             )
+
+    def thread_for_inbound(self, conversation_id: str, sent_at: str) -> dict | None:
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select t.* from haraj_threads t join message_deliveries d on d.request_id = t.request_id and d.seller_id = t.seller_id and d.need = t.need"
+                " where t.haraj_conversation_id = %s and d.delivery_status = 'sent' and d.sent_at <= %s::timestamptz order by d.sent_at desc limit 1",
+                (conversation_id, sent_at),
+            ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "select t.* from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s order by r.created_at desc limit 1",
+                    (conversation_id,),
+                ).fetchone()
+        return None if row is None else dict(row)
+
+    def conversation_checked(self, conversation_id: str, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int | None = None) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                "update haraj_threads set checked_at = coalesce(to_timestamp(%s), now()), retry_at = coalesce(to_timestamp(%s), now()) + make_interval(secs => %s),"
+                " failure_code = %s, high_water = greatest(coalesce(high_water, 0), %s) where haraj_conversation_id = %s",
+                (now, now, retry_seconds, failure_code, high_water or 0, conversation_id),
+            )
+
+    def has_haraj_message(self, haraj_message_id: str) -> bool:
+        with self._pool.connection() as conn:
+            return conn.execute("select 1 from messages where haraj_message_id = %s", (haraj_message_id,)).fetchone() is not None
+
+    def save_file_for_request(self, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
+        with self._pool.connection() as conn:
+            owner = conn.execute("select owner_user_id from requests where id = %s", (request_id,)).fetchone()
+        return self.save_file(owner["owner_user_id"], request_id, content_type, filename, data, width, height)
 
     def get_value(self, key: str) -> str | None:
         with self._pool.connection() as conn:

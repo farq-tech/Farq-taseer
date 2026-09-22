@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import re
 from urllib.parse import quote
 from pathlib import Path
@@ -535,8 +536,9 @@ def create_app(
         if authorization != f"Bearer {secret}":
             raise HTTPException(status_code=401, detail="unauthorized")
         # One run a minute: up to three sends 20 s apart, then read replies.
+        started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
-        received = sync_replies(store, chat, budget_seconds=12)
+        received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
         return {"sent": sent, "received": received}
 
     if WEB_DIR.is_dir():
