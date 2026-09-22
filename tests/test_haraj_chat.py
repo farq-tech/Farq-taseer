@@ -214,8 +214,13 @@ def request_with(store: Store, sellers: int) -> str:
     return store.create_request(owner, "سباك", "سباك", None, "الرياض", {}, [RequestRecipient(seller_id=str(100 + i), seller_name=f"s{i}") for i in range(sellers)])
 
 
-def statuses(store: Store) -> list[tuple[str, str | None]]:
-    rows = store._connection.execute("select delivery_status, error from message_deliveries order by seller_id").fetchall()
+def statuses(store) -> list[tuple[str, str | None]]:
+    sql = "select delivery_status, error from message_deliveries order by seller_id"
+    if hasattr(store, "_pool"):
+        with store._pool.connection() as conn:
+            rows = conn.execute(sql).fetchall()
+    else:
+        rows = store._connection.execute(sql).fetchall()
     return [(row["delivery_status"], row["error"]) for row in rows]
 
 

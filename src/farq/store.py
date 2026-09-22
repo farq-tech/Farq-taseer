@@ -55,12 +55,115 @@ def _delivery_state(deliveries: list[dict]) -> str:
     return "partial" if "sent" in statuses else "failed"
 
 
-def _visible_to_seller(message: Message, seller_id: str | None, need: str | None) -> bool:
+def visible_to_seller(message: Message, seller_id: str | None, need: str | None) -> bool:
     if message.sender_role == "seller":
         return seller_id is not None and message.seller_id == seller_id
     if message.seller_id is not None:
         return message.seller_id == seller_id
     return message.need is None or need is None or message.need == need
+
+
+def _stamp(value) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def route_targets(recipients, default_need: str | None, need: str | None, seller_id: str | None):
+    """Who a customer message goes to: one seller, or every seller on the item. Returns (targets, need, scope)."""
+    item_of = lambda row: row["need"] or default_need or ""
+    if seller_id is not None:
+        targets = [row for row in recipients if row["seller_id"] == seller_id and (need is None or item_of(row) == need)]
+        if not targets:
+            raise ValueError("unknown seller")
+        return targets[:1], item_of(targets[0]) or None, SINGLE_SELLER
+    if need is None and len({item_of(row) for row in recipients}) > 1:
+        raise ValueError("need is required for a request with several items")
+    targets = [row for row in recipients if need is None or item_of(row) == need]
+    if not targets:
+        raise ValueError("unknown item")
+    return targets, need, ALL_SELLERS
+
+
+def mark_cheapest(offers: list[Offer]) -> list[Offer]:
+    """One cheapest offer per item, and only when it is strictly the lowest."""
+    grouped: dict[str, list[Offer]] = {}
+    for offer in offers:
+        grouped.setdefault(offer.need or "", []).append(offer)
+    for group in grouped.values():
+        priced = [item for item in group if item.total_price is not None]
+        if priced:
+            lowest = min(item.total_price for item in priced)
+            winners = [item for item in priced if item.total_price == lowest]
+            if len(winners) == 1:
+                winners[0].cheapest = True
+    return offers
+
+
+def priced_offer(offer: Offer, body: str, seller_name: str, need: str | None) -> Offer:
+    base = offer.base_price if offer.base_price is not None else offer.amount
+    included = True if offer.delivery_included is None else offer.delivery_included
+    delivery = 0.0 if included else (offer.delivery_price or 0.0)
+    total = None if base is None else float(base) + float(delivery)
+    return Offer(
+        amount=total,
+        currency=offer.currency or "SAR",
+        note=offer.note or (body.strip() or None),
+        provider_name=offer.provider_name or seller_name,
+        phone=offer.phone,
+        base_price=base,
+        delivery_included=included,
+        delivery_price=delivery,
+        total_price=total,
+        need=offer.need or need,
+    )
+
+
+def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer], messages) -> dict:
+    recipient_count = len(recipients)
+    sent_count = sum(1 for item in recipients if item.send_status == "sent")
+    failed_count = sum(1 for item in recipients if item.send_status == "failed")
+    replied: set[str] = set()
+    latest_offer = None
+    for message in messages:
+        if message["sender_role"] == "seller":
+            replied.add(message["seller_id"] or _stamp(message["created_at"]))
+            if message["offer_amount"] is not None:
+                latest_offer = message
+    newest_offer = bool(messages) and messages[-1]["sender_role"] == "seller" and messages[-1]["offer_amount"] is not None
+    need_cards = []
+    grouped: dict[str, list[RequestRecipient]] = {}
+    for recipient in recipients:
+        grouped.setdefault(recipient.need or row["need"] or row["original_text"], []).append(recipient)
+    for label, group in grouped.items():
+        group_offers = [item for item in offers if (item.need or label) == label]
+        totals = [item.total_price for item in group_offers if item.total_price is not None]
+        need_cards.append({"need": label, "recipient_count": len(group), "offer_count": len(group_offers), "lowest_total": min(totals) if totals else None})
+    last = messages[-1] if messages else None
+    preview = " ".join((last["body"] or "").split()) if last is not None else ""
+    replies = max(len(replied), len(offers))
+    latest_amount = None if latest_offer is None else float(latest_offer["offer_amount"])
+    return {
+        "id": row["id"],
+        "original_text": row["original_text"],
+        "need": row["need"],
+        "city": row["city"],
+        "created_at": _stamp(row["created_at"]),
+        "last_synced_at": _stamp(row["last_synced_at"]),
+        "seller_names": [item.seller_name for item in recipients],
+        "last_message": preview[:180],
+        "last_message_at": None if last is None else _stamp(last["created_at"]),
+        "recipient_count": recipient_count,
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "queued_count": recipient_count - sent_count - failed_count,
+        "replied_count": replies,
+        "waiting_count": max(0, recipient_count - replies),
+        "has_new_offer": newest_offer or bool(offers),
+        "latest_offer_amount": latest_amount if not offers else min((item.total_price for item in offers if item.total_price is not None), default=None),
+        "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
+        "needs": need_cards,
+    }
 
 
 class Store:
@@ -549,20 +652,8 @@ class Store:
     ) -> Message:
         recipients = self._connection.execute("select * from request_recipients where request_id = ?", (request_id,)).fetchall()
         default_need = self._connection.execute("select need from requests where id = ?", (request_id,)).fetchone()["need"]
-        item_of = lambda row: self._col(row, "need") or default_need or ""
-        if seller_id is not None:
-            targets = [row for row in recipients if row["seller_id"] == seller_id and (need is None or item_of(row) == need)]
-            if not targets:
-                raise ValueError("unknown seller")
-            targets = targets[:1]
-            need = item_of(targets[0]) or None
-        else:
-            if need is None and len({item_of(row) for row in recipients}) > 1:
-                raise ValueError("need is required for a request with several items")
-            targets = [row for row in recipients if need is None or item_of(row) == need]
-            if not targets:
-                raise ValueError("unknown item")
-        scope = SINGLE_SELLER if seller_id is not None else ALL_SELLERS
+        item_of = lambda row: row["need"] or default_need or ""
+        targets, need, scope = route_targets(recipients, default_need, need, seller_id)
         message = self.add_message(request_id, "user", owner_user_id, body, None, seller_id=seller_id, need=need, reply_to=reply_to, scope=scope)
         if haraj_text is not None:
             self._connection.execute("update messages set haraj_text = ? where id = ?", (haraj_text, message.id))
@@ -739,71 +830,15 @@ class Store:
         return message
 
     def list_requests(self, owner_user_id: str) -> list[dict]:
-        rows = self._connection.execute(
-            "select * from requests where owner_user_id = ? order by created_at desc",
-            (owner_user_id,),
-        ).fetchall()
+        rows = self._connection.execute("select * from requests where owner_user_id = ? order by created_at desc", (owner_user_id,)).fetchall()
         items = []
         for row in rows:
-            request_id = row["id"]
-            recipients = [self._recipient_from_row(item) for item in self._connection.execute("select * from request_recipients where request_id = ?", (request_id,))]
-            offers = self._offers_for_request(request_id)
-            recipient_count = len(recipients)
-            sent_count = sum(1 for item in recipients if item.send_status == "sent")
-            failed_count = sum(1 for item in recipients if item.send_status == "failed")
-            seller_names = [item.seller_name for item in recipients]
+            recipients = [self._recipient_from_row(item) for item in self._connection.execute("select * from request_recipients where request_id = ?", (row["id"],))]
             messages = self._connection.execute(
                 "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
-                (request_id,),
+                (row["id"],),
             ).fetchall()
-            replied: set[str] = set()
-            latest_offer = None
-            for message in messages:
-                if message["sender_role"] == "seller":
-                    replied.add(message["seller_id"] or message["created_at"])
-                    if message["offer_amount"] is not None:
-                        latest_offer = message
-            newest_offer = bool(messages) and messages[-1]["sender_role"] == "seller" and messages[-1]["offer_amount"] is not None
-            need_cards = []
-            grouped: dict[str, list[RequestRecipient]] = {}
-            for recipient in recipients:
-                grouped.setdefault(recipient.need or row["need"] or row["original_text"], []).append(recipient)
-            for label, group in grouped.items():
-                group_offers = [item for item in offers if (item.need or label) == label]
-                totals = [item.total_price for item in group_offers if item.total_price is not None]
-                need_cards.append(
-                    {
-                        "need": label,
-                        "recipient_count": len(group),
-                        "offer_count": len(group_offers),
-                        "lowest_total": min(totals) if totals else None,
-                    }
-                )
-            last = messages[-1] if messages else None
-            preview = " ".join((last["body"] or "").split()) if last is not None else ""
-            items.append(
-                {
-                    "id": request_id,
-                    "original_text": row["original_text"],
-                    "need": row["need"],
-                    "city": row["city"],
-                    "created_at": row["created_at"],
-                    "last_synced_at": row["last_synced_at"] if "last_synced_at" in row.keys() else None,
-                    "seller_names": seller_names,
-                    "last_message": preview[:180],
-                    "last_message_at": None if last is None else last["created_at"],
-                    "recipient_count": recipient_count,
-                    "sent_count": sent_count,
-                    "failed_count": failed_count,
-                    "queued_count": recipient_count - sent_count - failed_count,
-                    "replied_count": max(len(replied), len(offers)),
-                    "waiting_count": max(0, recipient_count - max(len(replied), len(offers))),
-                    "has_new_offer": newest_offer or bool(offers),
-                    "latest_offer_amount": (None if latest_offer is None else latest_offer["offer_amount"]) if not offers else min((item.total_price for item in offers if item.total_price is not None), default=None),
-                    "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
-                    "needs": need_cards,
-                }
-            )
+            items.append(request_summary(row, recipients, self._offers_for_request(row["id"]), messages))
         return items
 
     def _request_by_token(self, token: str):
@@ -834,7 +869,6 @@ class Store:
 
     def _offers_for_request(self, request_id: str) -> list[Offer]:
         rows = self._connection.execute("select * from offers where request_id = ? order by total_price is null, total_price", (request_id,)).fetchall()
-        grouped: dict[str, list[Offer]] = {}
         offers: list[Offer] = []
         for item in rows:
             offer = Offer(
@@ -851,16 +885,7 @@ class Store:
                 need=item["need"],
             )
             offers.append(offer)
-            grouped.setdefault(item["need"] or "", []).append(offer)
-        for group in grouped.values():
-            priced = [item for item in group if item.total_price is not None]
-            if len(priced) == 1 or (priced and priced[0].total_price != priced[1].total_price if len(priced) > 1 else False):
-                if priced:
-                    lowest = min(item.total_price for item in priced)
-                    winners = [item for item in priced if item.total_price == lowest]
-                    if len(winners) == 1:
-                        winners[0].cheapest = True
-        return offers
+        return mark_cheapest(offers)
 
     def seller_view(self, token: str) -> dict | None:
         row = self._request_by_token(token)
@@ -888,7 +913,7 @@ class Store:
             "messages": [
                 item.model_dump(mode="json")
                 for item in self._messages_for_request(row["id"])
-                if _visible_to_seller(item, recipient_row["seller_id"] if recipient_row is not None else None, need)
+                if visible_to_seller(item, recipient_row["seller_id"] if recipient_row is not None else None, need)
             ],
         }
 
@@ -912,22 +937,7 @@ class Store:
             raise ValueError("unknown seller")
         matched = next(item for item in recipients if item["seller_id"] == seller_id)
         if offer is not None:
-            base = offer.base_price if offer.base_price is not None else offer.amount
-            included = True if offer.delivery_included is None else offer.delivery_included
-            delivery = 0.0 if included else (offer.delivery_price or 0.0)
-            total = None if base is None else float(base) + float(delivery)
-            offer = Offer(
-                amount=total,
-                currency=offer.currency or "SAR",
-                note=offer.note or (body.strip() or None),
-                provider_name=offer.provider_name or matched["seller_name"],
-                phone=offer.phone,
-                base_price=base,
-                delivery_included=included,
-                delivery_price=delivery,
-                total_price=total,
-                need=offer.need or self._col(matched, "need") or row["need"],
-            )
+            offer = priced_offer(offer, body, matched["seller_name"], self._col(matched, "need") or row["need"])
             self._connection.execute(
                 "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
