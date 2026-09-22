@@ -489,7 +489,8 @@ function chatDay(iso) {
 }
 
 // Colored sender names in the item conversation, the way a WhatsApp group shows them.
-const NAME_COLORS = ["#1F7AEC", "#C4462C", "#0A8754", "#8E44AD", "#D35400", "#16808A", "#B03A71", "#5B6BC0"];
+// Farq token colors that read on white bubbles and behind white initials.
+const NAME_COLORS = ["#0B6A63", "#22577A", "#DC6E41", "#248F5C", "#C7911E", "#065656", "#BE5532", "#22162B"];
 function nameColor(sellerId) {
   let hash = 0;
   for (const char of String(sellerId || "")) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
@@ -514,7 +515,7 @@ function waBubble(thread, message, { group, byId }) {
   const body = esc(message.body || "").replace(/\n/g, "<br>");
   const quoted = message.reply_to ? byId.get(message.reply_to) : null;
   const quote = quoted
-    ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? nameColor(quoted.seller_id) : "#06CF9C"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
+    ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? nameColor(quoted.seller_id) : "#83F1B1"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
     : "";
   const time = `<time>${esc(chatTime(message.created_at))}</time>`;
   if (mine) {

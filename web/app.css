@@ -778,15 +778,19 @@ apple-pay-button {
   display: block;
 }
 
-/* Customer conversation, laid out like WhatsApp (RTL: incoming on the right, yours on the left). */
+/* Customer conversation: WhatsApp's layout in Farq's colors (RTL: incoming on the right, yours on the left). */
 :root {
-  --chat-wallpaper: #EFEAE2;
-  --chat-out: #D9FDD3;
+  --chat-wallpaper: var(--neutral-100);
+  --chat-dots: color-mix(in srgb, var(--brand-900) 6%, transparent);
+  --chat-out: var(--brand-900);
+  --chat-out-text: var(--white);
+  --chat-out-meta: var(--mint-200);
   --chat-in: var(--white);
   --chat-head: var(--brand-900);
-  --chat-send: #00A884;
-  --chat-meta: #667781;
-  --chat-tick: #53BDEB;
+  --chat-send: var(--mint-500);
+  --chat-meta: var(--neutral-400);
+  --chat-system: var(--mint-50);
+  --chat-system-text: var(--brand-800);
 }
 .wa-screen { display: flex; flex-direction: column; min-height: 100dvh; background: var(--chat-wallpaper); }
 .wa-head {
@@ -802,6 +806,7 @@ apple-pay-button {
   display: grid; place-items: center; color: var(--white); font-weight: 800; font-size: 17px;
 }
 .wa-avatar.group { background: var(--mint-500); color: var(--brand-900); font-size: 15px; }
+.wa-avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--mint-500) 55%, transparent); }
 .wa-who { min-width: 0; display: flex; flex-direction: column; }
 .wa-who strong { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wa-who span { font-size: 12.5px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -811,19 +816,19 @@ apple-pay-button {
 }
 .wa-pinned strong { font-weight: 800; color: var(--brand-900); }
 .wa-pinned span:last-child { color: var(--chat-meta); }
-.wa-pin { background: var(--feedback-success-bg); color: var(--feedback-success-fg); border-radius: var(--radius-sm); padding: 2px 8px; font-size: 12px; font-weight: 800; }
+.wa-pin { background: var(--mint-100); color: var(--brand-900); border-radius: var(--radius-sm); padding: 2px 8px; font-size: 12px; font-weight: 800; }
 .wa-wall {
   flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px 10px 14px;
   background-color: var(--chat-wallpaper);
-  background-image: radial-gradient(rgba(4, 52, 52, 0.05) 1px, transparent 1px);
+  background-image: radial-gradient(var(--chat-dots) 1px, transparent 1px);
   background-size: 18px 18px;
 }
 .wa-system {
   align-self: center; max-width: 88%; margin: 6px 0; padding: 6px 12px; text-align: center;
-  background: #FFF3C4; color: #54656F; border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5;
+  background: var(--chat-system); color: var(--chat-system-text); border: 1px solid var(--mint-200); border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5;
   box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
 }
-.wa-system.subtle { background: rgba(255, 255, 255, 0.7); }
+.wa-system.subtle { background: var(--white); color: var(--chat-meta); border-color: var(--line); }
 .wa-day { display: flex; justify-content: center; margin: 8px 0 4px; }
 .wa-day span { background: var(--white); color: var(--chat-meta); font-size: 12px; padding: 5px 12px; border-radius: var(--radius-sm); box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13); }
 .wa-row { display: flex; margin-top: 4px; }
@@ -831,11 +836,18 @@ apple-pay-button {
 .wa-row.out { justify-content: flex-end; }
 .wa-bubble {
   position: relative; max-width: 82%; min-width: 96px; padding: 6px 9px 20px;
-  border-radius: 8px; font-size: 14.5px; line-height: var(--lh-arabic); color: #111B21;
-  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13); word-wrap: break-word;
+  border-radius: var(--radius-md); font-size: 14.5px; line-height: var(--lh-arabic); color: var(--ink);
+  box-shadow: var(--shadow-soft); word-wrap: break-word;
 }
 .wa-row.in .wa-bubble { background: var(--chat-in); border-start-start-radius: 0; }
-.wa-row.out .wa-bubble { background: var(--chat-out); border-start-end-radius: 0; }
+.wa-row.out .wa-bubble { background: var(--chat-out); color: var(--chat-out-text); border-start-end-radius: 0; }
+.wa-row.out .wa-meta, .wa-row.out .wa-to { color: var(--chat-out-meta); }
+.wa-row.out .wa-tick { stroke: var(--chat-out-meta); }
+.wa-row.out .wa-quote { background: rgba(255, 255, 255, 0.1); }
+.wa-row.out .wa-quote { border-inline-start-color: var(--mint-500); }
+.wa-row.out .wa-quote strong { color: var(--mint-300); }
+.wa-row.out .wa-quote span { color: var(--fareeq-ice); }
+.wa-row.out .wa-to.warn { color: var(--coral-500); }
 .wa-row.in .wa-bubble::before, .wa-row.out .wa-bubble::before {
   content: ""; position: absolute; top: 0; width: 8px; height: 13px;
 }
@@ -861,7 +873,7 @@ apple-pay-button {
   position: absolute; bottom: 3px; inset-inline-end: 8px;
   display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--chat-meta);
 }
-.wa-reply { border: 0; background: none; padding: 0 4px 0 0; font: inherit; font-size: 11px; font-weight: 800; color: var(--chat-send); cursor: pointer; }
+.wa-reply { border: 0; background: none; padding: 0 4px 0 0; font: inherit; font-size: 11px; font-weight: 800; color: var(--brand-700); cursor: pointer; }
 .wa-tick { width: 15px; height: 15px; fill: none; stroke: var(--chat-meta); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .wa-failed { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: var(--radius-full); background: var(--feedback-danger-fg); color: var(--white); font-size: 10px; font-weight: 800; }
 .wa-dock { position: sticky; bottom: 0; z-index: 3; background: transparent; padding-bottom: var(--safe-bottom); }
@@ -878,7 +890,7 @@ apple-pay-button {
 .wa-compose { display: flex; align-items: flex-end; gap: 6px; padding: 6px 8px 8px; }
 .wa-field {
   flex: 1; display: flex; align-items: center; gap: 6px; min-height: 46px; padding: 0 12px;
-  background: var(--white); border-radius: var(--radius-xl); box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+  background: var(--white); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow-soft);
 }
 .wa-field input { flex: 1; border: 0; outline: 0; background: none; font-size: 15px; min-height: 44px; }
 .wa-attach { display: grid; place-items: center; cursor: pointer; opacity: 0.6; }
@@ -886,7 +898,7 @@ apple-pay-button {
 .wa-send {
   width: 46px; height: 46px; flex: none; border: 0; border-radius: var(--radius-full);
   background: var(--chat-send); display: grid; place-items: center; padding: 0;
-  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.2);
+  box-shadow: var(--shadow-soft);
 }
-.wa-send img { filter: brightness(0) invert(1); }
+.wa-send img { filter: brightness(0); opacity: 0.85; }
 .status.warn { color: var(--feedback-danger-fg); font-weight: 700; }
