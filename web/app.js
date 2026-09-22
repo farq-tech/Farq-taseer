@@ -22,6 +22,9 @@ const state = {
   returnView: "home",
   picked: null,
   chatFiles: [],
+  searching: false,
+  seenCards: new Set(),
+  shownCount: 0,
   unreadTotal: 0,
   pushState: "",
   pushDismissed: (() => {
@@ -215,6 +218,21 @@ function facts(intent) {
   return items;
 }
 
+function cityInText(text) {
+  const value = String(text || "");
+  const found = state.cities.find((city) => value.includes(city.label) || value.includes(city.value));
+  return found ? found.value : "";
+}
+
+function renderCityAsk() {
+  return `${appBar({ back: "home" })}
+  <section class="page tight city-ask">
+    <div class="original-card"><span>طلبك</span><strong>${esc(state.query)}</strong></div>
+    <div class="section-head"><h1>في أي مدينة؟</h1><p class="lede">نختصر البحث على الجهات القريبة منك.</p></div>
+    ${cityChoices("search-city")}
+  </section>`;
+}
+
 function customerCity() {
   if (state.city) return state.city;
   const value = state.intent?.location_city?.value;
@@ -313,10 +331,10 @@ function appBar({ title = "", subtitle = "", back = "", end = "", avatar = "", l
   const start = back
     ? `<button class="icon-btn back" type="button" data-action="${esc(back)}" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`
     : `<span class="slot" aria-hidden="true"></span>`;
-  const mark = avatar || `<span class="bar-mark" aria-hidden="true"><img src="/icons/app-192.png" alt="" width="28" height="28"></span>`;
+  const mark = avatar || `<span class="bar-mark" aria-hidden="true"><img src="/brand/logo-square.png" alt="" width="30" height="30"></span>`;
   const heading = title
     ? `<span class="bar-title"><strong><bdi>${esc(title)}</bdi></strong>${subtitle ? `<span><bdi>${esc(subtitle)}</bdi></span>` : ""}</span>`
-    : `<a class="bar-title brand" href="/" data-action="home"><strong>فرق تسعير</strong></a>`;
+    : `<a class="bar-title brand" href="/" data-action="home" aria-label="فرق تسعير"><span class="wordmark"><img src="/brand/farq-wordmark-dark.svg" alt="فرق" width="52" height="24"><span>تسعير</span></span></a>`;
   return `<header class="top-bar${lined ? " lined" : ""}">${start}<span class="bar-body">${mark}${heading}</span>${end || '<span class="slot" aria-hidden="true"></span>'}</header>`;
 }
 
@@ -341,7 +359,7 @@ function renderAuth() {
   const register = state.authMode === "register";
   return `${appBar()}
   <section class="page auth">
-    <div class="auth-mark" aria-hidden="true"><img src="/icons/app-192.png" alt="" width="72" height="72"></div>
+    <div class="auth-mark" aria-hidden="true"><img src="/brand/logo-square.png" alt="" width="76" height="76"></div>
     <h1>${register ? "أنشئ حسابك" : "سجّل دخولك"}</h1>
     <p class="lede">${register ? "حساب واحد تتابع فيه كل طلباتك ومحادثاتك مع البائعين." : "لازم تسجّل دخول عشان تطلب أسعار وتراسل البائعين."}</p>
     <form id="auth-form" class="auth-form" novalidate>
@@ -412,10 +430,13 @@ function renderHome() {
 }
 
 function renderSearching() {
-  return `${topBar()}
+  const understood = [state.intent?.need, typeof state.intent?.location_city?.value === "string" ? cityLabel(state.intent.location_city.value) : state.city ? cityLabel(state.city) : ""]
+    .filter(Boolean)
+    .join(" · ");
+  return `${appBar()}
   <section class="page searching" aria-live="polite">
     <div class="pulse"><div class="pulse-mid"><div class="pulse-core">${icon("search-white", { size: 20 })}</div></div></div>
-    <div><h2>ندور لك...</h2><p class="lede">نبحث في أكثر من 2,000 جهة</p></div>
+    <div><h2>ندور لك...</h2><p class="lede">${esc(understood || "نبحث في أكثر من 2,000 جهة")}</p></div>
     <div class="dots" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
     <div class="original-card"><span>طلبك الأصلي</span><strong>${esc(state.query)}</strong></div>
   </section>`;
@@ -439,12 +460,17 @@ function renderQuestion() {
 
 function snip(result) {
   const lines = evidenceLines(result);
-  const text = result.ad?.description || lines[1] || lines[0] || "";
+  const text = adStory(result.ad?.description) || lines[1] || lines[0] || "";
   return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
 }
 
+let newCardsInBatch = 0;
 function renderCard(result) {
   const key = resultKey(result);
+  // Cards that were already on screen must not flash again when the next batch lands.
+  const fresh = state.seenCards && !state.seenCards.has(key);
+  const animated = fresh && newCardsInBatch < 8;
+  if (fresh) newCardsInBatch += 1;
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
   const name = result.ad?.title || seller.name || "جهة";
@@ -452,7 +478,7 @@ function renderCard(result) {
   const city = result.ad?.city || seller.city || "";
   const blurb = snip(result);
   const thumb = result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`;
-  return `<article class="vendor${selected ? " is-selected" : ""}">
+  return `<article class="vendor${selected ? " is-selected" : ""}${animated ? " is-new" : ""}"${animated ? ` style="animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ""}>
     <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 14 }) : ""}</button>
     <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
       ${thumb}
@@ -468,17 +494,18 @@ function renderCard(result) {
 
 function renderFlow() {
   const asking = state.searchState === "CLARIFICATION_REQUIRED" || state.searchState === "LOCATION_AMBIGUOUS";
-  const live = state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS");
+  const live = state.searching || (state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS"));
   const showEmpty = !asking && !state.partial && state.results.length === 0;
+  // The pulse is the first frame after «ابحث», not an empty list.
   if (live && !state.results.length && !asking) return renderSearching();
   const need = state.intent?.need || facts(state.intent)[0] || state.query || "النتائج";
   return `${appBar({ title: asking ? "" : "النتائج", back: "home" })}
   <section class="page tight flow">
-    ${asking ? "" : `<div class="group-head"><span>${formatCount(state.results.length)} جهة مطابقة</span><strong>${esc(need)}</strong></div>`}
+    ${asking ? "" : `<div class="group-head"><span data-count="${state.results.length}">${formatCount(state.shownCount || state.results.length)} جهة مطابقة</span><strong><bdi>${esc(need)}</bdi></strong></div>`}
     ${asking ? renderFacts() + renderQuestion() : ""}
     <p class="status ${live ? "live" : ""}" aria-live="polite">${esc(showEmpty ? "" : state.notice)}</p>
     ${showEmpty ? `<div class="empty"><h2>${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="text-btn" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${state.results.length ? `<div class="cards">${state.results.map(renderCard).join("")}</div>` : ""}
+    ${state.results.length ? `<div class="cards">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
     ${dock()}
   </section>`;
 }
@@ -958,8 +985,10 @@ function render() {
     seller: renderSeller,
     subscribe: renderSubscribe,
     auth: renderAuth,
+    "city-ask": renderCityAsk,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
+  const keepScroll = state.view === "flow" && lastView === "flow" ? window.scrollY : null;
   const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
   const stick = state.view === "thread" && (state.stickChat || nearBottom);
   app.innerHTML = shell(view());
@@ -969,7 +998,10 @@ function render() {
   }
   bindImages(app);
   bindGallery(app);
+  bindCounter(app);
+  if (state.view === "flow" && state.seenCards) for (const result of state.results) state.seenCards.add(resultKey(result));
   if (focused) document.getElementById(focused)?.focus();
+  if (keepScroll) window.scrollTo(0, keepScroll);
   if (stick) {
     state.stickChat = false;
     window.scrollTo(0, document.documentElement.scrollHeight);
@@ -977,6 +1009,29 @@ function render() {
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
   if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
+}
+
+// «٢٠ جهة مطابقة» counts up to the new number instead of jumping.
+function bindCounter(root) {
+  const node = root.querySelector("[data-count]");
+  if (!node) return;
+  const target = Number(node.dataset.count || 0);
+  const from = Number(state.shownCount || 0);
+  if (from === target) return;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    state.shownCount = target;
+    node.textContent = `${formatCount(target)} جهة مطابقة`;
+    return;
+  }
+  const started = performance.now();
+  const step = (now) => {
+    const ratio = Math.min(1, (now - started) / 200);
+    const value = Math.round(from + (target - from) * ratio);
+    node.textContent = `${formatCount(value)} جهة مطابقة`;
+    state.shownCount = value;
+    if (ratio < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 // The dots under the detail gallery follow the photo in view.
@@ -1031,13 +1086,26 @@ function applyDone(event) {
   state.notice = asking ? "" : finalNotice(event.state, state.results.length);
 }
 
-async function runSearch(text) {
+async function runSearch(text, city = "") {
   const query = (text || "").trim();
   if (!query) return;
   state.query = query;
-  state.city = "";
+  state.city = city || cityInText(query);
+  // Without a city the search is nationwide; ask first, then search inside that city.
+  if (!state.city && state.cities.length) {
+    state.view = "city-ask";
+    state.results = [];
+    state.intent = null;
+    state.searching = false;
+    render();
+    return;
+  }
+  const asked = state.city && !cityInText(query) ? `${query} ${cityLabel(state.city)}` : query;
   state.view = "flow";
   state.partial = true;
+  state.searching = true;
+  state.seenCards = new Set();
+  state.shownCount = 0;
   state.searchState = "";
   state.results = [];
   state.intent = null;
@@ -1048,23 +1116,28 @@ async function runSearch(text) {
   try {
     const headers = { "Content-Type": "application/json" };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query }) });
+    const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked }) });
     if (!response.ok || !response.body) throw new Error("stream");
     await readNdjson(response, (event) => {
       if (event.type === "intent") {
         state.intent = event.intent;
         state.clarification = event.clarification_question || "";
+        if (state.clarification) state.searching = false;
         if (!state.results.length && state.partial) state.notice = "نفهم طلبك…";
       } else if (event.type === "status") {
         state.searchState = event.state;
         state.partial = true;
         state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
       } else if (event.type === "results") {
+        if ((event.results || []).length) state.searching = false;
         state.results = event.results || [];
         state.partial = true;
         state.searchState = event.state;
         if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
-      } else if (event.type === "done") applyDone(event);
+      } else if (event.type === "done") {
+        state.searching = false;
+        applyDone(event);
+      }
       render();
     });
   } catch (_error) {
@@ -1578,6 +1651,8 @@ document.addEventListener("click", (event) => {
   else if (action === "unselect") {
     state.selected.delete(target.dataset.key);
     render();
+  } else if (action === "search-city") {
+    runSearch(state.query, target.dataset.city || "");
   } else if (action === "pick-city") {
     state.city = target.dataset.city || "";
     render();

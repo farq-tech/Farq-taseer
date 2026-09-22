@@ -908,14 +908,22 @@ html.is-busy body::before {
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
 button, .chat-row, .request-card, .vendor-body, .tab { -webkit-tap-highlight-color: transparent; }
-.primary, .chat-row, .tab, .chips button, .wa-send, .notify-on, .vendor-body, .tick, .choices button {
-  transition: transform var(--duration-fast) var(--ease-smooth), background-color var(--duration-fast) var(--ease-smooth), opacity var(--duration-fast);
+.primary, .chat-row, .tab, .chips button, .wa-send, .notify-on, .vendor-body, .tick, .choices button, .file-btn, .ghost-btn {
+  transition: transform 160ms var(--ease-smooth), background-color 160ms var(--ease-smooth), border-color 160ms var(--ease-smooth), opacity 160ms;
 }
-.primary:active, .wa-send:active, .notify-on:active, .chips button:active, .choices button:active { transform: scale(0.97); }
-.chat-row:active, .vendor-body:active { transform: scale(0.99); }
-.tab:active { opacity: 0.6; }
+.primary:active { transform: scale(0.98); background: var(--brand-soft); }
+.wa-send:active { transform: scale(0.94); background: var(--mint-600); }
+.chips button:active, .choices button:active, .file-btn:active { transform: scale(0.98); background: var(--mint-100); border-color: var(--mint-500); }
+.notify-on:active { transform: scale(0.98); background: var(--brand-soft); }
+.chat-row:active, .vendor-body:active { transform: scale(0.995); background: var(--mint-50); }
+.tab:active { opacity: 0.55; transform: scale(0.96); }
+.tick:active { transform: scale(0.92); }
+.vendor { transition: border-color 160ms var(--ease-smooth), background-color 160ms var(--ease-smooth), box-shadow 160ms var(--ease-smooth); }
+.vendor.is-new { animation: card-in 220ms var(--ease-enter) both; }
+@keyframes card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.searching { animation: view-enter 200ms var(--ease-enter) both; }
 @media (prefers-reduced-motion: reduce) {
-  .view-enter, .skeleton, html.is-busy body::before { animation: none; }
+  .view-enter, .skeleton, html.is-busy body::before, .vendor.is-new, .searching { animation: none; }
 }
 
 /* Sign in */
@@ -988,3 +996,10 @@ button, .chat-row, .request-card, .vendor-body, .tab { -webkit-tap-highlight-col
 @keyframes spin { to { transform: rotate(360deg); } }
 .wa-notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 8px 6px; padding: 8px 12px; border-radius: 12px; background: var(--feedback-danger-bg); color: var(--feedback-danger-fg); font-size: 13px; font-weight: 700; }
 .wa-notice button { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+
+/* Brand */
+.wordmark { display: inline-flex; align-items: baseline; gap: 7px; }
+.wordmark img { display: block; height: 22px; width: auto; transform: translateY(2px); }
+.wordmark span { font-size: 17px; font-weight: 700; color: var(--brand); }
+.city-ask .original-card { margin-bottom: 18px; }
+.city-ask .choices { display: flex; flex-wrap: wrap; gap: 10px; }
