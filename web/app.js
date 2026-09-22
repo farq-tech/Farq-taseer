@@ -439,6 +439,81 @@ function ic(name, size = 20) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 }
 
+// ---------------------------------------------------------------------------
+// Sound. Short tones built with the Web Audio API — no files to download, and
+// nothing plays until the person has tapped something, which is also what the
+// browsers require. Off is remembered per device.
+// ---------------------------------------------------------------------------
+const SOUNDS = {
+  // name: [ [frequency, start, length], ... ], gain
+  tap: [[[660, 0, 0.05]], 0.05],
+  sent: [[[520, 0, 0.07], [780, 0.06, 0.09]], 0.07],
+  offer: [[[784, 0, 0.1], [1047, 0.09, 0.14]], 0.09],
+  lower: [[[1047, 0, 0.09], [784, 0.08, 0.1], [659, 0.16, 0.16]], 0.09],
+  reply: [[[880, 0, 0.08]], 0.06],
+  award: [[[523, 0, 0.12], [659, 0.1, 0.12], [784, 0.2, 0.14], [1047, 0.3, 0.3]], 0.1],
+  fail: [[[300, 0, 0.14], [220, 0.12, 0.22]], 0.08],
+};
+
+const sound = {
+  ctx: null,
+  ready: false,
+  get on() {
+    try {
+      return localStorage.getItem("farq.sound") !== "0";
+    } catch (_error) {
+      return true;
+    }
+  },
+  set on(value) {
+    try {
+      localStorage.setItem("farq.sound", value ? "1" : "0");
+    } catch (_error) {}
+  },
+  // The first tap unlocks audio; after that a cue can play whenever it likes.
+  unlock() {
+    if (this.ready) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    this.ctx = this.ctx || new Ctx();
+    this.ctx.resume?.();
+    this.ready = true;
+  },
+  play(name) {
+    if (!this.on || !this.ready || !this.ctx) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches && name !== "award") return;
+    const recipe = SOUNDS[name];
+    if (!recipe) return;
+    const [notes, gain] = recipe;
+    const now = this.ctx.currentTime;
+    for (const [frequency, at, length] of notes) {
+      const osc = this.ctx.createOscillator();
+      const amp = this.ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = frequency;
+      amp.gain.setValueAtTime(0, now + at);
+      amp.gain.linearRampToValueAtTime(gain, now + at + 0.012);
+      amp.gain.exponentialRampToValueAtTime(0.0001, now + at + length);
+      osc.connect(amp).connect(this.ctx.destination);
+      osc.start(now + at);
+      osc.stop(now + at + length + 0.02);
+    }
+  },
+};
+
+// A short buzz to go with the cue, where the phone allows it.
+function buzz(pattern) {
+  if (!sound.on) return;
+  try {
+    navigator.vibrate?.(pattern);
+  } catch (_error) {}
+}
+
+function cue(name, pattern) {
+  sound.play(name);
+  if (pattern) buzz(pattern);
+}
+
 // The screen header: deep green, the title in the middle, the brand accent line under it.
 // `back` is the data-action for the chevron; in Arabic it points right, at the start of the line.
 function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = false, auth = false } = {}) {
@@ -604,7 +679,7 @@ function renderSearching() {
   <section class="fq-body" aria-live="polite">
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
-        <span style="flex:1">يبحث فرق عن أفضل سعر لك الآن...</span></div>
+        <span style="flex:1">${state.results.length ? `${formatCount(state.results.length)} مورد وصلوا حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
       <div class="fq-live-count">
         <span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>تحديث في الوقت الفعلي</span>
@@ -921,9 +996,12 @@ async function refreshUnread() {
   try {
     const data = await api("/v1/requests", { quiet: true });
     const changed = JSON.stringify(data.requests || []) !== JSON.stringify(state.requests);
+    const was = state.unreadTotal;
     state.requests = data.requests || [];
     setUnread(state.requests);
-    if (changed && state.view === "requests") render();
+    // Something arrived while the customer was on another screen.
+    if (state.unreadTotal > was) cue("offer", 12);
+    if (changed && (state.view === "requests" || state.view === "notifications")) render();
   } catch (_error) {}
 }
 
@@ -1617,8 +1695,17 @@ const NOTIFY_ROWS = [
 
 function renderNotifySettings() {
   const prefs = state.notifyPrefs || {};
+  const on = sound.on;
   return `${fqHead({ title: "إعدادات الإشعارات", back: "account" })}
   <section class="fq-body tight" style="gap:0;padding:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+        <strong style="font-size:15px;font-weight:600">نغمة عند وصول عرض</strong>
+        <span class="fq-meta" style="font-size:12px;line-height:1.5">نغمة قصيرة واهتزاز خفيف عند وصول رد أو عرض جديد، ونغمة أوضح لو كان العرض أقل من الكل</span>
+        <button class="fq-link" type="button" data-action="try-sound" style="align-self:flex-start">جرّب النغمة</button>
+      </span>
+      <button class="fq-switch${on ? " on" : ""}" type="button" data-action="sound-toggle" role="switch" aria-checked="${on}" aria-label="نغمة عند وصول عرض"><span></span></button>
+    </div>
     ${NOTIFY_ROWS.map(([key, title, desc]) => {
       const on = prefs[key] !== false;
       return `<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
@@ -2066,6 +2153,8 @@ async function runSearch(text, city = "") {
         state.partial = true;
         state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
       } else if (event.type === "results") {
+        // the first batch landing is the moment worth marking
+        if ((event.results || []).length && !state.results.length) cue("tap", 8);
         if ((event.results || []).length) state.searching = false;
         if (event.scanned != null) state.scanned = event.scanned;
         state.results = event.results || [];
@@ -2074,6 +2163,7 @@ async function runSearch(text, city = "") {
         if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
       } else if (event.type === "done") {
         state.searching = false;
+        if (state.results.length) cue("sent", 10);
         applyDone(event);
       }
       render();
@@ -2352,11 +2442,30 @@ async function loadThread(id, silent = false) {
   const thread = await api(`/v1/requests/${id}`, { quiet: silent });
   threadCache.set(id, thread);
   if (state.view !== "thread" || (state.pendingThread && state.pendingThread !== id)) return;
-  const previous = JSON.stringify(state.thread?.messages || []);
-  const first = !state.thread;
+  const before = state.thread;
+  const previous = JSON.stringify(before?.messages || []);
+  const first = !before;
   state.thread = thread;
   if (first) state.stickChat = true;
+  else announceArrivals(before, thread);
   if (!silent || first || previous !== JSON.stringify(thread.messages || [])) render();
+}
+
+// The payoff for the waiting: a reply, an offer, or an offer that undercuts the rest,
+// each with its own cue.
+function announceArrivals(before, after) {
+  const seen = new Set((before.messages || []).map((item) => item.id));
+  const fresh = (after.messages || []).filter((item) => item.sender_role === "seller" && !seen.has(item.id));
+  if (!fresh.length) return;
+  const priced = fresh.map(messagePrice).filter((value) => value != null);
+  if (!priced.length) {
+    cue("reply", 10);
+    return;
+  }
+  const older = (before.offers || []).map((item) => item.total_price).filter((value) => value != null);
+  const best = older.length ? Math.min(...older) : Infinity;
+  if (Math.min(...priced) < best) cue("lower", [10, 40, 16]);
+  else cue("offer", 12);
 }
 
 
@@ -2651,6 +2760,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  sound.unlock();
   const target = event.target.closest("[data-action]");
   if (!target) return;
   // A sheet's backdrop carries the close action; a tap inside the sheet must not close it.
@@ -2681,6 +2791,14 @@ document.addEventListener("click", (event) => {
     } catch (_error) {}
     if (state.notifyPrefs[key] && state.pushState !== "on") enableNotifications(true).catch(() => {}).finally(render);
     else render();
+  } else if (action === "sound-toggle") {
+    sound.unlock();
+    sound.on = !sound.on;
+    if (sound.on) cue("offer", 12);
+    render();
+  } else if (action === "try-sound") {
+    sound.unlock();
+    cue("lower", [10, 40, 16]);
   } else if (action === "read-all") {
     state.notifications = (state.notifications || []).map((item) => ({ ...item, unread: false }));
     render();
@@ -2785,11 +2903,13 @@ document.addEventListener("click", (event) => {
         state.awardPick = null;
         state.busy = false;
         state.view = "awarded";
+        cue("award", [14, 60, 22]);
         render();
       })
       .catch(() => {
         state.busy = false;
         state.awardPick = null;
+        cue("fail", 30);
         toast("ما قدرنا نسجّل الاختيار، جرّب مرة ثانية");
       });
   } else if (action === "winner-chat") {
