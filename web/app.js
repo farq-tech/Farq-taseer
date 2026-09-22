@@ -20,10 +20,11 @@ const state = {
   busy: false,
   subPlans: [],
   subStatus: null,
-  subChosenPlan: "",
+  subActivePlan: "",
+  subMountedPlan: "",
+  subMountFailed: false,
   subBusy: false,
   subError: "",
-  subMounted: false,
   city: "",
   cities: [
     { value: "الرياض", label: "الرياض" },
@@ -505,15 +506,21 @@ function subStatusBanner() {
 
 function renderPlanCard(plan) {
   const price = (plan.price_amount / 100).toLocaleString("ar-SA", { maximumFractionDigits: 2 });
+  const chosen = state.subActivePlan === plan.code;
+  const formId = `moyasar-form-${plan.code}`;
   return `<div class="plan-card${plan.is_placeholder_price ? " is-placeholder" : ""}">
     <h2 class="plan-name">${esc(plan.name_ar)}</h2>
     ${plan.is_placeholder_price ? `<p class="plan-note">سعر تجريبي مؤقت لاختبار الدفع - ليس السعر النهائي.</p>` : ""}
     <div class="plan-price"><strong>${esc(price)}</strong><span>${esc(plan.currency)} / ${esc(String(plan.duration_days))} يوم</span></div>
     <ul class="plan-features">${(plan.features || []).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>
-    <div class="pay-actions" id="pay-actions" data-plan="${esc(plan.code)}">
-      ${state.subBusy ? `<p class="lede">نجهّز الدفع…</p>` : `<div id="moyasar-form"></div><div id="applepay-slot"></div>`}
-    </div>
-    ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="text-btn" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}
+    ${
+      chosen
+        ? `<div class="pay-actions" id="pay-actions" data-plan="${esc(plan.code)}">
+            ${state.subBusy ? `<p class="lede">نجهّز الدفع…</p>` : `<div id="${formId}"></div><div id="applepay-slot-${esc(plan.code)}"></div>`}
+          </div>
+          ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="text-btn" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}`
+        : `<button class="primary block" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اشترك بهذه الخطة</button>`
+    }
   </div>`;
 }
 
@@ -546,7 +553,7 @@ function render() {
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
-  if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subPlans.length && !state.subMounted) mountPayment();
+  if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
 }
 
 function rememberFiles(fileList) {
@@ -757,7 +764,13 @@ function loadMoyasarSdk() {
     const script = document.createElement("script");
     script.src = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.js";
     script.onload = () => resolve(window.Moyasar);
-    script.onerror = () => reject(new Error("moyasar-sdk-failed"));
+    script.onerror = () => {
+      // Don't cache a rejected promise: a transient CDN hiccup would
+      // otherwise fail every future attempt for the rest of the session,
+      // even after the user hits "retry".
+      moyasarScriptPromise = null;
+      reject(new Error("moyasar-sdk-failed"));
+    };
     document.head.appendChild(script);
   });
   return moyasarScriptPromise;
@@ -767,22 +780,25 @@ async function loadSubscribe() {
   await ensureAuth();
   state.view = "subscribe";
   state.subError = "";
-  state.subMounted = false;
+  state.subActivePlan = "";
+  state.subMountedPlan = "";
+  state.subMountFailed = false;
   render();
   try {
     const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
     state.subPlans = plans.plans || [];
     state.subStatus = me;
+    if (state.subPlans.length === 1) state.subActivePlan = state.subPlans[0].code;
   } catch (_error) {
     state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
   }
   render();
 }
 
-async function mountPayment() {
-  const plan = state.subPlans[0];
-  if (!plan || state.subMounted) return;
-  state.subMounted = true;
+async function mountPayment(planCode) {
+  const plan = state.subPlans.find((item) => item.code === planCode);
+  if (!plan || state.subMountedPlan === planCode) return;
+  state.subMountedPlan = planCode;
   state.subBusy = true;
   state.subError = "";
   render();
@@ -791,12 +807,13 @@ async function mountPayment() {
     await loadMoyasarSdk();
     state.subBusy = false;
     render();
-    const mount = document.getElementById("moyasar-form");
+    const formId = `moyasar-form-${plan.code}`;
+    const mount = document.getElementById(formId);
     if (!mount || !window.Moyasar) throw new Error("moyasar-unavailable");
     const methods = ["creditcard"];
     if (window.ApplePaySession && ApplePaySession.canMakePayments && ApplePaySession.canMakePayments()) methods.push("applepay");
     window.Moyasar.init({
-      element: "#moyasar-form",
+      element: `#${formId}`,
       amount: checkout.amount,
       currency: checkout.currency,
       description: `${plan.name_ar} - فرق تسعير`,
@@ -821,6 +838,7 @@ async function mountPayment() {
       },
     });
   } catch (_error) {
+    state.subMountFailed = true;
     state.subBusy = false;
     state.subError = "الدفع غير متاح حالياً. حاول لاحقاً.";
     render();
@@ -911,8 +929,15 @@ document.addEventListener("click", (event) => {
   } else if (action === "idea") runSearch(target.dataset.query);
   else if (action === "requests") loadRequests().catch(() => {});
   else if (action === "subscribe") loadSubscribe().catch(() => {});
-  else if (action === "retry-payment") {
-    state.subMounted = false;
+  else if (action === "choose-plan") {
+    state.subActivePlan = target.dataset.plan;
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
+    state.subError = "";
+    render();
+  } else if (action === "retry-payment") {
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
     state.subError = "";
     render();
   }

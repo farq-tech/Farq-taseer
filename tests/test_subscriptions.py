@@ -23,12 +23,23 @@ class FakeMoyasar:
     def __init__(self):
         self.payments: dict[str, dict] = {}
         self.calls = 0
+        self._fail_remaining = 0
 
-    def register(self, moyasar_id: str, *, status: str, amount: int, currency: str, metadata: dict):
-        self.payments[moyasar_id] = {"status": status, "amount": amount, "currency": currency, "metadata": metadata}
+    def register(self, moyasar_id: str, *, status: str, amount: int, currency: str, metadata: dict, refunded: bool = False):
+        self.payments[moyasar_id] = {"status": status, "amount": amount, "currency": currency, "metadata": metadata, "refunded": refunded}
+
+    def mark_refunded(self, moyasar_id: str) -> None:
+        self.payments[moyasar_id]["refunded"] = True
+
+    def fail_next(self, times: int = 1) -> None:
+        """Simulate the next N fetch_payment calls hitting a transient outage."""
+        self._fail_remaining = times
 
     def fetch_payment(self, payment_id: str) -> MoyasarPayment:
         self.calls += 1
+        if self._fail_remaining > 0:
+            self._fail_remaining -= 1
+            raise MoyasarError("simulated transient Moyasar outage")
         if payment_id not in self.payments:
             raise MoyasarError("payment not found at Moyasar")
         data = self.payments[payment_id]
@@ -38,7 +49,7 @@ class FakeMoyasar:
             amount=data["amount"],
             currency=data["currency"],
             fee=0,
-            refunded=False,
+            refunded=data["refunded"],
             metadata=data["metadata"],
             source_type="creditcard",
             raw={},
@@ -204,8 +215,82 @@ def test_duplicate_webhook_delivery_is_a_no_op(tmp_path):
     second = api.post("/v1/payments/moyasar/webhook", json=webhook_body)
     assert second.status_code == 200
     assert second.json()["duplicate_event"] is True
-    # The fake client should only have been asked to fetch the payment once.
-    assert moyasar.calls == 1
+    assert second.json()["already_processed"] is True
+    # The event is only marked "seen" after a successful settlement, so the
+    # replay still re-fetches from Moyasar - but settle_payment's own status
+    # guard means it can never double-activate or double-extend.
+    assert moyasar.calls == 2
+
+
+def test_webhook_retries_after_transient_moyasar_outage_instead_of_being_dropped(tmp_path):
+    """Regression test: recording a webhook event as 'seen' before the
+    settlement actually succeeds would mean a genuine retry of that same
+    event id gets silently discarded as a duplicate, leaving a paying
+    customer stuck in payment_pending forever.
+    """
+    moyasar = FakeMoyasar()
+    api, store = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar_id = "pay_FLAKY"
+    moyasar.register(moyasar_id, status="paid", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+
+    webhook_body = {
+        "id": "evt_flaky",
+        "type": "payment_paid",
+        "secret_token": "whsec_test",
+        "data": {"id": moyasar_id, "metadata": checkout_data["metadata"]},
+    }
+    moyasar.fail_next(1)
+    first = api.post("/v1/payments/moyasar/webhook", json=webhook_body)
+    assert first.status_code == 200
+    assert first.json()["ok"] is False
+    assert first.json()["duplicate_event"] is False
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "none"
+
+    retry = api.post("/v1/payments/moyasar/webhook", json=webhook_body)
+    assert retry.status_code == 200
+    assert retry.json()["activated"] is True
+    assert retry.json()["duplicate_event"] is False
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "active"
+
+
+def test_refund_before_verification_never_activates(tmp_path):
+    moyasar = FakeMoyasar()
+    api, _ = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar_id = "pay_REFUNDED_EARLY"
+    moyasar.register(moyasar_id, status="paid", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"], refunded=True)
+    verify = api.post("/v1/subscriptions/verify", headers=headers, json={"payment_id": checkout_data["payment_id"], "moyasar_payment_id": moyasar_id})
+    assert verify.status_code == 200
+    assert verify.json()["status"] == "refunded"
+    assert verify.json()["activated"] is False
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "none"
+
+
+def test_refund_after_activation_cancels_the_subscription(tmp_path):
+    moyasar = FakeMoyasar()
+    api, _ = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar_id = "pay_REFUNDED_LATE"
+    moyasar.register(moyasar_id, status="paid", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+    activated = api.post("/v1/subscriptions/verify", headers=headers, json={"payment_id": checkout_data["payment_id"], "moyasar_payment_id": moyasar_id})
+    assert activated.json()["activated"] is True
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "active"
+
+    moyasar.mark_refunded(moyasar_id)
+    webhook_body = {
+        "id": "evt_refund",
+        "type": "payment_refunded",
+        "secret_token": "whsec_test",
+        "data": {"id": moyasar_id, "metadata": checkout_data["metadata"]},
+    }
+    refunded = api.post("/v1/payments/moyasar/webhook", json=webhook_body)
+    assert refunded.status_code == 200
+    assert refunded.json()["status"] == "refunded"
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "cancelled"
 
 
 def test_webhook_with_wrong_secret_is_rejected(tmp_path):

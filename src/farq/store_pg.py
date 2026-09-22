@@ -480,9 +480,24 @@ class PgStore:
             )
             return cur.rowcount > 0
 
+    def _lock_user_for_settlement(self, conn, payment_id: str):
+        """Serializes settle_payment/refund_payment for one user behind a
+        Postgres advisory lock (released automatically at transaction end).
+        Without this, a browser verify call and a webhook delivery for the
+        same payment - or two distinct renewals for the same user - can both
+        read 'payment_pending' before either writes, double-activating a
+        subscription or losing a paid renewal term. Returns the payment row
+        (re-read after the lock is held) or None if it doesn't exist.
+        """
+        owner = conn.execute("select user_id from payments where id = %s", (payment_id,)).fetchone()
+        if owner is None:
+            return None
+        conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (owner["user_id"],))
+        return conn.execute("select * from payments where id = %s", (payment_id,)).fetchone()
+
     def settle_payment(self, payment_id: str, provider_payment_id: str, provider_status: str, paid_amount: int, paid_currency: str) -> dict:
         with self._pool.connection() as conn:
-            payment = conn.execute("select * from payments where id = %s", (payment_id,)).fetchone()
+            payment = self._lock_user_for_settlement(conn, payment_id)
             if payment is None:
                 return {"ok": False, "reason": "payment_not_found"}
             if payment["status"] != "payment_pending":
@@ -545,6 +560,35 @@ class PgStore:
             "already_processed": False,
             "status": "paid",
             "activated": True,
+            "subscription": self.get_latest_subscription(payment["user_id"]),
+        }
+
+    def refund_payment(self, payment_id: str, provider_payment_id: str) -> dict:
+        """A refund can arrive before a pending payment ever settled, or
+        after it already activated a subscription - handle both so a
+        refunded charge never grants or keeps entitlement. Idempotent:
+        replaying a refund event for an already-refunded payment is a no-op.
+        """
+        with self._pool.connection() as conn:
+            payment = self._lock_user_for_settlement(conn, payment_id)
+            if payment is None:
+                return {"ok": False, "reason": "payment_not_found"}
+            if payment["status"] == "refunded":
+                return {"ok": True, "already_processed": True, "status": "refunded", "subscription": self.get_latest_subscription(payment["user_id"])}
+            if payment["subscription_id"]:
+                conn.execute(
+                    "update subscriptions set status = 'cancelled', updated_at = %s where id = %s and status = 'active'",
+                    (datetime.now(timezone.utc), payment["subscription_id"]),
+                )
+            conn.execute(
+                "update payments set status = 'refunded', provider_payment_id = %s where id = %s",
+                (provider_payment_id, payment_id),
+            )
+        return {
+            "ok": True,
+            "already_processed": False,
+            "status": "refunded",
+            "activated": False,
             "subscription": self.get_latest_subscription(payment["user_id"]),
         }
 

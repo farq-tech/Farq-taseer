@@ -70,6 +70,12 @@ def _settle_from_moyasar(store, moyasar: MoyasarClient, *, farq_payment_id: str,
     if fetched.metadata.get("farq_payment_id") != farq_payment_id:
         return {"ok": False, "reason": "payment_id_mismatch"}
 
+    # A refund can arrive either before a pending payment was ever settled,
+    # or after it already activated a subscription - handle both here so a
+    # refunded charge never grants (or keeps) entitlement.
+    if fetched.refunded:
+        return store.refund_payment(farq_payment_id, fetched.id)
+
     return store.settle_payment(
         payment_id=farq_payment_id,
         provider_payment_id=fetched.id,
@@ -92,13 +98,16 @@ def verify_checkout(store, moyasar: MoyasarClient, *, user_id: str, payment_id: 
 
 
 def handle_webhook(store, moyasar: MoyasarClient, *, event_id: str, event_type: str, moyasar_payment_id: str, farq_payment_id: str | None) -> dict:
-    """Idempotent: a duplicated webhook delivery for the same event id is a
-    no-op, and settle_payment() itself refuses to double-activate a payment
-    that already left 'payment_pending'.
+    """Idempotent: settle_payment()/refund_payment() refuse to double-apply a
+    payment that already left 'payment_pending', so replaying the same event
+    is always safe.
+
+    The event is only recorded as seen *after* a successful settlement
+    attempt. Recording it first would mean a transient Moyasar outage marks
+    the event "processed" while the payment is still pending - Moyasar's own
+    retry of that exact event id would then be silently dropped as a
+    duplicate, leaving a customer who actually paid stuck pending forever.
     """
-    is_new = store.record_webhook_event(event_id, event_type, moyasar_payment_id)
-    if not is_new:
-        return {"ok": True, "duplicate_event": True}
     if farq_payment_id is None:
         # Payment created outside our checkout flow (shouldn't happen in
         # production, but don't crash the webhook endpoint over it).
@@ -106,8 +115,14 @@ def handle_webhook(store, moyasar: MoyasarClient, *, event_id: str, event_type: 
         farq_payment_id = payment["id"] if payment else None
     if farq_payment_id is None:
         return {"ok": False, "reason": "unknown_payment", "duplicate_event": False}
+
     result = _settle_from_moyasar(store, moyasar, farq_payment_id=farq_payment_id, moyasar_payment_id=moyasar_payment_id)
-    result["duplicate_event"] = False
+    if not result.get("ok"):
+        result["duplicate_event"] = False
+        return result
+
+    is_new = store.record_webhook_event(event_id, event_type, moyasar_payment_id)
+    result["duplicate_event"] = not is_new
     return result
 
 

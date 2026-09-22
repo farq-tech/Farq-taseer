@@ -6,6 +6,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -30,6 +31,7 @@ class Store:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
+        self._settlement_lock = threading.Lock()
         self._migrate()
 
     def _migrate(self) -> None:
@@ -614,67 +616,105 @@ class Store:
     def settle_payment(self, payment_id: str, provider_payment_id: str, provider_status: str, paid_amount: int, paid_currency: str) -> dict:
         """Idempotently reconcile a Moyasar-verified payment. Only ever moves a
         payment out of 'payment_pending'; replaying the same event is a no-op.
+
+        Holds a process-wide lock for the duration of the read-check-write so
+        a concurrent verify call and webhook delivery for the same payment
+        can't both observe 'payment_pending' before either commits (which
+        would double-activate or double-extend a subscription). This store is
+        single-connection/dev-only; PgStore uses a real per-user Postgres
+        advisory lock for the same purpose in production.
         """
-        payment = self.get_payment(payment_id)
-        if payment is None:
-            return {"ok": False, "reason": "payment_not_found"}
-        if payment["status"] != "payment_pending":
-            # Already settled by an earlier callback/webhook - idempotent no-op.
-            return {"ok": True, "already_processed": True, "status": payment["status"], "subscription": self.get_latest_subscription(payment["user_id"])}
-        if payment["amount"] != paid_amount or payment["currency"] != paid_currency:
+        with self._settlement_lock:
+            payment = self.get_payment(payment_id)
+            if payment is None:
+                return {"ok": False, "reason": "payment_not_found"}
+            if payment["status"] != "payment_pending":
+                # Already settled by an earlier callback/webhook - idempotent no-op.
+                return {"ok": True, "already_processed": True, "status": payment["status"], "subscription": self.get_latest_subscription(payment["user_id"])}
+            if payment["amount"] != paid_amount or payment["currency"] != paid_currency:
+                self._connection.execute(
+                    "update payments set status = 'failed', provider_payment_id = ? where id = ?",
+                    (provider_payment_id, payment_id),
+                )
+                self._connection.commit()
+                return {"ok": True, "already_processed": False, "status": "failed", "reason": "amount_mismatch"}
+            if provider_status != "paid":
+                self._connection.execute(
+                    "update payments set status = ?, provider_payment_id = ? where id = ?",
+                    (provider_status, provider_payment_id, payment_id),
+                )
+                self._connection.commit()
+                return {"ok": True, "already_processed": False, "status": provider_status, "activated": False}
+
+            plan = self.get_plan(payment["plan"])
+            if plan is None:
+                self._connection.execute(
+                    "update payments set status = 'failed', provider_payment_id = ? where id = ?",
+                    (provider_payment_id, payment_id),
+                )
+                self._connection.commit()
+                return {"ok": True, "already_processed": False, "status": "failed", "reason": "unknown_plan"}
+
+            now_iso = _now()
+            latest = self.get_latest_subscription(payment["user_id"])
+            if latest is not None and latest["status"] == "active" and latest["expires_at"] and latest["expires_at"] > now_iso:
+                base = datetime.fromisoformat(latest["expires_at"])
+            else:
+                base = datetime.now(timezone.utc)
+
+            expires_at = (base + timedelta(days=plan["duration_days"])).isoformat()
+
+            if latest is not None and latest["status"] == "active":
+                subscription_id = latest["id"]
+                self._connection.execute(
+                    "update subscriptions set plan = ?, status = 'active', expires_at = ?, updated_at = ? where id = ?",
+                    (plan["code"], expires_at, now_iso, subscription_id),
+                )
+            else:
+                subscription_id = uuid4().hex
+                self._connection.execute(
+                    "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, created_at, updated_at) values (?, ?, ?, 'active', ?, ?, ?, ?)",
+                    (subscription_id, payment["user_id"], plan["code"], now_iso, expires_at, now_iso, now_iso),
+                )
             self._connection.execute(
-                "update payments set status = 'failed', provider_payment_id = ? where id = ?",
+                "update payments set status = 'paid', provider_payment_id = ?, subscription_id = ? where id = ?",
+                (provider_payment_id, subscription_id, payment_id),
+            )
+            self._connection.commit()
+            return {
+                "ok": True,
+                "already_processed": False,
+                "status": "paid",
+                "activated": True,
+                "subscription": self.get_latest_subscription(payment["user_id"]),
+            }
+
+    def refund_payment(self, payment_id: str, provider_payment_id: str) -> dict:
+        """A refund can arrive before a pending payment ever settled, or
+        after it already activated a subscription - handle both so a
+        refunded charge never grants or keeps entitlement. Idempotent:
+        replaying a refund event for an already-refunded payment is a no-op.
+        """
+        with self._settlement_lock:
+            payment = self.get_payment(payment_id)
+            if payment is None:
+                return {"ok": False, "reason": "payment_not_found"}
+            if payment["status"] == "refunded":
+                return {"ok": True, "already_processed": True, "status": "refunded", "subscription": self.get_latest_subscription(payment["user_id"])}
+            if payment["subscription_id"]:
+                self._connection.execute(
+                    "update subscriptions set status = 'cancelled', updated_at = ? where id = ? and status = 'active'",
+                    (_now(), payment["subscription_id"]),
+                )
+            self._connection.execute(
+                "update payments set status = 'refunded', provider_payment_id = ? where id = ?",
                 (provider_payment_id, payment_id),
             )
             self._connection.commit()
-            return {"ok": True, "already_processed": False, "status": "failed", "reason": "amount_mismatch"}
-        if provider_status != "paid":
-            self._connection.execute(
-                "update payments set status = ?, provider_payment_id = ? where id = ?",
-                (provider_status, provider_payment_id, payment_id),
-            )
-            self._connection.commit()
-            return {"ok": True, "already_processed": False, "status": provider_status, "activated": False}
-
-        plan = self.get_plan(payment["plan"])
-        if plan is None:
-            self._connection.execute(
-                "update payments set status = 'failed', provider_payment_id = ? where id = ?",
-                (provider_payment_id, payment_id),
-            )
-            self._connection.commit()
-            return {"ok": True, "already_processed": False, "status": "failed", "reason": "unknown_plan"}
-
-        now_iso = _now()
-        latest = self.get_latest_subscription(payment["user_id"])
-        if latest is not None and latest["status"] == "active" and latest["expires_at"] and latest["expires_at"] > now_iso:
-            base = datetime.fromisoformat(latest["expires_at"])
-        else:
-            base = datetime.now(timezone.utc)
-
-        expires_at = (base + timedelta(days=plan["duration_days"])).isoformat()
-
-        if latest is not None and latest["status"] == "active":
-            subscription_id = latest["id"]
-            self._connection.execute(
-                "update subscriptions set plan = ?, status = 'active', expires_at = ?, updated_at = ? where id = ?",
-                (plan["code"], expires_at, now_iso, subscription_id),
-            )
-        else:
-            subscription_id = uuid4().hex
-            self._connection.execute(
-                "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, created_at, updated_at) values (?, ?, ?, 'active', ?, ?, ?, ?)",
-                (subscription_id, payment["user_id"], plan["code"], now_iso, expires_at, now_iso, now_iso),
-            )
-        self._connection.execute(
-            "update payments set status = 'paid', provider_payment_id = ?, subscription_id = ? where id = ?",
-            (provider_payment_id, subscription_id, payment_id),
-        )
-        self._connection.commit()
-        return {
-            "ok": True,
-            "already_processed": False,
-            "status": "paid",
-            "activated": True,
-            "subscription": self.get_latest_subscription(payment["user_id"]),
-        }
+            return {
+                "ok": True,
+                "already_processed": False,
+                "status": "refunded",
+                "activated": False,
+                "subscription": self.get_latest_subscription(payment["user_id"]),
+            }
