@@ -228,6 +228,8 @@ def _search_need(
                     "trace_id": trace_id,
                     "partial": True,
                     "need": intent.need,
+                    # how many ads the search has looked at so far, for the live counter
+                    "scanned": len(accumulated),
                 }
         stages.append(
             {

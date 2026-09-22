@@ -526,14 +526,6 @@ h1 {
   padding: 14px 16px;
   margin-bottom: 8px;
 }
-.note {
-  min-height: 88px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  padding: 14px;
-  margin-top: 8px;
-}
 .optional { color: var(--secondary); font-size: 13px; margin: 14px 0 0; }
 .composer-bar { display: flex; gap: 16px; margin-top: 10px; }
 .file-btn { position: relative; color: var(--secondary); font-size: 14px; font-weight: 600; }
@@ -1431,7 +1423,7 @@ button.fq-card { cursor: pointer; }
 .fq-offer .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fq-offer .amount { font-size: 18px; font-weight: 800; color: var(--fq-deep-green); }
 .fq-offer .low { background: var(--fq-soft); color: var(--fq-deep-green); border-radius: 6px; padding: 2px 6px; font-size: 10px; font-weight: 700; }
-.fq-offer .note { font-size: 12px; color: var(--fq-text-2); margin: 0; }
+.fq-offer .fq-offer-note { font-size: 12px; color: var(--fq-text-2); margin: 0; }
 .fq-offer-foot { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; }
 .fq-sys { align-self: center; background: var(--fq-soft); color: var(--fq-deep-green); border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700; }
 
@@ -1536,3 +1528,96 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 
 /* ---------- toast ---------- */
 .fq-toast { position: fixed; inset-inline: 0; bottom: calc(96px + var(--safe-bottom)); margin-inline: auto; width: max-content; max-width: calc(100% - 48px); background: var(--fq-deep-green); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 600; z-index: 80; box-shadow: 0 8px 20px rgba(4, 52, 52, 0.25); animation: fq-rise 200ms ease; }
+
+/* ---------- AUTH01 corrections after visual review ---------- */
+.fq-head-row.auth { display: flex; align-items: center; justify-content: space-between; }
+.fq-wordmark { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+.fq-hero.soft { background: none; }
+.fq-hero.soft .halo { inset-inline-start: auto; left: -40px; top: -40px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(221, 244, 232, 0.95) 0%, rgba(221, 244, 232, 0) 70%); filter: blur(2px); }
+.fq-inp input, .fq-inp textarea { padding: 0; }
+.fq-inp textarea { padding: 14px 0; }
+.fq-legal { margin: 0; text-align: center; color: #9aafaa; font-size: 12px; line-height: 1.6; }
+.fq-legal a { color: #18a66a; font-weight: 600; }
+
+/* ---------- corrections from the visual review against the Figma frames ---------- */
+/* The conversation is laid out left-to-right like the frame draws it: the customer on the
+   right, every supplier on the left. Only the text inside a bubble runs right-to-left. */
+.fq-chat { direction: ltr; }
+.fq-chat .fq-msg { justify-content: flex-start; }
+.fq-chat .fq-msg.mine { justify-content: flex-end; }
+.fq-chat .fq-grp, .fq-chat .fq-mine-bub, .fq-chat .fq-bub, .fq-chat .fq-who,
+.fq-chat .fq-sys, .fq-chat .fq-private, .fq-chat .fq-offer { direction: rtl; }
+.fq-bub { border-inline-end: 0; border-left: 2px solid transparent; }
+.fq-chat .fq-time { direction: rtl; justify-content: flex-start; }
+.fq-msg.mine > div { align-items: flex-end; }
+
+/* The send button sits at the left end of the composer. */
+.fq-composer { flex-direction: row-reverse; }
+
+/* The bottom navigation reads الرئيسية · طلباتي · حسابي from the left, as every frame draws it. */
+.fq-nav-row { direction: ltr; }
+.fq-tab { direction: rtl; }
+.fq-place { white-space: nowrap; }
+.fq-place span { white-space: nowrap; }
+
+/* ---------- the September update: live indicators and score rings ---------- */
+.fq-live { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: var(--fq-soft); border: 1px solid var(--fq-line); font-size: 12px; font-weight: 600; color: var(--fq-text); }
+.fq-live.wide { width: 100%; }
+.fq-pulse { position: relative; width: 10px; height: 10px; flex: none; }
+.fq-pulse::before, .fq-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--fq-success); }
+.fq-pulse::after { animation: fq-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; }
+@keyframes fq-ping { 0% { transform: scale(1); opacity: 0.55; } 70%, 100% { transform: scale(1.9); opacity: 0; } }
+.fq-live-count { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--fq-text-2); }
+.fq-live-count b { color: var(--fq-text); font-weight: 700; }
+.fq-dots { display: inline-flex; gap: 3px; align-items: center; }
+.fq-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--fq-muted); animation: fq-blink 1.2s infinite; }
+.fq-dots i:nth-child(2) { animation-delay: 0.2s; }
+.fq-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes fq-blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+.fq-score { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }
+.fq-score .ring { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--fq-success) calc(var(--p, 0) * 1%), var(--fq-line) 0); }
+.fq-score .ring > span { width: 26px; height: 26px; border-radius: 50%; background: var(--fq-surface); display: grid; place-items: center; font-size: 10px; font-weight: 800; color: var(--fq-deep-green); }
+.fq-score .cap { font-size: 10px; color: var(--fq-text-2); }
+
+.fq-addbtn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 999px; border: 0; background: var(--fq-deep-green); color: #fff; font: inherit; font-size: 14px; font-weight: 700; }
+.fq-addbtn svg { width: 14px; height: 14px; }
+.fq-unread { background: var(--fq-success); color: #fff; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; }
+.fq-delta { border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; background: var(--fq-soft); color: var(--fq-success); }
+.fq-delta.up { background: #fdeee9; color: #b3402a; }
+.fq-best { background: var(--fq-deep-green); color: #fff; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; }
+.fq-glow { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(0, 159, 103, 0.16) 0%, rgba(0, 159, 103, 0) 70%); pointer-events: none; }
+.fq-celebrate { position: relative; display: grid; place-items: center; }
+.fq-ringstack { width: 80px; height: 80px; border-radius: 50%; background: var(--fq-soft); display: grid; place-items: center; }
+.fq-ringstack > span { width: 56px; height: 56px; border-radius: 50%; background: var(--fq-success); color: #fff; display: grid; place-items: center; }
+.fq-ringstack svg { width: 28px; height: 28px; stroke-width: 3; }
+.fq-chip-version { display: inline-flex; padding: 6px 12px; border-radius: 999px; background: var(--fq-app-bg); border: 1px solid var(--fq-line); font-size: 11px; color: var(--fq-text-2); }
+.fq-markall { background: rgba(255, 255, 255, 0.12); border: 0; border-radius: 999px; padding: 8px 12px; color: #fff; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.fq-celebrate .fq-glow { position: absolute; }
+.fq-note { align-items: center; }
+
+/* The shell is exactly one viewport tall so the conversation scrolls inside it and the
+   composer stays above the navigation instead of sliding under it. */
+.fq { height: 100dvh; }
+@media (min-width: 900px) { body.fq-web .fq { height: calc(100dvh - 48px); } }
+.fq-grp { align-items: flex-start; }
+.fq-bub, .fq-offer, .fq-offer-foot { align-self: stretch; }
+
+/* The supplier's name hugs the left edge of its bubble: keep the group itself
+   left-to-right and let only the text inside run right-to-left. */
+.fq-chat .fq-grp { direction: ltr; }
+.fq-chat .fq-grp > * { direction: rtl; }
+.fq-inputg { direction: ltr; }
+.fq-inputg textarea { direction: rtl; text-align: right; }
+.fq-replybtn { align-self: auto; }
+.fq-offer-foot { gap: 10px; }
+.fq-offer .head { direction: ltr; }
+.fq-offer .head .amount, .fq-offer .head .low { direction: rtl; }
+/* The pin and the globe sit before their label, as the header frames draw them. */
+.fq-lang, .fq-place { direction: ltr; }
+.fq-lang span, .fq-place span { direction: rtl; }
+/* The glow sits at the top-left corner of the hero, not mirrored with the text. */
+.fq-hero .halo { inset-inline-start: auto; left: -40px; }
+.fq-tag, .fq-unread, .fq-delta, .fq-best { white-space: nowrap; }
+.fq-unread { font-size: 10px; padding: 3px 8px; }
+.fq-card .fq-row { gap: 10px; }

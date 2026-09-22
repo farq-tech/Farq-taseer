@@ -66,8 +66,9 @@ function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
 
+// Every number in the frames — prices, times, counts — is printed in Western digits.
 function formatCount(value) {
-  return new Intl.NumberFormat("ar-SA").format(value);
+  return new Intl.NumberFormat("ar-SA-u-nu-latn").format(value);
 }
 
 function ago(iso) {
@@ -85,7 +86,7 @@ function ago(iso) {
 
 function money(amount) {
   if (amount == null || Number.isNaN(Number(amount))) return "";
-  return `${new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 0 }).format(amount)} ر.س`;
+  return `${new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 }).format(amount)} ر.س`;
 }
 
 // A thin bar at the top while the app is waiting on the server (background polling stays quiet).
@@ -441,10 +442,13 @@ function ic(name, size = 20) {
 // The screen header: deep green, the title in the middle, the brand accent line under it.
 // `back` is the data-action for the chevron; in Arabic it points right, at the start of the line.
 function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = false, auth = false } = {}) {
+  const langBtn = `<button class="fq-lang" type="button" data-action="lang" aria-label="اللغة">${ic("globe", 16)}<span>العربية</span></button>`;
   const lead = back
     ? `<button class="fq-ibtn" type="button" data-action="${esc(back)}" aria-label="رجوع">${ic("back", 18)}</button>`
-    : start || "<span></span>";
-  const tail = end || (mark ? `<span class="fq-head-mark">فرق</span>` : `<button class="fq-lang" type="button" data-action="lang" aria-label="اللغة">${ic("globe", 16)}<span>العربية</span></button>`);
+    : mark
+      ? `<span class="fq-head-mark">فرق</span>`
+      : start || langBtn;
+  const tail = end || (mark || back ? "<span></span>" : "<span></span>");
   return `<header class="fq-head${auth ? " is-auth" : ""}">
     <div class="fq-head-row">${lead}
       <div class="fq-head-mid"><h1 class="fq-head-title"><bdi>${esc(title)}</bdi></h1>${sub ? `<p class="fq-head-sub"><bdi>${esc(sub)}</bdi></p>` : ""}</div>
@@ -465,6 +469,7 @@ function fqNav(active) {
     ${tab("requests", "requests", "طلباتي", "file-text")}
     ${tab("account", "account", "حسابي", "user")}
   </div></nav>`;
+  // (the row itself is laid out left-to-right, so this order renders الرئيسية · طلباتي · حسابي)
 }
 
 function fqScreen(head, body, nav = "") {
@@ -483,14 +488,20 @@ function shell(body) {
 // The reveal button sits beside the input, not inside its label, so one tap counts once.
 
 // AUTH01_Login_AR — node 19:74.
+// AUTH01_Login_AR — node 19:74. The header is not mirrored: the wordmark sits left, the
+// language control right, the way the frame draws it.
 function renderAuth() {
   const register = state.authMode === "register";
   const title = register ? "إنشاء حساب" : "تسجيل الدخول";
   const sub = register ? "حساب واحد لكل طلباتك في فرق" : "ادخل إلى حسابك في فرق";
-  return `${fqHead({ title: "Farq", auth: true })}
+  const lang = `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>`;
+  return `<header class="fq-head is-auth">
+    <div class="fq-head-row auth">${lang}<span class="fq-wordmark">Farq</span></div>
+    <div class="fq-head-accent"></div>
+  </header>
   <section class="fq-body" style="padding:24px 24px 32px">
-    <div class="fq-hero" style="background:var(--fq-app-bg)">
-      <span class="halo" aria-hidden="true" style="background:var(--fq-mint)"></span>
+    <div class="fq-hero soft">
+      <span class="halo" aria-hidden="true"></span>
       <h1 class="fq-h1" style="font-size:28px;font-weight:700">${esc(title)}</h1>
       <p class="fq-lead">${esc(sub)}</p>
       <p class="fq-small fq-muted" style="line-height:1.5">قارن الأسعار وتواصل مع البائعين فوراً.</p>
@@ -505,7 +516,7 @@ function renderAuth() {
       <div class="fq-field"><label for="auth-password">كلمة المرور</label>
         <div class="fq-inp">${ic("lock", 18)}<input id="auth-password" name="password" type="${state.showPassword ? "text" : "password"}" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="••••••••">
           <button class="fq-eye" type="button" data-action="toggle-password" aria-label="${state.showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}" aria-pressed="${state.showPassword}">${ic(state.showPassword ? "eye-off" : "eye", 20)}</button></div>
-        ${register ? "" : `<div><button class="fq-link" type="button" data-action="forgot">ناسي الرقم السري؟</button></div>`}
+        ${register ? "" : `<div style="display:flex;justify-content:flex-end;padding-top:4px"><button class="fq-link" type="button" data-action="forgot">ناسي الرقم السري؟</button></div>`}
       </div>
       ${state.authError ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.authError)}</p>` : ""}
     </form>
@@ -514,7 +525,7 @@ function renderAuth() {
       <p class="fq-small" style="text-align:center">${register ? "عندك حساب؟" : "ليس لديك حساب؟"}
         <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
     </div>
-    <p class="fq-small" style="text-align:center;color:#9aafaa;font-size:12px;line-height:1.6;margin-top:auto">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" style="color:#18a66a;font-weight:600">الشروط والأحكام</a> و<a href="/privacy" style="color:#18a66a;font-weight:600">سياسة الخصوصية</a></p>
+    <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms">الشروط والأحكام</a> و<a href="/privacy">سياسة الخصوصية</a></p>
   </section>`;
 }
 
@@ -557,7 +568,7 @@ function showAuthError(message) {
 const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر ٢٠٢٥ لون ابيض", "تركيب مكيف", "تلفزيون سامسونج ٦٥ بوصة"];
 function renderHome() {
   const place = `<button class="fq-place" type="button" data-action="change-city">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
-  return `${fqHead({ title: "فرق Farq", start: place })}
+  return `${fqHead({ title: "فرق Farq", end: place })}
   <section class="fq-body">
     <div class="fq-hero">
       <span class="halo" aria-hidden="true"></span>
@@ -571,16 +582,19 @@ function renderHome() {
       <span style="color:var(--fq-muted)">${ic("edit", 20)}</span>
     </form>
     <div class="fq-pills" style="gap:10px">${HOME_CHIPS.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
-    <hr class="fq-line">
-    <button class="fq-btn" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:16px">
+      <hr class="fq-line">
+      <button class="fq-btn" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
+    </div>
   </section>
   ${fqNav("home")}`;
 }
 
-// M04_SearchProgress — node 27:124.
+// M04_SearchProgress — node 27:124, with the live banner and counter added in the update.
 const SEARCH_STEPS = ["نفهم طلبك", "ندور على الخيارات المناسبة", "نرتب النتائج", "جهزنا لك الخيارات"];
 function renderSearching() {
   const at = state.results.length ? 2 : state.intent ? 1 : 0;
+  const seen = state.scanned || 0;
   const card = `<div class="fq-card" style="gap:12px"><div style="display:flex;align-items:center;gap:12px">
       <span class="fq-skel" style="width:44px;height:44px;border-radius:50%"></span>
       <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span></div>
@@ -588,12 +602,28 @@ function renderSearching() {
     <span class="fq-skel" style="height:22px;width:35%;border-radius:8px"></span></div>`;
   return `${fqHead({ title: "ماعليك فرق بيجيب الفرق" })}
   <section class="fq-body" aria-live="polite">
-    <div class="fq-steps">${SEARCH_STEPS.map((label, index) => {
-      const cls = index < at ? "done" : index === at ? "now" : "";
-      return `<div class="fq-step ${cls}"><span class="mark">${index < at ? ic("check", 14) : ""}</span><span>${esc(label)}</span></div>`;
-    }).join("")}</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
+        <span style="flex:1">يبحث فرق عن أفضل سعر لك الآن...</span></div>
+      <div class="fq-live-count">
+        <span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>تحديث في الوقت الفعلي</span>
+        <span style="flex:1"></span>
+        ${seen ? `<span><b>تم فحص ${formatCount(seen)} عرض</b> حتى الآن</span>` : ""}
+      </div>
+      <div class="fq-steps">${SEARCH_STEPS.map((label, index) => {
+        const cls = index < at ? "done" : index === at ? "now" : "";
+        return `<div class="fq-step ${cls}"><span class="mark">${index < at ? ic("check", 14) : ""}</span><span>${esc(label)}</span></div>`;
+      }).join("")}</div>
+    </div>
     <div style="display:flex;flex-direction:column;gap:12px">${card.repeat(3)}</div>
   </section>`;
+}
+
+// A 0–100 ring with a caption, drawn beside a price or a rating (nodes 91:29, 91:53, 91:77).
+function scoreRing(percent, caption) {
+  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  return `<span class="fq-score" style="--p:${value}"><span class="ring"><span>${formatCount(value)}%</span></span><span class="cap">${esc(caption)}</span></span>`;
 }
 
 
@@ -625,6 +655,11 @@ function renderCard(result) {
   const price = money(result.ad?.price_amount);
   const where = cityLabel(result.ad?.city || seller.city || "");
   const blurb = snip(result);
+  // How far this price sits below the dearest result on screen — the «وفّر» ring.
+  const amounts = state.results.map((item) => item.ad?.price_amount).filter((value) => value != null);
+  const top = amounts.length > 1 ? Math.max(...amounts) : null;
+  const mine = result.ad?.price_amount;
+  const saving = top && mine != null && top > 0 ? Math.round(((top - mine) / top) * 100) : null;
   const photo = result.ad && imageSources(result.ad).length;
   const avatar = photo
     ? `<span class="fq-av" style="width:40px;height:40px;border-radius:20px;overflow:hidden"><img alt="" data-src="${esc(imageSources(result.ad).join("|"))}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>`
@@ -643,7 +678,8 @@ function renderCard(result) {
     ${blurb ? `<p class="fq-small" style="margin:0"><bdi>${esc(blurb)}</bdi></p>` : ""}
     <div class="fq-row">${price
       ? `<span class="fq-price" style="font-size:24px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>`
-      : `<span class="fq-meta">تواصل للحصول على سعر</span>`}</div>
+      : `<span class="fq-meta">تواصل للحصول على سعر</span>`}
+      ${saving != null ? scoreRing(saving, "وفّر") : ""}</div>
   </article>`;
 }
 
@@ -659,6 +695,8 @@ function renderFlow() {
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
     ${tabs.length > 1 ? `<div class="fq-pills"><button class="fq-pill on" type="button">الكل</button>${tabs.map((name) => `<button class="fq-pill" type="button" data-action="filter-need" data-name="${esc(name)}">${esc(name)}</button>`).join("")}</div>` : ""}
+    ${asking || !state.results.length ? "" : `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
+      <span>${formatCount(state.results.length)} مورد تم العثور عليهم${state.partial ? " • البحث مستمر" : ""}</span></div>`}
     ${asking ? "" : `<p class="fq-small" data-count="${state.results.length}" style="font-weight:600">تم العثور على ${formatCount(state.shownCount || state.results.length)} نتيجة</p>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
     ${showEmpty ? `<div class="fq-body center" style="padding:24px 0"><div class="fq-blob warn">${ic("search", 48)}</div><h2 class="fq-h2">${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="fq-link" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
@@ -753,7 +791,10 @@ function renderReview() {
                 </span>
               </span>
             </div>
-            ${price ? `<div class="fq-pills"><span class="fq-tag">${esc(price)}</span></div>` : ""}
+            <div class="fq-row">
+              ${price ? `<span class="fq-tag">${esc(price)}</span>` : "<span></span>"}
+              ${result.score != null ? scoreRing(Math.round(Math.max(0, Math.min(1, result.score)) * 100), "مطابقة") : ""}
+            </div>
           </article>`;
         })
         .join("")}
@@ -825,7 +866,8 @@ function renderSent() {
       <button class="fq-btn" type="button" data-action="open-sent">طلباتي</button>
       <button class="fq-btn ghost" type="button" data-action="home">العودة للرئيسية</button>
     </div>
-  </section>`;
+  </section>
+  ${fqNav("home")}`;
 }
 
 // Phone notifications when a supplier replies. iPhone only allows them for a site added to the home screen.
@@ -905,7 +947,7 @@ function renderRequests() {
     return `${head}<section class="fq-body center">
       <div class="fq-blob" style="width:110px;height:110px">${ic("clipboard", 48)}</div>
       <div><h1 class="fq-h2">ما عندك طلبات حتى الآن</h1><p class="fq-lead">اكتب اللي تحتاجه وخل فرق يجمع لك العروض.</p></div>
-      <button class="fq-btn" type="button" data-action="home" style="margin-top:8px">إنشاء أول طلب</button>
+      <button class="fq-btn" type="button" data-action="home" style="margin-top:8px;height:56px">إنشاء أول طلب</button>
     </section>${fqNav("requests")}`;
   }
   const filter = state.requestFilter || "all";
@@ -917,9 +959,8 @@ function renderRequests() {
   };
   const pill = (key, label) => `<button class="fq-pill${filter === key ? " on" : ""}" type="button" data-action="req-filter" data-filter="${key}">${label}</button>`;
   return `${head}<section class="fq-body tight">
-    ${notifyBanner()}
     <div class="fq-row"><span class="fq-small" style="font-weight:600">تابع عروضك وطلباتك من مكان واحد</span>
-      <button class="fq-link" type="button" data-action="home" style="font-size:14px;font-weight:700">+ طلب جديد</button></div>
+      <button class="fq-addbtn" type="button" data-action="home">${ic("plus", 14)}طلب جديد</button></div>
     <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تمت الترسية")}${pill("done", "مكتملة")}</div>
     <div style="display:flex;flex-direction:column;gap:12px">
       ${state.requests.filter(match).map((item) => {
@@ -929,8 +970,12 @@ function renderRequests() {
         const parts = [`${formatCount(item.recipient_count || 0)} موردًا`];
         if (item.replied_count) parts.push(`${formatCount(item.replied_count)} عروض`);
         else parts.push("لم تصل عروض بعد");
-        if (unread) parts.push(`${formatCount(unread)} رسائل جديدة`);
+        const waiting = Math.max(0, (item.recipient_count || 0) - (item.replied_count || 0));
+        const live = !item.awarded_seller_id && waiting
+          ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>${formatCount(waiting)} ${waiting === 1 ? "مورد يراجع" : "موردين يراجعون"} طلبك</span></div>`
+          : "";
         return `<button class="fq-card" type="button" data-action="thread" data-id="${esc(item.id)}" aria-label="افتح محادثة ${esc(need)}">
+          ${live}
           <div class="fq-row">
             <span style="display:flex;align-items:center;gap:8px">
               ${unread ? `<span style="width:6px;height:6px;border-radius:50%;background:var(--fq-success)"></span>` : ""}
@@ -941,7 +986,10 @@ function renderRequests() {
           </div>
           <div class="fq-row">
             <span class="fq-tag ${status.tone}">${esc(status.label)}</span>
-            <span class="fq-meta">${esc(parts.join(" · "))}</span>
+            <span style="display:flex;align-items:center;gap:8px">
+              <span class="fq-meta">${esc(parts.join(" · "))}</span>
+              ${unread ? `<span class="fq-unread">${formatCount(unread)} رسائل جديدة</span>` : ""}
+            </span>
           </div>
           ${item.latest_offer_amount != null
             ? `<hr class="fq-line"><div style="display:flex;justify-content:flex-start"><strong style="font-size:13px;color:var(--fq-deep-green)">أقل عرض ${esc(money(item.latest_offer_amount))}</strong></div>`
@@ -958,8 +1006,8 @@ function snippet(text, size = 50) {
 }
 
 const CHAT_ZONE = "Asia/Riyadh";
-const chatClock = new Intl.DateTimeFormat("ar-SA", { hour: "numeric", minute: "2-digit", timeZone: CHAT_ZONE });
-const chatDate = new Intl.DateTimeFormat("ar-SA", { day: "numeric", month: "long", timeZone: CHAT_ZONE });
+const chatClock = new Intl.DateTimeFormat("ar-SA-u-nu-latn", { hour: "numeric", minute: "2-digit", timeZone: CHAT_ZONE });
+const chatDate = new Intl.DateTimeFormat("ar-SA-u-nu-latn", { day: "numeric", month: "long", timeZone: CHAT_ZONE });
 const dayKey = (date) => date.toLocaleDateString("en-CA", { timeZone: CHAT_ZONE });
 
 function chatTime(iso) {
@@ -1103,7 +1151,8 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
       ? `<span class="fq-private">${ic("lock", 10)}خاص — إلى ${esc(only)}${message.scope === "single_seller" ? " فقط" : ""}</span>`
       : "";
     const failed = message.delivery_state === "failed" ? `<span class="fq-time" style="color:#b3402a">ما وصلت الرسالة</span>` : "";
-    const progress = deliveryProgress(message);
+    const latest = thread.messages?.filter((item) => item.sender_role !== "seller").slice(-1)[0];
+    const progress = latest && latest.id === message.id ? deliveryProgress(message) : "";
     return `<div class="fq-msg mine"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
       ${badge}
       <div class="fq-mine-bub">${quote}${media}${body ? `<p>${body}</p>` : ""}${progress ? `<span class="fq-time">${esc(progress)}</span>` : ""}${failed}${time}</div>
@@ -1117,17 +1166,20 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const offer = price != null
     ? `<div class="fq-offer" style="color:${tone.ink}">
         <div class="head">${cheapest ? `<span class="low">الأقل حاليًا</span>` : "<span></span>"}<span class="amount">${esc(money(price))}</span></div>
-        ${body ? `<p class="note">${body}</p>` : ""}
+        ${body ? `<p class="fq-offer-note">${body}</p>` : ""}
       </div>
-      <div class="fq-offer-foot"><span class="fq-time">${esc(chatTime(message.created_at))}</span><span style="color:${tone.ink}">عرض السعر المقدم ⚡</span></div>`
+      <div class="fq-offer-foot"><span class="fq-time">${esc(chatTime(message.created_at))}
+        <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">ردّ</button></span>
+        <span style="color:${tone.ink}">عرض السعر المقدم ⚡</span></div>`
     : "";
   return `<div class="fq-msg">
     <span class="fq-av" style="background:${tone.av};color:${tone.ink};visibility:${first ? "visible" : "hidden"}">${initial(who)}</span>
     <div class="fq-grp">
       ${first ? `<button class="fq-who" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${tone.ink};background:none;border:0;padding:0;font-family:inherit;text-align:start"><bdi>${esc(who)}</bdi>${won ? " ✓" : ""}</button>` : ""}
-      <div class="fq-bub" style="background:${tone.bub};border-inline-end-color:${tone.edge}">
-        ${quote}${offer || `${media}${body ? `<p>${body}</p>` : ""}${time}`}
-        <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">ردّ</button>
+      <div class="fq-bub" style="background:${tone.bub};border-left-color:${tone.edge}">
+        ${quote}${offer || `${media}${body ? `<p>${body}</p>` : ""}
+          <span class="fq-time">${esc(chatTime(message.created_at))}
+            <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">ردّ</button></span>`}
       </div>
     </div>
   </div>`;
@@ -1142,7 +1194,7 @@ function waMessages(thread, messages, group) {
   return messages
     .map((message) => {
       const day = chatDay(message.created_at);
-      const divider = day && day !== lastDay ? `<div class="fq-sys">${esc(day)}</div>` : "";
+      const divider = day && day !== lastDay && day !== "اليوم" ? `<div class="fq-sys">${esc(day)}</div>` : "";
       const sender = message.sender_role === "seller" ? `s:${message.seller_id}` : "me";
       const first = Boolean(divider) || sender !== lastSender;
       lastDay = day || lastDay;
@@ -1171,11 +1223,19 @@ function renderCompare() {
       .map((offer, index) => {
         const won = awarded && awarded === offer.seller_id;
         const gap = offer.total_price - cheapest;
+        const dearestOffer = offers[offers.length - 1]?.total_price || offer.total_price;
+        const saving = dearestOffer > 0 ? Math.round(((dearestOffer - offer.total_price) / dearestOffer) * 100) : 0;
         return `<article class="fq-cmp-card${index === 0 ? " best" : ""}">
           <div class="top">
-            <span class="amount">${esc(money(offer.total_price))}</span>
-            <span style="display:flex;align-items:center;gap:8px">
-              ${index === 0 ? `<span class="fq-tag deep">الأقل</span>` : ""}
+            <span style="display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+              <span class="amount">${esc(money(offer.total_price))}</span>
+              ${index === 0
+                ? offers.length > 1 ? `<span class="fq-delta">أوفر بـ ${esc(money(dearestOffer - offer.total_price))}</span>` : ""
+                : `<span class="fq-delta up">+${esc(money(gap))}</span>`}
+            </span>
+            ${scoreRing(saving, "وفّر")}
+            <span style="display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end">
+              ${index === 0 ? `<span class="fq-best">أفضل سعر</span>` : ""}
               ${won ? `<span class="fq-tag ok">الفائز</span>` : ""}
               <span class="who"><bdi>${esc(sellerName(thread, offer.seller_id))}</bdi></span>
             </span>
@@ -1229,7 +1289,11 @@ function renderAwarded() {
   const offer = (thread.offers || []).find((item) => item.seller_id === thread.awarded_seller_id);
   return `${fqHead({ title: "تمت الترسية", mark: true })}
   <section class="fq-body center">
-    <div class="fq-blob">${ic("check", 56)}</div>
+    <div class="fq-celebrate">
+      <span class="fq-glow" style="width:320px;height:320px" aria-hidden="true"></span>
+      <span class="fq-glow" style="width:220px;height:220px" aria-hidden="true"></span>
+      <span class="fq-ringstack"><span>${ic("check", 28)}</span></span>
+    </div>
     <div><h1 class="fq-h1">تمت الترسية!</h1><p class="fq-lead">تم اعتماد هذا العرض وأرسلنا للمورد إشعار القبول.</p></div>
     <div class="fq-card pad" style="width:100%;align-items:center;text-align:center">
       <strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong>
@@ -1415,10 +1479,10 @@ function renderThread() {
     : "";
 
   return `${fqHead({ title, sub, back: backAction, end: menu })}
-    ${awardedHead || offersBar(thread, allOffers)}
+    ${awardedHead}
     ${pills}
     <section class="fq-chat" id="chat-wall">
-      <div class="fq-sys">${esc(group ? `رسالتك توصل لكل الموردين (${formatCount(recipients.length)}). اختر مستلمًا لترسل له وحده.` : privateWinner ? `✓ محادثة خاصة مع ${sellerName(thread, awarded)}` : `محادثتك مع ${sellerName(thread, one)}`)}</div>
+      ${privateWinner ? `<div class="fq-sys">✓ محادثة خاصة مع ${esc(sellerName(thread, awarded))}</div>` : ""}
       ${waMessages(thread, messages, group) || `<div class="fq-sys">بانتظار الرد.</div>`}
     </section>
     <div>
@@ -1473,7 +1537,7 @@ function renderAccount() {
       ${item("الشروط والأحكام", "terms")}
       ${item("تسجيل الخروج", "sign-out")}
     </div>
-    <p class="fq-meta" style="text-align:center">الإصدار 1.0.0</p>
+    <p style="text-align:center;margin:0"><span class="fq-chip-version">الإصدار 1.0.0</span></p>
   </section>
   ${fqNav("account")}`;
 }
@@ -1498,7 +1562,7 @@ const NOTE_KINDS = {
 
 function renderNotifications() {
   const list = state.notifications || [];
-  const markAll = `<button class="fq-lang" type="button" data-action="read-all" style="font-size:12px">تحديد الكل كمقروء</button>`;
+  const markAll = `<button class="fq-markall" type="button" data-action="read-all">تحديد الكل كمقروء</button>`;
   if (!list.length) {
     return `${fqHead({ title: "الإشعارات", start: markAll, mark: true })}
     <section class="fq-body center">
@@ -1991,6 +2055,7 @@ async function runSearch(text, city = "") {
         state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
       } else if (event.type === "results") {
         if ((event.results || []).length) state.searching = false;
+        if (event.scanned != null) state.scanned = event.scanned;
         state.results = event.results || [];
         state.partial = true;
         state.searchState = event.state;
