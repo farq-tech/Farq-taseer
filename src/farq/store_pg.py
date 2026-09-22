@@ -52,7 +52,9 @@ class PgStore:
             database_url,
             min_size=min_size,
             max_size=max_size,
-            kwargs={"row_factory": dict_row, "options": "-c search_path=taseer"},
+            # prepare_threshold=None: Supabase's transaction pooler hands each transaction to any
+            # backend, so server-side prepared statements collide ("_pg3_0 already exists").
+            kwargs={"row_factory": dict_row, "options": "-c search_path=taseer", "prepare_threshold": None},
             open=True,
         )
 

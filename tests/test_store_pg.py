@@ -1,8 +1,15 @@
 """The same journeys against PgStore, on a throwaway Postgres built from supabase/migrations.
 
-Runs only when FARQ_TEST_DATABASE_URL points at a disposable database, e.g.
-  docker run -d --name taseer-pg -e POSTGRES_PASSWORD=pg -p 55432:5432 postgres:16-alpine
-  FARQ_TEST_DATABASE_URL=postgresql://postgres:pg@127.0.0.1:55432/postgres pytest tests/test_store_pg.py
+Runs only when FARQ_TEST_DATABASE_URL points at a disposable database. Production reaches
+Postgres through Supabase's transaction pooler, so test through PgBouncer in transaction mode:
+  docker network create taseer-net
+  docker run -d --name taseer-pg --network taseer-net -e POSTGRES_PASSWORD=pg postgres:16-alpine
+  docker exec taseer-pg psql -U postgres -c "alter role postgres set search_path = taseer, public"
+  docker run -d --name taseer-bouncer --network taseer-net -p 56432:5432 \
+    -e DATABASE_URL=postgres://postgres:pg@taseer-pg:5432/postgres -e POOL_MODE=transaction \
+    -e AUTH_TYPE=scram-sha-256 -e MAX_PREPARED_STATEMENTS=0 \
+    -e IGNORE_STARTUP_PARAMETERS=extra_float_digits,options edoburu/pgbouncer
+  FARQ_TEST_DATABASE_URL=postgresql://postgres:pg@127.0.0.1:56432/postgres pytest tests/test_store_pg.py
 Every table in the taseer schema is emptied between tests.
 """
 
