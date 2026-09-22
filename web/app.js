@@ -1386,15 +1386,15 @@ function awardSheet(thread, pick) {
     <div class="fq-sheet" role="dialog" aria-label="ترسية الطلب">
       <span class="fq-grab" aria-hidden="true"></span>
       <div><h2 style="font-size:24px">ترسية الطلب</h2><p class="fq-lead">راجع العرض قبل التأكيد</p></div>
-      <div class="fq-card flat" style="background:var(--fq-app-bg)">
-        <div class="fq-row"><span class="fq-price">${esc(money(pick.price))}</span><strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong></div>
+      <div class="fq-card flat fq-awardcard">
+        <div class="fq-row"><span class="fq-price won">${esc(money(pick.price))}</span><strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong></div>
         <hr class="fq-line">
         <div class="fq-row"><span class="fq-meta">${esc(thread.need || thread.original_text || "")}</span><span class="fq-meta">${esc(cityLabel(thread.city) || "")}</span></div>
       </div>
       <div class="fq-notice">بعد تأكيد الترسية سيتم اعتماد هذا العرض وإغلاق المنافسة على بقية الموردين.</div>
       <div class="fq-actions">
-        <button class="fq-btn" type="button" data-action="confirm-award" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : `تأكيد الترسية على ${esc(who)}`}</button>
-        <button class="fq-btn quiet" type="button" data-action="cancel-award">رجوع</button>
+        <button class="fq-btn success" type="button" data-action="confirm-award" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : `تأكيد الترسية على ${esc(who)}`}</button>
+        <button class="fq-btn ghost" type="button" data-action="cancel-award">رجوع</button>
       </div>
     </div>
   </div>`;
@@ -1411,16 +1411,16 @@ function renderAwarded() {
     <div class="fq-celebrate">
       <span class="fq-glow" style="width:320px;height:320px" aria-hidden="true"></span>
       <span class="fq-glow" style="width:220px;height:220px" aria-hidden="true"></span>
-      <span class="fq-ringstack"><span>${ic("check", 28)}</span></span>
+      <span class="fq-ringstack"><span class="ring">${ic("check", 28)}</span></span>
     </div>
     <div><h1 class="fq-h1">تمت الترسية!</h1><p class="fq-lead">تم اعتماد هذا العرض وأرسلنا للمورد إشعار القبول.</p></div>
-    <div class="fq-card pad" style="width:100%;align-items:center;text-align:center">
+    <div class="fq-card pad fq-wincard" style="width:100%;align-items:center;text-align:center">
       <strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong>
-      ${offer?.total_price != null ? `<span class="fq-price">${esc(money(offer.total_price))}</span>` : ""}
+      ${offer?.total_price != null ? `<span class="fq-price won">${esc(money(offer.total_price))}</span>` : ""}
     </div>
     <div class="fq-actions" style="width:100%;margin-top:auto">
-      <button class="fq-btn" type="button" data-action="winner-chat">متابعة المحادثة</button>
-      <button class="fq-btn ghost" type="button" data-action="open-compare">عرض تفاصيل العرض</button>
+      <button class="fq-btn success" type="button" data-action="winner-chat">متابعة المحادثة</button>
+      <button class="fq-btn ghost outline" type="button" data-action="open-compare">عرض تفاصيل العرض</button>
     </div>
   </section>
   ${fqNav("requests")}`;

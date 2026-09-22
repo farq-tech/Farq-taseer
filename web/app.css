@@ -1853,3 +1853,10 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-chat.won .fq-av { width: 28px; height: 28px; font-size: 12px; }
 .fq-who.mineName { color: var(--fq-text-2); font-weight: 600; align-self: flex-end; }
 .fq-to-chip { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 4px 8px; border-radius: 999px; background: var(--fq-soft); color: var(--fq-deep-green); font-size: 12px; font-weight: 700; }
+/* A01 / A02: the award wears the success green */
+.fq-price.won { color: var(--fq-success); }
+.fq-awardcard { background: #f4fbf8; border: 1px solid #cfe9dc; }
+.fq-wincard { position: relative; overflow: hidden; }
+.fq-wincard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-success); }
+.fq-btn.ghost.outline { border-color: var(--fq-success); color: var(--fq-success); }
+.fq-ringstack > span.ring { background: var(--fq-surface); border: 3px solid var(--fq-success); color: var(--fq-success); }
