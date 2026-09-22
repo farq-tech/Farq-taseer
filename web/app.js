@@ -307,15 +307,27 @@ function initial(name) {
   return esc(text.charAt(0) || "ف");
 }
 
-function topBar({ title = "فرق تسعير", back = "", end = '<span class="slot" aria-hidden="true"></span>', lined = false } = {}) {
-  const start = back || '<span class="slot" aria-hidden="true"></span>';
-  return `<header class="top-bar${lined ? " lined" : ""}">${end}<a class="brand-title" href="/" data-action="home">${esc(title)}</a>${start}</header>`;
+// One bar on every screen: the mark with «فرق تسعير» (or the screen's title), and the back arrow
+// pointing right, the way back reads in Arabic.
+function appBar({ title = "", subtitle = "", back = "", end = "", avatar = "", lined = true } = {}) {
+  const start = back
+    ? `<button class="icon-btn back" type="button" data-action="${esc(back)}" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`
+    : `<span class="slot" aria-hidden="true"></span>`;
+  const mark = avatar || `<span class="bar-mark" aria-hidden="true"><img src="/icons/app-192.png" alt="" width="28" height="28"></span>`;
+  const heading = title
+    ? `<span class="bar-title"><strong><bdi>${esc(title)}</bdi></strong>${subtitle ? `<span><bdi>${esc(subtitle)}</bdi></span>` : ""}</span>`
+    : `<a class="bar-title brand" href="/" data-action="home"><strong>فرق تسعير</strong></a>`;
+  return `<header class="top-bar${lined ? " lined" : ""}">${start}<span class="bar-body">${mark}${heading}</span>${end || '<span class="slot" aria-hidden="true"></span>'}</header>`;
+}
+
+function topBar(options = {}) {
+  return appBar(options);
 }
 
 function tabBar(active) {
   return `<nav class="tab-bar" aria-label="التنقل">
     <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
-    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests"><span class="tab-icon">${icon("briefcase")}<span class="unread-dot" data-unread-total ${state.unreadTotal ? "" : "hidden"}>${formatCount(state.unreadTotal || 0)}</span></span><span>طلباتي</span></button>
+    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests"><span class="tab-icon">${icon("briefcase")}<span class="unread-dot" data-unread-total ${state.unreadTotal ? "" : "hidden"} aria-label="فيه ردود جديدة"></span></span><span>طلباتي</span></button>
     <button class="tab${active === "subscribe" ? " active" : ""}" type="button" data-action="subscribe">${icon("check-square")}<span>الاشتراك</span></button>
   </nav>`;
 }
@@ -327,7 +339,7 @@ function shell(body, { bare = false } = {}) {
 
 function renderAuth() {
   const register = state.authMode === "register";
-  return `<header class="top-bar lined"><span class="slot" aria-hidden="true"></span><span class="brand-title">فرق تسعير</span><span class="slot" aria-hidden="true"></span></header>
+  return `${appBar()}
   <section class="page auth">
     <div class="auth-mark" aria-hidden="true"><img src="/icons/app-192.png" alt="" width="72" height="72"></div>
     <h1>${register ? "أنشئ حسابك" : "سجّل دخولك"}</h1>
@@ -380,7 +392,7 @@ function showAuthError(message) {
 
 function renderHome() {
   const chips = ["سباك بالرياض", "كهربائي بجدة", "نقل عفش"];
-  return `${topBar()}
+  return `${appBar()}
   <section class="page home">
     <h1>وش تبي نسعّر لك؟</h1>
     <p class="lede">اكتب اللي تحتاجه وخلنا ندور لك</p>
@@ -441,16 +453,16 @@ function renderCard(result) {
   const blurb = snip(result);
   const thumb = result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`;
   return `<article class="vendor${selected ? " is-selected" : ""}">
+    <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 14 }) : ""}</button>
     <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
       ${thumb}
       <span class="vendor-copy">
-        <strong>${esc(name)}</strong>
-        <span class="vendor-meta">${seller.name ? `<span>${esc(seller.name)}</span>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
+        <strong><bdi>${esc(name)}</bdi></strong>
+        <span class="vendor-meta">${seller.name ? `<bdi>${esc(seller.name)}</bdi>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
         ${blurb ? `<span class="snip">${esc(blurb)}</span>` : ""}
-        <span class="price">${esc(price || "السعر عند الطلب")}</span>
+        <span class="price${price ? "" : " on-ask"}">${esc(price || "السعر عند الطلب")}</span>
       </span>
     </button>
-    <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 12 }) : ""}</button>
   </article>`;
 }
 
@@ -460,8 +472,7 @@ function renderFlow() {
   const showEmpty = !asking && !state.partial && state.results.length === 0;
   if (live && !state.results.length && !asking) return renderSearching();
   const need = state.intent?.need || facts(state.intent)[0] || state.query || "النتائج";
-  const back = `<button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
-  return `${topBar({ title: asking ? "فرق تسعير" : "النتائج", back })}
+  return `${appBar({ title: asking ? "" : "النتائج", back: "home" })}
   <section class="page tight flow">
     ${asking ? "" : `<div class="group-head"><span>${formatCount(state.results.length)} جهة مطابقة</span><strong>${esc(need)}</strong></div>`}
     ${asking ? renderFacts() + renderQuestion() : ""}
@@ -477,6 +488,16 @@ function dock() {
   if (!count || state.view === "review") return "";
   const label = count === 1 ? "اطلب السعر من جهة واحدة" : `اطلب السعر من ${formatCount(count)} جهات`;
   return `<div class="dock"><p class="hint">سنرسل طلبك لكل الجهات المختارة</p><button class="primary compact" type="button" data-action="review">${esc(label)}</button></div>`;
+}
+
+// Haraj ads carry boilerplate lines that mean nothing inside Taseer.
+const AD_NOISE = [/رقم\s*الجوال\s*يظهر/, /اضغط\s*(على\s*)?(زر\s*)?تواصل/, /للتواصل\s*واتس/, /^\s*للجادين\s*فقط\s*$/];
+function adStory(text) {
+  return String(text || "")
+    .split("\n")
+    .filter((line) => line.trim() && !AD_NOISE.some((pattern) => pattern.test(line)))
+    .join("\n")
+    .trim();
 }
 
 function renderDetail() {
@@ -495,14 +516,14 @@ function renderDetail() {
   const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
-  return `${topBar({ title: "التفاصيل", back })}
+  return `${appBar({ title: "التفاصيل", back: "back-results" })}
   <article class="page tight detail">
-    <div class="gallery">${frames}</div>
-    <h1 style="font-size:22px">${esc(result.ad?.title || seller.name || "")}</h1>
-    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">السعر عند الطلب</p>`}
-    <p class="meta">${esc(place(result))}${seller.name ? ` · ${esc(seller.name)}` : ""}</p>
-    ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
+    <div class="gallery" id="gallery">${frames}</div>
+    ${gallery.length > 1 ? `<div class="gallery-dots" id="gallery-dots">${gallery.map((_item, index) => `<span class="dot${index ? "" : " is-on"}"></span>`).join("")}</div>` : ""}
+    <h1 style="font-size:22px"><bdi>${esc(result.ad?.title || seller.name || "")}</bdi></h1>
+    <p class="price big">${esc(price || "السعر عند الطلب")}</p>
+    <p class="meta">${esc(place(result))}${seller.name ? ` · ` : ""}${seller.name ? `<bdi>${esc(seller.name)}</bdi>` : ""}</p>
+    ${adStory(result.ad?.description) ? `<p class="story">${esc(adStory(result.ad.description))}</p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
     <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
     ${dock()}
@@ -513,18 +534,19 @@ function renderReview() {
   const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: sellerOf(result).name || "بائع" }));
   const city = customerCity();
   const ready = state.selected.size > 0 && Boolean(city);
-  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
-  return `${topBar({ title: "طلب عرض سعر", back })}
+  return `${appBar({ title: "طلب عرض سعر", back: "back-results" })}
   <section class="page tight review">
     <h1>جاهز نرسله؟</h1>
     <p class="summary">${esc(state.query)}</p>
-    <ul class="who">${names.map((item) => `<li><span>${esc(item.name)}</span><button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
+    <ul class="who">${names.map((item) => `<li><bdi>${esc(item.name)}</bdi><button class="plain-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
     ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="section-head"><h1 style="font-size:20px">في أي مدينة؟</h1></div>${cityChoices("pick-city")}`}
     <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
-    <p class="optional">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
-    <div class="composer-bar">
-      <label class="file-btn">${icon("camera")} صورة<input type="file" accept="image/*" data-action="add-files"></label>
-      <label class="file-btn">${icon("paperclip")} ملف PDF<input type="file" accept="application/pdf" data-action="add-files"></label>
+    <div class="attach-block">
+      <p class="optional">أرفق صورة أو ملف PDF (اختياري).</p>
+      <div class="composer-bar">
+        <label class="file-btn">${icon("camera")}<span>صورة</span><input type="file" accept="image/*" data-action="add-files"></label>
+        <label class="file-btn">${icon("paperclip")}<span>ملف PDF</span><input type="file" accept="application/pdf" data-action="add-files"></label>
+      </div>
     </div>
     ${filePreview()}
     ${state.notice ? `<p class="status warn" role="alert">${esc(state.notice)}</p>` : ""}
@@ -572,7 +594,6 @@ function setUnread(requests) {
   state.unreadTotal = (requests || []).reduce((sum, item) => sum + (item.unread_count || 0), 0);
   document.querySelectorAll("[data-unread-total]").forEach((node) => {
     node.hidden = !state.unreadTotal;
-    node.textContent = formatCount(state.unreadTotal);
   });
 }
 
@@ -589,10 +610,8 @@ async function refreshUnread() {
 }
 
 function renderRequests() {
-  const logo = `<span class="slot" aria-hidden="true"></span>`;
-  const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
-  const account = `<button class="account-chip" type="button" data-action="sign-out" aria-label="تسجيل خروج">${state.account?.name ? `${esc(state.account.name)} · ` : ""}خروج</button>`;
-  const head = `<header class="top-bar lined">${account}${title}${logo}</header>`;
+  const account = `<button class="account-chip" type="button" data-action="sign-out">${state.account?.name ? `<bdi>${esc(state.account.name)}</bdi> · ` : ""}خروج</button>`;
+  const head = appBar({ end: account });
   if (state.requestsLoading && !state.requests.length) {
     const row = `<div class="chat-row"><span class="chat-avatar skeleton"></span><span class="chat-main"><span class="skeleton line" style="width:55%"></span><span class="skeleton line" style="width:80%"></span><span class="skeleton line" style="width:35%"></span></span></div>`;
     return `${head}<section class="page soft requests-page" aria-busy="true"><div class="chat-list">${row.repeat(4)}</div></section>${tabBar("requests")}`;
@@ -609,14 +628,12 @@ function renderRequests() {
       const when = ago(item.last_message_at || item.created_at);
       const unread = item.unread_count || 0;
       const price = item.latest_offer_amount != null ? `أرخص سعر ${money(item.latest_offer_amount)}` : item.replied_count ? `ردّ ${formatCount(item.replied_count)} من ${formatCount(item.recipient_count || 0)}` : `بانتظار الرد من ${formatCount(item.recipient_count || 0)}`;
-      const avatar = one
-        ? `<span class="chat-avatar" style="background:${SELLER_COLORS[0]}">${initial(names[0])}</span>`
-        : `<span class="chat-avatar group">${formatCount(names.length || item.recipient_count || 0)}</span>`;
+      const avatar = `<span class="chat-avatar" style="background:${SELLER_COLORS[0]}">${initial(names[0] || need)}</span>${one ? "" : `<span class="chat-count">${formatCount(names.length || item.recipient_count || 0)}</span>`}`;
       return `<button class="chat-row${unread ? " has-unread" : ""}" type="button" data-action="thread" data-id="${esc(item.id)}" aria-label="افتح محادثة ${esc(need)}">
         ${avatar}
         <span class="chat-main">
-          <span class="chat-top"><strong>${esc(one ? names[0] : need)}</strong><time>${esc(when || "")}</time></span>
-          <span class="chat-sub">${esc(one ? need : names.join("، "))}</span>
+          <span class="chat-top"><strong><bdi>${esc(one ? names[0] : need)}</bdi></strong><time>${esc(when || "")}</time></span>
+          <span class="chat-sub"><bdi>${esc(one ? need : names.join("، "))}</bdi></span>
           <span class="chat-bottom"><span class="chat-last">${esc(item.last_message || "")}</span>${unread ? `<span class="unread-count">${formatCount(unread)}</span>` : ""}</span>
           <span class="chat-price">${esc(price)}</span>
         </span>
@@ -734,7 +751,7 @@ function waBubble(thread, message, { group, byId }) {
   }
   const price = messagePrice(message);
   const name = group
-    ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${sellerColor(thread, message.seller_id)}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
+    ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${sellerColor(thread, message.seller_id)}"><bdi>${esc(sellerName(thread, message.seller_id))}</bdi></button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
     : "";
   return `<div class="wa-row in" style="--seller:${sellerColor(thread, message.seller_id)}"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}${media}${body ? `<div class="wa-text">${body}</div>` : ""}<span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
 }
@@ -762,11 +779,7 @@ function renderThread() {
     const names = known?.seller_names || [];
     const title = names.length === 1 ? names[0] : known?.need || known?.original_text || "المحادثة";
     return `<div class="wa-screen">
-      <header class="wa-head">
-        <button class="wa-back" type="button" data-action="requests" aria-label="رجوع">${icon("chevron", { size: 22 })}</button>
-        <span class="wa-avatar ${names.length === 1 ? "" : "group"}" style="${names.length === 1 ? `background:${SELLER_COLORS[0]}` : ""}">${names.length === 1 ? initial(title) : formatCount(names.length || 0)}</span>
-        <div class="wa-who"><strong>${esc(title)}</strong><span>نحمّل المحادثة…</span></div>
-      </header>
+      ${appBar({ title, subtitle: "نحمّل المحادثة…", back: "requests", avatar: `<span class="bar-avatar${names.length === 1 ? "" : " group"}"${names.length === 1 ? ` style="background:${SELLER_COLORS[0]}"` : ""}>${names.length === 1 ? initial(title) : formatCount(names.length || 0)}</span>` })}
       <section class="wa-wall" aria-busy="true">
         <div class="wa-row out"><div class="wa-bubble skeleton" style="width:58%;height:78px"></div></div>
         <div class="wa-row in"><div class="wa-bubble skeleton" style="width:66%;height:64px"></div></div>
@@ -820,7 +833,7 @@ function renderThread() {
                 const on = state.picked.has(item.seller_id);
                 return `<li><button type="button" class="wa-recipient${on ? " is-on" : ""}" style="--seller:${sellerColor(thread, item.seller_id)}" data-action="toggle-recipient" data-seller="${esc(item.seller_id)}" role="checkbox" aria-checked="${on}">
                   <span class="wa-check" aria-hidden="true">${on ? "✓" : ""}</span>
-                  <span class="wa-recipient-name">${esc(item.seller_name)}</span>
+                  <span class="wa-recipient-name"><bdi>${esc(item.seller_name)}</bdi></span>
                 </button></li>`;
               })
               .join("")}</ul>`
@@ -836,12 +849,11 @@ function renderThread() {
     : "";
   const nonePicked = pickable && !picked.length;
   const placeholder = target ? `ردّ على ${target.name}` : !group ? "اكتب رسالة" : picked.length === recipients.length ? "اكتب رسالة للكل" : picked.length ? `اكتب رسالة لـ ${picked.length === 1 ? picked[0].seller_name : `${formatCount(picked.length)} بائعين`}` : "اختر بائع واحد على الأقل";
+  const headAvatar = one
+    ? `<span class="bar-avatar" style="background:${sellerColor(thread, one)}">${initial(title)}</span>`
+    : `<span class="bar-avatar group">${formatCount(recipients.length)}</span>`;
   return `<div class="wa-screen">
-    <header class="wa-head">
-      <button class="wa-back" type="button" data-action="${backAction}" aria-label="رجوع">${icon("chevron", { size: 22 })}</button>
-      ${avatar}
-      <div class="wa-who"><strong>${esc(title)}</strong><span>${esc(status)}</span></div>
-    </header>
+    ${appBar({ title, subtitle: status, back: backAction, avatar: headAvatar })}
     ${best ? `<div class="wa-pinned"><span class="wa-pin">${one ? "عرضه" : "أرخص عرض"}</span><strong>${esc(money(best.total_price))}</strong>${one ? "" : `<span>${esc(best.provider_name || sellerName(thread, best.seller_id))}</span>`}</div>` : ""}
     <section class="wa-wall" id="chat-wall">
       <div class="wa-system">${esc(notice)}</div>
@@ -869,10 +881,7 @@ function renderSeller() {
   if (!seller) return `<section class="page"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
   const partner = options[0]?.seller_name || "الجهة";
-  return `<header class="seller-head">
-      <span class="mark round">${initial(partner)}</span>
-      <div class="who-line"><strong>${esc(partner)}</strong><span class="meta">${esc([seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "))}</span></div>
-    </header>
+  return `${appBar({ title: partner, subtitle: [seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "), avatar: `<span class="bar-avatar" style="background:${SELLER_COLORS[0]}">${initial(partner)}</span>` })}
     <section class="page soft">
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
     <div class="thread"><p class="day">اليوم</p>${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
@@ -898,21 +907,27 @@ function subStatusBanner() {
   return "";
 }
 
+function planPeriod(days) {
+  if (days === 30 || days === 31) return "شهر";
+  if (days === 365) return "سنة";
+  if (days === 7) return "أسبوع";
+  return `${formatCount(days)} يوم`;
+}
+
 function renderPlanCard(plan) {
-  const price = (plan.price_amount / 100).toLocaleString("ar-SA", { maximumFractionDigits: 2 });
   const chosen = state.subActivePlan === plan.code;
   const formId = `moyasar-form-${plan.code}`;
   return `<div class="plan-card${plan.is_placeholder_price ? " is-placeholder" : ""}">
     <h2 class="plan-name">${esc(plan.name_ar)}</h2>
     ${plan.is_placeholder_price ? `<p class="plan-note">سعر تجريبي مؤقت لاختبار الدفع - ليس السعر النهائي.</p>` : ""}
-    <div class="plan-price"><strong>${esc(price)}</strong><span>${esc(plan.currency)} / ${esc(String(plan.duration_days))} يوم</span></div>
+    <div class="plan-price"><strong>${esc(money(plan.price_amount / 100))}</strong><span>/ ${esc(planPeriod(plan.duration_days))}</span></div>
     <ul class="plan-features">${(plan.features || []).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>
     ${
       chosen
         ? `<div class="pay-actions" id="pay-actions" data-plan="${esc(plan.code)}">
             ${state.subBusy ? `<p class="lede">نجهّز الدفع…</p>` : `<div id="${formId}"></div><div id="applepay-slot-${esc(plan.code)}"></div>`}
           </div>
-          ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="text-btn" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}`
+          ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="ghost-btn block" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}`
         : `<button class="primary block" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اشترك بهذه الخطة</button>`
     }
   </div>`;
@@ -920,7 +935,7 @@ function renderPlanCard(plan) {
 
 function renderSubscribe() {
   const active = state.subStatus?.status === "active";
-  return `${topBar({ title: "الاشتراك" })}
+  return `${appBar({ title: "الاشتراك" })}
   <section class="page tight subscribe-page">
     <div class="section-head"><h1>اشترك في فرق تسعير</h1><p class="lede">افتح كل المزايا المدفوعة بخطة واحدة بسيطة.</p></div>
     ${subStatusBanner()}
@@ -953,6 +968,7 @@ function render() {
     lastView = state.view;
   }
   bindImages(app);
+  bindGallery(app);
   if (focused) document.getElementById(focused)?.focus();
   if (stick) {
     state.stickChat = false;
@@ -961,6 +977,24 @@ function render() {
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
   if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
+}
+
+// The dots under the detail gallery follow the photo in view.
+function bindGallery(root) {
+  const gallery = root.querySelector("#gallery");
+  const dots = root.querySelector("#gallery-dots");
+  if (!gallery || !dots) return;
+  const update = () => {
+    const frames = [...gallery.children];
+    const middle = gallery.scrollLeft + gallery.clientWidth / 2;
+    let current = 0;
+    frames.forEach((frame, index) => {
+      if (Math.abs(frame.offsetLeft + frame.clientWidth / 2 - middle) < Math.abs(frames[current].offsetLeft + frames[current].clientWidth / 2 - middle)) current = index;
+    });
+    [...dots.children].forEach((dot, index) => dot.classList.toggle("is-on", index === current));
+  };
+  gallery.addEventListener("scroll", () => requestAnimationFrame(update), { passive: true });
+  update();
 }
 
 function rememberFiles(fileList) {
