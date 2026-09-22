@@ -62,20 +62,23 @@ def dispatch_pending(
             now = clock()
             if _paused(store, "send_paused_until", now):
                 break
-            wait = max(0.0, float(store.get_value("last_send_at") or 0) + SEND_SPACING_SECONDS - now)
-            if now + wait > deadline:
+            # One booking in the database paces every instance and every cron run together.
+            slot = store.reserve_send_slot(SEND_SPACING_SECONDS, now, deadline)
+            if slot is None:
                 break
             claimed = store.claim_deliveries(limit=1)
             if not claimed:
+                store.release_send_slot(slot, SEND_SPACING_SECONDS)
                 break
             item = claimed[0]
             body = item["body"]
             if QUOTE_LINK in body:
                 if not item.get("reply_token"):
+                    store.release_send_slot(slot, SEND_SPACING_SECONDS)
                     store.finish_delivery(item["id"], error="NO_QUOTE_LINK", retry=False)
                     continue
                 body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
-            sleep(wait)
+            sleep(max(0.0, slot - clock()))
             try:
                 result = chat.send(
                     conversation_id=item["haraj_conversation_id"],
@@ -84,10 +87,10 @@ def dispatch_pending(
                     body=body,
                 )
             except HarajChatUnavailable as exc:
+                store.release_send_slot(slot, SEND_SPACING_SECONDS)
                 store.finish_delivery(item["id"], error=exc.code, retry=True)
                 break
             except HarajRefused as exc:
-                store.set_value("last_send_at", str(clock()))
                 retry = store.delivery_attempts(item["id"]) < MAX_ATTEMPTS
                 store.finish_delivery(item["id"], error=f"REFUSED_{exc.status}", retry=retry)
                 if exc.hard_stop:
@@ -95,14 +98,12 @@ def dispatch_pending(
                     break
                 continue
             except HarajSendUncertain as exc:
-                store.set_value("last_send_at", str(clock()))
                 store.finish_delivery(item["id"], error=exc.code, retry=False)
                 continue
             except (HarajNotSent, Exception) as exc:  # noqa: BLE001 - nothing was posted
                 retry = store.delivery_attempts(item["id"]) < MAX_ATTEMPTS
                 store.finish_delivery(item["id"], error=str(exc) or type(exc).__name__, retry=retry)
                 continue
-            store.set_value("last_send_at", str(clock()))
             store.finish_delivery(item["id"], sent=result)
             sent += 1
     return sent

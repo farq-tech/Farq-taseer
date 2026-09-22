@@ -79,7 +79,7 @@ def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
     getattr(api_tests, name)(tmp_path, monkeypatch) if "monkeypatch" in getattr(api_tests, name).__code__.co_varnames else getattr(api_tests, name)(tmp_path)
 
 
-@pytest.mark.parametrize("name", ["test_sends_are_spaced_and_a_refusal_stops_the_batch", "test_an_uncertain_post_is_failed_not_retried"])
+@pytest.mark.parametrize("name", ["test_sends_are_spaced_and_a_refusal_stops_the_batch", "test_an_uncertain_post_is_failed_not_retried", "test_send_slots_are_shared_by_every_instance"])
 def test_worker_on_postgres(name, tmp_path, monkeypatch, pg_store):
     import tests.test_haraj_chat as chat_tests
 

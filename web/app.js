@@ -78,7 +78,24 @@ function money(amount) {
   return `${new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 0 }).format(amount)} ر.س`;
 }
 
-async function api(path, { method = "GET", json, form, skipAuth = false } = {}) {
+// A thin bar at the top while the app is waiting on the server (background polling stays quiet).
+let busyRequests = 0;
+function setBusy(delta) {
+  busyRequests = Math.max(0, busyRequests + delta);
+  document.documentElement.classList.toggle("is-busy", busyRequests > 0);
+}
+
+async function api(path, options = {}) {
+  if (options.quiet) return request(path, options);
+  setBusy(1);
+  try {
+    return await request(path, options);
+  } finally {
+    setBusy(-1);
+  }
+}
+
+async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false } = {}) {
   const headers = {};
   if (state.token && !skipAuth) headers.Authorization = `Bearer ${state.token}`;
   let body;
@@ -91,7 +108,7 @@ async function api(path, { method = "GET", json, form, skipAuth = false } = {}) 
     state.token = "";
     localStorage.removeItem("farq.token");
     await ensureAuth();
-    return api(path, { method, json, form });
+    return request(path, { method, json, form, quiet });
   }
   if (!response.ok) {
     const error = new Error("request failed");
@@ -485,7 +502,7 @@ function setUnread(requests) {
 async function refreshUnread() {
   if (!state.token || state.view === "thread" || state.view === "seller" || document.visibilityState !== "visible") return;
   try {
-    const data = await api("/v1/requests");
+    const data = await api("/v1/requests", { quiet: true });
     const changed = JSON.stringify(data.requests || []) !== JSON.stringify(state.requests);
     state.requests = data.requests || [];
     setUnread(state.requests);
@@ -497,6 +514,10 @@ function renderRequests() {
   const logo = `<span class="slot" aria-hidden="true"></span>`;
   const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
   const head = `<header class="top-bar lined">${logo}${title}${logo}</header>`;
+  if (state.requestsLoading && !state.requests.length) {
+    const row = `<div class="chat-row"><span class="chat-avatar skeleton"></span><span class="chat-main"><span class="skeleton line" style="width:55%"></span><span class="skeleton line" style="width:80%"></span><span class="skeleton line" style="width:35%"></span></span></div>`;
+    return `${head}<section class="page soft requests-page" aria-busy="true"><div class="chat-list">${row.repeat(4)}</div></section>${tabBar("requests")}`;
+  }
   if (!state.requests.length) {
     return `${head}<section class="page soft requests-page"><p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>${tabBar("requests")}`;
   }
@@ -579,10 +600,22 @@ const TICK = {
 };
 
 function deliveryTick(message) {
-  if (!(message.deliveries || []).length) return "";
-  if (message.delivery_state === "sent" || message.delivery_state === "partial") return TICK.sent;
+  const deliveries = message.deliveries || [];
+  if (!deliveries.length) return "";
+  const sent = deliveries.filter((item) => item.status === "sent").length;
+  if (sent) return TICK.sent;
   if (message.delivery_state === "failed") return TICK.failed;
   return TICK.queued;
+}
+
+// Messages leave one at a time, 20 s apart, so a message to several suppliers shows its progress.
+function deliveryProgress(message) {
+  const deliveries = message.deliveries || [];
+  const sent = deliveries.filter((item) => item.status === "sent").length;
+  const waiting = deliveries.filter((item) => item.status === "queued" || item.status === "sending").length;
+  if (!deliveries.length || !waiting) return "";
+  if (deliveries.length === 1) return "يُرسل الآن…";
+  return `وصلت لـ ${formatCount(sent)} من ${formatCount(deliveries.length)} · الباقي خلال ${formatCount(Math.max(1, Math.ceil((waiting * 20) / 60)))} د`;
 }
 
 function waBubble(thread, message, { group, byId }) {
@@ -596,7 +629,8 @@ function waBubble(thread, message, { group, byId }) {
   if (mine) {
     const only = group && message.scope === "single_seller" && message.seller_id ? `<div class="wa-to">إلى ${esc(sellerName(thread, message.seller_id))} فقط</div>` : "";
     const failed = message.delivery_state === "failed" ? `<div class="wa-to warn">ما وصلت الرسالة</div>` : "";
-    return `<div class="wa-row out"><div class="wa-bubble">${quote}<div class="wa-text">${body}</div>${only}${failed}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
+    const progress = deliveryProgress(message);
+    return `<div class="wa-row out"><div class="wa-bubble">${quote}<div class="wa-text">${body}</div>${only}${failed}${progress ? `<div class="wa-to">${esc(progress)}</div>` : ""}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
   }
   const price = messagePrice(message);
   const name = group
@@ -623,7 +657,23 @@ function waMessages(thread, messages, group) {
 // conversation, and every message here is routed to or synced from those.
 function renderThread() {
   const thread = state.thread;
-  if (!thread) return `<section class="page"><p>نحمّل المحادثة…</p></section>`;
+  if (!thread) {
+    const known = state.requests.find((item) => item.id === state.pendingThread);
+    const names = known?.seller_names || [];
+    const title = names.length === 1 ? names[0] : known?.need || known?.original_text || "المحادثة";
+    return `<div class="wa-screen">
+      <header class="wa-head">
+        <button class="wa-back" type="button" data-action="requests" aria-label="رجوع">${icon("chevron", { size: 22 })}</button>
+        <span class="wa-avatar ${names.length === 1 ? "" : "group"}" style="${names.length === 1 ? `background:${SELLER_COLORS[0]}` : ""}">${names.length === 1 ? initial(title) : formatCount(names.length || 0)}</span>
+        <div class="wa-who"><strong>${esc(title)}</strong><span>نحمّل المحادثة…</span></div>
+      </header>
+      <section class="wa-wall" aria-busy="true">
+        <div class="wa-row out"><div class="wa-bubble skeleton" style="width:58%;height:78px"></div></div>
+        <div class="wa-row in"><div class="wa-bubble skeleton" style="width:66%;height:64px"></div></div>
+        <div class="wa-row in"><div class="wa-bubble skeleton" style="width:44%;height:52px"></div></div>
+      </section>
+    </div>`;
+  }
   const recipients = thread.recipients || [];
   const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
   const group = !one;
@@ -736,6 +786,7 @@ function renderSubscribe() {
   ${tabBar("subscribe")}`;
 }
 
+let lastView = "";
 function render() {
   clearInterval(poll);
   const view = {
@@ -752,13 +803,17 @@ function render() {
   const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
   const stick = state.view === "thread" && (state.stickChat || nearBottom);
   app.innerHTML = shell(view());
+  if (state.view !== lastView) {
+    app.firstElementChild?.classList.add("view-enter");
+    lastView = state.view;
+  }
   bindImages(app);
   if (focused) document.getElementById(focused)?.focus();
   if (stick) {
     state.stickChat = false;
     window.scrollTo(0, document.documentElement.scrollHeight);
   }
-  if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
+  if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
   if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
 }
@@ -920,6 +975,7 @@ async function sendRequest() {
     state.notice = "";
     state.selected.clear();
     state.thread = created;
+    threadCache.set(created.id, created);
     state.replyTo = null;
     // One seller: straight into the chat with him. Several: the item's group chat.
     state.activeSeller = created.recipients?.length === 1 ? created.recipients[0].seller_id : "";
@@ -935,21 +991,37 @@ async function sendRequest() {
   }
 }
 
+// Screens switch at once: what we already have (or a placeholder) shows while the server answers.
+const threadCache = new Map();
+
 async function loadRequests() {
-  await ensureAuth();
   state.view = "requests";
-  state.requests = (await api("/v1/requests")).requests || [];
-  setUnread(state.requests);
+  state.requestsLoading = !state.requestsLoaded;
   render();
+  await ensureAuth();
+  state.requests = (await api("/v1/requests")).requests || [];
+  state.requestsLoaded = true;
+  state.requestsLoading = false;
+  setUnread(state.requests);
+  if (state.view === "requests") render();
 }
 
 async function loadThread(id, silent = false) {
+  if (!silent) {
+    state.view = "thread";
+    state.thread = threadCache.get(id) || null;
+    state.pendingThread = id;
+    render();
+  }
   await ensureAuth();
-  const thread = await api(`/v1/requests/${id}`);
+  const thread = await api(`/v1/requests/${id}`, { quiet: silent });
+  threadCache.set(id, thread);
+  if (state.view !== "thread" || (state.pendingThread && state.pendingThread !== id)) return;
   const previous = JSON.stringify(state.thread?.messages || []);
+  const first = !state.thread;
   state.thread = thread;
-  state.view = "thread";
-  if (!silent || previous !== JSON.stringify(thread.messages || [])) render();
+  if (first) state.stickChat = true;
+  if (!silent || first || previous !== JSON.stringify(thread.messages || [])) render();
 }
 
 async function loadSeller(token, silent = false) {

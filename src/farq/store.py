@@ -783,6 +783,22 @@ class Store:
 
     # --- Channel state shared by every instance: session tokens, pauses, pacing ------------------
 
+    def reserve_send_slot(self, spacing: float, now: float, deadline: float) -> float | None:
+        """Book the next send time for every instance at once: max(next_send_at, now), if it fits the deadline."""
+        row = self._connection.execute("select value from haraj_channel where key = 'next_send_at'").fetchone()
+        slot = max(float(row["value"]) if row and row["value"] else 0.0, now)
+        if slot > deadline:
+            return None
+        self.set_value("next_send_at", repr(slot + spacing))
+        return slot
+
+    def release_send_slot(self, slot: float, spacing: float) -> None:
+        """Give back a booked slot nobody used, unless someone booked after it."""
+        self._connection.execute(
+            "update haraj_channel set value = ? where key = 'next_send_at' and value = ?", (repr(slot), repr(slot + spacing))
+        )
+        self._connection.commit()
+
     def get_value(self, key: str) -> str | None:
         row = self._connection.execute("select value from haraj_channel where key = ?", (key,)).fetchone()
         return None if row is None else row["value"]

@@ -590,6 +590,25 @@ class PgStore:
                 (now, now, retry_seconds, failure_code, thread["request_id"], thread["seller_id"], thread["need"]),
             )
 
+    def reserve_send_slot(self, spacing: float, now: float, deadline: float) -> float | None:
+        """Book the next send time for every instance at once. The row lock serialises concurrent bookers."""
+        with self._pool.connection() as conn:
+            conn.execute("insert into haraj_channel (key, value) values ('next_send_at', '0') on conflict (key) do nothing")
+            row = conn.execute(
+                "update haraj_channel set value = (greatest(coalesce(nullif(value, '')::float8, 0), %(now)s) + %(spacing)s)::text, updated_at = now()"
+                " where key = 'next_send_at' and greatest(coalesce(nullif(value, '')::float8, 0), %(now)s) <= %(deadline)s"
+                " returning value::float8 - %(spacing)s as slot",
+                {"now": now, "spacing": spacing, "deadline": deadline},
+            ).fetchone()
+        return None if row is None else float(row["slot"])
+
+    def release_send_slot(self, slot: float, spacing: float) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                "update haraj_channel set value = %s::text where key = 'next_send_at' and value::float8 = %s",
+                (slot, slot + spacing),
+            )
+
     def get_value(self, key: str) -> str | None:
         with self._pool.connection() as conn:
             row = conn.execute("select value from haraj_channel where key = %s", (key,)).fetchone()

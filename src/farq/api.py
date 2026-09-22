@@ -17,7 +17,7 @@ from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.intent import analyze, analyze_needs
 from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
-from farq.worker import dispatch_pending, poll_once, start_poller
+from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
@@ -467,21 +467,33 @@ def create_app(
             raise HTTPException(status_code=503, detail="CRON_SECRET is not set")
         if authorization != f"Bearer {secret}":
             raise HTTPException(status_code=401, detail="unauthorized")
-        sent, received = poll_once(store, chat, budget_seconds=25)
+        # One run a minute: up to three sends 20 s apart, then read replies.
+        sent = dispatch_pending(store, chat, budget_seconds=42)
+        received = sync_replies(store, chat, budget_seconds=12)
         return {"sent": sent, "received": received}
 
     if WEB_DIR.is_dir():
 
+        # The functions run in Sydney, next to the database. Static files are cached at Vercel's edge
+        # near the visitor (s-maxage; each deployment starts a fresh cache), and browsers revalidate
+        # the page, script and styles so a deploy shows up at once.
+        def static_file(path: Path) -> FileResponse:
+            if path.suffix in {".png", ".svg", ".ico", ".woff2"}:
+                cache = "public, max-age=86400, s-maxage=31536000"
+            else:
+                cache = "public, max-age=0, must-revalidate, s-maxage=31536000"
+            return FileResponse(path, headers={"Cache-Control": cache})
+
         @app.get("/")
         def index() -> FileResponse:
-            return FileResponse(WEB_DIR / "index.html")
+            return static_file(WEB_DIR / "index.html")
 
         @app.get("/{full_path:path}")
         def spa(full_path: str) -> FileResponse:
             candidate = (WEB_DIR / full_path).resolve()
             if candidate.is_file() and candidate.is_relative_to(WEB_DIR.resolve()):
-                return FileResponse(candidate)
-            return FileResponse(WEB_DIR / "index.html")
+                return static_file(candidate)
+            return static_file(WEB_DIR / "index.html")
 
     return app
 

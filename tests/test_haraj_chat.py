@@ -255,3 +255,13 @@ def test_an_uncertain_post_is_failed_not_retried(tmp_path: Path):
     dispatch_pending(store, ScriptedChat([]), budget_seconds=600, sleep=lambda s: None, clock=lambda: now[0])
     assert statuses(store) == [("failed", "NETWORK_ERROR")]
     assert "https://taseer.farq.sa/s/" in chat.bodies[0]
+
+
+def test_send_slots_are_shared_by_every_instance(tmp_path: Path):
+    store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
+    # Two cron runs at the same moment get slots 20 s apart, never the same one.
+    assert store.reserve_send_slot(20, 1000.0, 1100.0) == 1000.0
+    assert store.reserve_send_slot(20, 1000.0, 1100.0) == 1020.0
+    assert store.reserve_send_slot(20, 1000.0, 1030.0) is None
+    store.release_send_slot(1020.0, 20)
+    assert store.reserve_send_slot(20, 1001.0, 1100.0) == 1020.0
