@@ -18,6 +18,7 @@ const state = {
   replyTo: null,
   account: null,
   authMode: "login",
+  showPassword: false,
   authError: "",
   returnView: "home",
   picked: null,
@@ -355,19 +356,37 @@ function shell(body, { bare = false } = {}) {
   return `<main class="shell">${body}</main>`;
 }
 
+// The reveal button sits beside the input, not inside its label, so one tap counts once.
+function field({ id, label, icon, attrs, after = "" }) {
+  return `<div class="field-line">
+    <label for="${id}">${esc(label)}</label>
+    <span class="input-wrap"><img class="input-icon" src="/icons/${icon}.svg" alt="" width="20" height="20"><input id="${id}" ${attrs}>${after}</span>
+  </div>`;
+}
+
 function renderAuth() {
   const register = state.authMode === "register";
+  const reveal = state.showPassword ? "eye-off" : "eye";
   return `${appBar()}
   <section class="page auth">
-    <div class="auth-mark" aria-hidden="true"><img src="/brand/logo-square.png" alt="" width="76" height="76"></div>
+    <div class="auth-hero">
+      <span class="auth-glow" aria-hidden="true"></span>
+      <img class="auth-logo" src="/brand/logo-square.png" alt="" width="84" height="84">
+    </div>
     <h1>${register ? "أنشئ حسابك" : "سجّل دخولك"}</h1>
     <p class="lede">${register ? "حساب واحد تتابع فيه كل طلباتك ومحادثاتك مع البائعين." : "لازم تسجّل دخول عشان تطلب أسعار وتراسل البائعين."}</p>
-    <form id="auth-form" class="auth-form" novalidate>
-      ${register ? `<label class="field-line"><span>الاسم</span><input name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="اسمك"></label>` : ""}
-      <label class="field-line"><span>البريد الإلكتروني</span><input name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required placeholder="name@example.com"></label>
-      <label class="field-line"><span>كلمة السر</span><input name="password" type="password" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="${register ? "٨ أحرف أو أكثر" : ""}"></label>
+    <form id="auth-form" class="auth-card" novalidate>
+      ${register ? field({ id: "auth-name", label: "الاسم", icon: "user", attrs: 'name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="اسمك"' }) : ""}
+      ${field({ id: "auth-email", label: "البريد الإلكتروني", icon: "mail", attrs: 'name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required placeholder="name@example.com"' })}
+      ${field({
+        id: "auth-password",
+        label: "كلمة السر",
+        icon: "lock",
+        attrs: `name="password" type="${state.showPassword ? "text" : "password"}" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="${register ? "٨ أحرف أو أكثر" : ""}"`,
+        after: `<button class="reveal" type="button" data-action="toggle-password" aria-label="${state.showPassword ? "إخفاء كلمة السر" : "إظهار كلمة السر"}" aria-pressed="${state.showPassword}"><img src="/icons/${reveal}.svg" alt="" width="22" height="22"></button>`,
+      })}
       ${state.authError ? `<p class="status warn" role="alert">${esc(state.authError)}</p>` : ""}
-      <button class="primary block" type="submit" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : register ? "إنشاء الحساب" : "دخول"}</button>
+      <button class="primary block tall" type="submit" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : register ? "إنشاء الحساب" : "دخول"}</button>
     </form>
     <p class="auth-switch">${register ? "عندك حساب؟" : "ما عندك حساب؟"} <button class="text-btn" type="button" data-action="auth-mode">${register ? "سجّل دخول" : "أنشئ حساب"}</button></p>
   </section>`;
@@ -1668,6 +1687,17 @@ document.addEventListener("click", (event) => {
   else if (action === "clear-notice") {
     state.notice = "";
     render();
+  } else if (action === "toggle-password") {
+    const field = document.querySelector("#auth-password");
+    const keep = field?.value || "";
+    state.showPassword = !state.showPassword;
+    render();
+    const next = document.querySelector("#auth-password");
+    if (next) {
+      next.value = keep;
+      next.focus();
+      next.setSelectionRange(keep.length, keep.length);
+    }
   } else if (action === "auth-mode") {
     state.authMode = state.authMode === "register" ? "login" : "register";
     state.authError = "";
