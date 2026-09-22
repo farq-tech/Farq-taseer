@@ -445,12 +445,13 @@ function ic(name, size = 20) {
 // browsers require. Off is remembered per device.
 // ---------------------------------------------------------------------------
 const SOUNDS = {
-  // name: [ [frequency, start, length], ... ], gain
+  // name: [ [frequency, start, length], ... ], gain — the note count is the message:
+  // one for a reply, two for a price, three falling for a price that beats them all.
   tap: [[[660, 0, 0.05]], 0.05],
-  sent: [[[520, 0, 0.07], [780, 0.06, 0.09]], 0.07],
+  reply: [[[880, 0, 0.08]], 0.06],
   offer: [[[784, 0, 0.1], [1047, 0.09, 0.14]], 0.09],
   lower: [[[1047, 0, 0.09], [784, 0.08, 0.1], [659, 0.16, 0.16]], 0.09],
-  reply: [[[880, 0, 0.08]], 0.06],
+  found: [[[659, 0, 0.09], [988, 0.08, 0.16]], 0.08],
   award: [[[523, 0, 0.12], [659, 0.1, 0.12], [784, 0.2, 0.14], [1047, 0.3, 0.3]], 0.1],
   fail: [[[300, 0, 0.14], [220, 0.12, 0.22]], 0.08],
 };
@@ -479,9 +480,10 @@ const sound = {
     this.ctx.resume?.();
     this.ready = true;
   },
+  // Reduced motion is about movement on screen; sound answers only to this app's
+  // switch, to what the browser allows, and to the device's own silent mode.
   play(name) {
     if (!this.on || !this.ready || !this.ctx) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches && name !== "award") return;
     const recipe = SOUNDS[name];
     if (!recipe) return;
     const [notes, gain] = recipe;
@@ -512,6 +514,17 @@ function buzz(pattern) {
 function cue(name, pattern) {
   sound.play(name);
   if (pattern) buzz(pattern);
+}
+
+// Each happening sounds once. The key is the thing that happened — a message id, a
+// search — so a re-render, another poll, a reconnect or a repeated event stays quiet.
+const sounded = new Set();
+function cueOnce(key, name, pattern) {
+  if (!key || sounded.has(key)) return false;
+  sounded.add(key);
+  if (sounded.size > 500) for (const old of [...sounded].slice(0, 200)) sounded.delete(old);
+  cue(name, pattern);
+  return true;
 }
 
 // The screen header: deep green, the title in the middle, the brand accent line under it.
@@ -1000,7 +1013,8 @@ async function refreshUnread() {
     state.requests = data.requests || [];
     setUnread(state.requests);
     // Something arrived while the customer was on another screen.
-    if (state.unreadTotal > was) cue("offer", 12);
+    const newest = state.requests.map((item) => item.last_message_at || "").sort().pop() || "";
+    if (state.unreadTotal > was) cueOnce(`inbox:${newest}`, "offer", 12);
     if (changed && (state.view === "requests" || state.view === "notifications")) render();
   } catch (_error) {}
 }
@@ -1700,11 +1714,11 @@ function renderNotifySettings() {
   <section class="fq-body tight" style="gap:0;padding:0">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-        <strong style="font-size:15px;font-weight:600">نغمة عند وصول عرض</strong>
-        <span class="fq-meta" style="font-size:12px;line-height:1.5">نغمة قصيرة واهتزاز خفيف عند وصول رد أو عرض جديد، ونغمة أوضح لو كان العرض أقل من الكل</span>
-        <button class="fq-link" type="button" data-action="try-sound" style="align-self:flex-start">جرّب النغمة</button>
+        <strong style="font-size:15px;font-weight:600">أصوات التطبيق</strong>
+        <span class="fq-meta" style="font-size:12px;line-height:1.5">أصوات خفيفة عند وصول الرسائل والعروض وإتمام العمليات المهمة.</span>
+        <button class="fq-link" type="button" data-action="try-sound" style="align-self:flex-start">جرّب الصوت</button>
       </span>
-      <button class="fq-switch${on ? " on" : ""}" type="button" data-action="sound-toggle" role="switch" aria-checked="${on}" aria-label="نغمة عند وصول عرض"><span></span></button>
+      <button class="fq-switch${on ? " on" : ""}" type="button" data-action="sound-toggle" role="switch" aria-checked="${on}" aria-label="أصوات التطبيق"><span></span></button>
     </div>
     ${NOTIFY_ROWS.map(([key, title, desc]) => {
       const on = prefs[key] !== false;
@@ -2126,6 +2140,7 @@ async function runSearch(text, city = "") {
   }
   const asked = state.city && !cityInText(query) ? `${query} ${cityLabel(state.city)}` : query;
   state.view = "flow";
+  state.searchId = `${Date.now()}`;
   state.partial = true;
   state.searching = true;
   state.seenCards = new Set();
@@ -2153,8 +2168,7 @@ async function runSearch(text, city = "") {
         state.partial = true;
         state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
       } else if (event.type === "results") {
-        // the first batch landing is the moment worth marking
-        if ((event.results || []).length && !state.results.length) cue("tap", 8);
+        // partial batches move the counter and the list, and say nothing
         if ((event.results || []).length) state.searching = false;
         if (event.scanned != null) state.scanned = event.scanned;
         state.results = event.results || [];
@@ -2163,8 +2177,9 @@ async function runSearch(text, city = "") {
         if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
       } else if (event.type === "done") {
         state.searching = false;
-        if (state.results.length) cue("sent", 10);
         applyDone(event);
+        // one rising pair, only once, and only when the search actually found something
+        if (state.results.length) cueOnce(`search:${state.searchId}`, "found", 10);
       }
       render();
     });
@@ -2172,6 +2187,7 @@ async function runSearch(text, city = "") {
     try {
       const done = await api("/v1/search", { method: "POST", json: { query } });
       applyDone(done);
+      if (state.results.length) cueOnce(`search:${state.searchId}`, "found", 10);
     } catch (_fallback) {
       state.partial = false;
       state.searchState = "INTERNAL_ERROR";
@@ -2453,19 +2469,19 @@ async function loadThread(id, silent = false) {
 
 // The payoff for the waiting: a reply, an offer, or an offer that undercuts the rest,
 // each with its own cue.
+// The payoff for the waiting. One cue per arrival, never two: a price that beats every
+// other offer outranks a price, and a price outranks a plain reply.
 function announceArrivals(before, after) {
   const seen = new Set((before.messages || []).map((item) => item.id));
   const fresh = (after.messages || []).filter((item) => item.sender_role === "seller" && !seen.has(item.id));
   if (!fresh.length) return;
-  const priced = fresh.map(messagePrice).filter((value) => value != null);
-  if (!priced.length) {
-    cue("reply", 10);
-    return;
-  }
   const older = (before.offers || []).map((item) => item.total_price).filter((value) => value != null);
-  const best = older.length ? Math.min(...older) : Infinity;
-  if (Math.min(...priced) < best) cue("lower", [10, 40, 16]);
-  else cue("offer", 12);
+  const priced = fresh.filter((item) => messagePrice(item) != null);
+  // «Lowest» means it beat a price already on the table; the first price is just a price.
+  const undercut = older.length ? priced.filter((item) => messagePrice(item) < Math.min(...older)) : [];
+  if (undercut.length) cueOnce(`lower:${undercut[0].id}`, "lower", [10, 40, 16]);
+  else if (priced.length) cueOnce(`offer:${priced[0].id}`, "offer", 12);
+  else cueOnce(`reply:${fresh[0].id}`, "reply", 10);
 }
 
 
@@ -2797,8 +2813,9 @@ document.addEventListener("click", (event) => {
     if (sound.on) cue("offer", 12);
     render();
   } else if (action === "try-sound") {
+    // one short cue, the same one an arriving offer plays
     sound.unlock();
-    cue("lower", [10, 40, 16]);
+    cue("offer", 12);
   } else if (action === "read-all") {
     state.notifications = (state.notifications || []).map((item) => ({ ...item, unread: false }));
     render();
