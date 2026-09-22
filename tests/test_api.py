@@ -394,3 +394,12 @@ def test_price_needs_a_currency():
     assert extract_price("السعر ١٬٢٠٠ ريال شامل") == 1200
     assert extract_price("500 ر.س") == 500
     assert extract_price("عندي 3 حبات") is None
+
+
+def test_cron_route_is_not_swallowed_by_the_web_app(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("CRON_SECRET", "s3cret")
+    api = client(tmp_path)
+    assert api.get("/v1/internal/haraj-sync").status_code == 401
+    ran = api.get("/v1/internal/haraj-sync", headers={"Authorization": "Bearer s3cret"})
+    assert ran.status_code == 200
+    assert ran.json() == {"sent": 0, "received": 0}

@@ -434,6 +434,18 @@ def create_app(
         )
         return {"received": True, **result}
 
+    # Registered before the web catch-all below, which answers every other GET.
+    @app.get("/v1/internal/haraj-sync")
+    def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
+        # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
+        secret = os.environ.get("CRON_SECRET")
+        if not secret:
+            raise HTTPException(status_code=503, detail="CRON_SECRET is not set")
+        if authorization != f"Bearer {secret}":
+            raise HTTPException(status_code=401, detail="unauthorized")
+        sent, received = poll_once(store, chat, budget_seconds=25)
+        return {"sent": sent, "received": received}
+
     if WEB_DIR.is_dir():
 
         @app.get("/")
@@ -446,17 +458,6 @@ def create_app(
             if candidate.is_file() and candidate.is_relative_to(WEB_DIR.resolve()):
                 return FileResponse(candidate)
             return FileResponse(WEB_DIR / "index.html")
-
-    @app.get("/v1/internal/haraj-sync")
-    def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
-        # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
-        secret = os.environ.get("CRON_SECRET")
-        if not secret:
-            raise HTTPException(status_code=503, detail="CRON_SECRET is not set")
-        if authorization != f"Bearer {secret}":
-            raise HTTPException(status_code=401, detail="unauthorized")
-        sent, received = poll_once(store, chat, budget_seconds=25)
-        return {"sent": sent, "received": received}
 
     return app
 
