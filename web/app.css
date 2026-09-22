@@ -1860,3 +1860,12 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-wincard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-success); }
 .fq-btn.ghost.outline { border-color: var(--fq-success); color: var(--fq-success); }
 .fq-ringstack > span.ring { background: var(--fq-surface); border: 3px solid var(--fq-success); color: var(--fq-success); }
+/* the usage bar fills from the right, the way Arabic reads */
+.fq-track { direction: rtl; }
+/* N01: the mark-all pill is mint, each day carries a short rule */
+.fq-markall { background: var(--fq-mint); color: var(--fq-deep-green); font-weight: 700; }
+.fq-sec-title { display: flex; flex-direction: column; gap: 6px; }
+.fq-sec-title > span::after { content: ""; display: block; width: 28px; height: 3px; border-radius: 2px; background: var(--fq-success); margin-top: 6px; }
+/* a button that only reports a state */
+.fq-btn.mint { background: var(--fq-mint); color: var(--fq-deep-green); box-shadow: none; }
+.fq-btn.mint:disabled { opacity: 1; }

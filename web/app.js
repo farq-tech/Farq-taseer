@@ -1690,19 +1690,19 @@ function renderNotifications() {
   const list = state.notifications || [];
   const markAll = `<button class="fq-markall" type="button" data-action="read-all">تحديد الكل كمقروء</button>`;
   if (!list.length) {
-    return `${fqHead({ title: "الإشعارات", start: markAll, mark: true })}
+    return `${fqHead({ title: "الإشعارات", mark: true, end: markAll })}
     <section class="fq-body center">
       <div class="fq-blob">${ic("bell", 48)}</div>
       <div><h1 class="fq-h2">ما فيه إشعارات بعد</h1><p class="fq-lead">أول ما يوصل عرض أو رسالة، تلقاه هنا.</p></div>
     </section>${fqNav("account")}`;
   }
   const groups = [["اليوم", list.filter((item) => chatDay(item.at) === "اليوم")], ["أمس", list.filter((item) => chatDay(item.at) === "أمس")], ["أقدم", list.filter((item) => !["اليوم", "أمس"].includes(chatDay(item.at)))]];
-  return `${fqHead({ title: "الإشعارات", start: markAll, mark: true })}
+  return `${fqHead({ title: "الإشعارات", mark: true, end: markAll })}
   <section class="fq-body">
     ${groups
       .filter(([, items]) => items.length)
       .map(([label, items]) => `<div style="display:flex;flex-direction:column;gap:12px">
-        <p class="fq-sec-title">${esc(label)}</p>
+        <p class="fq-sec-title"><span>${esc(label)}</span></p>
         ${items
           .map((note) => {
             const kind = NOTE_KINDS[note.kind] || NOTE_KINDS.message;
@@ -1824,7 +1824,7 @@ function usageCard({ title, badge, badgeTone = "ok", price, per, used, limit, fo
     <div class="fq-row"><span class="fq-tag ${badgeTone}">${esc(badge)}</span><span class="name">${esc(title)}</span></div>
     <div class="fq-row"><span></span><span><span class="amount">${esc(price)}</span> <span class="per">${esc(per)}</span></span></div>
     <div class="fq-usage">
-      <div class="fq-row"><span class="fq-small" style="font-weight:600">${formatCount(used)} من ${formatCount(limit)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
+      <div class="fq-row"><span class="fq-small" style="font-weight:700;color:var(--fq-success)">${formatCount(used)} من ${formatCount(limit)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
       <div class="fq-track${warn ? " warn" : ""}"><span style="width:${pct}%"></span></div>
       <p class="fq-meta" style="margin:0">${esc(foot)}</p>
     </div>
@@ -1977,7 +1977,7 @@ function renderSubscribe() {
     ? `<div class="fq-banner">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${formatCount(left)} بند ${subscribed ? "هذا الشهر" : "في التجربة المجانية"}.</span>
         <button type="button" data-action="${subscribed ? "upgrade" : "show-plans"}">${subscribed ? "ترقية الآن" : "عرض الباقات"}</button></div>`
     : "";
-  return `${fqHead({ title: "حسابي", back: "account", mark: true })}
+  return `${fqHead({ title: "حسابي", mark: true, end: `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>` })}
   ${banner}
   <section class="fq-body tight">
     ${subscribed
@@ -1995,7 +1995,7 @@ function renderSubscribe() {
         <div class="fq-sticky">
           ${near
             ? `<button class="fq-btn warn" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
-            : `<button class="fq-btn" type="button" disabled>تجربتك مفعلة</button>`}
+            : `<button class="fq-btn mint" type="button" disabled>تجربتك مفعلة</button>`}
           <p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
         </div>`}
   </section>
