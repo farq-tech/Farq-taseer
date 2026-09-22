@@ -6,14 +6,16 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from farq.config import SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
-from farq.intent import analyze
+from farq.intent import analyze, analyze_needs
+from farq.haraj_chat import HarajChat, NotConnectedChat
+from farq.worker import dispatch_pending, start_poller
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.orchestrator import iter_search, run_search
@@ -39,6 +41,8 @@ class RecipientBody(ApiModel):
     seller_id: str
     seller_name: str
     ad_id: str | None = None
+    need: str | None = None
+    listing_url: str | None = None
 
 
 class RequestBody(ApiModel):
@@ -53,8 +57,9 @@ class RequestBody(ApiModel):
 class MessageBody(ApiModel):
     body: str
     sender_role: str = "user"
-    offer_amount: float | None = None
-    offer_currency: str | None = None
+    seller_id: str | None = None
+    need: str | None = None
+    reply_to: str | None = None
 
 
 class SellerReplyBody(ApiModel):
@@ -62,6 +67,10 @@ class SellerReplyBody(ApiModel):
     seller_id: str | None = None
     offer_amount: float | None = None
     offer_currency: str | None = None
+    provider_name: str | None = None
+    phone: str | None = None
+    delivery_included: bool | None = None
+    delivery_price: float | None = None
 
 
 def _intent_state(intent) -> str | None:
@@ -77,23 +86,31 @@ def _intent_state(intent) -> str | None:
 def _public_event(event: dict) -> dict:
     kind = event["type"]
     if kind == "intent":
-        return {
+        payload = {
             "type": "intent",
             "trace_id": event["trace_id"],
             "intent": event["intent"].model_dump(mode="json"),
             "clarification_question": event.get("clarification_question"),
         }
+        if event.get("intents"):
+            payload["intents"] = [item.model_dump(mode="json") for item in event["intents"]]
+        return payload
     if kind == "status":
         return {"type": "status", "state": event["state"], "trace_id": event["trace_id"]}
     if kind == "results":
         results: list[SearchResult] = event["results"]
-        return {
+        payload = {
             "type": "results",
             "trace_id": event["trace_id"],
             "state": event["state"].value,
             "partial": True,
             "results": [item.model_dump(mode="json") for item in results],
         }
+        if event.get("need"):
+            payload["need"] = event["need"]
+        if event.get("groups"):
+            payload["groups"] = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in event["groups"]]
+        return payload
     if kind == "done":
         payload = event["response"].model_dump(mode="json")
         payload["type"] = "done"
@@ -101,8 +118,15 @@ def _public_event(event: dict) -> dict:
     return {"type": kind}
 
 
-def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient | None, config: SearchConfig) -> FastAPI:
+def create_app(
+    store: Store,
+    corpus: MemoryCorpus,
+    live_client: HarajLiveClient | None,
+    config: SearchConfig,
+    chat: HarajChat | None = None,
+) -> FastAPI:
     app = FastAPI(title="FARQ Individuals", version="1")
+    chat = chat or NotConnectedChat()
 
     def current_user(authorization: str | None = Header(default=None)) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -138,11 +162,13 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
 
     @app.post("/v1/intent")
     def intent_only(body: SearchBody) -> dict:
-        intent = analyze(body.query)
+        intents = analyze_needs(body.query)
+        intent = intents[0] if intents else analyze(body.query)
         return {
             "intent": intent.model_dump(mode="json"),
-            "state": _intent_state(intent),
-            "clarification_question": intent.clarification_question,
+            "intents": [item.model_dump(mode="json") for item in intents],
+            "state": _intent_state(intent) if len(intents) <= 1 else None,
+            "clarification_question": intent.clarification_question if len(intents) <= 1 else None,
         }
 
     def _user_from_header(authorization: str | None) -> str | None:
@@ -200,7 +226,7 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
         return {"requests": store.list_requests(user_id)}
 
     @app.post("/v1/requests")
-    def create_request(body: RequestBody, user_id: str = Depends(current_user)) -> dict:
+    def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
         try:
             request_id = store.create_request(
                 user_id,
@@ -209,10 +235,20 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
                 body.notes,
                 body.city,
                 body.attributes,
-                [RequestRecipient(seller_id=item.seller_id, seller_name=item.seller_name, ad_id=item.ad_id) for item in body.recipients],
+                [
+                    RequestRecipient(
+                        seller_id=item.seller_id,
+                        seller_name=item.seller_name,
+                        ad_id=item.ad_id,
+                        need=item.need,
+                        listing_url=item.listing_url,
+                    )
+                    for item in body.recipients
+                ],
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        background.add_task(dispatch_pending, store, chat)
         record = store.get_request(request_id, user_id)
         return record.model_dump(mode="json")
 
@@ -236,13 +272,23 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
         return FileResponse(path, media_type=content_type, filename=filename)
 
     @app.post("/v1/requests/{request_id}/messages")
-    def message(request_id: str, body: MessageBody, user_id: str = Depends(current_user)) -> dict:
-        if store.get_request(request_id, user_id) is None:
-            raise HTTPException(status_code=404, detail="request not found")
-        offer = None
-        if body.offer_amount is not None:
-            offer = Offer(amount=body.offer_amount, currency=body.offer_currency or "SAR")
-        created = store.add_message(request_id, "user" if body.sender_role != "user" else body.sender_role, user_id, body.body, offer)
+    def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        if not body.body.strip():
+            raise HTTPException(status_code=422, detail="message is required")
+        try:
+            created = store.route_customer_message(
+                request_id,
+                user_id,
+                body.body.strip(),
+                need=body.need,
+                seller_id=body.seller_id,
+                reply_to=body.reply_to,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        background.add_task(dispatch_pending, store, chat)
         return created.model_dump(mode="json")
 
     @app.get("/v1/requests/{request_id}")
@@ -265,7 +311,17 @@ def create_app(store: Store, corpus: MemoryCorpus, live_client: HarajLiveClient 
             raise HTTPException(status_code=422, detail="message or price is required")
         offer = None
         if body.offer_amount is not None:
-            offer = Offer(amount=body.offer_amount, currency=body.offer_currency or "SAR")
+            offer = Offer(
+                amount=body.offer_amount,
+                currency=body.offer_currency or "SAR",
+                note=body.body.strip() or None,
+                provider_name=body.provider_name,
+                phone=body.phone,
+                base_price=body.offer_amount,
+                delivery_included=True if body.delivery_included is None else body.delivery_included,
+                delivery_price=body.delivery_price or 0,
+                total_price=None,
+            )
         try:
             created = store.add_seller_reply(token, body.seller_id, body.body, offer)
         except ValueError as exc:
@@ -308,4 +364,8 @@ def app() -> FastAPI:
     corpus = MemoryCorpus.from_json(Path(os.environ.get("FARQ_CORPUS_PATH", default_sample_path())))
     config = SearchConfig()
     live = HarajLiveClient(config) if config.enable_live else None
-    return create_app(store, corpus, live, config)
+    # No Haraj messaging adapter exists yet: messages queue until one is plugged in here.
+    chat = NotConnectedChat()
+    application = create_app(store, corpus, live, config, chat)
+    start_poller(store, chat)
+    return application

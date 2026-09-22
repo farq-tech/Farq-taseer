@@ -127,6 +127,9 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
         console = any(contains_term(title, word) for word in ("جهاز", "سوني", "بلايستيشن"))
         if game and not console:
             return False, ["game_not_console"]
+    if intent.subcategory.value in {"electrician", "plumber"} and title:
+        if any(contains_term(title, word) for word in ("فرن", "سكوتر", "سرير", "دريل", "سير", "مشط", "موقد", "دباب", "قدر ضغط")):
+            return False, ["product_not_trade"]
     if intent.condition.known and text:
         stated_condition = _explicit_condition(text)
         if stated_condition and stated_condition != intent.condition.value:

@@ -4,7 +4,7 @@ from farq.config import SearchConfig
 from farq.contracts import SearchState
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.eligibility import decide
-from farq.intent import analyze
+from farq.intent import analyze, analyze_needs
 from farq.live_haraj import LiveBatch, ad_from_item
 from farq.orchestrator import run_search
 from farq.text import normalize
@@ -55,6 +55,17 @@ def test_service_without_city_asks_instead_of_guessing_riyadh():
     assert intent.location_city.value is None
     assert intent.clarification_question
     assert any(item.value == "wardrobe" for item in intent.attributes)
+
+
+def test_plumber_and_electrician_split_into_two_needs():
+    intents = analyze_needs("أبي سباك وأبي كهربائي بالرياض")
+    assert [item.subcategory.value for item in intents] == ["plumber", "electrician"]
+    assert all(item.location_city.value == "الرياض" for item in intents)
+    assert all(item.clarification_question is None for item in intents)
+    plumber = analyze("سباك بالرياض")
+    assert plumber.subcategory.value == "plumber"
+    electrician = analyze("كهربائي بالرياض")
+    assert electrician.subcategory.value == "electrician"
 
 
 def test_unknown_query_is_not_a_match():

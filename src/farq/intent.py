@@ -105,6 +105,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا",), eligibility=(("فيلا",),), expansions=("فيلا",)),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش"), eligibility=(("نقل",), ("عفش",)), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
     _head(type="service", category="trades", subcategory="carpenter", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نجار", "نجاره", "نجارة"), eligibility=(("نجار", "نجاره"),), expansions=("نجار", "نجار موبيليا", "تفصيل دولاب", "نجاره")),
+    _head(type="service", category="trades", subcategory="plumber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سباك", "سباكه", "سباكة"), eligibility=(("سباك", "سباكه", "سباكة"),), expansions=("سباك", "سباك صحي", "تسليك مجاري")),
+    _head(type="service", category="trades", subcategory="electrician", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كهربائي", "كهرباء", "كهربائي منازل"), eligibility=(("كهربائي", "كهرباء"),), expansions=("كهربائي", "كهربائي منازل", "تمديد كهرباء")),
     _head(type="service", category="trades", subcategory="insulation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("عزل سطح", "عزل اسطح", "مقاول عزل"), eligibility=(("عزل",), ("سطح", "اسطح", "فوم")), expansions=("عزل اسطح", "عزل فوم", "مقاول عزل")),
     _head(type="service", category="building_materials", subcategory="railings", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("درابزين",), eligibility=(("درابزين",),), expansions=("درابزين ستانلس", "درابزين درج", "درابزين سلالم", "تفصيل درابزين", "تركيب درابزين")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف سبليت", "مكيف اسبليت", "سبليت"), eligibility=(("مكيف", "سبليت"),), expansions=("مكيف سبليت", "مكيف اسبليت")),
@@ -147,7 +149,7 @@ def _select_head(matches: list[tuple[int, Head]]) -> Head | None:
         return None
     service = [item for item in matches if item[1].type == "service" and not item[1].ambiguous]
     product = [item for item in matches if item[1].type in {"product", "vehicle", "property"}]
-    if service and product and service[0][1].subcategory in {"carpenter", "moving", "insulation", "railings"}:
+    if service and product and service[0][1].subcategory in {"carpenter", "moving", "insulation", "railings", "plumber", "electrician"}:
         return max(service, key=lambda item: item[0])[1]
     return max(matches, key=lambda item: item[0])[1]
 
@@ -256,6 +258,9 @@ def analyze(query: str) -> IntentResponse:
             intent.missing_decision_information = ["need"]
             return intent
     intent.understood = True
+    if head.phrases:
+        city_label = intent.location_city.value if isinstance(intent.location_city.value, str) else ""
+        intent.need = f"{head.phrases[0]} {city_label}".strip() if head.category else (_need(original) or head.phrases[0])
     intent.type = known(head.type, 0.8 if head.category else 0.45, head.phrases[0])
     if head.category:
         intent.category = known(head.category, 0.75, head.phrases[0])
@@ -296,6 +301,56 @@ def analyze(query: str) -> IntentResponse:
     intent.eligibility_groups = groups
     intent.search_terms = expand(intent.need or normalized, head.expansions, groups, intent.location_city.value if intent.location_city.known else None)
     return intent
+
+
+_NEED_SPLIT = re.compile(r"\s+و(?:ابي|ابغى|ابغي|احتاج|اريد)?\s+")
+
+
+def distinct_service_heads(query: str) -> list[Head]:
+    matches = _matching_heads(normalize(query))
+    seen: set[str] = set()
+    heads: list[Head] = []
+    for _length, head in sorted(matches, key=lambda item: item[0], reverse=True):
+        if head.type != "service" or head.ambiguous or not head.subcategory:
+            continue
+        if head.subcategory in seen:
+            continue
+        seen.add(head.subcategory)
+        heads.append(head)
+    return heads
+
+
+def split_need_texts(query: str) -> list[str]:
+    original = query.strip()
+    if not original:
+        return [original]
+    cities = find_cities(normalize(original))
+    city = cities[0] if len(cities) == 1 else ""
+    parts = [part.strip() for part in _NEED_SPLIT.split(normalize(original)) if part.strip()]
+    if len(parts) < 2:
+        heads = distinct_service_heads(original)
+        if len(heads) >= 2:
+            return [f"{head.phrases[0]} {city}".strip() for head in heads]
+        return [original]
+    texts: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        part_cities = find_cities(part)
+        if part_cities and not [token for token in tokens(part) if token not in part_cities]:
+            continue
+        text = part
+        if city and not part_cities:
+            text = f"{part} {city}"
+        texts.append(text)
+    return texts or [original]
+
+
+def analyze_needs(query: str) -> list[IntentResponse]:
+    texts = split_need_texts(query)
+    intents = [analyze(text) for text in texts]
+    understood = [item for item in intents if item.understood]
+    return understood or intents
 
 
 def eligibility_groups(intent: IntentResponse) -> tuple[tuple[str, ...], ...]:

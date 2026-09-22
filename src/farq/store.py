@@ -11,6 +11,10 @@ from pathlib import Path
 from uuid import uuid4
 
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
+from farq.haraj_chat import InboundMessage, SentMessage, extract_price
+
+ALL_SELLERS = "all_sellers"
+SINGLE_SELLER = "single_seller"
 
 
 def _now() -> str:
@@ -20,6 +24,15 @@ def _now() -> str:
 def _hash_password(password: str, salt: str) -> str:
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 120_000)
     return digest.hex()
+
+
+def _delivery_state(deliveries: list[dict]) -> str:
+    statuses = {item["status"] for item in deliveries}
+    if statuses == {"sent"}:
+        return "sent"
+    if statuses & {"queued", "sending"}:
+        return "queued"
+    return "partial" if "sent" in statuses else "failed"
 
 
 class Store:
@@ -104,7 +117,66 @@ class Store:
         )
         self._connection.commit()
         self._ensure_column("requests", "reply_token", "text")
+        self._ensure_column("requests", "last_synced_at", "text")
         self._ensure_column("messages", "seller_id", "text")
+        self._ensure_column("messages", "delivery_state", "text")
+        self._ensure_column("messages", "need", "text")
+        self._ensure_column("messages", "reply_to", "text")
+        self._ensure_column("messages", "scope", "text")
+        self._ensure_column("messages", "haraj_conversation_id", "text")
+        self._ensure_column("messages", "haraj_message_id", "text")
+        self._connection.executescript(
+            """
+            create unique index if not exists messages_haraj_message on messages (haraj_message_id) where haraj_message_id is not null;
+            create table if not exists haraj_threads (
+              request_id text not null,
+              seller_id text not null,
+              need text not null default '',
+              ad_id text,
+              haraj_conversation_id text,
+              last_fetched_at text,
+              primary key (request_id, seller_id, need)
+            );
+            create table if not exists message_deliveries (
+              id text primary key,
+              message_id text not null,
+              request_id text not null,
+              seller_id text not null,
+              need text not null default '',
+              haraj_message_id text,
+              delivery_status text not null,
+              error text,
+              attempts integer not null default 0,
+              sent_at text,
+              created_at text not null
+            );
+            update message_deliveries set delivery_status = 'queued' where delivery_status = 'sending';
+            """
+        )
+        self._ensure_column("request_recipients", "need", "text")
+        self._ensure_column("request_recipients", "reply_token", "text")
+        self._ensure_column("request_recipients", "send_status", "text")
+        self._ensure_column("request_recipients", "listing_url", "text")
+        self._connection.execute(
+            """
+            create table if not exists offers (
+              id text primary key,
+              request_id text not null,
+              seller_id text not null,
+              need text,
+              provider_name text,
+              phone text,
+              base_price real,
+              delivery_included integer,
+              delivery_price real,
+              total_price real,
+              currency text,
+              message text,
+              created_at text not null
+            )
+            """
+        )
+        self._connection.commit()
 
     def _ensure_column(self, table: str, column: str, declaration: str) -> None:
         names = {row[1] for row in self._connection.execute(f"pragma table_info({table})")}
@@ -169,15 +241,36 @@ class Store:
         if not recipients:
             raise ValueError("at least one recipient is required")
         request_id = uuid4().hex
-        reply_token = secrets.token_urlsafe(24)
+        first_token = secrets.token_urlsafe(16)
+        created = _now()
         self._connection.execute(
             "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, reply_token, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, owner_user_id, original_text, need, notes, city, json.dumps(attributes, ensure_ascii=False), reply_token, _now()),
+            (request_id, owner_user_id, original_text, need, notes, city, json.dumps(attributes, ensure_ascii=False), first_token, created),
         )
-        self._connection.executemany(
-            "insert into request_recipients (request_id, seller_id, seller_name, ad_id) values (?, ?, ?, ?)",
-            [(request_id, item.seller_id, item.seller_name, item.ad_id) for item in recipients],
-        )
+        for index, item in enumerate(recipients):
+            token = item.reply_token or (first_token if index == 0 else secrets.token_urlsafe(16))
+            self._connection.execute(
+                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    request_id,
+                    item.seller_id,
+                    item.seller_name,
+                    item.ad_id,
+                    item.need or need,
+                    token,
+                    "queued",
+                    item.listing_url,
+                ),
+            )
+        # The request itself is the first message on each item, routed to every seller on that item.
+        needs = list(dict.fromkeys((item.need or need or "") for item in recipients))
+        for item_need in needs:
+            text = original_text if len(needs) == 1 or not item_need else item_need
+            if city and len(needs) > 1:
+                text = f"{text} في {city}"
+            if notes:
+                text = f"{text}\n{notes}"
+            self._enqueue(request_id, text, item_need or None, None, None)
         self._connection.commit()
         return request_id
 
@@ -204,17 +297,28 @@ class Store:
         offer: Offer | None = None,
         attachment_ids: list[str] | None = None,
         seller_id: str | None = None,
+        need: str | None = None,
+        reply_to: str | None = None,
+        scope: str | None = None,
+        created_at: str | None = None,
+        haraj_conversation_id: str | None = None,
+        haraj_message_id: str | None = None,
     ) -> Message:
         message_id = uuid4().hex
-        created = _now()
+        created = created_at or _now()
         self._connection.execute(
-            "insert into messages (id, request_id, sender_role, sender_user_id, seller_id, body, offer_amount, offer_currency, attachment_ids_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert into messages (id, request_id, sender_role, sender_user_id, seller_id, need, reply_to, scope, haraj_conversation_id, haraj_message_id, body, offer_amount, offer_currency, attachment_ids_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 message_id,
                 request_id,
                 sender_role,
                 sender_user_id,
                 seller_id,
+                need,
+                reply_to,
+                scope,
+                haraj_conversation_id,
+                haraj_message_id,
                 body,
                 None if offer is None else offer.amount,
                 None if offer is None else offer.currency,
@@ -233,6 +337,11 @@ class Store:
             request_id=request_id,
             sender_role=sender_role,
             seller_id=seller_id,
+            need=need,
+            reply_to=reply_to,
+            direction="seller_to_customer" if sender_role == "seller" else "customer_to_seller",
+            scope=scope,
+            haraj_conversation_id=haraj_conversation_id,
             body=body,
             offer=offer,
             attachment_ids=attachment_ids or [],
@@ -246,31 +355,12 @@ class Store:
         ).fetchone()
         if row is None:
             return None
-        recipients = [
-            RequestRecipient(seller_id=item["seller_id"], seller_name=item["seller_name"], ad_id=item["ad_id"])
-            for item in self._connection.execute("select * from request_recipients where request_id = ?", (request_id,))
-        ]
+        recipients = [self._recipient_from_row(item) for item in self._connection.execute("select * from request_recipients where request_id = ?", (request_id,))]
         attachments = [
             Attachment(id=item["id"], filename=item["filename"], content_type=item["content_type"], size_bytes=item["size_bytes"])
             for item in self._connection.execute("select * from attachments where request_id = ?", (request_id,))
         ]
-        messages = []
-        for item in self._connection.execute("select * from messages where request_id = ? order by created_at", (request_id,)):
-            offer = None
-            if item["offer_amount"] is not None:
-                offer = Offer(amount=item["offer_amount"], currency=item["offer_currency"])
-            messages.append(
-                Message(
-                    id=item["id"],
-                    request_id=request_id,
-                    sender_role=item["sender_role"],
-                    seller_id=item["seller_id"],
-                    body=item["body"],
-                    offer=offer,
-                    attachment_ids=json.loads(item["attachment_ids_json"]),
-                    created_at=item["created_at"],
-                )
-            )
+        messages = self._messages_for_request(request_id)
         return RequestRecord(
             id=row["id"],
             owner_user_id=row["owner_user_id"],
@@ -282,9 +372,201 @@ class Store:
             recipients=recipients,
             attachments=attachments,
             messages=messages,
+            offers=self._offers_for_request(request_id),
             reply_token=row["reply_token"],
+            last_synced_at=row["last_synced_at"] if "last_synced_at" in row.keys() else None,
             created_at=row["created_at"],
         )
+
+    def _messages_for_request(self, request_id: str) -> list[Message]:
+        deliveries: dict[str, list[dict]] = {}
+        for item in self._connection.execute("select message_id, seller_id, delivery_status, sent_at from message_deliveries where request_id = ? order by created_at", (request_id,)):
+            deliveries.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": item["sent_at"]})
+        messages = []
+        for item in self._connection.execute("select * from messages where request_id = ? order by created_at", (request_id,)):
+            offer = None
+            if item["offer_amount"] is not None:
+                offer = Offer(amount=item["offer_amount"], currency=item["offer_currency"])
+            routed = deliveries.get(item["id"], [])
+            messages.append(
+                Message(
+                    id=item["id"],
+                    request_id=request_id,
+                    sender_role=item["sender_role"],
+                    seller_id=item["seller_id"],
+                    need=item["need"],
+                    reply_to=item["reply_to"],
+                    direction="seller_to_customer" if item["sender_role"] == "seller" else "customer_to_seller",
+                    scope=item["scope"],
+                    haraj_conversation_id=item["haraj_conversation_id"],
+                    body=item["body"],
+                    offer=offer,
+                    attachment_ids=json.loads(item["attachment_ids_json"]),
+                    created_at=item["created_at"],
+                    delivery_state=_delivery_state(routed) if routed else None,
+                    deliveries=routed,
+                )
+            )
+        return messages
+
+    # --- Router: customer -> Haraj conversations -------------------------------------------------
+
+    def _enqueue(self, request_id: str, body: str, need: str | None, seller_id: str | None, reply_to: str | None, owner_user_id: str | None = None) -> Message:
+        recipients = self._connection.execute("select * from request_recipients where request_id = ?", (request_id,)).fetchall()
+        default_need = self._connection.execute("select need from requests where id = ?", (request_id,)).fetchone()["need"]
+        item_of = lambda row: self._col(row, "need") or default_need or ""
+        if seller_id is not None:
+            targets = [row for row in recipients if row["seller_id"] == seller_id and (need is None or item_of(row) == need)]
+            if not targets:
+                raise ValueError("unknown seller")
+            targets = targets[:1]
+            need = item_of(targets[0]) or None
+        else:
+            if need is None and len({item_of(row) for row in recipients}) > 1:
+                raise ValueError("need is required for a request with several items")
+            targets = [row for row in recipients if need is None or item_of(row) == need]
+            if not targets:
+                raise ValueError("unknown item")
+        scope = SINGLE_SELLER if seller_id is not None else ALL_SELLERS
+        message = self.add_message(request_id, "user", owner_user_id, body, None, seller_id=seller_id, need=need, reply_to=reply_to, scope=scope)
+        created = _now()
+        for row in targets:
+            self._connection.execute(
+                "insert or ignore into haraj_threads (request_id, seller_id, need, ad_id) values (?, ?, ?, ?)",
+                (request_id, row["seller_id"], item_of(row), row["ad_id"]),
+            )
+            self._connection.execute(
+                "insert into message_deliveries (id, message_id, request_id, seller_id, need, delivery_status, created_at) values (?, ?, ?, ?, ?, 'queued', ?)",
+                (uuid4().hex, message.id, request_id, row["seller_id"], item_of(row), created),
+            )
+        self._connection.commit()
+        return message
+
+    def route_customer_message(
+        self,
+        request_id: str,
+        owner_user_id: str,
+        body: str,
+        need: str | None = None,
+        seller_id: str | None = None,
+        reply_to: str | None = None,
+    ) -> Message:
+        """Everyone on the item by default; one seller when replying to them or when picked explicitly."""
+        if self._connection.execute("select 1 from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone() is None:
+            raise LookupError("request not found")
+        if reply_to:
+            quoted = self._connection.execute("select * from messages where id = ? and request_id = ?", (reply_to, request_id)).fetchone()
+            if quoted is None:
+                raise ValueError("unknown reply_to")
+            if quoted["seller_id"]:
+                seller_id = quoted["seller_id"]
+            need = need or quoted["need"]
+        return self._enqueue(request_id, body, need, seller_id, reply_to, owner_user_id)
+
+    def claim_deliveries(self, limit: int = 50) -> list[dict]:
+        rows = self._connection.execute(
+            """
+            select d.id, d.request_id, d.seller_id, d.need, m.body, t.ad_id, t.haraj_conversation_id
+            from message_deliveries d
+            join messages m on m.id = d.message_id
+            join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
+            where d.delivery_status = 'queued'
+            order by d.created_at
+            limit ?
+            """,
+            (limit,),
+        ).fetchall()
+        for row in rows:
+            self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1 where id = ?", (row["id"],))
+        self._connection.commit()
+        return [dict(row) for row in rows]
+
+    def finish_delivery(self, delivery_id: str, sent: SentMessage | None = None, error: str | None = None, retry: bool = False) -> None:
+        row = self._connection.execute("select * from message_deliveries where id = ?", (delivery_id,)).fetchone()
+        if row is None:
+            return
+        key = (row["request_id"], row["seller_id"], row["need"])
+        if sent is not None:
+            self._connection.execute(
+                "update message_deliveries set delivery_status = 'sent', haraj_message_id = ?, sent_at = ?, error = null where id = ?",
+                (sent.haraj_message_id, _now(), delivery_id),
+            )
+            self._connection.execute(
+                "update haraj_threads set haraj_conversation_id = ? where request_id = ? and seller_id = ? and need = ?",
+                (sent.haraj_conversation_id, *key),
+            )
+            status = "sent"
+        else:
+            status = "queued" if retry else "failed"
+            self._connection.execute("update message_deliveries set delivery_status = ?, error = ? where id = ?", (status, error, delivery_id))
+        if status != "queued":
+            self._connection.execute(
+                "update request_recipients set send_status = ? where request_id = ? and seller_id = ? and coalesce(need, '') in (?, '') and coalesce(send_status, '') != 'sent'",
+                (status, *key),
+            )
+        self._connection.commit()
+
+    def delivery_attempts(self, delivery_id: str) -> int:
+        row = self._connection.execute("select attempts from message_deliveries where id = ?", (delivery_id,)).fetchone()
+        return 0 if row is None else row["attempts"]
+
+    # --- Sync: Haraj -> item conversation ---------------------------------------------------------
+
+    def threads_to_sync(self) -> list[dict]:
+        rows = self._connection.execute("select * from haraj_threads where haraj_conversation_id is not null").fetchall()
+        return [dict(row) for row in rows]
+
+    def record_inbound(self, thread: dict, inbound: InboundMessage) -> Message | None:
+        """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
+        if self._connection.execute("select 1 from messages where haraj_message_id = ?", (inbound.haraj_message_id,)).fetchone():
+            return None
+        request_id, seller_id, need = thread["request_id"], thread["seller_id"], thread["need"] or None
+        recipient = self._connection.execute(
+            "select * from request_recipients where request_id = ? and seller_id = ? order by coalesce(need, '') = ? desc",
+            (request_id, seller_id, need or ""),
+        ).fetchone()
+        offer = None
+        price = extract_price(inbound.body)
+        if price is not None:
+            offer = Offer(
+                amount=price,
+                currency="SAR",
+                note=inbound.body,
+                provider_name=recipient["seller_name"] if recipient else None,
+                seller_id=seller_id,
+                total_price=price,
+                need=need,
+            )
+            # Latest price from a seller on an item replaces the earlier one.
+            self._connection.execute("delete from offers where request_id = ? and seller_id = ? and coalesce(need, '') = ?", (request_id, seller_id, need or ""))
+            self._connection.execute(
+                "insert into offers (id, request_id, seller_id, need, provider_name, total_price, currency, message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (uuid4().hex, request_id, seller_id, need, offer.provider_name, price, "SAR", inbound.body, _now()),
+            )
+        message = self.add_message(
+            request_id,
+            "seller",
+            None,
+            inbound.body,
+            offer,
+            seller_id=seller_id,
+            need=need,
+            scope=SINGLE_SELLER,
+            created_at=inbound.sent_at,
+            haraj_conversation_id=thread["haraj_conversation_id"],
+            haraj_message_id=inbound.haraj_message_id,
+        )
+        owner = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
+        self._connection.execute(
+            "insert into notifications (id, user_id, request_id, kind, created_at) values (?, ?, ?, ?, ?)",
+            (uuid4().hex, owner["owner_user_id"], request_id, "seller_reply", message.created_at),
+        )
+        self._connection.execute(
+            "update haraj_threads set last_fetched_at = max(coalesce(last_fetched_at, ''), ?) where request_id = ? and seller_id = ? and need = ?",
+            (inbound.sent_at, request_id, seller_id, thread["need"]),
+        )
+        self._connection.commit()
+        return message
 
     def list_requests(self, owner_user_id: str) -> list[dict]:
         rows = self._connection.execute(
@@ -294,10 +576,11 @@ class Store:
         items = []
         for row in rows:
             request_id = row["id"]
-            recipient_count = self._connection.execute(
-                "select count(*) as count from request_recipients where request_id = ?",
-                (request_id,),
-            ).fetchone()["count"]
+            recipients = [self._recipient_from_row(item) for item in self._connection.execute("select * from request_recipients where request_id = ?", (request_id,))]
+            offers = self._offers_for_request(request_id)
+            recipient_count = len(recipients)
+            sent_count = sum(1 for item in recipients if item.send_status == "sent")
+            failed_count = sum(1 for item in recipients if item.send_status == "failed")
             messages = self._connection.execute(
                 "select sender_role, seller_id, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
                 (request_id,),
@@ -310,6 +593,21 @@ class Store:
                     if message["offer_amount"] is not None:
                         latest_offer = message
             newest_offer = bool(messages) and messages[-1]["sender_role"] == "seller" and messages[-1]["offer_amount"] is not None
+            need_cards = []
+            grouped: dict[str, list[RequestRecipient]] = {}
+            for recipient in recipients:
+                grouped.setdefault(recipient.need or row["need"] or row["original_text"], []).append(recipient)
+            for label, group in grouped.items():
+                group_offers = [item for item in offers if (item.need or label) == label]
+                totals = [item.total_price for item in group_offers if item.total_price is not None]
+                need_cards.append(
+                    {
+                        "need": label,
+                        "recipient_count": len(group),
+                        "offer_count": len(group_offers),
+                        "lowest_total": min(totals) if totals else None,
+                    }
+                )
             items.append(
                 {
                     "id": request_id,
@@ -317,37 +615,98 @@ class Store:
                     "need": row["need"],
                     "city": row["city"],
                     "created_at": row["created_at"],
+                    "last_synced_at": row["last_synced_at"] if "last_synced_at" in row.keys() else None,
                     "recipient_count": recipient_count,
-                    "replied_count": len(replied),
-                    "waiting_count": max(0, recipient_count - len(replied)),
-                    "has_new_offer": newest_offer,
-                    "latest_offer_amount": None if latest_offer is None else latest_offer["offer_amount"],
+                    "sent_count": sent_count,
+                    "failed_count": failed_count,
+                    "queued_count": recipient_count - sent_count - failed_count,
+                    "replied_count": max(len(replied), len(offers)),
+                    "waiting_count": max(0, recipient_count - max(len(replied), len(offers))),
+                    "has_new_offer": newest_offer or bool(offers),
+                    "latest_offer_amount": (None if latest_offer is None else latest_offer["offer_amount"]) if not offers else min((item.total_price for item in offers if item.total_price is not None), default=None),
                     "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
+                    "needs": need_cards,
                 }
             )
         return items
 
     def _request_by_token(self, token: str):
-        return self._connection.execute("select * from requests where reply_token = ?", (token,)).fetchone()
+        row = self._connection.execute("select * from requests where reply_token = ?", (token,)).fetchone()
+        if row is not None:
+            return row
+        recipient = self._connection.execute("select request_id from request_recipients where reply_token = ?", (token,)).fetchone()
+        if recipient is None:
+            return None
+        return self._connection.execute("select * from requests where id = ?", (recipient["request_id"],)).fetchone()
+
+    def _recipient_by_token(self, token: str):
+        return self._connection.execute("select * from request_recipients where reply_token = ?", (token,)).fetchone()
+
+    def _col(self, row, name, default=None):
+        return row[name] if name in row.keys() and row[name] is not None else default
+
+    def _recipient_from_row(self, item) -> RequestRecipient:
+        return RequestRecipient(
+            seller_id=item["seller_id"],
+            seller_name=item["seller_name"],
+            ad_id=item["ad_id"],
+            need=self._col(item, "need"),
+            reply_token=self._col(item, "reply_token"),
+            send_status=self._col(item, "send_status", "sent"),
+            listing_url=self._col(item, "listing_url"),
+        )
+
+    def _offers_for_request(self, request_id: str) -> list[Offer]:
+        rows = self._connection.execute("select * from offers where request_id = ? order by total_price is null, total_price", (request_id,)).fetchall()
+        grouped: dict[str, list[Offer]] = {}
+        offers: list[Offer] = []
+        for item in rows:
+            offer = Offer(
+                amount=item["total_price"],
+                currency=item["currency"] or "SAR",
+                note=item["message"],
+                provider_name=item["provider_name"],
+                phone=item["phone"],
+                seller_id=item["seller_id"],
+                base_price=item["base_price"],
+                delivery_included=bool(item["delivery_included"]) if item["delivery_included"] is not None else None,
+                delivery_price=item["delivery_price"],
+                total_price=item["total_price"],
+                need=item["need"],
+            )
+            offers.append(offer)
+            grouped.setdefault(item["need"] or "", []).append(offer)
+        for group in grouped.values():
+            priced = [item for item in group if item.total_price is not None]
+            if len(priced) == 1 or (priced and priced[0].total_price != priced[1].total_price if len(priced) > 1 else False):
+                if priced:
+                    lowest = min(item.total_price for item in priced)
+                    winners = [item for item in priced if item.total_price == lowest]
+                    if len(winners) == 1:
+                        winners[0].cheapest = True
+        return offers
 
     def seller_view(self, token: str) -> dict | None:
         row = self._request_by_token(token)
         if row is None:
             return None
-        recipients = [
-            {"seller_id": item["seller_id"], "seller_name": item["seller_name"], "ad_id": item["ad_id"]}
-            for item in self._connection.execute("select * from request_recipients where request_id = ?", (row["id"],))
-        ]
+        recipient_row = self._recipient_by_token(token)
+        if recipient_row is not None:
+            recipients = [self._recipient_from_row(recipient_row)]
+            need = recipient_row["need"] or row["need"]
+        else:
+            recipients = [self._recipient_from_row(item) for item in self._connection.execute("select * from request_recipients where request_id = ?", (row["id"],))]
+            need = row["need"]
         attachments = [
             {"id": item["id"], "filename": item["filename"], "content_type": item["content_type"], "size_bytes": item["size_bytes"]}
             for item in self._connection.execute("select * from attachments where request_id = ?", (row["id"],))
         ]
         return {
-            "need": row["need"],
+            "need": need,
             "original_text": row["original_text"],
             "notes": row["notes"],
             "city": row["city"],
-            "recipients": recipients,
+            "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
         }
 
@@ -355,25 +714,77 @@ class Store:
         row = self._request_by_token(token)
         if row is None:
             raise ValueError("request not found")
+        recipient_row = self._recipient_by_token(token)
         recipients = self._connection.execute(
-            "select seller_id from request_recipients where request_id = ?",
+            "select * from request_recipients where request_id = ?",
             (row["id"],),
         ).fetchall()
         ids = [item["seller_id"] for item in recipients]
+        if recipient_row is not None:
+            seller_id = recipient_row["seller_id"]
         if seller_id is None:
             if len(ids) != 1:
                 raise ValueError("seller_id required")
             seller_id = ids[0]
         if seller_id not in ids:
             raise ValueError("unknown seller")
-        text = body.strip() or "عرض سعر"
-        message = self.add_message(row["id"], "seller", None, text, offer, seller_id=seller_id)
+        matched = next(item for item in recipients if item["seller_id"] == seller_id)
+        if offer is not None:
+            base = offer.base_price if offer.base_price is not None else offer.amount
+            included = True if offer.delivery_included is None else offer.delivery_included
+            delivery = 0.0 if included else (offer.delivery_price or 0.0)
+            total = None if base is None else float(base) + float(delivery)
+            offer = Offer(
+                amount=total,
+                currency=offer.currency or "SAR",
+                note=offer.note or (body.strip() or None),
+                provider_name=offer.provider_name or matched["seller_name"],
+                phone=offer.phone,
+                base_price=base,
+                delivery_included=included,
+                delivery_price=delivery,
+                total_price=total,
+                need=offer.need or self._col(matched, "need") or row["need"],
+            )
+            self._connection.execute(
+                "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    uuid4().hex,
+                    row["id"],
+                    seller_id,
+                    offer.need,
+                    offer.provider_name,
+                    offer.phone,
+                    offer.base_price,
+                    None if offer.delivery_included is None else int(offer.delivery_included),
+                    offer.delivery_price,
+                    offer.total_price,
+                    offer.currency,
+                    offer.note,
+                    _now(),
+                ),
+            )
+        text = body.strip() or ("عرض سعر" if offer is None else f"الإجمالي: {offer.total_price:g} ر.س")
+        need = (offer.need if offer is not None else None) or self._col(matched, "need") or row["need"]
+        message = self.add_message(row["id"], "seller", None, text, offer, seller_id=seller_id, need=need)
         self._connection.execute(
             "insert into notifications (id, user_id, request_id, kind, created_at) values (?, ?, ?, ?, ?)",
             (uuid4().hex, row["owner_user_id"], row["id"], "seller_reply", message.created_at),
         )
         self._connection.commit()
         return message
+
+    def mark_synced(self, request_id: str | None = None) -> None:
+        stamp = _now()
+        if request_id:
+            self._connection.execute("update requests set last_synced_at = ? where id = ?", (stamp, request_id))
+        else:
+            self._connection.execute("update requests set last_synced_at = ?", (stamp,))
+        self._connection.commit()
+
+    def active_request_ids(self) -> list[str]:
+        rows = self._connection.execute("select id from requests order by created_at desc").fetchall()
+        return [item["id"] for item in rows]
 
     def attachment_path(self, request_id: str, attachment_id: str, owner_user_id: str | None = None, reply_token: str | None = None) -> tuple[Path, str, str] | None:
         if owner_user_id is not None:
@@ -389,7 +800,12 @@ class Store:
                 (request_id, reply_token),
             ).fetchone()
             if owner is None:
-                return None
+                linked = self._connection.execute(
+                    "select request_id from request_recipients where request_id = ? and reply_token = ?",
+                    (request_id, reply_token),
+                ).fetchone()
+                if linked is None:
+                    return None
         else:
             return None
         row = self._connection.execute(

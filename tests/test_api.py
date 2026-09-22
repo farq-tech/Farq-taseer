@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 from farq.api import create_app
 from farq.config import SearchConfig
 from farq.corpus import MemoryCorpus, default_sample_path
+from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 from farq.store import Store
+from farq.worker import poll_once
 
 
 def client(tmp_path: Path) -> TestClient:
@@ -45,13 +47,16 @@ def test_request_message_and_attachment_round_trip(tmp_path: Path):
     message = api.post(
         f"/v1/requests/{request_id}/messages",
         headers=headers,
-        json={"body": "كم السعر؟", "offer_amount": 1500, "offer_currency": "SAR"},
+        json={"body": "كم السعر؟"},
     )
     assert message.status_code == 200
     fetched = api.get(f"/v1/requests/{request_id}", headers=headers)
     body = fetched.json()
     assert body["attachments"]
-    assert body["messages"][0]["offer"]["amount"] == 1500
+    # The request opens the item conversation; nothing reaches Haraj without a connected channel.
+    assert [item["body"] for item in body["messages"]] == ["أبي نجار يسوي دولاب\nشمال الرياض", "كم السعر؟"]
+    assert {item["delivery_state"] for item in body["messages"]} == {"queued"}
+    assert body["recipients"][0]["send_status"] == "queued"
     assert "rfq" not in fetched.text.lower()
 
 
@@ -126,8 +131,53 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
     assert listed["has_new_offer"] is True
     assert listed["latest_offer_amount"] == 2800
     thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
-    assert thread["messages"][0]["offer"]["amount"] == 2800
-    assert thread["messages"][0]["sender_role"] == "seller"
+    assert thread["messages"][-1]["offer"]["amount"] == 2800
+    assert thread["messages"][-1]["sender_role"] == "seller"
+
+
+def test_unique_reply_tokens_and_delivery_total(tmp_path: Path):
+    api = client(tmp_path)
+    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={
+            "original_text": "أبي سباك وأبي كهربائي بالرياض",
+            "need": "سباك",
+            "city": "الرياض",
+            "recipients": [
+                {"seller_id": "p1", "seller_name": "محمد", "need": "سباك"},
+                {"seller_id": "e1", "seller_name": "أحمد", "need": "كهربائي"},
+            ],
+        },
+    )
+    assert created.status_code == 200
+    body = created.json()
+    tokens = [item["reply_token"] for item in body["recipients"]]
+    assert len(tokens) == 2
+    assert tokens[0] != tokens[1]
+    reply = api.post(
+        f"/v1/seller/{tokens[0]}/messages",
+        json={
+            "provider_name": "محمد",
+            "phone": "0500000000",
+            "offer_amount": 250,
+            "delivery_included": False,
+            "delivery_price": 50,
+            "body": "أقدر أجيك بكرة",
+        },
+    )
+    assert reply.status_code == 200
+    thread = api.get(f"/v1/requests/{body['id']}", headers=headers).json()
+    offer = thread["offers"][0]
+    assert offer["base_price"] == 250
+    assert offer["delivery_price"] == 50
+    assert offer["total_price"] == 300
+    assert offer["need"] == "سباك"
+    assert offer["cheapest"] is True
+    listed = api.get("/v1/requests", headers=headers).json()["requests"][0]
+    assert listed["needs"][0]["offer_count"] == 1
+    assert listed["needs"][0]["lowest_total"] == 300
 
 
 def test_search_stream_reports_live_before_the_final_result(tmp_path: Path):
@@ -167,3 +217,101 @@ def test_search_stream_reports_live_before_the_final_result(tmp_path: Path):
     assert body.index("LIVE_SEARCHING") < body.index('"type": "done"')
     assert "118000" in body
     assert "thumbcdn.haraj.com.sa" in body
+
+
+class FakeHaraj:
+    """Records what would go out to Haraj and serves seller replies back."""
+
+    def __init__(self):
+        self.sent: list[tuple[str, str, str]] = []
+        self.inbox: dict[str, list[InboundMessage]] = {}
+
+    def send(self, *, conversation_id, seller_id, ad_id, body):
+        conversation = conversation_id or f"conv-{seller_id}-{ad_id}"
+        self.sent.append((conversation, seller_id, body))
+        return SentMessage(haraj_conversation_id=conversation, haraj_message_id=f"out-{len(self.sent)}")
+
+    def fetch(self, *, conversation_id, since):
+        return [item for item in self.inbox.get(conversation_id, []) if since is None or item.sent_at > since]
+
+
+def test_item_conversation_routes_through_haraj(tmp_path: Path):
+    haraj = FakeHaraj()
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), haraj))
+    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={
+            "original_text": "أبي سباك وأبي كهربائي بالرياض",
+            "need": "سباك",
+            "city": "الرياض",
+            "recipients": [
+                {"seller_id": "p1", "seller_name": "محمد", "need": "سباك", "ad_id": "a1"},
+                {"seller_id": "p2", "seller_name": "خالد", "need": "سباك", "ad_id": "a2"},
+                {"seller_id": "e1", "seller_name": "أحمد", "need": "كهربائي", "ad_id": "a3"},
+            ],
+        },
+    ).json()
+    request_id = created["id"]
+    url = f"/v1/requests/{request_id}/messages"
+    # Opening message: one per item, into each seller's own Haraj conversation.
+    assert sorted((seller, body) for _conv, seller, body in haraj.sent) == [
+        ("e1", "كهربائي في الرياض"),
+        ("p1", "سباك في الرياض"),
+        ("p2", "سباك في الرياض"),
+    ]
+    assert {item["send_status"] for item in api.get(f"/v1/requests/{request_id}", headers=headers).json()["recipients"]} == {"sent"}
+
+    haraj.inbox["conv-p1-a1"] = [InboundMessage("in-1", "أقدر بكرة والسعر ٢٥٠ ريال", "2099-01-01T00:00:01+00:00")]
+    haraj.inbox["conv-p2-a2"] = [InboundMessage("in-2", "كم نقطة تسريب؟", "2099-01-01T00:00:02+00:00")]
+    assert poll_once(store, haraj) == (0, 2)
+    assert poll_once(store, haraj) == (0, 0)  # already recorded, not duplicated
+
+    thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
+    question = next(item for item in thread["messages"] if item["body"] == "كم نقطة تسريب؟")
+    assert question["direction"] == "seller_to_customer"
+    assert question["haraj_conversation_id"] == "conv-p2-a2"
+    offer = thread["offers"][0]
+    assert (offer["seller_id"], offer["provider_name"], offer["total_price"]) == ("p1", "محمد", 250)
+
+    haraj.sent.clear()
+    broadcast = api.post(url, headers=headers, json={"body": "أبي الشغل الخميس", "need": "سباك"}).json()
+    reply = api.post(url, headers=headers, json={"body": "نقطتين", "reply_to": question["id"]}).json()
+    direct = api.post(url, headers=headers, json={"body": "تقدر الصبح؟", "seller_id": "p1"}).json()
+    assert (broadcast["scope"], broadcast["seller_id"]) == ("all_sellers", None)
+    assert (reply["scope"], reply["seller_id"]) == ("single_seller", "p2")
+    assert (direct["scope"], direct["seller_id"]) == ("single_seller", "p1")
+    # Broadcast reaches only this item's sellers; replies and picks reach one seller's Haraj conversation.
+    assert haraj.sent == [
+        ("conv-p1-a1", "p1", "أبي الشغل الخميس"),
+        ("conv-p2-a2", "p2", "أبي الشغل الخميس"),
+        ("conv-p2-a2", "p2", "نقطتين"),
+        ("conv-p1-a1", "p1", "تقدر الصبح؟"),
+    ]
+    assert api.post(url, headers=headers, json={"body": "x"}).status_code == 422  # several items: pick one
+    assert api.post(url, headers=headers, json={"body": "x", "seller_id": "nobody"}).status_code == 422
+
+
+def test_not_connected_keeps_messages_queued(tmp_path: Path):
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
+    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={"original_text": "أبي نجار", "need": "نجار", "recipients": [{"seller_id": "n1", "seller_name": "نجار"}]},
+    ).json()
+    assert poll_once(store) == (0, 0)
+    thread = api.get(f"/v1/requests/{created['id']}", headers=headers).json()
+    assert thread["messages"][0]["delivery_state"] == "queued"
+    assert thread["last_synced_at"] is None
+    listed = api.get("/v1/requests", headers=headers).json()["requests"][0]
+    assert (listed["sent_count"], listed["queued_count"]) == (0, 1)
+
+
+def test_price_needs_a_currency():
+    assert extract_price("السعر ١٬٢٠٠ ريال شامل") == 1200
+    assert extract_price("500 ر.س") == 500
+    assert extract_price("عندي 3 حبات") is None

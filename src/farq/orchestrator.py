@@ -9,6 +9,7 @@ from uuid import uuid4
 from farq.config import SearchConfig
 from farq.contracts import (
     IntentResponse,
+    NeedGroup,
     ResultUnit,
     SearchResponse,
     SearchResult,
@@ -17,7 +18,7 @@ from farq.contracts import (
 from farq.corpus import LocalHit, MemoryCorpus
 from farq.dedup import deduplicate
 from farq.eligibility import decide
-from farq.intent import analyze
+from farq.intent import analyze, analyze_needs
 from farq.live_haraj import HarajLiveClient, LiveBatch, QueryFetch
 from farq.ranking import rank, score
 
@@ -140,45 +141,16 @@ def _ordered(intent: IntentResponse, local_results: list[SearchResult], live_res
     return rank(intent, merged, config, now), removed
 
 
-def iter_search(
-    query: str,
+def _search_need(
+    intent: IntentResponse,
     corpus: MemoryCorpus,
     live_client: HarajLiveClient | None,
-    config: SearchConfig | None = None,
-    now: datetime | None = None,
-) -> Iterator[dict]:
-    config = config or SearchConfig()
-    now = now or _now()
-    trace_id = uuid4().hex
+    config: SearchConfig,
+    now: datetime,
+    yield_event,
+    trace_id: str,
+) -> tuple[SearchState, list[SearchResult], list[dict]]:
     stages: list[dict] = []
-    intent = analyze(query)
-    stages.append({"stage": "intent", "understood": intent.understood, "type": intent.type.value, "result_unit": intent.result_unit.value})
-    yield {"type": "intent", "intent": intent, "trace_id": trace_id, "clarification_question": intent.clarification_question}
-
-    def finish(state: SearchState, results: list[SearchResult], clarification: str | None = None) -> dict:
-        response = SearchResponse(
-            state=state,
-            intent=intent,
-            results=results,
-            clarification_question=clarification,
-            trace_id=trace_id,
-        )
-        trace = {"trace_id": trace_id, "stages": stages, "state": state.value}
-        return {"type": "done", "response": response, "trace": trace}
-
-    if not intent.understood:
-        response = finish(SearchState.NOT_UNDERSTOOD, [])
-        yield response
-        return
-    if isinstance(intent.location_city.value, list):
-        stages.append({"stage": "clarification", "reason": "multiple_cities"})
-        yield finish(SearchState.LOCATION_AMBIGUOUS, [], intent.clarification_question)
-        return
-    if intent.clarification_question:
-        stages.append({"stage": "clarification", "question": intent.clarification_question, "missing": intent.missing_decision_information})
-        yield finish(SearchState.CLARIFICATION_REQUIRED, [], intent.clarification_question)
-        return
-
     city = intent.location_city.value if intent.location_sensitivity.value == "required" else None
     city_filter = city if isinstance(city, str) else None
     local_hits = corpus.retrieve(intent.search_terms, city_filter, limit=100)
@@ -186,6 +158,7 @@ def iter_search(
     stages.append(
         {
             "stage": "local_retrieval",
+            "need": intent.need,
             "candidates": len(local_hits),
             "qualified": len(local_results),
             "rejected": local_rejected,
@@ -194,23 +167,26 @@ def iter_search(
         }
     )
     reasons = _wants_live(intent, len(local_results), config)
-    stages.append({"stage": "quality_gate", "live": bool(reasons), "reasons": reasons})
+    stages.append({"stage": "quality_gate", "need": intent.need, "live": bool(reasons), "reasons": reasons})
     live_batch: LiveBatch | None = None
     live_results: list[SearchResult] = []
     live_reasons: list[str] = []
     live_rejected = 0
     if reasons and live_client is not None:
-        stages.append({"stage": "live_retrieval", "status": SearchState.LIVE_SEARCHING.value})
-        yield {"type": "status", "state": SearchState.LIVE_SEARCHING.value, "trace_id": trace_id}
+        stages.append({"stage": "live_retrieval", "need": intent.need, "status": SearchState.LIVE_SEARCHING.value})
+        yield_event({"type": "status", "state": SearchState.LIVE_SEARCHING.value, "trace_id": trace_id})
         if local_results:
             ordered, _removed = _ordered(intent, local_results, [], config, now)
-            yield {
-                "type": "results",
-                "state": SearchState.PARTIAL_RESULTS,
-                "results": ordered,
-                "trace_id": trace_id,
-                "partial": True,
-            }
+            yield_event(
+                {
+                    "type": "results",
+                    "state": SearchState.PARTIAL_RESULTS,
+                    "results": ordered,
+                    "trace_id": trace_id,
+                    "partial": True,
+                    "need": intent.need,
+                }
+            )
         live_batch = LiveBatch()
         accumulated: list = []
         city_value = intent.location_city.value if isinstance(intent.location_city.value, str) else None
@@ -246,16 +222,20 @@ def iter_search(
             live_results, live_rejected, live_reasons = _live_results(intent, snapshot, config, now)
             ordered, _removed = _ordered(intent, local_results, live_results, config, now)
             if ordered:
-                yield {
-                    "type": "results",
-                    "state": SearchState.PARTIAL_RESULTS,
-                    "results": ordered,
-                    "trace_id": trace_id,
-                    "partial": True,
-                }
+                yield_event(
+                    {
+                        "type": "results",
+                        "state": SearchState.PARTIAL_RESULTS,
+                        "results": ordered,
+                        "trace_id": trace_id,
+                        "partial": True,
+                        "need": intent.need,
+                    }
+                )
         stages.append(
             {
                 "stage": "live_retrieval",
+                "need": intent.need,
                 "fetched": len(live_batch.ads),
                 "qualified": len(live_results),
                 "rejected": live_rejected,
@@ -266,15 +246,109 @@ def iter_search(
             }
         )
     ordered, removed = _ordered(intent, local_results, live_results, config, now)
-    stages.append({"stage": "dedup", "removed": removed, "kept": len(ordered)})
+    stages.append({"stage": "dedup", "need": intent.need, "removed": removed, "kept": len(ordered)})
     state = _final_state(
         results=ordered,
         wants_live=bool(reasons),
         live=live_batch,
         rejection_reasons=local_reasons + live_reasons,
     )
-    stages.append({"stage": "response", "state": state.value, "results": len(ordered)})
-    yield finish(state, ordered)
+    stages.append({"stage": "response", "need": intent.need, "state": state.value, "results": len(ordered)})
+    return state, ordered, stages
+
+
+def iter_search(
+    query: str,
+    corpus: MemoryCorpus,
+    live_client: HarajLiveClient | None,
+    config: SearchConfig | None = None,
+    now: datetime | None = None,
+) -> Iterator[dict]:
+    config = config or SearchConfig()
+    now = now or _now()
+    trace_id = uuid4().hex
+    stages: list[dict] = []
+    needs = analyze_needs(query)
+    intent = needs[0] if needs else analyze(query)
+    stages.append(
+        {
+            "stage": "intent",
+            "understood": intent.understood,
+            "type": intent.type.value,
+            "result_unit": intent.result_unit.value,
+            "needs": [item.need for item in needs],
+        }
+    )
+    yield {"type": "intent", "intent": intent, "intents": needs, "trace_id": trace_id, "clarification_question": intent.clarification_question}
+
+    pending: list[dict] = []
+
+    def yield_event(event: dict) -> None:
+        pending.append(event)
+
+    def finish(
+        state: SearchState,
+        results: list[SearchResult],
+        clarification: str | None = None,
+        groups: list[NeedGroup] | None = None,
+    ) -> dict:
+        response = SearchResponse(
+            state=state,
+            intent=intent,
+            results=results,
+            groups=groups or [],
+            clarification_question=clarification,
+            trace_id=trace_id,
+        )
+        trace = {"trace_id": trace_id, "stages": stages, "state": state.value}
+        return {"type": "done", "response": response, "trace": trace}
+
+    blocked = [item for item in needs if not item.understood]
+    if blocked and len(blocked) == len(needs):
+        yield finish(SearchState.NOT_UNDERSTOOD, [])
+        return
+    if any(isinstance(item.location_city.value, list) for item in needs):
+        stages.append({"stage": "clarification", "reason": "multiple_cities"})
+        yield finish(SearchState.LOCATION_AMBIGUOUS, [], intent.clarification_question)
+        return
+    if any(item.clarification_question for item in needs):
+        first = next(item for item in needs if item.clarification_question)
+        stages.append({"stage": "clarification", "question": first.clarification_question, "missing": first.missing_decision_information})
+        yield finish(SearchState.CLARIFICATION_REQUIRED, [], first.clarification_question)
+        return
+
+    groups: list[NeedGroup] = []
+    flat: list[SearchResult] = []
+    for need_intent in needs:
+        state, ordered, need_stages = _search_need(need_intent, corpus, live_client, config, now, yield_event, trace_id)
+        stages.extend(need_stages)
+        for event in pending:
+            yield event
+        pending.clear()
+        label = need_intent.need or need_intent.original_query
+        groups.append(NeedGroup(need=label, intent=need_intent, results=ordered, state=state))
+        seen = {(item.ad.id if item.ad else None, item.seller.id if item.seller else None) for item in flat}
+        for item in ordered:
+            key = (item.ad.id if item.ad else None, item.seller.id if item.seller else None)
+            if key in seen:
+                continue
+            seen.add(key)
+            flat.append(item)
+        yield {
+            "type": "results",
+            "state": SearchState.PARTIAL_RESULTS,
+            "results": flat,
+            "groups": groups,
+            "trace_id": trace_id,
+            "partial": True,
+        }
+
+    if len(groups) == 1:
+        yield finish(groups[0].state, groups[0].results, groups=[groups[0]])
+        return
+    any_results = any(group.results for group in groups)
+    state = SearchState.RESULTS if any_results else SearchState.NO_QUALIFIED_RESULTS
+    yield finish(state, flat, groups=groups)
 
 
 def run_search(

@@ -37,10 +37,10 @@ class SearchConfig:
     """
 
     min_qualified_local: int = field(default_factory=lambda: _env_int("FARQ_MIN_QUALIFIED_LOCAL", 3))
-    live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 10))
-    live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 2))
-    live_max_queries: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_QUERIES", 3))
-    live_timeout_seconds: float = field(default_factory=lambda: _env_float("FARQ_LIVE_TIMEOUT_SECONDS", 8))
+    live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 20))
+    live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 3))
+    live_max_queries: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_QUERIES", 4))
+    live_timeout_seconds: float = field(default_factory=lambda: _env_float("FARQ_LIVE_TIMEOUT_SECONDS", 10))
     live_concurrency: int = field(default_factory=lambda: _env_int("FARQ_LIVE_CONCURRENCY", 2))
     enable_live: bool = field(default_factory=lambda: _env_bool("FARQ_ENABLE_LIVE", True))
     # Local rows are sellers, not ads, including trades. Live Haraj is what
@@ -52,6 +52,6 @@ class SearchConfig:
         "other",
         "service",
     )
-    max_results: int = field(default_factory=lambda: _env_int("FARQ_MAX_RESULTS", 20))
+    max_results: int = field(default_factory=lambda: _env_int("FARQ_MAX_RESULTS", 40))
     fresh_days: int = field(default_factory=lambda: _env_int("FARQ_FRESH_DAYS", 30))
     recent_days: int = field(default_factory=lambda: _env_int("FARQ_RECENT_DAYS", 180))

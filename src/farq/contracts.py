@@ -125,11 +125,19 @@ class SearchResult(ContractModel):
     match_evidence: list[str] = Field(default_factory=list)
 
 
+class NeedGroup(ContractModel):
+    need: str
+    intent: IntentResponse
+    results: list[SearchResult] = Field(default_factory=list)
+    state: SearchState = SearchState.RESULTS
+
+
 class SearchResponse(ContractModel):
     contract_version: str = CONTRACT_VERSION
     state: SearchState
     intent: IntentResponse
     results: list[SearchResult] = Field(default_factory=list)
+    groups: list[NeedGroup] = Field(default_factory=list)
     clarification_question: str | None = None
     trace_id: str
 
@@ -145,6 +153,15 @@ class Offer(ContractModel):
     amount: float | None = None
     currency: str | None = None
     note: str | None = None
+    provider_name: str | None = None
+    phone: str | None = None
+    seller_id: str | None = None
+    base_price: float | None = None
+    delivery_included: bool | None = None
+    delivery_price: float | None = None
+    total_price: float | None = None
+    need: str | None = None
+    cheapest: bool = False
 
 
 class Message(ContractModel):
@@ -152,16 +169,27 @@ class Message(ContractModel):
     request_id: str
     sender_role: str
     seller_id: str | None = None
+    need: str | None = None
+    reply_to: str | None = None
+    direction: str = "customer_to_seller"
+    scope: str | None = None
+    haraj_conversation_id: str | None = None
     body: str
     offer: Offer | None = None
     attachment_ids: list[str] = Field(default_factory=list)
     created_at: str
+    delivery_state: str | None = None
+    deliveries: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RequestRecipient(ContractModel):
     seller_id: str
     seller_name: str
     ad_id: str | None = None
+    need: str | None = None
+    reply_token: str | None = None
+    send_status: str = "sent"
+    listing_url: str | None = None
 
 
 class RequestRecord(ContractModel):
@@ -175,5 +203,7 @@ class RequestRecord(ContractModel):
     recipients: list[RequestRecipient]
     attachments: list[Attachment] = Field(default_factory=list)
     messages: list[Message] = Field(default_factory=list)
+    offers: list[Offer] = Field(default_factory=list)
     reply_token: str | None = None
+    last_synced_at: str | None = None
     created_at: str
