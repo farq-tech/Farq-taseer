@@ -1503,7 +1503,7 @@ function attachSheet() {
     <div class="fq-sheet" role="dialog" aria-label="إرفاق ملف">
       <span class="fq-grab" aria-hidden="true"></span>
       <h2>إرفاق ملف</h2>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="fq-attach-grid">
         ${option("image", "معرض الصور", "image/*", "")}
         ${option("camera", "الكاميرا", "image/*", 'capture="environment"')}
         ${option("file-text", "ملف PDF", "application/pdf", "")}
@@ -1927,13 +1927,13 @@ function renderSubscribe() {
   // SUB02_Plans / FT09_PlansWithTrial — nodes 60:54 and 64:1001.
   if (view === "plans" || view === "upgrade") {
     const upgrade = view === "upgrade";
-    return `${fqHead({ title: upgrade ? "ترقية الباقة" : "الباقات", back: "my-plan", mark: true })}
+    return `${fqHead({ title: upgrade ? "ترقية الباقة" : "حسابي", back: "my-plan", mark: true })}
     <section class="fq-body tight">
       <div><h1 class="fq-h1">${upgrade ? "اختر الترقية المناسبة" : "اختر اللي يناسب استخدامك"}</h1>
         <p class="fq-lead">اشتراك شهري، وتقدر تبدأ بالباقة المناسبة لك وتعدلها بأي وقت.</p></div>
       ${isSubscribed()
         ? ""
-        : `<article class="fq-plan">
+        : `<article class="fq-plan trial">
             <div class="fq-row"><span class="fq-tag ok">مفعلة حالياً</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
             <div class="fq-row"><span class="per">ابدأ بدون بطاقة</span><span class="amount">0 ر.س</span></div>
             <p class="desc">✓ ${formatCount(TRIAL_ITEMS)} بند تسعير • ✓ حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند</p>

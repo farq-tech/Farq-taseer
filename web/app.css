@@ -1869,3 +1869,10 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 /* a button that only reports a state */
 .fq-btn.mint { background: var(--fq-mint); color: var(--fq-deep-green); box-shadow: none; }
 .fq-btn.mint:disabled { opacity: 1; }
+/* FT09: the paid plans are flat mint cards; the badge never breaks */
+.fq-plan .badge, .fq-plan .fq-tag { white-space: nowrap; }
+.fq-plan.trial { background: #f2faf6; border-color: #dceee5; box-shadow: none; }
+.fq-plan .name { line-height: 1.4; }
+/* C03: the attachment options read right to left */
+.fq-attach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; direction: rtl; }
+.fq-attach-opt { background: var(--fq-surface); }
