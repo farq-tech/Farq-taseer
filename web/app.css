@@ -1827,3 +1827,23 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-facts .fq-row { direction: ltr; }
 .fq-facts .fq-row > * { direction: rtl; }
 .fq-facts strong { font-size: 16px; font-weight: 700; }
+/* C02: one card per recipient, the mark on the left and the control on the right */
+.fq-rcpt { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-input); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); font: inherit; color: var(--fq-text); direction: ltr; overflow: hidden; }
+.fq-rcpt.on { border-color: #cfe9dc; }
+.fq-rcpt.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-success); }
+.fq-rcpt .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; direction: rtl; text-align: left; }
+.fq-rcpt .meta strong { font-size: 15px; font-weight: 600; }
+.fq-rcpt .price { font-size: 13px; color: var(--fq-success); font-weight: 600; }
+.fq-rcpt .fq-av { width: 36px; height: 36px; border-radius: 50%; font-size: 14px; }
+.fq-rcpt .fq-av.group { background: var(--fq-deep-green); color: #fff; }
+.fq-rcpt .fq-radio { flex: none; }
+/* C02: one card per recipient, the mark on the left and the control on the right */
+.fq-rcpt { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-input); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); font: inherit; color: var(--fq-text); direction: ltr; overflow: hidden; }
+.fq-rcpt.on { border-color: #cfe9dc; }
+.fq-rcpt.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-success); }
+.fq-rcpt .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; direction: rtl; text-align: left; }
+.fq-rcpt .meta strong { font-size: 15px; font-weight: 600; }
+.fq-rcpt .price { font-size: 13px; color: var(--fq-success); font-weight: 600; }
+.fq-rcpt .fq-av { width: 36px; height: 36px; border-radius: 50%; font-size: 14px; }
+.fq-rcpt .fq-av.group { background: var(--fq-deep-green); color: #fff; }
+.fq-rcpt .fq-radio { flex: none; }

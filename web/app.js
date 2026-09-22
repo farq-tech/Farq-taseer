@@ -1448,19 +1448,21 @@ function offersBar(thread, offers) {
 
 // C02_RecipientPicker — node 33:159. Figma draws radio dots; Taseer keeps the multi-select the
 // customer asked for, so «الكل» ticks everyone and each row toggles on its own.
+// C02_RecipientPicker — node 33:159. Every recipient is its own card: the mark on the left,
+// the name and its price beside it, the control on the right, and a green bar down the left
+// edge of the ones this message will reach. Figma draws radios; Taseer keeps the multi-select
+// the customer asked for, so «الكل» ticks everyone and each row toggles on its own.
 function recipientSheet(thread) {
   const recipients = thread.recipients || [];
   const picked = state.picked || new Set();
-  const all = picked.size === recipients.length;
+  const all = recipients.length > 0 && picked.size === recipients.length;
   const priceOf = (id) => (thread.offers || []).find((item) => item.seller_id === id)?.total_price;
   const row = (on, avatar, name, sub, action, data) =>
-    `<button class="fq-recipient" type="button" data-action="${action}" ${data} role="checkbox" aria-checked="${on}">
-      <span style="display:flex;align-items:center;gap:12px;min-width:0">
-        ${avatar}
-        <span style="display:flex;flex-direction:column;gap:2px;text-align:start;min-width:0">
-          <strong style="font-size:15px;font-weight:600"><bdi>${esc(name)}</bdi></strong>
-          ${sub ? `<span class="fq-meta">${esc(sub)}</span>` : ""}
-        </span>
+    `<button class="fq-rcpt${on ? " on" : ""}" type="button" data-action="${action}" ${data} role="checkbox" aria-checked="${on}">
+      ${avatar}
+      <span class="meta">
+        <strong><bdi>${esc(name)}</bdi></strong>
+        ${sub ? `<span class="price">${esc(sub)}</span>` : ""}
       </span>
       <span class="fq-radio${on ? " on" : ""}" aria-hidden="true"></span>
     </button>`;
@@ -1468,9 +1470,9 @@ function recipientSheet(thread) {
     <div class="fq-sheet" role="dialog" aria-label="إرسال إلى">
       <span class="fq-grab" aria-hidden="true"></span>
       <div class="fq-row"><h2>إرسال إلى:</h2>
-        <button class="fq-link" type="button" data-action="pick-none" ${picked.size ? "" : "disabled"}>إزالة الكل</button></div>
-      <div style="display:flex;flex-direction:column">
-        ${row(all, `<span class="fq-av" style="background:var(--fq-mint);color:var(--fq-deep-green)">${ic("users", 18)}</span>`, `الكل (${formatCount(recipients.length)} مورد)`, "", "pick-all", "")}
+        <button class="fq-link" type="button" data-action="${all ? "pick-none" : "pick-all"}">${all ? "إزالة الكل" : "تحديد الكل"}</button></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${row(all, `<span class="fq-av group">${ic("users", 18)}</span>`, `الكل (${formatCount(recipients.length)} مورد)`, "", "pick-all", "")}
         ${recipients
           .map((item) => {
             const tone = sellerTone(thread, item.seller_id);
