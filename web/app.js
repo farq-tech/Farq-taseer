@@ -27,6 +27,8 @@ const state = {
     { value: "الدمام", label: "الدمام" },
     { value: "الخبر", label: "الخبر" },
   ],
+  payments: null,
+  showPay: false,
 };
 
 const app = document.querySelector("#app");
@@ -177,12 +179,118 @@ function cityChoices(action) {
 function bubbles(messages, mine) {
   return (messages || [])
     .map((message) => {
+      if (message.sender_role === "system") {
+        return `<div class="bubble system"><div>${esc(message.body || "")}</div></div>`;
+      }
       const role = message.sender_role === mine ? "user" : "seller";
       const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
       const body = esc(message.body || "").replace(/\n/g, "<br>");
       return `<div class="bubble ${role}">${price}<div>${body}</div></div>`;
     })
     .join("");
+}
+
+function halalas(amount) {
+  return Math.round(Number(amount) * 100);
+}
+
+function loadMoyasarAssets() {
+  if (window.Moyasar) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    if (!document.querySelector('link[data-moyasar]')) {
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.css";
+      css.dataset.moyasar = "1";
+      document.head.appendChild(css);
+    }
+    const existing = document.querySelector("script[data-moyasar]");
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("moyasar")));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdn.moyasar.com/mpf/1.15.0/moyasar.js";
+    script.dataset.moyasar = "1";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("moyasar"));
+    document.head.appendChild(script);
+  });
+}
+
+async function mountApplePayForm() {
+  const mount = document.querySelector("#moyasar-apple-pay");
+  const thread = state.thread;
+  const config = state.payments;
+  const amount = thread?.payable_amount;
+  if (!mount || !thread || !config?.enabled || amount == null) return;
+  if (thread.payment?.status === "paid") return;
+  try {
+    await loadMoyasarAssets();
+  } catch (_error) {
+    state.notice = "ما قدرنا نحمّل Apple Pay.";
+    render();
+    return;
+  }
+  if (!window.Moyasar) return;
+  const callback = new URL(location.origin);
+  callback.searchParams.set("pay_request", thread.id);
+  window.Moyasar.init({
+    element: mount,
+    amount: halalas(amount),
+    currency: config.currency || "SAR",
+    description: `فارق تسعير — ${thread.need || thread.original_text || thread.id}`,
+    publishable_api_key: config.publishable_key,
+    callback_url: callback.toString(),
+    supported_networks: config.supported_networks || ["mada", "visa", "mastercard"],
+    methods: config.methods || ["applepay", "creditcard"],
+    apple_pay: {
+      country: "SA",
+      label: config.display_name || "فرق",
+      validate_merchant_url: config.validate_merchant_url || "https://api.moyasar.com/v1/applepay/initiate",
+    },
+    on_completed: async (payment) => {
+      if (!payment?.id) return;
+      try {
+        const confirmed = await api("/v1/payments/confirm", {
+          method: "POST",
+          json: { moyasar_id: payment.id, request_id: thread.id },
+        });
+        state.thread = confirmed.request;
+        state.showPay = false;
+        state.notice = "تم الدفع بنجاح.";
+        render();
+      } catch (_error) {
+        state.notice = "الدفع وصل، بس التأكيد تأخر. حدّث المحادثة.";
+        render();
+      }
+    },
+  });
+}
+
+async function confirmReturnPayment() {
+  const params = new URLSearchParams(location.search);
+  const requestId = params.get("pay_request");
+  const paymentId = params.get("id");
+  if (!requestId || !paymentId) return;
+  history.replaceState({}, "", "/");
+  try {
+    await ensureAuth();
+    const confirmed = await api("/v1/payments/confirm", {
+      method: "POST",
+      json: { moyasar_id: paymentId, request_id: requestId },
+    });
+    state.thread = confirmed.request;
+    state.view = "thread";
+    state.showPay = false;
+    state.notice = "تم الدفع بنجاح.";
+    render();
+  } catch (_error) {
+    await loadThread(requestId).catch(() => {});
+    state.notice = "ما قدرنا نؤكد الدفع. جرّب من المحادثة.";
+    render();
+  }
 }
 
 function finalNotice(status, count) {
@@ -449,12 +557,29 @@ function renderThread() {
   const thread = state.thread;
   if (!thread) return `<section class="page"><p>نحمّل المحادثة…</p></section>`;
   const who = (thread.recipients || []).map((item) => item.seller_name).join(" · ");
-  const offer = (thread.messages || []).find((item) => item.offer?.amount != null);
+  const offer = [...(thread.messages || [])].reverse().find((item) => item.offer?.amount != null);
+  const amount = thread.payable_amount ?? offer?.offer?.amount;
+  const paid = thread.payment?.status === "paid";
+  const canPay = Boolean(state.payments?.enabled && amount != null && !paid);
   const back = `<button class="icon-btn" type="button" data-action="requests" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
   const phone = `<span class="icon-btn" aria-hidden="true">${icon("phone", { size: 20 })}</span>`;
+  const payBlock = paid
+    ? `<div class="pay-card"><strong>تم الدفع</strong><p class="pay-note">وصلنا تأكيد الدفع لهذا العرض.</p></div>`
+    : canPay
+      ? `<div class="pay-card">
+          <div class="row"><strong>ادفع العرض</strong><span>${esc(money(amount))}</span></div>
+          ${
+            state.showPay
+              ? `<div id="moyasar-apple-pay" class="mysr-form"></div><p class="pay-note">Apple Pay على أجهزة آبل. البطاقات متاحة كخيار بديل.</p>`
+              : `<button class="primary block compact" type="button" data-action="pay-offer">Apple Pay</button><p class="pay-note">ادفع عرض السعر مباشرة عبر Moyasar.</p>`
+          }
+        </div>`
+      : "";
   return `<header class="chat-head">${phone}<div class="who-line"><strong>${esc(who || "المحادثة")}</strong><span class="meta">${esc(thread.need || thread.original_text || "")}</span></div>${back}</header>
   <section class="page soft chat-page">
-    ${offer ? `<div class="quote-card"><div class="row"><span class="tag">عرض</span><strong>الإجمالي: ${esc(money(offer.offer.amount))}</strong></div><p>الطلب: ${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
+    ${offer ? `<div class="quote-card"><div class="row"><span class="tag">عرض</span><strong>الإجمالي: ${esc(money(amount))}</strong></div><p>الطلب: ${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
+    ${payBlock}
+    ${state.notice && state.view === "thread" ? `<p class="status">${esc(state.notice)}</p>` : ""}
     <div class="thread"><p class="day">اليوم</p>${bubbles(thread.messages, "user") || `<p class="meta">بانتظار الرد.</p>`}</div>
   </section>
   <form class="reply-form" id="user-reply">
@@ -503,6 +628,11 @@ function render() {
   if (focused) document.getElementById(focused)?.focus();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
   if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
+  if (state.view === "thread" && state.showPay) {
+    queueMicrotask(() => {
+      mountApplePayForm().catch(() => {});
+    });
+  }
 }
 
 function rememberFiles(fileList) {
@@ -808,6 +938,11 @@ document.addEventListener("click", (event) => {
   else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`);
   else if (action === "send") sendRequest();
   else if (action === "thread") loadThread(target.dataset.id).catch(() => {});
+  else if (action === "pay-offer") {
+    state.showPay = true;
+    state.notice = "";
+    render();
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -817,6 +952,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
+else if (new URLSearchParams(location.search).get("pay_request")) confirmReturnPayment();
 else render();
 
 api("/v1/cities", { skipAuth: true })
@@ -825,3 +961,12 @@ api("/v1/cities", { skipAuth: true })
     if (state.view === "flow" || state.view === "review") render();
   })
   .catch(() => {});
+
+api("/v1/payments/config", { skipAuth: true })
+  .then((data) => {
+    state.payments = data;
+    if (state.view === "thread") render();
+  })
+  .catch(() => {
+    state.payments = { enabled: false };
+  });

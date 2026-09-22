@@ -565,6 +565,29 @@ h1 {
 .chat-head strong { display: block; font-size: 16px; font-weight: 800; color: var(--brand); }
 .chat-head .meta { color: var(--muted); }
 
+.pay-card {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--subtle);
+  border: 1px solid var(--line);
+}
+.pay-card .mysr-form { margin-top: 8px; }
+.pay-card .pay-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.bubble.system {
+  align-self: center;
+  max-width: 92%;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 8px;
+}
 .quote-card {
   background: var(--surface);
   border: 1px solid var(--line);
