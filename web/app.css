@@ -1680,22 +1680,26 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq[data-enter] .fq-profile-banner { animation-delay: 100ms; }
 .fq[data-enter] .fq-filters { animation-delay: 140ms; }
 
-/* a list that cascades: one card every 80ms, landing with a little bounce */
-.fq-stagger > * { animation: fq-pop 520ms var(--fq-spring) both; }
-.fq-stagger > *:nth-child(1) { animation-delay: calc(var(--fq-step) * 1); }
-.fq-stagger > *:nth-child(2) { animation-delay: calc(var(--fq-step) * 2); }
-.fq-stagger > *:nth-child(3) { animation-delay: calc(var(--fq-step) * 3); }
-.fq-stagger > *:nth-child(4) { animation-delay: calc(var(--fq-step) * 4); }
-.fq-stagger > *:nth-child(5) { animation-delay: calc(var(--fq-step) * 5); }
-.fq-stagger > *:nth-child(6) { animation-delay: calc(var(--fq-step) * 6); }
-.fq-stagger > *:nth-child(7) { animation-delay: calc(var(--fq-step) * 7); }
-.fq-stagger > *:nth-child(8) { animation-delay: calc(var(--fq-step) * 8); }
-.fq-stagger > *:nth-child(n + 9) { animation-delay: calc(var(--fq-step) * 9); }
-.fq-stagger.unfold > * { animation-name: fq-unfold; animation-timing-function: var(--fq-ease); }
+/* A list cascades when you arrive on the screen — and only then. The screen
+   re-renders itself every few seconds while offers and replies come in; if the
+   cascade ran on each of those, the cards would restart mid-flight and the list
+   would look stuck. A card that genuinely arrives later animates on its own,
+   through .fq-in. */
+.fq[data-enter] .fq-stagger > * { animation: fq-pop 520ms var(--fq-spring) both; }
+.fq[data-enter] .fq-stagger > *:nth-child(1) { animation-delay: calc(var(--fq-step) * 1); }
+.fq[data-enter] .fq-stagger > *:nth-child(2) { animation-delay: calc(var(--fq-step) * 2); }
+.fq[data-enter] .fq-stagger > *:nth-child(3) { animation-delay: calc(var(--fq-step) * 3); }
+.fq[data-enter] .fq-stagger > *:nth-child(4) { animation-delay: calc(var(--fq-step) * 4); }
+.fq[data-enter] .fq-stagger > *:nth-child(5) { animation-delay: calc(var(--fq-step) * 5); }
+.fq[data-enter] .fq-stagger > *:nth-child(6) { animation-delay: calc(var(--fq-step) * 6); }
+.fq[data-enter] .fq-stagger > *:nth-child(7) { animation-delay: calc(var(--fq-step) * 7); }
+.fq[data-enter] .fq-stagger > *:nth-child(8) { animation-delay: calc(var(--fq-step) * 8); }
+.fq[data-enter] .fq-stagger > *:nth-child(n + 9) { animation-delay: calc(var(--fq-step) * 9); }
+.fq[data-enter] .fq-stagger.unfold > * { animation-name: fq-unfold; animation-timing-function: var(--fq-ease); }
 
 /* the price face-off: the first offer swings in from the right, the next from the left */
-.fq-faceoff > *:nth-child(odd) { animation-name: fq-from-right; }
-.fq-faceoff > *:nth-child(even) { animation-name: fq-from-left; }
+.fq[data-enter] .fq-faceoff > *:nth-child(odd) { animation-name: fq-from-right; }
+.fq[data-enter] .fq-faceoff > *:nth-child(even) { animation-name: fq-from-left; }
 
 /* a card that arrives later, while you are looking at the list */
 .fq-in { animation: fq-pop 480ms var(--fq-spring) both; }
@@ -1727,7 +1731,68 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 @media (prefers-reduced-motion: reduce) {
   .fq[data-enter] .fq-head, .fq[data-enter] .fq-nav, .fq[data-enter] .fq-body > *, .fq-body > *,
   .fq[data-enter] .fq-offers-bar, .fq[data-enter] .fq-profile-banner, .fq[data-enter] .fq-filters,
-  .fq-stagger > *, .fq-in, .fq-btn.breathe, .fq-celebrate .fq-glow,
+  .fq[data-enter] .fq-stagger > *, .fq-in, .fq-btn.breathe, .fq-celebrate .fq-glow,
   .fq-celebrate .fq-ringstack, .fq-celebrate .fq-ringstack > span, .fq-blob.land,
   .fq-pulse::after, .fq-dots i { animation: none !important; }
 }
+
+/* =====================================================================
+   Literal values from the Figma CSS export (AUTH01/02, M01, M02).
+   Gradients, glows, inset shadows and line heights the node reads missed.
+   ===================================================================== */
+
+/* --- the header: a gradient, a soft glow, a hairline of light, rounded off --- */
+.fq-head { background: linear-gradient(90deg, #003f3a 0%, #07534c 100%); border-radius: 0 0 18px 18px; position: relative; isolation: isolate; overflow: hidden; }
+.fq-head::before { content: ""; position: absolute; width: 220px; height: 220px; left: calc(50% - 110px); top: -24px; background: #ddf4e8; opacity: 0.1; filter: blur(20px); border-radius: 50%; pointer-events: none; z-index: 0; }
+.fq-head > * { position: relative; z-index: 2; }
+.fq-head-row { min-height: 56px; padding: 14px 20px; }
+.fq-head-accent { position: relative; z-index: 3; }
+.fq-head-accent::before { content: ""; position: absolute; left: 0; right: 0; bottom: 3px; height: 1px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.102) 0%, rgba(255, 255, 255, 0) 100%); }
+/* a screen with a back button carries the deeper corner and the vertical gradient */
+.fq-head.deep { background: linear-gradient(180deg, #003f3a 0%, #07534c 100%); border-radius: 0 0 24px 24px; }
+.fq-head.deep .fq-head-row { min-height: 56px; }
+.fq-head.is-auth { border-radius: 0; }
+.fq-head.is-auth::before { content: none; }
+.fq-head-row.auth { padding: 14px 24px; min-height: 56px; }
+.fq-lang svg { color: #009f67; }
+
+/* --- AUTH: the screen itself is a gradient, the card floats on it --- */
+body.fq-auth { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%); }
+body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%); }
+.fq-hero.soft { background: #f7f9f7; border-radius: 18px; padding: 20px; gap: 10px; }
+.fq-hero.soft .halo { left: -40px; top: -40px; width: 140px; height: 140px; background: #ddf4e8; opacity: 0.12; filter: none; }
+.fq-hero.soft .fq-h1 { font-size: 28px; font-weight: 700; line-height: 52px; }
+.fq-hero.soft .fq-lead { font-size: 15px; font-weight: 500; line-height: 28px; }
+.fq-hero.soft .fq-small { font-size: 14px; font-weight: 400; line-height: 1.5; }
+#auth-form { border: 1px solid rgba(255, 255, 255, 0.4); box-shadow: 0 2px 10px -4px rgba(0, 159, 103, 0.149), 0 12px 24px -8px rgba(0, 63, 58, 0.102); backdrop-filter: blur(9px); }
+#auth-form .fq-inp { background: #ffffff; border: 1px solid rgba(255, 255, 255, 0.4); box-shadow: inset 0 -1px 4px rgba(0, 63, 58, 0.078), inset 0 1px 2px rgba(255, 255, 255, 0.6); backdrop-filter: blur(5px); }
+.fq-legal { font-size: 12px; font-weight: 400; line-height: 1.6; color: #9aafaa; }
+
+/* --- buttons carry the brand's green glow --- */
+.fq-btn { box-shadow: 0 2px 8px -2px rgba(0, 159, 103, 0.149), 0 10px 20px -6px rgba(0, 159, 103, 0.2); }
+.fq-btn.ghost, .fq-btn.quiet { box-shadow: none; }
+
+/* --- M01 --- */
+.fq-hero { background: #ddf4e8; border-radius: 18px; padding: 20px; gap: 16px; }
+.fq-hero .halo { left: auto; right: -30px; top: -30px; width: 120px; height: 120px; background: #009f67; opacity: 0.15; filter: none; }
+.fq-hero h1 { font-size: 26px; font-weight: 800; line-height: 49px; }
+.fq-hero p { font-size: 16px; font-weight: 500; line-height: 1.5; }
+#composer { padding: 18px; gap: 12px; box-shadow: 0 8px 24px 4px rgba(63, 61, 59, 0.078), 0 1px 3px rgba(0, 0, 0, 0.078); }
+#composer textarea { font-size: 16px; font-weight: 500; line-height: 30px; }
+.fq-chip { font-size: 14px; font-weight: 500; border: 1px solid var(--fq-line); }
+
+/* --- the bottom navigation --- */
+.fq-nav { border-top: 0.5px solid var(--fq-line); box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.051); backdrop-filter: blur(10px); }
+.fq-nav-row { padding: 12px 16px; }
+.fq-tab { width: 110px; font-size: 11px; font-weight: 500; }
+.fq-tab.on { color: var(--fq-deep-green); font-weight: 700; }
+.fq-tab-badge { background: var(--fq-success); }
+
+/* --- M02 need cards --- */
+.fq-card { border: 1px solid rgba(255, 255, 255, 0.502); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.078), 0 1px 3px rgba(0, 0, 0, 0.051); }
+.fq-needcard { gap: 14px; padding: 16px; }
+.fq-needcard .name { font-size: 17px; font-weight: 700; color: var(--fq-text); }
+.fq-needcard .desc { font-size: 16px; font-weight: 500; line-height: 30px; color: var(--fq-text-2); }
+.fq-editbtn { background: #e6f5ee; border: 1px solid var(--fq-line); border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 700; color: var(--fq-deep-green); }
+.fq-checkbadge { width: 24px; height: 24px; border-radius: 10px; background: #ddf4e8; color: var(--fq-deep-green); display: grid; place-items: center; border: 0; padding: 0; }
+.fq-checkbadge.off { background: transparent; border: 2px solid var(--fq-line); color: transparent; }

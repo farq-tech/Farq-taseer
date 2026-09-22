@@ -260,16 +260,16 @@ function renderUnderstand() {
   <section class="fq-body">
     <div><h1 class="fq-h1">هذا اللي فهمناه</h1><p class="fq-lead">راجع طلبك وعدّل اللي تبي قبل نبدأ البحث.</p></div>
     ${state.needs
-      .map((need, index) => `<article class="fq-card">
+      .map((need, index) => `<article class="fq-card fq-needcard">
         <div class="fq-row">
-          <button class="fq-pill" type="button" data-action="edit-need" data-index="${index}">تعديل</button>
+          <button class="fq-editbtn" type="button" data-action="edit-need" data-index="${index}">تعديل</button>
           <span style="display:flex;align-items:center;gap:8px">
-            <strong style="font-size:20px;font-weight:800"><bdi>${esc(needLabel(need))}</bdi></strong>
-            <button class="fq-switch-tick${need.on ? " on" : ""}" type="button" data-action="toggle-need" data-index="${index}" aria-pressed="${need.on}" aria-label="${need.on ? "استبعاد البند" : "تضمين البند"}"
-              style="width:24px;height:24px;border-radius:50%;border:2px solid ${need.on ? "var(--fq-success)" : "var(--fq-line)"};background:${need.on ? "var(--fq-success)" : "transparent"};color:#fff;display:grid;place-items:center;padding:0">${need.on ? ic("check", 14) : ""}</button>
+            <span class="name"><bdi>${esc(needLabel(need))}</bdi></span>
+            <button class="fq-checkbadge${need.on ? "" : " off"}" type="button" data-action="toggle-need" data-index="${index}" aria-pressed="${need.on}" aria-label="${need.on ? "استبعاد البند" : "تضمين البند"}">${ic("check", 14)}</button>
           </span>
         </div>
-        <p class="fq-small" style="font-size:15px;color:var(--fq-text)"><bdi>${esc(need.desc)}</bdi></p>
+        <p class="desc"><bdi>${esc(need.desc)}</bdi></p>
+        <hr class="fq-line">
         <div style="display:flex;flex-direction:column;gap:8px">
           <span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("map-pin", 16)}<bdi>${esc([need.district, cityLabel(need.city)].filter(Boolean).join("، "))}</bdi></span>
           ${need.when ? `<span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("calendar", 16)}<bdi>${esc(need.when)}</bdi></span>` : ""}
@@ -537,7 +537,7 @@ function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = 
       ? `<span class="fq-head-mark">فرق</span>`
       : start || langBtn;
   const tail = end || (mark || back ? "<span></span>" : "<span></span>");
-  return `<header class="fq-head${auth ? " is-auth" : ""}">
+  return `<header class="fq-head${auth ? " is-auth" : ""}${back ? " deep" : ""}">
     <div class="fq-head-row">${lead}
       <div class="fq-head-mid"><h1 class="fq-head-title"><bdi>${esc(title)}</bdi></h1>${sub ? `<p class="fq-head-sub"><bdi>${esc(sub)}</bdi></p>` : ""}</div>
       ${tail}</div>
@@ -2008,9 +2008,11 @@ function render() {
   const keepScroll = state.view === "flow" && lastView === "flow" ? window.scrollY : null;
   const wall = document.getElementById("chat-wall");
   const stick = state.view === "thread" && (state.stickChat || !wall || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 140);
-  const arriving = state.view !== lastView;
+  // A streaming search re-renders the list many times; that is not an arrival.
+  const arriving = state.view !== lastView && !(state.view === "flow" && state.results.length);
   app.innerHTML = shell(`${view()}${state.pushAsk ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
   document.body.classList.toggle("fq-web", window.innerWidth >= 900);
+  document.body.classList.toggle("fq-auth", state.view === "auth");
   // the choreographed entrance belongs to the screen, not to every render of it
   if (arriving) {
     app.firstElementChild?.setAttribute("data-enter", "");
