@@ -60,7 +60,6 @@ const state = {
 
 const app = document.querySelector("#app");
 let poll = 0;
-const sellerRoute = location.pathname.match(/^\/s\/([^/]+)\/?$/);
 const subscribeCallback = location.pathname === "/subscribe/callback";
 
 function esc(value) {
@@ -131,7 +130,7 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
 
 // Everyone signs in with a Taseer account before using the app; requests belong to that account.
 function requireSignIn() {
-  if (state.view !== "auth") state.returnView = state.view === "seller" ? "home" : state.view;
+  if (state.view !== "auth") state.returnView = state.view;
   state.view = "auth";
   state.authError = "";
   render();
@@ -227,12 +226,85 @@ function cityInText(text) {
 }
 
 function renderCityAsk() {
-  return `${appBar({ back: "home" })}
-  <section class="page tight city-ask">
-    <div class="original-card"><span>طلبك</span><strong>${esc(state.query)}</strong></div>
-    <div class="section-head"><h1>في أي مدينة؟</h1><p class="lede">نختصر البحث على الجهات القريبة منك.</p></div>
-    ${cityChoices("search-city")}
+  return `${fqHead({ title: "المدينة", back: "home" })}
+  <section class="fq-body">
+    <div class="fq-hero"><span class="halo" aria-hidden="true"></span>
+      <h1>في أي مدينة؟</h1>
+      <p>نختصر البحث على الجهات القريبة منك.</p></div>
+    <div class="fq-card pad"><p class="fq-small fq-muted">طلبك</p><p style="margin:0;font-size:15px;font-weight:600"><bdi>${esc(state.query)}</bdi></p></div>
+    <div class="fq-pills" style="gap:10px">${state.cities
+      .map((city) => `<button class="fq-chip" type="button" data-action="search-city" data-value="${esc(city.label)}" data-city="${esc(city.value)}">${esc(city.label)}</button>`)
+      .join("")}</div>
   </section>`;
+}
+
+// M02_Understanding — node 27:68. One card per need the parser found; each opens M03 to edit.
+// The parser's category codes are English slugs; a card shows Arabic or nothing.
+function arabicOnly(value) {
+  const text = String(value ?? "").trim();
+  return /[\u0600-\u06FF]/.test(text) ? text : "";
+}
+
+function needLabel(need) {
+  return need.name || "بند";
+}
+
+function renderUnderstand() {
+  if (!state.needs) {
+    const card = `<div class="fq-card"><span class="fq-skel" style="height:24px;width:40%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:85%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:55%;border-radius:8px"></span></div>`;
+    return `${fqHead({ title: "فهم الطلب", back: "home" })}<section class="fq-body" aria-busy="true">${card.repeat(2)}</section>`;
+  }
+  const active = state.needs.filter((item) => item.on);
+  return `${fqHead({ title: "فهم الطلب", back: "home" })}
+  <section class="fq-body">
+    <div><h1 class="fq-h1">هذا اللي فهمناه</h1><p class="fq-lead">راجع طلبك وعدّل اللي تبي قبل نبدأ البحث.</p></div>
+    ${state.needs
+      .map((need, index) => `<article class="fq-card">
+        <div class="fq-row">
+          <button class="fq-pill" type="button" data-action="edit-need" data-index="${index}">تعديل</button>
+          <span style="display:flex;align-items:center;gap:8px">
+            <strong style="font-size:20px;font-weight:800"><bdi>${esc(needLabel(need))}</bdi></strong>
+            <button class="fq-switch-tick${need.on ? " on" : ""}" type="button" data-action="toggle-need" data-index="${index}" aria-pressed="${need.on}" aria-label="${need.on ? "استبعاد البند" : "تضمين البند"}"
+              style="width:24px;height:24px;border-radius:50%;border:2px solid ${need.on ? "var(--fq-success)" : "var(--fq-line)"};background:${need.on ? "var(--fq-success)" : "transparent"};color:#fff;display:grid;place-items:center;padding:0">${need.on ? ic("check", 14) : ""}</button>
+          </span>
+        </div>
+        <p class="fq-small" style="font-size:15px;color:var(--fq-text)"><bdi>${esc(need.desc)}</bdi></p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("map-pin", 16)}<bdi>${esc([need.district, cityLabel(need.city)].filter(Boolean).join("، "))}</bdi></span>
+          ${need.when ? `<span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("calendar", 16)}<bdi>${esc(need.when)}</bdi></span>` : ""}
+        </div>
+      </article>`)
+      .join("")}
+    <div class="fq-sticky"><button class="fq-btn" type="button" data-action="run-search" ${active.length ? "" : "disabled"}>ابحث عن الخيارات</button></div>
+  </section>
+  ${state.editing != null ? editSheet(state.needs[state.editing], state.editing) : ""}`;
+}
+
+// M03_EditItemSheet — node 85:217.
+function editSheet(need, index) {
+  if (!need) return "";
+  return `<div class="fq-scrim" data-action="close-sheet">
+    <form class="fq-sheet" id="edit-need" data-index="${index}">
+      <span class="fq-grab" aria-hidden="true"></span>
+      <h2>تعديل البند</h2>
+      <div class="fq-field"><label for="need-name">اسم البند</label><div class="fq-inp"><input id="need-name" name="name" value="${esc(need.name)}"></div></div>
+      <div class="fq-field"><label for="need-desc">الوصف</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="need-desc" name="desc" rows="2">${esc(need.desc)}</textarea></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="fq-field"><label for="need-place">الموقع</label><div class="fq-inp"><input id="need-place" name="district" value="${esc([need.district, cityLabel(need.city)].filter(Boolean).join("، "))}"></div></div>
+        <div class="fq-field"><label for="need-qty">الكمية</label>
+          <div class="fq-inp" style="justify-content:space-between">
+            <button class="fq-eye" type="button" data-action="qty" data-step="-1" aria-label="أنقص">${ic("minus", 18)}</button>
+            <input id="need-qty" name="qty" inputmode="numeric" value="${esc(String(need.qty || 1))}" style="text-align:center;max-width:48px">
+            <button class="fq-eye" type="button" data-action="qty" data-step="1" aria-label="زد">${ic("plus", 18)}</button>
+          </div></div>
+      </div>
+      <div class="fq-field"><label for="need-when">وقت التنفيذ المتوقع</label><div class="fq-inp">${ic("calendar", 18)}<input id="need-when" name="when" value="${esc(need.when || "")}" placeholder="مثلاً: السبت، 28 سبتمبر"></div></div>
+      <div class="fq-actions">
+        <button class="fq-btn sm" type="submit">حفظ التعديل</button>
+        <button class="fq-btn quiet" type="button" data-action="close-sheet">إلغاء</button>
+      </div>
+    </form>
+  </div>`;
 }
 
 function customerCity() {
@@ -255,16 +327,6 @@ function cityChoices(action) {
     .join("")}</div>`;
 }
 
-function bubbles(messages, mine) {
-  return (messages || [])
-    .map((message) => {
-      const role = message.sender_role === mine ? "user" : "seller";
-      const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
-      const body = esc(message.body || "").replace(/\n/g, "<br>");
-      return `<div class="bubble ${role}">${price}<div>${body}</div></div>`;
-    })
-    .join("");
-}
 
 function finalNotice(status, count) {
   if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
@@ -309,87 +371,150 @@ function frame(ad, { eager = false, thumb = false } = {}) {
 
 function filePreview() {
   if (!state.files.length) return "";
-  return `<div class="previews">${state.files
-    .map(
-      (item, index) => `<figure>${
-        item.preview ? `<img src="${item.preview}" alt="">` : `<div class="file-chip">${esc(item.file.name)}</div>`
-      }<button type="button" data-action="remove-file" data-index="${index}" aria-label="حذف ${esc(item.file.name)}">×</button></figure>`,
-    )
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${state.files
+    .map((item, index) => `<span class="fq-file">${item.preview ? `<img src="${item.preview}" alt="">` : `<span>PDF</span>`}
+      <button type="button" data-action="remove-file" data-index="${index}" aria-label="حذف ${esc(item.file.name)}">${ic("x", 12)}</button></span>`)
     .join("")}</div>`;
 }
 
-function icon(name, { size = 20, flip = false, label = "" } = {}) {
-  return `<img class="${flip ? "flip" : ""}" src="/icons/${name}.svg" width="${size}" height="${size}" alt="${esc(label)}">`;
-}
 
 function initial(name) {
   const text = String(name || "ف").trim();
   return esc(text.charAt(0) || "ف");
 }
 
+// ---------------------------------------------------------------------------
+// Figma design system (file sL4tnA7DTWWhhbarV0ttZZ, canvas "01 — FARQ SCREENS")
+// Feather icon set, inlined so an icon inherits the colour of the text beside it.
+// ---------------------------------------------------------------------------
+const ICONS = {
+  home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  "file-text": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>',
+  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  back: '<polyline points="9 18 15 12 9 6"/>',
+  forward: '<polyline points="15 18 9 12 15 6"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  "map-pin": '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  paperclip: '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/>',
+  send: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/>',
+  award: '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  "check-circle": '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+  folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+  "alert-triangle": '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>',
+  "help-circle": '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  "message-square": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  "message-circle": '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/>',
+  tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><path d="M7 7h.01"/>',
+  "arrow-down": '<path d="M12 5v14"/><polyline points="19 12 12 19 5 12"/>',
+  "more-vertical": '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/>',
+  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  "eye-off": '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>',
+  "log-out": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><path d="M21 12H9"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  "credit-card": '<rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+};
+
+function ic(name, size = 20) {
+  const body = ICONS[name];
+  if (!body) return "";
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+// The screen header: deep green, the title in the middle, the brand accent line under it.
+// `back` is the data-action for the chevron; in Arabic it points right, at the start of the line.
+function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = false, auth = false } = {}) {
+  const lead = back
+    ? `<button class="fq-ibtn" type="button" data-action="${esc(back)}" aria-label="رجوع">${ic("back", 18)}</button>`
+    : start || "<span></span>";
+  const tail = end || (mark ? `<span class="fq-head-mark">فرق</span>` : `<button class="fq-lang" type="button" data-action="lang" aria-label="اللغة">${ic("globe", 16)}<span>العربية</span></button>`);
+  return `<header class="fq-head${auth ? " is-auth" : ""}">
+    <div class="fq-head-row">${lead}
+      <div class="fq-head-mid"><h1 class="fq-head-title"><bdi>${esc(title)}</bdi></h1>${sub ? `<p class="fq-head-sub"><bdi>${esc(sub)}</bdi></p>` : ""}</div>
+      ${tail}</div>
+    <div class="fq-head-accent"></div>
+  </header>`;
+}
+
+// Bottom navigation, exactly the three tabs the final screens carry.
+function fqNav(active) {
+  const tab = (key, action, label, glyph) => {
+    const badge = key === "requests" && state.unreadTotal ? `<span class="fq-tab-badge" data-unread-total>${formatCount(state.unreadTotal)}</span>` : "";
+    return `<button class="fq-tab${active === key ? " on" : ""}" type="button" data-action="${action}" aria-current="${active === key ? "page" : "false"}">
+      <span class="fq-tab-wrap">${ic(glyph, 24)}${badge}</span><span>${label}</span></button>`;
+  };
+  return `<nav class="fq-nav" aria-label="التنقل"><div class="fq-nav-row">
+    ${tab("home", "home", "الرئيسية", "home")}
+    ${tab("requests", "requests", "طلباتي", "file-text")}
+    ${tab("account", "account", "حسابي", "user")}
+  </div></nav>`;
+}
+
+function fqScreen(head, body, nav = "") {
+  return `${head}${body}${nav}`;
+}
+
 // One bar on every screen: the mark with «فرق تسعير» (or the screen's title), and the back arrow
 // pointing right, the way back reads in Arabic.
-function appBar({ title = "", subtitle = "", back = "", end = "", avatar = "", lined = true } = {}) {
-  const start = back
-    ? `<button class="icon-btn back" type="button" data-action="${esc(back)}" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`
-    : `<span class="slot" aria-hidden="true"></span>`;
-  const mark = avatar || `<span class="bar-mark" aria-hidden="true"><img src="/brand/logo-square.png" alt="" width="30" height="30"></span>`;
-  const heading = title
-    ? `<span class="bar-title"><strong><bdi>${esc(title)}</bdi></strong>${subtitle ? `<span><bdi>${esc(subtitle)}</bdi></span>` : ""}</span>`
-    : `<a class="bar-title brand" href="/" data-action="home" aria-label="فرق تسعير"><span class="wordmark"><img src="/brand/farq-wordmark-dark.svg" alt="فرق" width="52" height="24"><span>تسعير</span></span></a>`;
-  return `<header class="top-bar${lined ? " lined" : ""}">${start}<span class="bar-body">${mark}${heading}</span>${end || '<span class="slot" aria-hidden="true"></span>'}</header>`;
-}
 
-function topBar(options = {}) {
-  return appBar(options);
-}
 
-function tabBar(active) {
-  return `<nav class="tab-bar" aria-label="التنقل">
-    <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
-    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests"><span class="tab-icon">${icon("briefcase")}<span class="unread-dot" data-unread-total ${state.unreadTotal ? "" : "hidden"} aria-label="فيه ردود جديدة"></span></span><span>طلباتي</span></button>
-    <button class="tab${active === "subscribe" ? " active" : ""}" type="button" data-action="subscribe">${icon("check-square")}<span>الاشتراك</span></button>
-  </nav>`;
-}
 
-function shell(body, { bare = false } = {}) {
-  if (bare) return `<main class="shell">${body}</main>`;
-  return `<main class="shell">${body}</main>`;
+function shell(body) {
+  return `<main class="fq">${body}</main>`;
 }
 
 // The reveal button sits beside the input, not inside its label, so one tap counts once.
-function field({ id, label, icon, attrs, after = "" }) {
-  return `<div class="field-line">
-    <label for="${id}">${esc(label)}</label>
-    <span class="input-wrap"><img class="input-icon" src="/icons/${icon}.svg" alt="" width="20" height="20"><input id="${id}" ${attrs}>${after}</span>
-  </div>`;
-}
 
+// AUTH01_Login_AR — node 19:74.
 function renderAuth() {
   const register = state.authMode === "register";
-  const reveal = state.showPassword ? "eye-off" : "eye";
-  return `${appBar()}
-  <section class="page auth">
-    <div class="auth-hero">
-      <span class="auth-glow" aria-hidden="true"></span>
-      <img class="auth-logo" src="/brand/logo-square.png" alt="" width="84" height="84">
+  const title = register ? "إنشاء حساب" : "تسجيل الدخول";
+  const sub = register ? "حساب واحد لكل طلباتك في فرق" : "ادخل إلى حسابك في فرق";
+  return `${fqHead({ title: "Farq", auth: true })}
+  <section class="fq-body" style="padding:24px 24px 32px">
+    <div class="fq-hero" style="background:var(--fq-app-bg)">
+      <span class="halo" aria-hidden="true" style="background:var(--fq-mint)"></span>
+      <h1 class="fq-h1" style="font-size:28px;font-weight:700">${esc(title)}</h1>
+      <p class="fq-lead">${esc(sub)}</p>
+      <p class="fq-small fq-muted" style="line-height:1.5">قارن الأسعار وتواصل مع البائعين فوراً.</p>
     </div>
-    <h1>${register ? "أنشئ حسابك" : "سجّل دخولك"}</h1>
-    <p class="lede">${register ? "حساب واحد تتابع فيه كل طلباتك ومحادثاتك مع البائعين." : "لازم تسجّل دخول عشان تطلب أسعار وتراسل البائعين."}</p>
-    <form id="auth-form" class="auth-card" novalidate>
-      ${register ? field({ id: "auth-name", label: "الاسم", icon: "user", attrs: 'name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="اسمك"' }) : ""}
-      ${field({ id: "auth-email", label: "البريد الإلكتروني", icon: "mail", attrs: 'name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required placeholder="name@example.com"' })}
-      ${field({
-        id: "auth-password",
-        label: "كلمة السر",
-        icon: "lock",
-        attrs: `name="password" type="${state.showPassword ? "text" : "password"}" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="${register ? "٨ أحرف أو أكثر" : ""}"`,
-        after: `<button class="reveal" type="button" data-action="toggle-password" aria-label="${state.showPassword ? "إخفاء كلمة السر" : "إظهار كلمة السر"}" aria-pressed="${state.showPassword}"><img src="/icons/${reveal}.svg" alt="" width="22" height="22"></button>`,
-      })}
-      ${state.authError ? `<p class="status warn" role="alert">${esc(state.authError)}</p>` : ""}
-      <button class="primary block tall" type="submit" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : register ? "إنشاء الحساب" : "دخول"}</button>
+    <form id="auth-form" class="fq-card" style="gap:16px;padding:24px;border-radius:var(--fq-r-input);box-shadow:var(--fq-shadow-form)" novalidate>
+      ${register
+        ? `<div class="fq-field"><label for="auth-name">الاسم</label>
+            <div class="fq-inp">${ic("user", 18)}<input id="auth-name" name="name" autocomplete="name" required minlength="2" maxlength="60" placeholder="اسمك"></div></div>`
+        : ""}
+      <div class="fq-field"><label for="auth-email">البريد الإلكتروني</label>
+        <div class="fq-inp">${ic("mail", 18)}<input id="auth-email" name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required placeholder="farq@example.com"></div></div>
+      <div class="fq-field"><label for="auth-password">كلمة المرور</label>
+        <div class="fq-inp">${ic("lock", 18)}<input id="auth-password" name="password" type="${state.showPassword ? "text" : "password"}" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="••••••••">
+          <button class="fq-eye" type="button" data-action="toggle-password" aria-label="${state.showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}" aria-pressed="${state.showPassword}">${ic(state.showPassword ? "eye-off" : "eye", 20)}</button></div>
+        ${register ? "" : `<div><button class="fq-link" type="button" data-action="forgot">ناسي الرقم السري؟</button></div>`}
+      </div>
+      ${state.authError ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.authError)}</p>` : ""}
     </form>
-    <p class="auth-switch">${register ? "عندك حساب؟" : "ما عندك حساب؟"} <button class="text-btn" type="button" data-action="auth-mode">${register ? "سجّل دخول" : "أنشئ حساب"}</button></p>
+    <div class="fq-actions" style="gap:20px;align-items:center">
+      <button class="fq-btn" type="submit" form="auth-form" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : title}</button>
+      <p class="fq-small" style="text-align:center">${register ? "عندك حساب؟" : "ليس لديك حساب؟"}
+        <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
+    </div>
+    <p class="fq-small" style="text-align:center;color:#9aafaa;font-size:12px;line-height:1.6;margin-top:auto">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" style="color:#18a66a;font-weight:600">الشروط والأحكام</a> و<a href="/privacy" style="color:#18a66a;font-weight:600">سياسة الخصوصية</a></p>
   </section>`;
 }
 
@@ -428,54 +553,57 @@ function showAuthError(message) {
   return null;
 }
 
+// M01_Home — node 27:10.
+const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر ٢٠٢٥ لون ابيض", "تركيب مكيف", "تلفزيون سامسونج ٦٥ بوصة"];
 function renderHome() {
-  const chips = ["سباك بالرياض", "كهربائي بجدة", "نقل عفش"];
-  return `${appBar()}
-  <section class="page home">
-    <h1>وش تبي نسعّر لك؟</h1>
-    <p class="lede">اكتب اللي تحتاجه وخلنا ندور لك</p>
-    <form class="composer" id="composer">
-      <div class="field">
-        <label class="sr" for="composer-query">وش تبي؟</label>
-        <textarea id="composer-query" name="query" placeholder="مثال: أبي سباك وأبي كهربائي بالرياض">${esc(state.query)}</textarea>
-      </div>
-      <div class="suggestions">
-        <span>اقتراحات سريعة</span>
-        <div class="chips">${chips.map((idea) => `<button type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
-      </div>
-      <button class="primary block" type="submit">ابحث</button>
+  const place = `<button class="fq-place" type="button" data-action="change-city">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
+  return `${fqHead({ title: "فرق Farq", start: place })}
+  <section class="fq-body">
+    <div class="fq-hero">
+      <span class="halo" aria-hidden="true"></span>
+      <h1>وش تبي نسعّر لك؟</h1>
+      <p>قل لنا وش تحتاج و ماعليك فرق بيجيب الفرق من عدت مصادر و في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
+    </div>
+    <form class="fq-card pad" id="composer" style="gap:10px">
+      <label class="sr" for="composer-query">وش تبي نسعّر لك؟</label>
+      <textarea id="composer-query" name="query" rows="2" placeholder="مثلاً: أبي سباك يوم السبت وكهربائي يركب 3 أفياش"
+        style="border:0;outline:none;resize:none;font:inherit;font-size:15px;line-height:1.7;color:var(--fq-text);background:none;width:100%">${esc(state.query)}</textarea>
+      <span style="color:var(--fq-muted)">${ic("edit", 20)}</span>
     </form>
+    <div class="fq-pills" style="gap:10px">${HOME_CHIPS.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+    <hr class="fq-line">
+    <button class="fq-btn" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
   </section>
-  ${tabBar("home")}`;
+  ${fqNav("home")}`;
 }
 
+// M04_SearchProgress — node 27:124.
+const SEARCH_STEPS = ["نفهم طلبك", "ندور على الخيارات المناسبة", "نرتب النتائج", "جهزنا لك الخيارات"];
 function renderSearching() {
-  const understood = [state.intent?.need, typeof state.intent?.location_city?.value === "string" ? cityLabel(state.intent.location_city.value) : state.city ? cityLabel(state.city) : ""]
-    .filter(Boolean)
-    .join(" · ");
-  return `${appBar()}
-  <section class="page searching" aria-live="polite">
-    <div class="pulse"><div class="pulse-mid"><div class="pulse-core">${icon("search-white", { size: 20 })}</div></div></div>
-    <div><h2>ندور لك...</h2><p class="lede">${esc(understood || "نبحث في أكثر من 2,000 جهة")}</p></div>
-    <div class="dots" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
-    <div class="original-card"><span>طلبك الأصلي</span><strong>${esc(state.query)}</strong></div>
+  const at = state.results.length ? 2 : state.intent ? 1 : 0;
+  const card = `<div class="fq-card" style="gap:12px"><div style="display:flex;align-items:center;gap:12px">
+      <span class="fq-skel" style="width:44px;height:44px;border-radius:50%"></span>
+      <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span></div>
+    <span class="fq-skel" style="height:14px;width:70%;border-radius:8px"></span>
+    <span class="fq-skel" style="height:22px;width:35%;border-radius:8px"></span></div>`;
+  return `${fqHead({ title: "ماعليك فرق بيجيب الفرق" })}
+  <section class="fq-body" aria-live="polite">
+    <div class="fq-steps">${SEARCH_STEPS.map((label, index) => {
+      const cls = index < at ? "done" : index === at ? "now" : "";
+      return `<div class="fq-step ${cls}"><span class="mark">${index < at ? ic("check", 14) : ""}</span><span>${esc(label)}</span></div>`;
+    }).join("")}</div>
+    <div style="display:flex;flex-direction:column;gap:12px">${card.repeat(3)}</div>
   </section>`;
 }
 
-function renderFacts() {
-  const items = facts(state.intent);
-  if (!items.length) return "";
-  const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : "";
-  const need = items.filter((item) => item !== city)[0] || state.intent?.need || state.query;
-  return `<div class="need-card">${city ? `<span class="loc">${esc(cityLabel(city))}</span>` : "<span></span>"}<div class="copy"><div class="glyph">${initial(need)}</div><div><strong>${esc(need)}</strong><em>فهمنا طلبك وجاهزين ندور</em></div></div></div>`;
-}
 
 function renderQuestion() {
   const question = state.clarification || "";
   const aboutCity = question.includes("مدينة");
-  return `<section class="section-head"><h1>${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</h1><p class="lede">${esc(question)}</p></section>
-    ${aboutCity ? cityChoices("answer") : ""}
-    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>`;
+  return `<div><h1 class="fq-h1">${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</h1><p class="fq-lead">${esc(question)}</p></div>
+    ${aboutCity
+      ? `<div class="fq-pills" style="gap:10px">${state.cities.map((city) => `<button class="fq-chip" type="button" data-action="answer" data-value="${esc(city.label)}" data-city="${esc(city.value)}">${esc(city.label)}</button>`).join("")}</div>`
+      : `<form id="answer" class="fq-card pad"><div class="fq-inp"><input name="value" placeholder="جوابك" autocomplete="off"></div><button class="fq-btn sm" type="submit">كمّل</button></form>`}`;
 }
 
 function snip(result) {
@@ -484,50 +612,60 @@ function snip(result) {
   return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
 }
 
+// M05_SearchResults result card — node 27:180.
 let newCardsInBatch = 0;
 function renderCard(result) {
   const key = resultKey(result);
-  // Cards that were already on screen must not flash again when the next batch lands.
   const fresh = state.seenCards && !state.seenCards.has(key);
   const animated = fresh && newCardsInBatch < 8;
   if (fresh) newCardsInBatch += 1;
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
-  const name = result.ad?.title || tidyName(seller.name) || "جهة";
+  const name = tidyName(seller.name) || result.ad?.title || "جهة";
   const price = money(result.ad?.price_amount);
-  const city = result.ad?.city || seller.city || "";
+  const where = cityLabel(result.ad?.city || seller.city || "");
   const blurb = snip(result);
-  const thumb = result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`;
-  return `<article class="vendor${selected ? " is-selected" : ""}${animated ? " is-new" : ""}"${animated ? ` style="animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ""}>
-    <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 14 }) : ""}</button>
-    <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
-      ${thumb}
-      <span class="vendor-copy">
-        <strong><bdi>${esc(name)}</bdi></strong>
-        <span class="vendor-meta">${seller.name ? `<bdi>${esc(tidyName(seller.name))}</bdi>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
-        ${blurb ? `<span class="snip">${esc(blurb)}</span>` : ""}
-        <span class="price${price ? "" : " on-ask"}">${esc(price || "السعر عند الطلب")}</span>
-      </span>
-    </button>
+  const photo = result.ad && imageSources(result.ad).length;
+  const avatar = photo
+    ? `<span class="fq-av" style="width:40px;height:40px;border-radius:20px;overflow:hidden"><img alt="" data-src="${esc(imageSources(result.ad).join("|"))}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>`
+    : `<span class="fq-av" style="width:40px;height:40px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:16px">${initial(name)}</span>`;
+  return `<article class="fq-card${animated ? " fq-in" : ""}"${animated ? ` style="animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ""}>
+    <div class="fq-row" style="align-items:flex-start">
+      <button class="fq-tick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? ic("check", 14) : ""}</button>
+      <button type="button" data-action="open" data-key="${esc(key)}" style="flex:1;min-width:0;display:flex;gap:12px;align-items:center;background:none;border:0;padding:0;font:inherit;text-align:start">
+        ${avatar}
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+          <strong style="font-size:17px;font-weight:700;color:var(--fq-text);display:flex;align-items:center;gap:6px">${ic("award", 14)}<bdi>${esc(name)}</bdi></strong>
+          ${where ? `<span class="fq-meta">${esc(where)}</span>` : ""}
+        </span>
+      </button>
+    </div>
+    ${blurb ? `<p class="fq-small" style="margin:0"><bdi>${esc(blurb)}</bdi></p>` : ""}
+    <div class="fq-row">${price
+      ? `<span class="fq-price" style="font-size:24px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>`
+      : `<span class="fq-meta">تواصل للحصول على سعر</span>`}</div>
   </article>`;
 }
 
+// M05_SearchResults — node 27:180.
 function renderFlow() {
   const asking = state.searchState === "CLARIFICATION_REQUIRED" || state.searchState === "LOCATION_AMBIGUOUS";
   const live = state.searching || (state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS"));
   const showEmpty = !asking && !state.partial && state.results.length === 0;
-  // The pulse is the first frame after «ابحث», not an empty list.
   if (live && !state.results.length && !asking) return renderSearching();
-  const need = state.intent?.need || facts(state.intent)[0] || state.query || "النتائج";
-  return `${appBar({ title: asking ? "" : "النتائج", back: "home" })}
-  <section class="page tight flow">
-    ${asking ? "" : `<div class="group-head"><span data-count="${state.results.length}">${formatCount(state.shownCount || state.results.length)} جهة مطابقة</span><strong><bdi>${esc(need)}</bdi></strong></div>`}
-    ${asking ? renderFacts() + renderQuestion() : ""}
-    <p class="status ${live ? "live" : ""}" aria-live="polite">${esc(showEmpty ? "" : state.notice)}</p>
-    ${showEmpty ? `<div class="empty"><h2>${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="text-btn" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${state.results.length ? `<div class="cards">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
-    ${dock()}
-  </section>`;
+  const count = state.selected.size;
+  const tabs = (state.needs || []).filter((item) => item.on).map((item) => item.name);
+  return `${fqHead({ title: "نتائج البحث", back: "back-understand" })}
+  <section class="fq-body tight">
+    ${asking ? renderQuestion() : ""}
+    ${tabs.length > 1 ? `<div class="fq-pills"><button class="fq-pill on" type="button">الكل</button>${tabs.map((name) => `<button class="fq-pill" type="button" data-action="filter-need" data-name="${esc(name)}">${esc(name)}</button>`).join("")}</div>` : ""}
+    ${asking ? "" : `<p class="fq-small" data-count="${state.results.length}" style="font-weight:600">تم العثور على ${formatCount(state.shownCount || state.results.length)} نتيجة</p>`}
+    ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
+    ${showEmpty ? `<div class="fq-body center" style="padding:24px 0"><div class="fq-blob warn">${ic("search", 48)}</div><h2 class="fq-h2">${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="fq-link" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
+    ${state.results.length ? `<div style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
+    ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة بـ ${formatCount(count)} ${count === 1 ? "خيار" : "خيارات"}</button></div>` : ""}
+  </section>
+  ${state.view === "detail" ? detailSheet() : ""}`;
 }
 
 function dock() {
@@ -547,57 +685,128 @@ function adStory(text) {
     .trim();
 }
 
-function renderDetail() {
+// M06_SupplierDetailSheet — node 85:279. A sheet over the results, not its own screen.
+function detailSheet() {
   const result = state.active;
-  if (!result) return renderFlow();
+  if (!result) return "";
   const seller = sellerOf(result);
+  const name = tidyName(seller.name) || result.ad?.title || "المورد";
   const gallery = state.gallery.length ? state.gallery : imageSources(result.ad);
-  const frames = gallery.length
-    ? gallery
-        .map((url) => {
-          const sources = [...new Set([url, ...imageSources(result.ad)])].join("|");
-          return `<div class="frame" data-frame><img alt="" data-src="${esc(sources)}" loading="lazy" decoding="async"></div>`;
-        })
-        .join("")
-    : `<div class="frame is-missing" data-frame></div>`;
   const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  return `${appBar({ title: "التفاصيل", back: "back-results" })}
-  <article class="page tight detail">
-    <div class="gallery" id="gallery">${frames}</div>
-    ${gallery.length > 1 ? `<div class="gallery-dots" id="gallery-dots">${gallery.map((_item, index) => `<span class="dot${index ? "" : " is-on"}"></span>`).join("")}</div>` : ""}
-    <h1 style="font-size:22px"><bdi>${esc(result.ad?.title || seller.name || "")}</bdi></h1>
-    <p class="price big">${esc(price || "السعر عند الطلب")}</p>
-    <p class="meta">${esc(place(result))}${seller.name ? ` · ` : ""}${seller.name ? `<bdi>${esc(tidyName(seller.name))}</bdi>` : ""}</p>
-    ${adStory(result.ad?.description) ? `<p class="story">${esc(adStory(result.ad.description))}</p>` : ""}
-    ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
-    <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
-    ${dock()}
-  </article>`;
-}
-
-function renderReview() {
-  const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: tidyName(sellerOf(result).name) || "بائع" }));
-  const city = customerCity();
-  const ready = state.selected.size > 0 && Boolean(city);
-  return `${appBar({ title: "طلب عرض سعر", back: "back-results" })}
-  <section class="page tight review">
-    <h1>جاهز نرسله؟</h1>
-    <p class="summary">${esc(state.query)}</p>
-    <ul class="who">${names.map((item) => `<li><bdi>${esc(item.name)}</bdi><button class="plain-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
-    ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="section-head"><h1 style="font-size:20px">في أي مدينة؟</h1></div>${cityChoices("pick-city")}`}
-    <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
-    <div class="attach-block">
-      <p class="optional">أرفق صورة أو ملف PDF (اختياري).</p>
-      <div class="composer-bar">
-        <label class="file-btn">${icon("camera")}<span>صورة</span><input type="file" accept="image/*" data-action="add-files"></label>
-        <label class="file-btn">${icon("paperclip")}<span>ملف PDF</span><input type="file" accept="application/pdf" data-action="add-files"></label>
+  const story = adStory(result.ad?.description);
+  return `<div class="fq-scrim" data-action="close-sheet">
+    <div class="fq-sheet" role="dialog" aria-label="${esc(name)}">
+      <span class="fq-grab" aria-hidden="true"></span>
+      <div class="fq-row" style="align-items:flex-start">
+        <span class="fq-av" style="width:56px;height:56px;border-radius:28px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:20px">${initial(name)}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;text-align:start">
+          <strong style="font-size:22px;font-weight:800"><bdi>${esc(name)}</bdi></strong>
+          <span class="fq-meta">${esc(place(result) || cityLabel(result.ad?.city || seller.city || ""))}</span>
+        </span>
+      </div>
+      <hr class="fq-line">
+      <h2 style="font-size:15px">عن المورد والخدمة</h2>
+      ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">ما فيه وصف إضافي من المورد.</p>`}
+      ${price ? `<div><span class="fq-price" style="font-size:32px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span><p class="fq-meta" style="margin:4px 0 0">قيمة العرض الإجمالية</p></div>` : ""}
+      ${gallery.length ? `<h2 style="font-size:15px">أعمال سابقة للمورد</h2>
+        <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
+          .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)
+          .join("")}</div>` : ""}
+      ${result.ad?.listing_state === "deleted" ? `<p class="fq-small" style="color:#b3402a">هذا الإعلان محذوف.</p>` : ""}
+      <div class="fq-actions">
+        <button class="fq-btn sm" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "تم اختياره" : "اختيار هذا المورد"}</button>
+        <button class="fq-btn quiet" type="button" data-action="close-sheet">إلغاء</button>
       </div>
     </div>
-    ${filePreview()}
-    ${state.notice ? `<p class="status warn" role="alert">${esc(state.notice)}</p>` : ""}
-    <button class="primary block" type="button" data-action="send" ${ready ? "" : "disabled"}>${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
+  </div>`;
+}
+
+// M07_SupplierSelection — node 27:279.
+function renderReview() {
+  const chosen = [...state.selected.entries()];
+  const city = customerCity();
+  const ready = chosen.length > 0 && Boolean(city) && !state.busy;
+  const extra = state.reviewExtra === true;
+  return `${fqHead({ title: "اختيار البائعين", back: "back-results" })}
+  <section class="fq-body tight">
+    <div><h1 class="fq-h2">اختر من تبي نطلب منهم سعر</h1>
+      <p class="fq-lead">${esc([state.query, cityLabel(city)].filter(Boolean).join(" · "))}</p></div>
+    <div><span class="fq-tag deep">تم اختيار ${formatCount(chosen.length)}</span></div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${chosen
+        .map(([key, result]) => {
+          const seller = sellerOf(result);
+          const name = tidyName(seller.name) || "بائع";
+          const price = money(result.ad?.price_amount);
+          return `<article class="fq-card">
+            <div class="fq-row" style="align-items:center">
+              <button class="fq-tick on" type="button" data-action="unselect" data-key="${esc(key)}" aria-pressed="true" aria-label="إزالة ${esc(name)}">${ic("check", 14)}</button>
+              <span style="flex:1;min-width:0;display:flex;align-items:center;gap:12px">
+                <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:18px">${initial(name)}</span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <strong style="font-size:17px;font-weight:700"><bdi>${esc(name)}</bdi></strong>
+                  <span class="fq-meta">${esc(cityLabel(result.ad?.city || seller.city || "") || "")}</span>
+                </span>
+              </span>
+            </div>
+            ${price ? `<div class="fq-pills"><span class="fq-tag">${esc(price)}</span></div>` : ""}
+          </article>`;
+        })
+        .join("")}
+    </div>
+    ${city ? "" : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">في أي مدينة؟</h2>
+      <div class="fq-pills" style="gap:10px">${state.cities.map((item) => `<button class="fq-chip" type="button" data-action="pick-city" data-city="${esc(item.value)}">${esc(item.label)}</button>`).join("")}</div></div>`}
+    <button class="fq-link" type="button" data-action="toggle-extra" aria-expanded="${extra}">${extra ? "إخفاء" : "إضافة"} ملاحظة أو مرفقات (اختياري)</button>
+    ${extra
+      ? `<div class="fq-card pad">
+          <div class="fq-field"><label for="note">ملاحظة</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="note" rows="2" placeholder="اختياري">${esc(state.note)}</textarea></div></div>
+          <div class="fq-pills">
+            <label class="fq-pill" style="display:inline-flex;align-items:center;gap:6px">${ic("camera", 16)}<span>صورة</span><input type="file" accept="image/*" data-action="add-files" hidden></label>
+            <label class="fq-pill" style="display:inline-flex;align-items:center;gap:6px">${ic("paperclip", 16)}<span>ملف PDF</span><input type="file" accept="application/pdf" data-action="add-files" hidden></label>
+          </div>
+          ${filePreview()}
+        </div>`
+      : ""}
+    ${state.notice ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.notice)}</p>` : ""}
+    <div class="fq-sticky"><button class="fq-btn" type="button" data-action="send" ${ready ? "" : "disabled"}>أرسل طلب التسعير</button></div>
+  </section>`;
+}
+
+// M09_SendingProcessing — node 85:338.
+function renderSending() {
+  const total = state.sendingTo || state.selected.size;
+  const steps = ["تم التحقق من تفاصيل البنود", "تحديد النطاق الجغرافي للموردين", "جاري الإرسال ومطابقة الأسعار"];
+  return `${fqHead({ title: "البحث مستمر" })}
+  <section class="fq-body center" aria-live="polite">
+    <div class="fq-ring spin" style="--p:70%"><span>فرق</span></div>
+    <div><h1 class="fq-h1">جاري إرسال طلبك...</h1>
+      <p class="fq-lead">يتم إرسال تفاصيل طلبك الآن لـ ${formatCount(total)} موردين معتمدين في ${esc(cityLabel(customerCity()) || "مدينتك")} للحصول على أفضل العروض.</p></div>
+    <div class="fq-steps" style="align-items:center">${steps
+      .map((label) => `<div class="fq-step" style="gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--fq-success)"></span><span>${esc(label)}</span></div>`)
+      .join("")}</div>
+    <p class="fq-meta" style="margin-top:auto">الرجاء عدم إغلاق التطبيق لضمان استقبال الردود السريعة</p>
+  </section>`;
+}
+
+// M10_RequestSent — node 27:374.
+function renderSent() {
+  const info = state.sentInfo || {};
+  return `${fqHead({ title: "تم الإرسال" })}
+  <section class="fq-body center">
+    <div class="fq-blob">${ic("check", 56)}</div>
+    <div><h1 class="fq-h1">تم إرسال طلبك!</h1>
+      <p class="fq-lead">أرسلنا طلب التسعير لـ ${formatCount(info.sellers || 0)} بائعين. راح يوصلك رد خلال دقائق قليلة.</p></div>
+    <div class="fq-card pad" style="width:100%">
+      <div class="fq-row"><span class="fq-meta">تم التواصل معهم</span><strong>${formatCount(info.sellers || 0)} بائعين</strong></div>
+      <div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong>${esc(info.need || state.query || "")}</strong></div>
+      <div class="fq-row"><span class="fq-meta">الرد المتوقع</span><strong>خلال دقائق</strong></div>
+    </div>
+    <div class="fq-actions" style="width:100%;margin-top:auto">
+      <button class="fq-btn" type="button" data-action="open-sent">طلباتي</button>
+      <button class="fq-btn ghost" type="button" data-action="home">العودة للرئيسية</button>
+    </div>
   </section>`;
 }
 
@@ -609,11 +818,13 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 function notifyBanner() {
   if (state.pushState === "on" || state.pushDismissed) return "";
   if (isIOS && !isStandalone) {
-    return `<div class="notify-banner"><div><strong>تبي تنبيه لما يردون عليك؟</strong><span>اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»، وافتح تسعير من هناك.</span></div><button type="button" data-action="dismiss-notify" aria-label="إغلاق">✕</button></div>`;
+    return `<div class="fq-banner"><span style="flex:1">تبي تنبيه لما يردون عليك؟ أضف تسعير للشاشة الرئيسية وافتحه من هناك.</span>
+      <button type="button" data-action="dismiss-notify" aria-label="إغلاق">✕</button></div>`;
   }
   if (!pushSupported || typeof Notification === "undefined" || Notification.permission === "denied") return "";
   if (Notification.permission === "granted" && state.pushState !== "off") return "";
-  return `<div class="notify-banner"><div><strong>تبي تنبيه لما يردون عليك؟</strong><span>يوصلك إشعار على جوالك أول ما يرد أي بائع.</span></div><button class="notify-on" type="button" data-action="enable-notify">فعّل التنبيهات</button></div>`;
+  return `<div class="fq-banner">${ic("bell", 16)}<span style="flex:1">تبي تنبيه لما يردون عليك؟</span>
+    <button type="button" data-action="enable-notify">تفعيل التنبيهات</button></div>`;
 }
 
 function urlKey(base64) {
@@ -646,7 +857,7 @@ function setUnread(requests) {
 
 // Keep the unread count fresh on every screen except the open conversation.
 async function refreshUnread() {
-  if (!state.token || state.view === "thread" || state.view === "seller" || document.visibilityState !== "visible") return;
+  if (!state.token || state.view === "thread" || state.view === "compare" || document.visibilityState !== "visible") return;
   try {
     const data = await api("/v1/requests", { quiet: true });
     const changed = JSON.stringify(data.requests || []) !== JSON.stringify(state.requests);
@@ -656,38 +867,71 @@ async function refreshUnread() {
   } catch (_error) {}
 }
 
+// R01_MyRequests / R01_MyRequests_Empty — nodes 37:9 and 37:119.
+function requestStatus(item) {
+  if (item.awarded_seller_id) return { tone: "ok", label: "✓ تم إختيار أفضل عرض" };
+  const replied = item.replied_count || 0;
+  const total = item.recipient_count || 0;
+  if (replied && replied >= total) return { tone: "warn", label: "● تم استقبال كل العروض" };
+  if (replied) return { tone: "ok", label: "وصلت بعض العروض" };
+  return { tone: "warn", label: "جاري استقبال العروض" };
+}
+
 function renderRequests() {
-  const account = `<button class="account-chip" type="button" data-action="sign-out">${state.account?.name ? `<bdi>${esc(state.account.name)}</bdi> · ` : ""}خروج</button>`;
-  const head = appBar({ end: account });
+  const head = fqHead({ title: "طلباتي", mark: true });
   if (state.requestsLoading && !state.requests.length) {
-    const row = `<div class="chat-row"><span class="chat-avatar skeleton"></span><span class="chat-main"><span class="skeleton line" style="width:55%"></span><span class="skeleton line" style="width:80%"></span><span class="skeleton line" style="width:35%"></span></span></div>`;
-    return `${head}<section class="page soft requests-page" aria-busy="true"><div class="chat-list">${row.repeat(4)}</div></section>${tabBar("requests")}`;
+    const row = `<div class="fq-card"><span class="fq-skel" style="height:20px;width:45%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:80%;border-radius:8px"></span></div>`;
+    return `${head}<section class="fq-body" aria-busy="true">${row.repeat(4)}</section>${fqNav("requests")}`;
   }
   if (!state.requests.length) {
-    return `${head}<section class="page soft requests-page"><p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>${tabBar("requests")}`;
+    return `${head}<section class="fq-body center">
+      <div class="fq-blob" style="width:110px;height:110px">${ic("clipboard", 48)}</div>
+      <div><h1 class="fq-h2">ما عندك طلبات حتى الآن</h1><p class="fq-lead">اكتب اللي تحتاجه وخل فرق يجمع لك العروض.</p></div>
+      <button class="fq-btn" type="button" data-action="home" style="margin-top:8px">إنشاء أول طلب</button>
+    </section>${fqNav("requests")}`;
   }
-  // A chat list, like WhatsApp's: each request is a conversation you tap to open.
-  return `${head}<section class="page soft requests-page">${notifyBanner()}<div class="chat-list">${state.requests
-    .map((item) => {
-      const need = item.need || item.original_text;
-      const names = (item.seller_names || []).map(tidyName);
-      const one = names.length === 1;
-      const when = ago(item.last_message_at || item.created_at);
-      const unread = item.unread_count || 0;
-      const price = item.latest_offer_amount != null ? `أرخص سعر ${money(item.latest_offer_amount)}` : item.replied_count ? `ردّ ${formatCount(item.replied_count)} من ${formatCount(item.recipient_count || 0)}` : `بانتظار الرد من ${formatCount(item.recipient_count || 0)}`;
-      const avatar = `<span class="chat-avatar" style="background:${SELLER_COLORS[0]}">${initial(names[0] || need)}</span>${one ? "" : `<span class="chat-count">${formatCount(names.length || item.recipient_count || 0)}</span>`}`;
-      return `<button class="chat-row${unread ? " has-unread" : ""}" type="button" data-action="thread" data-id="${esc(item.id)}" aria-label="افتح محادثة ${esc(need)}">
-        ${avatar}
-        <span class="chat-main">
-          <span class="chat-top"><strong><bdi>${esc(one ? names[0] : need)}</bdi></strong><time>${esc(when || "")}</time></span>
-          <span class="chat-sub"><bdi>${esc(one ? need : names.join("، "))}</bdi></span>
-          <span class="chat-bottom"><span class="chat-last">${esc(item.last_message || "")}</span>${unread ? `<span class="unread-count">${formatCount(unread)}</span>` : ""}</span>
-          <span class="chat-price">${esc(price)}</span>
-        </span>
-        <span class="chat-open" aria-hidden="true">${icon("chevron", { size: 18 })}</span>
-      </button>`;
-    })
-    .join("")}</div></section>${tabBar("requests")}`;
+  const filter = state.requestFilter || "all";
+  const match = (item) => {
+    if (filter === "awarded") return Boolean(item.awarded_seller_id);
+    if (filter === "active") return !item.awarded_seller_id;
+    if (filter === "done") return Boolean(item.awarded_seller_id);
+    return true;
+  };
+  const pill = (key, label) => `<button class="fq-pill${filter === key ? " on" : ""}" type="button" data-action="req-filter" data-filter="${key}">${label}</button>`;
+  return `${head}<section class="fq-body tight">
+    ${notifyBanner()}
+    <div class="fq-row"><span class="fq-small" style="font-weight:600">تابع عروضك وطلباتك من مكان واحد</span>
+      <button class="fq-link" type="button" data-action="home" style="font-size:14px;font-weight:700">+ طلب جديد</button></div>
+    <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تمت الترسية")}${pill("done", "مكتملة")}</div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${state.requests.filter(match).map((item) => {
+        const need = item.need || item.original_text;
+        const status = requestStatus(item);
+        const unread = item.unread_count || 0;
+        const parts = [`${formatCount(item.recipient_count || 0)} موردًا`];
+        if (item.replied_count) parts.push(`${formatCount(item.replied_count)} عروض`);
+        else parts.push("لم تصل عروض بعد");
+        if (unread) parts.push(`${formatCount(unread)} رسائل جديدة`);
+        return `<button class="fq-card" type="button" data-action="thread" data-id="${esc(item.id)}" aria-label="افتح محادثة ${esc(need)}">
+          <div class="fq-row">
+            <span style="display:flex;align-items:center;gap:8px">
+              ${unread ? `<span style="width:6px;height:6px;border-radius:50%;background:var(--fq-success)"></span>` : ""}
+              <strong style="font-size:15px;font-weight:700"><bdi>${esc(need)}</bdi></strong>
+              <span class="fq-meta" style="font-size:11px;color:var(--fq-muted)">${esc(ago(item.last_message_at || item.created_at))}</span>
+            </span>
+            <span style="color:var(--fq-muted);display:grid;place-items:center">${ic("back", 16)}</span>
+          </div>
+          <div class="fq-row">
+            <span class="fq-tag ${status.tone}">${esc(status.label)}</span>
+            <span class="fq-meta">${esc(parts.join(" · "))}</span>
+          </div>
+          ${item.latest_offer_amount != null
+            ? `<hr class="fq-line"><div style="display:flex;justify-content:flex-start"><strong style="font-size:13px;color:var(--fq-deep-green)">أقل عرض ${esc(money(item.latest_offer_amount))}</strong></div>`
+            : ""}
+        </button>`;
+      }).join("")}
+    </div>
+  </section>${fqNav("requests")}`;
 }
 
 function snippet(text, size = 50) {
@@ -754,13 +998,31 @@ function sellerName(thread, sellerId) {
 // One colour per supplier, from the Farq token palette, handed out in the request's order so no two
 // suppliers in the same conversation share one.
 const SELLER_COLORS = ["#0B6A63", "#22577A", "#DC6E41", "#C7911E", "#248F5C", "#22162B", "#065656", "#BE5532"];
-function sellerColor(thread, sellerId) {
+// C01_UnifiedConversation — node 77:1092. Each supplier keeps one tone: avatar tint, name ink,
+// bubble tint and bubble edge. The first four are the tones drawn in Figma; the rest follow the
+// same recipe so a conversation with more than four suppliers never repeats one.
+const SELLER_TONES = [
+  { av: "#b2dfdb", ink: "#00796b", bub: "#f0f9f8", edge: "rgba(0,150,136,0.35)" },
+  { av: "#cfd8dc", ink: "#37474f", bub: "#f2f4f5", edge: "rgba(69,90,100,0.35)" },
+  { av: "#e8dcc8", ink: "#6d5b3e", bub: "#f6f4f1", edge: "rgba(161,136,100,0.35)" },
+  { av: "#d7cee0", ink: "#5c4a6e", bub: "#f5f3f7", edge: "rgba(120,100,140,0.35)" },
+  { av: "#cfe3f5", ink: "#2b5f8e", bub: "#f1f6fb", edge: "rgba(43,95,142,0.35)" },
+  { av: "#f5d9cf", ink: "#8e4b2f", bub: "#fbf3f0", edge: "rgba(142,75,47,0.35)" },
+  { av: "#d9e8cf", ink: "#4a6e34", bub: "#f4f8f1", edge: "rgba(74,110,52,0.35)" },
+  { av: "#f0dfc0", ink: "#7a5b1c", bub: "#faf6ec", edge: "rgba(122,91,28,0.35)" },
+];
+
+function sellerTone(thread, sellerId) {
   const ids = [...new Set((thread?.recipients || []).map((item) => item.seller_id))];
   const index = ids.indexOf(sellerId);
-  if (index >= 0) return SELLER_COLORS[index % SELLER_COLORS.length];
+  if (index >= 0) return SELLER_TONES[index % SELLER_TONES.length];
   let hash = 0;
   for (const char of String(sellerId || "")) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return SELLER_COLORS[hash % SELLER_COLORS.length];
+  return SELLER_TONES[hash % SELLER_TONES.length];
+}
+
+function sellerColor(thread, sellerId) {
+  return sellerTone(thread, sellerId).ink;
 }
 
 const TICK = {
@@ -812,34 +1074,45 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const body = esc(message.body || "").replace(/\n/g, "<br>");
   const media = mediaHtml(message.media);
   const quoted = message.reply_to ? byId.get(message.reply_to) : null;
+  const time = `<span class="fq-time">${esc(chatTime(message.created_at))}${mine ? deliveryTick(message) : ""}</span>`;
   const quote = quoted
-    ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#83F1B1"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
+    ? `<div class="fq-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#009f67"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
     : "";
-  const time = `<time>${esc(chatTime(message.created_at))}</time>`;
   if (mine) {
     const some = message.scope === "some_sellers" ? (message.deliveries || []).map((item) => sellerName(thread, item.seller_id)).join("، ") : "";
-    const only = group && message.scope === "single_seller" && message.seller_id ? `<div class="wa-to">إلى ${esc(sellerName(thread, message.seller_id))} فقط</div>` : group && some ? `<div class="wa-to">إلى ${esc(some)}</div>` : "";
-    const failed = message.delivery_state === "failed" ? `<div class="wa-to warn">ما وصلت الرسالة</div>` : "";
+    const only = message.scope === "single_seller" && message.seller_id ? sellerName(thread, message.seller_id) : some;
+    const badge = group && only
+      ? `<span class="fq-private">${ic("lock", 10)}خاص — إلى ${esc(only)}${message.scope === "single_seller" ? " فقط" : ""}</span>`
+      : "";
+    const failed = message.delivery_state === "failed" ? `<span class="fq-time" style="color:#b3402a">ما وصلت الرسالة</span>` : "";
     const progress = deliveryProgress(message);
-    return `<div class="wa-row out${first ? " first" : ""}"><div class="wa-bubble${media && !body ? " media-only" : ""}">${quote}${media}${body ? `<div class="wa-text">${body}</div>` : ""}${only}${failed}${progress ? `<div class="wa-to">${esc(progress)}</div>` : ""}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
+    return `<div class="fq-msg mine"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+      ${badge}
+      <div class="fq-mine-bub">${quote}${media}${body ? `<p>${body}</p>` : ""}${progress ? `<span class="fq-time">${esc(progress)}</span>` : ""}${failed}${time}</div>
+    </div></div>`;
   }
-  // A group chat: each supplier keeps his colour, his avatar and his name, and his price stands out.
-  const color = sellerColor(thread, message.seller_id);
+  const tone = sellerTone(thread, message.seller_id);
   const who = sellerName(thread, message.seller_id);
   const price = messagePrice(message);
   const cheapest = price != null && best != null && price === best;
   const won = thread.awarded_seller_id && thread.awarded_seller_id === message.seller_id;
-  const avatar = group ? `<span class="wa-avatar-sm"${first ? ` style="background:${color}"` : ""}>${first ? initial(who) : ""}</span>` : "";
-  const name = group && first
-    ? `<button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${color}"><bdi>${esc(who)}</bdi>${won ? `<span class="won-tag">الفائز</span>` : ""}</button>`
-    : "";
   const offer = price != null
-    ? `<div class="wa-offer${cheapest ? " is-cheapest" : ""}">
-        <span class="wa-offer-head">عرض سعر${cheapest ? `<span class="wa-cheapest">الأرخص</span>` : ""}</span>
-        <strong>${esc(money(price))}</strong>
-      </div>`
+    ? `<div class="fq-offer" style="color:${tone.ink}">
+        <div class="head">${cheapest ? `<span class="low">الأقل حاليًا</span>` : "<span></span>"}<span class="amount">${esc(money(price))}</span></div>
+        ${body ? `<p class="note">${body}</p>` : ""}
+      </div>
+      <div class="fq-offer-foot"><span class="fq-time">${esc(chatTime(message.created_at))}</span><span style="color:${tone.ink}">عرض السعر المقدم ⚡</span></div>`
     : "";
-  return `<div class="wa-row in${first ? " first" : ""}" style="--seller:${color}">${avatar}<div class="wa-bubble${price != null ? " has-offer" : ""}">${name}${quote}${offer}${media}${body ? `<div class="wa-text">${body}</div>` : ""}<span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
+  return `<div class="fq-msg">
+    <span class="fq-av" style="background:${tone.av};color:${tone.ink};visibility:${first ? "visible" : "hidden"}">${initial(who)}</span>
+    <div class="fq-grp">
+      ${first ? `<button class="fq-who" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${tone.ink};background:none;border:0;padding:0;font-family:inherit;text-align:start"><bdi>${esc(who)}</bdi>${won ? " ✓" : ""}</button>` : ""}
+      <div class="fq-bub" style="background:${tone.bub};border-inline-end-color:${tone.edge}">
+        ${quote}${offer || `${media}${body ? `<p>${body}</p>` : ""}${time}`}
+        <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">ردّ</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function waMessages(thread, messages, group) {
@@ -851,9 +1124,8 @@ function waMessages(thread, messages, group) {
   return messages
     .map((message) => {
       const day = chatDay(message.created_at);
-      const divider = day && day !== lastDay ? `<div class="wa-day"><span>${esc(day)}</span></div>` : "";
+      const divider = day && day !== lastDay ? `<div class="fq-sys">${esc(day)}</div>` : "";
       const sender = message.sender_role === "seller" ? `s:${message.seller_id}` : "me";
-      // Messages in a row from the same sender group together, the way WhatsApp stacks them.
       const first = Boolean(divider) || sender !== lastSender;
       lastDay = day || lastDay;
       lastSender = sender;
@@ -866,179 +1138,419 @@ function waMessages(thread, messages, group) {
 // with several it is the item's group chat. Sellers never see it: each has only their own Haraj
 // conversation, and every message here is routed to or synced from those.
 // The offers, side by side: sorted by price, each with the gap to the cheapest, and one tap to pick a winner.
-function compareSheet(thread, offers) {
-  const sorted = [...offers].sort((a, b) => a.total_price - b.total_price);
-  const cheapest = sorted[0]?.total_price ?? 0;
+// O01_CompareOffers — node 39:180. Its own screen, reached from the conversation.
+function renderCompare() {
+  const thread = state.thread;
+  if (!thread) return renderRequests();
+  const offers = (thread.offers || []).filter((item) => item.total_price != null).sort((a, b) => a.total_price - b.total_price);
+  const cheapest = offers[0]?.total_price ?? 0;
   const awarded = thread.awarded_seller_id;
-  return `<div class="compare" role="dialog" aria-label="مقارنة العروض">
-    <div class="compare-head">
-      <strong>مقارنة ${formatCount(sorted.length)} عروض</strong>
-      <button type="button" class="plain-btn" data-action="close-compare">إغلاق</button>
-    </div>
-    <ol class="compare-list">
-      ${sorted
-        .map((offer, index) => {
-          const gap = offer.total_price - cheapest;
-          const won = awarded && awarded === offer.seller_id;
-          return `<li class="compare-row${won ? " is-won" : ""}" style="--seller:${sellerColor(thread, offer.seller_id)}">
-            <span class="compare-rank">${formatCount(index + 1)}</span>
-            <span class="compare-who">
-              <bdi>${esc(sellerName(thread, offer.seller_id))}</bdi>
-              <span>${index === 0 ? "الأرخص" : `أغلى بـ ${esc(money(gap))}`}</span>
+  const chat = `<button class="fq-ibtn" type="button" data-action="all-sellers" aria-label="المحادثة">${ic("message-circle", 20)}</button>`;
+  return `${fqHead({ title: "قارن العروض", sub: `${formatCount(offers.length)} عروض · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat })}
+  <section class="fq-body tight">
+    ${offers.length ? "" : `<div class="fq-body center"><div class="fq-blob warn">${ic("tag", 48)}</div><h2 class="fq-h2">ما وصلت عروض بأسعار بعد</h2><p class="fq-lead">أول ما يرسل مورد سعرًا يظهر هنا للمقارنة.</p></div>`}
+    ${offers
+      .map((offer, index) => {
+        const won = awarded && awarded === offer.seller_id;
+        const gap = offer.total_price - cheapest;
+        return `<article class="fq-cmp-card${index === 0 ? " best" : ""}">
+          <div class="top">
+            <span class="amount">${esc(money(offer.total_price))}</span>
+            <span style="display:flex;align-items:center;gap:8px">
+              ${index === 0 ? `<span class="fq-tag deep">الأقل</span>` : ""}
+              ${won ? `<span class="fq-tag ok">الفائز</span>` : ""}
+              <span class="who"><bdi>${esc(sellerName(thread, offer.seller_id))}</bdi></span>
             </span>
-            <span class="compare-price">${esc(money(offer.total_price))}</span>
+          </div>
+          <hr class="fq-line">
+          <div class="fq-inc">
+            <span><span class="${index === 0 ? "y" : "n"}">${index === 0 ? "✓" : "•"}</span>${index === 0 ? "أقل عرض وصل" : `أغلى بـ ${esc(money(gap))} عن الأقل`}</span>
+            ${offer.currency ? `<span><span class="y">✓</span>العملة ${esc(offer.currency === "SAR" ? "ريال سعودي" : offer.currency)}</span>` : ""}
+            <span><span class="y">✓</span>وصل ${esc(ago(offer.created_at) || "")}</span>
+          </div>
+          <hr class="fq-line">
+          <div class="fq-cmp-actions">
             ${won
-              ? `<span class="compare-won">الفائز</span>`
-              : `<button class="compare-pick" type="button" data-action="award" data-seller="${esc(offer.seller_id)}" data-price="${esc(String(offer.total_price))}">اختر</button>`}
-          </li>`;
-        })
-        .join("")}
-    </ol>
-    ${awarded ? `<p class="compare-note">تقدر تغيّر الفائز في أي وقت.</p>` : `<p class="compare-note">لما تختار، نرسل للبائع إشعار قبول ونعلّم عرضه هنا.</p>`}
+              ? `<button class="fq-btn ghost" type="button" disabled>تمت الترسية</button>`
+              : `<button class="fq-btn" type="button" data-action="pick-winner" data-seller="${esc(offer.seller_id)}" data-price="${esc(String(offer.total_price))}">اختيار هذا العرض</button>`}
+            <button class="fq-btn ghost" type="button" data-action="seller-filter" data-seller="${esc(offer.seller_id)}">مراسلته</button>
+          </div>
+        </article>`;
+      })
+      .join("")}
+  </section>
+  ${state.awardPick ? awardSheet(thread, state.awardPick) : ""}`;
+}
+
+// A01_AwardConfirmation — node 37:243.
+function awardSheet(thread, pick) {
+  const who = sellerName(thread, pick.sellerId);
+  return `<div class="fq-scrim" data-action="cancel-award">
+    <div class="fq-sheet" role="dialog" aria-label="ترسية الطلب">
+      <span class="fq-grab" aria-hidden="true"></span>
+      <div><h2 style="font-size:24px">ترسية الطلب</h2><p class="fq-lead">راجع العرض قبل التأكيد</p></div>
+      <div class="fq-card flat" style="background:var(--fq-app-bg)">
+        <div class="fq-row"><span class="fq-price">${esc(money(pick.price))}</span><strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong></div>
+        <hr class="fq-line">
+        <div class="fq-row"><span class="fq-meta">${esc(thread.need || thread.original_text || "")}</span><span class="fq-meta">${esc(cityLabel(thread.city) || "")}</span></div>
+      </div>
+      <div class="fq-notice">بعد تأكيد الترسية سيتم اعتماد هذا العرض وإغلاق المنافسة على بقية الموردين.</div>
+      <div class="fq-actions">
+        <button class="fq-btn" type="button" data-action="confirm-award" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : `تأكيد الترسية على ${esc(who)}`}</button>
+        <button class="fq-btn quiet" type="button" data-action="cancel-award">رجوع</button>
+      </div>
+    </div>
   </div>`;
 }
 
-function pinnedBar(thread, offers, best, one) {
-  const awarded = thread.awarded_seller_id;
-  if (awarded) {
-    const won = offers.find((item) => item.seller_id === awarded) || (thread.offers || []).find((item) => item.seller_id === awarded);
-    return `<button class="wa-pinned is-won" type="button" data-action="${one ? "all-sellers" : "open-compare"}">
-      <span class="wa-pin won">الفائز</span><strong><bdi>${esc(sellerName(thread, awarded))}</bdi></strong>
-      ${won?.total_price != null ? `<span>${esc(money(won.total_price))}</span>` : ""}
-      ${one ? "" : `<span class="wa-pinned-go">غيّر</span>`}
-    </button>`;
-  }
-  if (!best) return "";
-  if (one) return `<div class="wa-pinned"><span class="wa-pin">عرضه</span><strong>${esc(money(best.total_price))}</strong></div>`;
-  return `<button class="wa-pinned" type="button" data-action="open-compare">
-    <span class="wa-pin">أرخص عرض</span><strong>${esc(money(best.total_price))}</strong>
-    <span><bdi>${esc(sellerName(thread, best.seller_id))}</bdi></span>
-    <span class="wa-pinned-go">قارن ${formatCount(offers.length)}</span>
-  </button>`;
+// A02_AwardSuccess — node 37:289.
+function renderAwarded() {
+  const thread = state.thread;
+  if (!thread) return renderRequests();
+  const who = sellerName(thread, thread.awarded_seller_id);
+  const offer = (thread.offers || []).find((item) => item.seller_id === thread.awarded_seller_id);
+  return `${fqHead({ title: "تمت الترسية", mark: true })}
+  <section class="fq-body center">
+    <div class="fq-blob">${ic("check", 56)}</div>
+    <div><h1 class="fq-h1">تمت الترسية!</h1><p class="fq-lead">تم اعتماد هذا العرض وأرسلنا للمورد إشعار القبول.</p></div>
+    <div class="fq-card pad" style="width:100%;align-items:center;text-align:center">
+      <strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong>
+      ${offer?.total_price != null ? `<span class="fq-price">${esc(money(offer.total_price))}</span>` : ""}
+    </div>
+    <div class="fq-actions" style="width:100%;margin-top:auto">
+      <button class="fq-btn" type="button" data-action="winner-chat">متابعة المحادثة</button>
+      <button class="fq-btn ghost" type="button" data-action="open-compare">عرض تفاصيل العرض</button>
+    </div>
+  </section>
+  ${fqNav("requests")}`;
 }
 
+// The offers summary above the conversation — node 33:159 (C02 underlay, offers-section).
+function offersBar(thread, offers) {
+  if (!offers.length) return "";
+  const sorted = [...offers].sort((a, b) => a.total_price - b.total_price);
+  const low = sorted[0].total_price;
+  const high = sorted[sorted.length - 1].total_price;
+  const top = sorted.slice(0, 3);
+  return `<div class="fq-offers-bar">
+    <div class="fq-row">
+      <button class="fq-pill on" type="button" data-action="open-compare">قارن العروض</button>
+      <span class="fq-small"><b>${formatCount(sorted.length)} عرضًا</b>${sorted.length > 1 ? ` <span class="fq-meta">· من ${esc(money(low))} إلى ${esc(money(high))}</span>` : ""}</span>
+    </div>
+    ${top
+      .map((offer, index) => `<div class="mini"><span>${esc(money(offer.total_price))}</span>
+        <span style="display:flex;align-items:center;gap:6px"><bdi>${esc(sellerName(thread, offer.seller_id))}</bdi>${index === 0 ? `<span class="fq-tag deep">الأقل</span>` : ""}</span></div>`)
+      .join("")}
+    ${sorted.length > 3 ? `<button class="fq-link" type="button" data-action="open-compare">عرض جميع العروض (${formatCount(sorted.length)})</button>` : ""}
+  </div>`;
+}
+
+// C02_RecipientPicker — node 33:159. Figma draws radio dots; Taseer keeps the multi-select the
+// customer asked for, so «الكل» ticks everyone and each row toggles on its own.
+function recipientSheet(thread) {
+  const recipients = thread.recipients || [];
+  const picked = state.picked || new Set();
+  const all = picked.size === recipients.length;
+  const priceOf = (id) => (thread.offers || []).find((item) => item.seller_id === id)?.total_price;
+  const row = (on, avatar, name, sub, action, data) =>
+    `<button class="fq-recipient" type="button" data-action="${action}" ${data} role="checkbox" aria-checked="${on}">
+      <span style="display:flex;align-items:center;gap:12px;min-width:0">
+        ${avatar}
+        <span style="display:flex;flex-direction:column;gap:2px;text-align:start;min-width:0">
+          <strong style="font-size:15px;font-weight:600"><bdi>${esc(name)}</bdi></strong>
+          ${sub ? `<span class="fq-meta">${esc(sub)}</span>` : ""}
+        </span>
+      </span>
+      <span class="fq-radio${on ? " on" : ""}" aria-hidden="true"></span>
+    </button>`;
+  return `<div class="fq-scrim" data-action="close-picker">
+    <div class="fq-sheet" role="dialog" aria-label="إرسال إلى">
+      <span class="fq-grab" aria-hidden="true"></span>
+      <div class="fq-row"><h2>إرسال إلى:</h2>
+        <button class="fq-link" type="button" data-action="pick-none" ${picked.size ? "" : "disabled"}>إزالة الكل</button></div>
+      <div style="display:flex;flex-direction:column">
+        ${row(all, `<span class="fq-av" style="background:var(--fq-mint);color:var(--fq-deep-green)">${ic("users", 18)}</span>`, `الكل (${formatCount(recipients.length)} مورد)`, "", "pick-all", "")}
+        ${recipients
+          .map((item) => {
+            const tone = sellerTone(thread, item.seller_id);
+            const price = priceOf(item.seller_id);
+            const name = sellerName(thread, item.seller_id);
+            return row(
+              picked.has(item.seller_id),
+              `<span class="fq-av" style="background:${tone.av};color:${tone.ink}">${initial(name)}</span>`,
+              name,
+              price != null ? money(price) : "",
+              "toggle-recipient",
+              `data-seller="${esc(item.seller_id)}"`,
+            );
+          })
+          .join("")}
+      </div>
+      <button class="fq-btn sm" type="button" data-action="close-picker">تم</button>
+    </div>
+  </div>`;
+}
+
+// C03_AttachmentFlow — node 85:378.
+function attachSheet() {
+  const option = (glyph, label, accept, capture) =>
+    `<label class="fq-attach-opt">${ic(glyph, 24)}<span>${esc(label)}</span>
+      <input type="file" accept="${accept}" ${capture} multiple data-action="chat-files" hidden></label>`;
+  return `<div class="fq-scrim" data-action="close-attach">
+    <div class="fq-sheet" role="dialog" aria-label="إرفاق ملف">
+      <span class="fq-grab" aria-hidden="true"></span>
+      <h2>إرفاق ملف</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        ${option("image", "معرض الصور", "image/*", "")}
+        ${option("camera", "الكاميرا", "image/*", 'capture="environment"')}
+        ${option("file-text", "ملف PDF", "application/pdf", "")}
+        ${option("folder", "مستند", "application/pdf,image/*", "")}
+      </div>
+      ${state.chatFiles.length
+        ? `<div><p class="fq-small" style="font-weight:600">الملفات المحددة</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${state.chatFiles
+              .map((item, index) => `<span class="fq-file">${item.preview ? `<img src="${item.preview}" alt="">` : `<span>PDF</span>`}
+                <button type="button" data-action="remove-chat-file" data-index="${index}" aria-label="إزالة">${ic("x", 12)}</button></span>`)
+              .join("")}</div></div>`
+        : ""}
+      <button class="fq-btn sm" type="button" data-action="close-attach" ${state.chatFiles.length ? "" : "disabled"}>إرسال المرفقات</button>
+    </div>
+  </div>`;
+}
+
+// C01_UnifiedConversation (node 77:1092) and, once a winner is picked, C04_PostAwardChat (node 37:372).
 function renderThread() {
   const thread = state.thread;
   if (!thread) {
     const known = state.requests.find((item) => item.id === state.pendingThread);
-    const names = known?.seller_names || [];
-    const title = names.length === 1 ? names[0] : known?.need || known?.original_text || "المحادثة";
-    return `<div class="wa-screen">
-      ${appBar({ title, subtitle: "نحمّل المحادثة…", back: "requests", avatar: `<span class="bar-avatar${names.length === 1 ? "" : " group"}"${names.length === 1 ? ` style="background:${SELLER_COLORS[0]}"` : ""}>${names.length === 1 ? initial(title) : formatCount(names.length || 0)}</span>` })}
-      <section class="wa-wall" aria-busy="true">
-        <div class="wa-row out"><div class="wa-bubble skeleton" style="width:58%;height:78px"></div></div>
-        <div class="wa-row in"><div class="wa-bubble skeleton" style="width:66%;height:64px"></div></div>
-        <div class="wa-row in"><div class="wa-bubble skeleton" style="width:44%;height:52px"></div></div>
-      </section>
-    </div>`;
+    const title = known?.need || known?.original_text || "المحادثة";
+    return `${fqHead({ title, sub: "نحمّل المحادثة…", back: "requests" })}
+      <section class="fq-chat" aria-busy="true">
+        <div class="fq-msg mine"><div class="fq-skel" style="width:58%;height:70px;border-radius:18px"></div></div>
+        <div class="fq-msg"><div class="fq-skel" style="width:66%;height:62px;border-radius:18px"></div></div>
+        <div class="fq-msg"><div class="fq-skel" style="width:44%;height:52px;border-radius:18px"></div></div>
+      </section>`;
   }
   const recipients = thread.recipients || [];
+  const awarded = thread.awarded_seller_id || "";
   const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
   const group = !one;
-  const namesOf = (items) => items.map((item) => sellerName(thread, item.seller_id));
+  const privateWinner = Boolean(awarded) && one === awarded;
   const messages = (thread.messages || []).filter(
     (message) => !one || message.seller_id === one || (message.deliveries || []).some((item) => item.seller_id === one),
   );
-  const offers = (thread.offers || []).filter((item) => item.total_price != null && (!one || item.seller_id === one));
-  const best = [...offers].sort((a, b) => a.total_price - b.total_price)[0];
-  const title = one ? sellerName(thread, one) : thread.need || thread.original_text || "المحادثة";
-  const status = one ? thread.need || thread.original_text || "" : namesOf(recipients).join("، ");
+  const allOffers = (thread.offers || []).filter((item) => item.total_price != null);
+  const offers = allOffers.filter((item) => !one || item.seller_id === one);
+  const best = [...allOffers].sort((a, b) => a.total_price - b.total_price)[0];
+  const need = thread.need || thread.original_text || "المحادثة";
+  const title = one ? sellerName(thread, one) : need;
+  const sub = one
+    ? [need, offers[0]?.total_price != null ? money(offers[0].total_price) : ""].filter(Boolean).join(" · ")
+    : [best ? `${sellerName(thread, best.seller_id)} · ${money(best.total_price)}` : "", allOffers.length ? `${formatCount(allOffers.length)} عروض` : `${formatCount(recipients.length)} موردًا`]
+        .filter(Boolean)
+        .join(" — ");
   const backAction = state.activeSeller && recipients.length > 1 ? "all-sellers" : "requests";
-  const avatar = one
-    ? `<span class="wa-avatar" style="background:${sellerColor(thread, one)}">${initial(title)}</span>`
-    : `<span class="wa-avatar group">${formatCount(recipients.length)}</span>`;
-  const notice = group
-    ? `رسالتك توصل لكل الجهات (${formatCount(recipients.length)}). «ردّ» أو @الاسم توصل له بس.`
-    : `محادثتك مع ${sellerName(thread, one)}. رسايلك توصل له بس.`;
-  const target = state.replyTo;
-  // Who this message goes to: everyone ticked by default; untick anyone before sending.
-  const pickable = group && !target;
-  if (pickable && (!state.picked || state.pickedFor !== thread.id)) {
+  const menu = `<button class="fq-ibtn" type="button" data-action="thread-menu" aria-label="خيارات">${ic("more-vertical", 18)}</button>`;
+
+  // Who the next message goes to: everyone by default, any subset via C02.
+  if (group && (!state.picked || state.pickedFor !== thread.id)) {
     state.picked = new Set(recipients.map((item) => item.seller_id));
     state.pickedFor = thread.id;
   }
-  const picked = pickable ? recipients.filter((item) => state.picked.has(item.seller_id)) : [];
-  const open = state.pickerOpen !== false;
-  const picker = pickable
-    ? `<div class="wa-recipients" role="group" aria-label="المستلمين">
-        <div class="wa-recipients-head">
-          <button type="button" class="wa-recipients-toggle" data-action="toggle-picker" aria-expanded="${open}">
-            <span>إلى ${picked.length === recipients.length ? "الكل" : `${formatCount(picked.length)} من ${formatCount(recipients.length)}`}</span>
-            <span class="wa-caret${open ? " is-open" : ""}" aria-hidden="true">${icon("chevron", { size: 14 })}</span>
-          </button>
-          <span class="wa-recipients-actions">
-            <button type="button" class="text-btn" data-action="pick-all" ${picked.length === recipients.length ? "disabled" : ""}>تحديد الكل</button>
-            <button type="button" class="text-btn" data-action="pick-none" ${picked.length ? "" : "disabled"}>إزالة الكل</button>
-          </span>
-        </div>
-        ${open
-          ? `<ul class="wa-recipient-list">${recipients
-              .map((item) => {
-                const on = state.picked.has(item.seller_id);
-                return `<li><button type="button" class="wa-recipient${on ? " is-on" : ""}" style="--seller:${sellerColor(thread, item.seller_id)}" data-action="toggle-recipient" data-seller="${esc(item.seller_id)}" role="checkbox" aria-checked="${on}">
-                  <span class="wa-check" aria-hidden="true">${on ? "✓" : ""}</span>
-                  <span class="wa-recipient-name"><bdi>${esc(sellerName(thread, item.seller_id))}</bdi></span>
-                </button></li>`;
-              })
-              .join("")}</ul>`
-          : ""}
+  const picked = group ? recipients.filter((item) => state.picked.has(item.seller_id)) : [];
+  const target = state.replyTo;
+  const nonePicked = group && !target && !picked.length;
+  const toLabel = target
+    ? `ردّ على ${target.name}`
+    : one
+      ? `إلى ${sellerName(thread, one)}`
+      : picked.length === recipients.length
+        ? `إلى الكل (${formatCount(recipients.length)} مورد)`
+        : picked.length
+          ? `إلى ${picked.length === 1 ? sellerName(thread, picked[0].seller_id) : `${formatCount(picked.length)} موردين`}`
+          : "ما اخترت أحد";
+  const placeholder = target ? `ردّ على ${target.name}` : group && picked.length === recipients.length ? "اكتب رسالة للجميع..." : "اكتب رسالتك...";
+
+  const pills = group
+    ? `<div class="fq-filters">
+        <button class="fq-fpill all${state.activeSeller ? "" : " on"}" type="button" data-action="all-sellers">الكل</button>
+        ${recipients
+          .map((item) => {
+            const tone = sellerTone(thread, item.seller_id);
+            return `<button class="fq-fpill" type="button" data-action="seller-filter" data-seller="${esc(item.seller_id)}">
+              <span class="dot" style="background:${tone.ink}"></span><bdi>${esc(sellerName(thread, item.seller_id))}</bdi></button>`;
+          })
+          .join("")}
       </div>`
     : "";
-  const files = state.chatFiles.length
-    ? `<div class="wa-files">${state.chatFiles
-        .map(
-          (item, index) => `<div class="wa-file-chip">${item.preview ? `<img src="${item.preview}" alt="">` : `<span class="wa-file-icon">PDF</span>`}<span>${esc(snippet(item.name, 18))}</span><button type="button" data-action="remove-chat-file" data-index="${index}" aria-label="إزالة">✕</button></div>`,
-        )
-        .join("")}</div>`
-    : "";
-  const nonePicked = pickable && !picked.length;
-  const placeholder = target ? `ردّ على ${target.name}` : !group ? "اكتب رسالة" : picked.length === recipients.length ? "اكتب رسالة للكل" : picked.length ? `اكتب رسالة لـ ${picked.length === 1 ? sellerName(thread, picked[0].seller_id) : `${formatCount(picked.length)} بائعين`}` : "اختر بائع واحد على الأقل";
-  const headAvatar = one
-    ? `<span class="bar-avatar" style="background:${sellerColor(thread, one)}">${initial(title)}</span>`
-    : `<span class="bar-avatar group">${formatCount(recipients.length)}</span>`;
-  return `<div class="wa-screen">
-    ${appBar({ title, subtitle: status, back: backAction, avatar: headAvatar })}
-    ${pinnedBar(thread, offers, best, one)}
-    ${state.compareOpen && !one ? compareSheet(thread, offers) : ""}
-    <section class="wa-wall" id="chat-wall">
-      <div class="wa-system">${esc(notice)}</div>
-      ${waMessages(thread, messages, group) || `<div class="wa-system">بانتظار الرد.</div>`}
-      <div class="wa-system subtle">${esc(thread.last_synced_at ? `آخر تحديث ${ago(thread.last_synced_at)}` : "بانتظار أول تحديث")}</div>
-    </section>
-    <div class="wa-dock">
-      ${target ? `<div class="wa-replying" style="--who:${sellerColor(state.thread, target.sellerId)}"><div><strong>${esc(target.name)}</strong><span>${esc(snippet(target.body, 60))}</span></div><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
-      ${state.notice ? `<div class="wa-notice" role="alert">${esc(state.notice)}<button type="button" data-action="clear-notice" aria-label="إغلاق">✕</button></div>` : ""}
-      ${picker}
-      <div class="mention-list" id="mention-list" hidden></div>
-      ${files}
-      <form class="wa-compose" id="user-reply">
-        <div class="wa-field">
-          <input name="body" placeholder="${esc(placeholder)}" autocomplete="off" ${nonePicked ? "disabled" : ""}>
-          <label class="wa-attach" aria-label="أرفق صورة أو ملف PDF">${icon("paperclip")}<input type="file" accept="image/*,application/pdf" multiple data-action="chat-files"></label>
+
+  const awardedHead = privateWinner
+    ? `<div class="fq-offers-bar">
+        <div class="fq-row">
+          <strong style="font-size:17px;color:var(--fq-deep-green)">${esc(offers[0]?.total_price != null ? money(offers[0].total_price) : "")}</strong>
+          <span style="display:flex;align-items:center;gap:8px"><span class="fq-tag ok">محادثة خاصة</span><strong><bdi>${esc(sellerName(thread, awarded))}</bdi></strong></span>
         </div>
-        <button class="wa-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? '<span class="wa-spinner" aria-hidden="true"></span>' : icon("send", { size: 20 })}</button>
+        <hr class="fq-line">
+        <button class="fq-link" type="button" data-action="open-compare">عرض تفاصيل العرض</button>
+      </div>`
+    : "";
+
+  return `${fqHead({ title, sub, back: backAction, end: menu })}
+    ${awardedHead || offersBar(thread, allOffers)}
+    ${pills}
+    <section class="fq-chat" id="chat-wall">
+      <div class="fq-sys">${esc(group ? `رسالتك توصل لكل الموردين (${formatCount(recipients.length)}). اختر مستلمًا لترسل له وحده.` : privateWinner ? `✓ محادثة خاصة مع ${sellerName(thread, awarded)}` : `محادثتك مع ${sellerName(thread, one)}`)}</div>
+      ${waMessages(thread, messages, group) || `<div class="fq-sys">بانتظار الرد.</div>`}
+    </section>
+    <div>
+      ${state.notice ? `<div class="fq-target" style="background:#fdeee9;color:#b3402a" role="alert">${esc(state.notice)}<button type="button" data-action="clear-notice" aria-label="إغلاق">${ic("x", 14)}</button></div>` : ""}
+      ${target
+        ? `<div class="fq-target" style="--who:${sellerColor(thread, target.sellerId)}">${ic("message-square", 14)}<bdi>${esc(target.name)}: ${esc(snippet(target.body, 40))}</bdi><button type="button" data-action="cancel-reply">إلغاء</button></div>`
+        : privateWinner
+          ? `<div class="fq-target">${ic("lock", 14)}<span>قناة تواصل مغلقة 1:1 مع ${esc(sellerName(thread, awarded))}</span></div>`
+          : `<div class="fq-target">${ic("users", 14)}<span>${esc(toLabel)}</span>${group ? `<button type="button" data-action="open-picker">تغيير</button>` : ""}</div>`}
+      ${state.chatFiles.length
+        ? `<div style="display:flex;gap:8px;padding:8px 16px;background:var(--fq-surface);border-top:1px solid var(--fq-line);overflow-x:auto">${state.chatFiles
+            .map((item, index) => `<span class="fq-file">${item.preview ? `<img src="${item.preview}" alt="">` : `<span>PDF</span>`}
+              <button type="button" data-action="remove-chat-file" data-index="${index}" aria-label="إزالة">${ic("x", 12)}</button></span>`)
+            .join("")}</div>`
+        : ""}
+      <div class="mention-list" id="mention-list" hidden></div>
+      <form class="fq-composer" id="user-reply">
+        <button class="fq-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? `<span class="fq-ring spin" style="width:18px;height:18px;--p:60%"></span>` : ic("send", 18)}</button>
+        <div class="fq-inputg">
+          <button class="fq-iconbtn" type="button" data-action="open-attach" aria-label="إرفاق">${ic("paperclip", 20)}</button>
+          <textarea name="body" rows="1" placeholder="${esc(placeholder)}" ${nonePicked ? "disabled" : ""}></textarea>
+          <button class="fq-iconbtn" type="button" data-action="emoji" aria-label="رموز">${ic("smile", 20)}</button>
+        </div>
       </form>
     </div>
-  </div>`;
+    ${fqNav("requests")}
+    ${state.pickerOpen ? recipientSheet(thread) : ""}
+    ${state.attachOpen ? attachSheet() : ""}`;
 }
 
-function renderSeller() {
-  const seller = state.seller;
-  if (!seller) return `<section class="page"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
-  const options = seller.recipients || [];
-  const partner = tidyName(options[0]?.seller_name) || "الجهة";
-  return `${appBar({ title: partner, subtitle: [seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "), avatar: `<span class="bar-avatar" style="background:${SELLER_COLORS[0]}">${initial(partner)}</span>` })}
-    <section class="page soft">
-    ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
-    <div class="thread"><p class="day">اليوم</p>${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
-    <form id="seller-reply">
-      ${options.length > 1 ? `<select name="seller_id">${options.map((item) => `<option value="${esc(item.seller_id)}">${esc(item.seller_name)}</option>`).join("")}</select>` : `<input type="hidden" name="seller_id" value="${esc(options[0]?.seller_id || "")}">`}
-      <input name="amount" inputmode="decimal" placeholder="السعر، إذا عندك" autocomplete="off">
-      <textarea name="body" rows="2" placeholder="اكتب رسالة..."></textarea>
-      <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
-    </form>
-    ${state.notice ? `<p class="status">${esc(state.notice)}</p>` : ""}
-    </section>`;
+// AC01_Account — node 85:438.
+function renderAccount() {
+  const name = state.account?.name || "حسابي";
+  const email = state.account?.email || "";
+  const plan = state.subStatus?.status === "active" ? state.subStatus?.subscription?.plan || "" : "";
+  const item = (label, action, badge = "") =>
+    `<button class="fq-item" type="button" data-action="${action}">
+      <span class="lead">${esc(label)}${badge ? `<span class="fq-tag deep">${esc(badge)}</span>` : ""}</span>${ic("back", 16)}</button>`;
+  return `${fqHead({ title: "حسابي" })}
+  <section class="fq-body">
+    <div class="fq-profile">
+      <span class="pic">${initial(name)}</span>
+      <span><b><bdi>${esc(name)}</bdi></b><span dir="ltr">${esc(email)}</span></span>
+    </div>
+    <div class="fq-list">
+      ${item("بياناتي", "profile")}
+      ${item("اشتراكي", "subscribe", plan ? planName(plan) : trialLabel())}
+      ${item("الإشعارات", "notifications")}
+      ${item("إعدادات الإشعارات", "notify-settings")}
+      ${item("الدعم والمساعدة", "support")}
+      ${item("سياسة الخصوصية", "privacy")}
+      ${item("الشروط والأحكام", "terms")}
+      ${item("تسجيل الخروج", "sign-out")}
+    </div>
+    <p class="fq-meta" style="text-align:center">الإصدار 1.0.0</p>
+  </section>
+  ${fqNav("account")}`;
+}
+
+function planName(code) {
+  return state.subPlans.find((item) => item.code === code)?.name_ar || code;
+}
+
+function trialLabel() {
+  const used = state.usage?.items_used ?? state.requests.length;
+  return `التجربة المجانية · ${formatCount(Math.max(0, TRIAL_ITEMS - used))} بند متبقٍ`;
+}
+
+// N01_NotificationCenter — node 85:4.
+const NOTE_KINDS = {
+  offer: { glyph: "tag", title: "عرض جديد" },
+  lower: { glyph: "arrow-down", title: "عرض أقل" },
+  message: { glyph: "message-square", title: "رسالة جديدة" },
+  award: { glyph: "check-circle", title: "تمت الترسية" },
+  question: { glyph: "help-circle", title: "سؤال من مورد" },
+};
+
+function renderNotifications() {
+  const list = state.notifications || [];
+  const markAll = `<button class="fq-lang" type="button" data-action="read-all" style="font-size:12px">تحديد الكل كمقروء</button>`;
+  if (!list.length) {
+    return `${fqHead({ title: "الإشعارات", start: markAll, mark: true })}
+    <section class="fq-body center">
+      <div class="fq-blob">${ic("bell", 48)}</div>
+      <div><h1 class="fq-h2">ما فيه إشعارات بعد</h1><p class="fq-lead">أول ما يوصل عرض أو رسالة، تلقاه هنا.</p></div>
+    </section>${fqNav("account")}`;
+  }
+  const groups = [["اليوم", list.filter((item) => chatDay(item.at) === "اليوم")], ["أمس", list.filter((item) => chatDay(item.at) === "أمس")], ["أقدم", list.filter((item) => !["اليوم", "أمس"].includes(chatDay(item.at)))]];
+  return `${fqHead({ title: "الإشعارات", start: markAll, mark: true })}
+  <section class="fq-body">
+    ${groups
+      .filter(([, items]) => items.length)
+      .map(([label, items]) => `<div style="display:flex;flex-direction:column;gap:12px">
+        <p class="fq-sec-title">${esc(label)}</p>
+        ${items
+          .map((note) => {
+            const kind = NOTE_KINDS[note.kind] || NOTE_KINDS.message;
+            return `<button class="fq-note" type="button" data-action="thread" data-id="${esc(note.request_id || "")}">
+              <span class="ic">${ic(kind.glyph, 18)}</span>
+              <span class="mid"><span class="kind">${esc(kind.title)} <em>· ${esc(note.need || "")}</em></span>
+                <span class="txt">${esc(note.text || "")}</span></span>
+              <span class="when">${note.unread ? `<span class="unread"></span>` : ""}${esc(ago(note.at))}</span>
+            </button>`;
+          })
+          .join("")}
+      </div>`)
+      .join("")}
+  </section>
+  ${fqNav("account")}`;
+}
+
+// N03_NotificationSettings — node 85:145.
+const NOTIFY_ROWS = [
+  ["messages", "رسائل الموردين", "تنبيه فوري عند وصول رسالة جديدة في المحادثة"],
+  ["offers", "عروض جديدة", "تنبيه عند تقديم مورد لعرض سعر جديد لطلبك"],
+  ["lower", "عرض أقل", "تنبيه فوري عند وصول عرض سعر أقل من العروض الحالية"],
+  ["updates", "تحديثات الطلب", "ترسية الطلب، إغلاق الطلب، أو تحديث حالته الرسمية"],
+  ["billing", "الاشتراك والاستخدام", "تذكير بحد الاستخدام الشهري وتجديد باقة العضوية"],
+];
+
+function renderNotifySettings() {
+  const prefs = state.notifyPrefs || {};
+  return `${fqHead({ title: "إعدادات الإشعارات", back: "account" })}
+  <section class="fq-body tight" style="gap:0;padding:0">
+    ${NOTIFY_ROWS.map(([key, title, desc]) => {
+      const on = prefs[key] !== false;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+          <strong style="font-size:15px;font-weight:600">${esc(title)}</strong>
+          <span class="fq-meta" style="font-size:12px;line-height:1.5">${esc(desc)}</span>
+        </span>
+        <button class="fq-switch${on ? " on" : ""}" type="button" data-action="notify-toggle" data-key="${key}" role="switch" aria-checked="${on}" aria-label="${esc(title)}"><span></span></button>
+      </div>`;
+    }).join("")}
+  </section>
+  ${fqNav("account")}`;
+}
+
+// N02_PushPermission — node 85:101. A modal over whatever screen asked for it.
+function pushPrompt() {
+  return `<div class="fq-scrim" style="align-items:center" data-action="dismiss-notify">
+    <div class="fq-sheet" style="border-radius:var(--fq-r-sheet);max-width:326px;margin:0 24px;text-align:center;align-items:center;padding:24px">
+      <span class="fq-blob" style="width:64px;height:64px">${ic("bell", 28)}</span>
+      <h2>تبغى نبلغك أول ما توصلك عروض؟</h2>
+      <p class="fq-lead">نرسل لك تنبيه فوري عند وصول رسائل جديدة أو عروض أسعار منافسة على طلباتك.</p>
+      <div class="fq-actions" style="width:100%">
+        <button class="fq-btn" type="button" data-action="enable-notify">تفعيل التنبيهات</button>
+        <button class="fq-btn quiet" type="button" data-action="dismiss-notify">لاحقًا</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function subStatusBanner() {
@@ -1060,74 +1572,285 @@ function planPeriod(days) {
   return `${formatCount(days)} يوم`;
 }
 
-function renderPlanCard(plan) {
-  const chosen = state.subActivePlan === plan.code;
-  const formId = `moyasar-form-${plan.code}`;
-  return `<div class="plan-card${plan.is_placeholder_price ? " is-placeholder" : ""}">
-    <h2 class="plan-name">${esc(plan.name_ar)}</h2>
-    ${plan.is_placeholder_price ? `<p class="plan-note">سعر تجريبي مؤقت لاختبار الدفع - ليس السعر النهائي.</p>` : ""}
-    <div class="plan-price"><strong>${esc(money(plan.price_amount / 100))}</strong><span>/ ${esc(planPeriod(plan.duration_days))}</span></div>
-    <ul class="plan-features">${(plan.features || []).map((item) => `<li>${esc(item)}</li>`).join("")}</ul>
-    ${
-      chosen
-        ? `<div class="pay-actions" id="pay-actions" data-plan="${esc(plan.code)}">
-            ${state.subBusy ? `<p class="lede">نجهّز الدفع…</p>` : `<div id="${formId}"></div><div id="applepay-slot-${esc(plan.code)}"></div>`}
-          </div>
-          ${state.subError ? `<p class="pay-error">${esc(state.subError)}</p><button class="ghost-btn block" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}`
-        : `<button class="primary block" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اشترك بهذه الخطة</button>`
-    }
+
+// Subscription + free trial. The free trial's rules (50 items, 6 suppliers per item) are counted
+// in the client; the server does not enforce them yet.
+const TRIAL_ITEMS = 50;
+const TRIAL_SELLERS = 6;
+
+function trialUsed() {
+  return state.usage?.items_used ?? state.requests.length;
+}
+
+function isSubscribed() {
+  return state.subStatus?.status === "active";
+}
+
+function planCard(plan, { popular = false } = {}) {
+  const price = plan.price_amount != null ? money(plan.price_amount / 100) : "XX ر.س";
+  return `<article class="fq-plan${popular ? " pop" : ""}">
+    <div class="fq-row">
+      <span>${popular ? `<span class="badge">الأكثر طلبًا</span>` : ""}</span>
+      <span class="name">${esc(plan.name_ar)}</span>
+    </div>
+    <div class="fq-row"><span></span><span><span class="amount">${esc(String(price).replace(" ر.س", ""))} ر.س</span> <span class="per">/ ${esc(planPeriod(plan.duration_days))}يًا</span></span></div>
+    ${plan.description_ar ? `<p class="desc">${esc(plan.description_ar)}</p>` : ""}
+    ${(plan.features || []).length ? `<div class="fq-feats">${plan.features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
+    <button class="fq-btn sm${popular ? "" : " ghost"}" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اختيار ${esc(plan.name_ar)}</button>
+  </article>`;
+}
+
+function usageCard({ title, badge, badgeTone = "ok", price, per, used, limit, foot, warn = false }) {
+  const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  return `<div class="fq-plan">
+    <div class="fq-row"><span class="fq-tag ${badgeTone}">${esc(badge)}</span><span class="name">${esc(title)}</span></div>
+    <div class="fq-row"><span></span><span><span class="amount">${esc(price)}</span> <span class="per">${esc(per)}</span></span></div>
+    <div class="fq-usage">
+      <div class="fq-row"><span class="fq-small" style="font-weight:600">${formatCount(used)} من ${formatCount(limit)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
+      <div class="fq-track${warn ? " warn" : ""}"><span style="width:${pct}%"></span></div>
+      <p class="fq-meta" style="margin:0">${esc(foot)}</p>
+    </div>
   </div>`;
 }
 
 function renderSubscribe() {
-  const active = state.subStatus?.status === "active";
-  return `${appBar({ title: "الاشتراك" })}
-  <section class="page tight subscribe-page">
-    <div class="section-head"><h1>اشترك في فرق تسعير</h1><p class="lede">افتح كل المزايا المدفوعة بخطة واحدة بسيطة.</p></div>
-    ${subStatusBanner()}
-    ${!active && !state.subActivePlan && state.subError ? `<p class="pay-error">${esc(state.subError)}</p>` : ""}
-    ${active ? "" : state.subPlans.length ? state.subPlans.map(renderPlanCard).join("") : `<p class="lede">لا توجد خطط متاحة حالياً.</p>`}
+  const view = state.subView || (isSubscribed() ? "my-plan" : "my-plan");
+  const plans = state.subPlans || [];
+  const popularIndex = plans.length > 1 ? 1 : 0;
+
+  // SUB04_PaymentProcessing — node 60:161.
+  if (view === "paying") {
+    return `<section class="fq-body center">
+      <div class="fq-ring spin" style="--p:35%"><span>${ic("credit-card", 24)}</span></div>
+      <div><h1 class="fq-h1">جاري تفعيل اشتراكك...</h1><p class="fq-lead">لا تغلق الصفحة، نجهز لك تجربة البحث الآن.</p></div>
+    </section>`;
+  }
+
+  // SUB05_PaymentSuccess / FT11_SubscriptionActivated — nodes 60:179 and 64:1114.
+  if (view === "paid") {
+    return `${fqHead({ title: "تم التفعيل", mark: true })}
+    <section class="fq-body center">
+      <div class="fq-blob">${ic("check", 56)}</div>
+      <div><h1 class="fq-h1">تم تفعيل اشتراكك</h1>
+        <p class="fq-lead">باقة: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p>
+        <span class="fq-tag ok" style="font-size:13px">نشط الآن</span></div>
+      <div class="fq-actions" style="width:100%;margin-top:auto">
+        ${state.resumeAfterPay ? `<button class="fq-btn" type="button" data-action="resume-request">إكمال إرسال الطلب</button>` : ""}
+        <button class="fq-btn${state.resumeAfterPay ? " ghost" : ""}" type="button" data-action="my-plan">تم</button>
+      </div>
+    </section>`;
+  }
+
+  // SUB06_PaymentFailed — node 60:214.
+  if (view === "failed") {
+    return `${fqHead({ title: "تعذر الدفع", mark: true })}
+    <section class="fq-body center">
+      <div class="fq-blob warn">${ic("alert-triangle", 48)}</div>
+      <div><h1 class="fq-h1">تعذر إكمال الدفع</h1>
+        <p class="fq-lead">${esc(state.subError || "لم يتم خصم قيمة الاشتراك. يرجى مراجعة تفاصيل حسابك أو المحاولة مرة أخرى.")}</p></div>
+      <div class="fq-actions" style="width:100%;margin-top:auto">
+        <button class="fq-btn" type="button" data-action="retry-payment">إعادة المحاولة</button>
+        <button class="fq-btn ghost" type="button" data-action="my-plan">رجوع</button>
+      </div>
+    </section>`;
+  }
+
+  // SUB12_ResumeRequest / FT12 — nodes 62:278 and 64:1148.
+  if (view === "resume") {
+    return `${fqHead({ title: "تأكيد التفعيل", mark: true })}
+    <section class="fq-body center">
+      <div class="fq-blob">${ic("check", 56)}</div>
+      <div><h1 class="fq-h1">تم تفعيل اشتراكك بنجاح!</h1>
+        <p class="fq-lead">الباقة الحالية: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p></div>
+      <div class="fq-card pad" style="width:100%;align-items:center;text-align:center">
+        <div class="fq-ring spin" style="width:48px;height:48px;--p:40%"><span style="width:36px;height:36px"></span></div>
+        <p class="fq-small" style="font-weight:600">جاري إكمال إرسال طلبك تلقائياً...</p>
+        <p class="fq-meta">يتم الآن إرسال طلب التسعير إلى الموردين المحددين مسبقاً.</p>
+      </div>
+    </section>`;
+  }
+
+  // SUB01_SubscriptionGate / FT08_SubscriptionRequired — nodes 60:10 and 64:956.
+  if (view === "gate") {
+    const exhausted = trialUsed() >= TRIAL_ITEMS;
+    return `${fqHead({ title: exhausted ? "اشترك للمتابعة" : "اشترك معنا", back: "back-gate", mark: true })}
+    <section class="fq-body">
+      <div class="fq-hero"><span class="halo" aria-hidden="true"></span>
+        <h1 style="font-size:22px">${exhausted ? "أكملت التجربة المجانية!" : "باقي خطوة وحدة بس!"}</h1>
+        <p>${exhausted ? "اختر الباقة المناسبة لمواصلة استخدام فرق وإرسال طلباتك مباشرة." : "اختر الباقة المناسبة، وبعد التفعيل نكمل إرسال طلبك مباشرة للموردين المحددين."}</p></div>
+      <div class="fq-feats">
+        ${["طلبك ومواصفاته محفوظة بالكامل", "الموردون الذين اخترتهم محفوظون", "لن تحتاج تبدأ كتابة طلبك من جديد"]
+          .map((line) => `<span class="fq-feat"><span class="fq-tag ok" style="border-radius:50%;width:24px;height:24px;justify-content:center">✓</span>${esc(line)}</span>`)
+          .join("")}
+      </div>
+      <div class="fq-actions" style="margin-top:auto">
+        <button class="fq-btn" type="button" data-action="show-plans">عرض الباقات</button>
+        <button class="fq-btn ghost" type="button" data-action="back-gate">ليس الآن</button>
+      </div>
+    </section>`;
+  }
+
+  // SUB09_LimitReached / FT07_TrialExhausted — nodes 62:134 and 64:919.
+  if (view === "limit") {
+    const trial = !isSubscribed();
+    return `${fqHead({ title: trial ? "انتهت التجربة" : "تجاوزت الحد المسموح", back: "back-gate", mark: true })}
+    <section class="fq-body center">
+      <div class="fq-blob warn">${ic("alert-triangle", 48)}</div>
+      <div><h1 class="fq-h1">${trial ? "استخدمت التجربة المجانية" : "عذرًا، استهلكت كامل رصيد البنود"}</h1>
+        <p class="fq-lead">${formatCount(TRIAL_ITEMS)} من ${formatCount(TRIAL_ITEMS)} بند</p>
+        <span class="fq-tag deep" style="font-size:13px">طلبك الأخير محفوظ ولن يضيع</span></div>
+      <div class="fq-actions" style="width:100%;margin-top:auto">
+        <button class="fq-btn" type="button" data-action="show-plans">عرض الباقات</button>
+        <button class="fq-btn ghost" type="button" data-action="back-gate">رجوع</button>
+      </div>
+    </section>`;
+  }
+
+  // SUB02_Plans / FT09_PlansWithTrial — nodes 60:54 and 64:1001.
+  if (view === "plans" || view === "upgrade") {
+    const upgrade = view === "upgrade";
+    return `${fqHead({ title: upgrade ? "ترقية الباقة" : "الباقات", back: "my-plan", mark: true })}
+    <section class="fq-body tight">
+      <div><h1 class="fq-h1">${upgrade ? "اختر الترقية المناسبة" : "اختر اللي يناسب استخدامك"}</h1>
+        <p class="fq-lead">اشتراك شهري، وتقدر تبدأ بالباقة المناسبة لك وتعدلها بأي وقت.</p></div>
+      ${isSubscribed()
+        ? ""
+        : `<article class="fq-plan">
+            <div class="fq-row"><span class="fq-tag ok">مفعلة حالياً</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
+            <div class="fq-row"><span class="per">ابدأ بدون بطاقة</span><span class="amount">0 ر.س</span></div>
+            <p class="desc">✓ ${formatCount(TRIAL_ITEMS)} بند تسعير • ✓ حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند</p>
+          </article>
+          <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
+      ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
+      ${plans.length ? plans.map((plan, index) => planCard(plan, { popular: index === popularIndex })).join("") : `<p class="fq-lead">لا توجد باقات متاحة حالياً.</p>`}
+    </section>`;
+  }
+
+  // SUB03_PlanReview / SUB11_ApplePayConfirm / FT10 — nodes 60:109, 62:229, 64:1063.
+  if (view === "review") {
+    const plan = plans.find((item) => item.code === state.subActivePlan);
+    if (!plan) return renderSubscribe.call(null);
+    return `${fqHead({ title: "مراجعة الاشتراك", back: "show-plans", mark: true })}
+    <section class="fq-body">
+      <div><h1 class="fq-h1">راجع اشتراكك</h1><p class="fq-lead">المعلومات المحددة وتفاصيل خطة الدفع.</p></div>
+      <div class="fq-card pad">
+        <div class="fq-row"><strong style="font-size:18px">${esc(plan.name_ar)}</strong><span class="fq-meta">الباقة المختارة</span></div>
+        <div class="fq-row"><strong>${esc(money(plan.price_amount / 100))} / ${esc(planPeriod(plan.duration_days))}يًا</strong><span class="fq-meta">قيمة الاشتراك</span></div>
+        ${(plan.features || []).length ? `<hr class="fq-line"><div class="fq-feats">${plan.features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
+        ${plan.is_placeholder_price ? `<p class="fq-meta">سعر تجريبي مؤقت لاختبار الدفع — ليس السعر النهائي.</p>` : ""}
+      </div>
+      <div><p class="fq-sec-title">طريقة الدفع</p>
+        <div class="fq-card pad" style="margin-top:8px">
+          ${state.subBusy ? `<p class="fq-lead">نجهّز الدفع…</p>` : `<div id="moyasar-form-${esc(plan.code)}"></div>`}
+          ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p><button class="fq-btn ghost sm" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}
+        </div></div>
+      <button class="fq-btn ghost" type="button" data-action="show-plans" style="margin-top:auto">تغيير الباقة</button>
+    </section>`;
+  }
+
+  // SUB07_CurrentPlan / SUB08_NearLimit / FT01–FT06 — nodes 62:16, 62:73, 64:325…64:835.
+  const used = trialUsed();
+  const subscribed = isSubscribed();
+  const plan = subscribed ? plans.find((item) => item.code === state.subStatus?.subscription?.plan) : null;
+  const limit = subscribed ? Number(plan?.features_limit || 250) : TRIAL_ITEMS;
+  const left = Math.max(0, limit - used);
+  const near = left <= Math.max(2, Math.round(limit * 0.2));
+  const banner = near
+    ? `<div class="fq-banner">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${formatCount(left)} بند ${subscribed ? "هذا الشهر" : "في التجربة المجانية"}.</span>
+        <button type="button" data-action="${subscribed ? "upgrade" : "show-plans"}">${subscribed ? "ترقية الآن" : "عرض الباقات"}</button></div>`
+    : "";
+  return `${fqHead({ title: "حسابي", back: "account", mark: true })}
+  ${banner}
+  <section class="fq-body tight">
+    ${subscribed
+      ? usageCard({ title: `الباقة الحالية: ${planName(state.subStatus?.subscription?.plan || "")}`, badge: near ? "قارب على الانتهاء" : "نشطة", badgeTone: near ? "warn" : "ok", price: plan ? money(plan.price_amount / 100) : "", per: "/ شهريًا", used, limit, foot: near ? `المتبقي ${formatCount(left)} بند فقط لتفادي توقف الخدمة` : `المتبقي ${formatCount(left)} بند هذا الشهر`, warn: near })
+      : usageCard({ title: "التجربة المجانية", badge: near ? "شارفت على الانتهاء" : "مفعلة", badgeTone: near ? "warn" : "ok", price: "0 ر.س", per: "/ ابدأ بدون بطاقة", used, limit, foot: `المتبقي ${formatCount(left)} بند`, warn: near })}
+    ${subscribed
+      ? `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
+          <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>
+          <button class="fq-btn sm" type="button" data-action="upgrade">ترقية الاشتراك</button></div>`
+      : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">مزايا الفترة التجريبية:</h2>
+          <div class="fq-feats">${[`حتى ${formatCount(TRIAL_ITEMS)} بند تسعير`, `حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
+            .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
+            .join("")}</div></div>
+        <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند مجاناً.</p>
+        <div class="fq-sticky">
+          ${near
+            ? `<button class="fq-btn warn" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
+            : `<button class="fq-btn" type="button" disabled>تجربتك مفعلة</button>`}
+          <p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
+        </div>`}
   </section>
-  ${tabBar("subscribe")}`;
+  ${fqNav("account")}`;
 }
+
+const VIEWS = {
+  home: renderHome,
+  "city-ask": renderCityAsk,
+  understand: renderUnderstand,
+  flow: renderFlow,
+  detail: renderFlow,
+  review: renderReview,
+  sending: renderSending,
+  sent: renderSent,
+  requests: renderRequests,
+  thread: renderThread,
+  compare: renderCompare,
+  awarded: renderAwarded,
+  account: renderAccount,
+  notifications: renderNotifications,
+  "notify-settings": renderNotifySettings,
+  subscribe: renderSubscribe,
+  auth: renderAuth,
+};
 
 let lastView = "";
 function render() {
   clearInterval(poll);
-  const view = {
-    home: renderHome,
-    flow: renderFlow,
-    detail: renderDetail,
-    review: renderReview,
-    requests: renderRequests,
-    thread: renderThread,
-    seller: renderSeller,
-    subscribe: renderSubscribe,
-    auth: renderAuth,
-    "city-ask": renderCityAsk,
-  }[state.view] || renderHome;
+  const view = VIEWS[state.view] || renderHome;
   const focused = document.activeElement?.id;
   const keepScroll = state.view === "flow" && lastView === "flow" ? window.scrollY : null;
-  const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
-  const stick = state.view === "thread" && (state.stickChat || nearBottom);
-  app.innerHTML = shell(view());
-  if (state.view !== lastView) {
-    app.firstElementChild?.classList.add("view-enter");
-    lastView = state.view;
-  }
+  const wall = document.getElementById("chat-wall");
+  const stick = state.view === "thread" && (state.stickChat || !wall || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 140);
+  app.innerHTML = shell(`${view()}${state.pushAsk ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
+  document.body.classList.toggle("fq-web", window.innerWidth >= 900);
+  if (state.view !== lastView) lastView = state.view;
   bindImages(app);
   bindGallery(app);
   bindCounter(app);
+  bindGrow(app);
   if (state.view === "flow" && state.seenCards) for (const result of state.results) state.seenCards.add(resultKey(result));
   if (focused) document.getElementById(focused)?.focus();
   if (keepScroll) window.scrollTo(0, keepScroll);
   if (stick) {
     state.stickChat = false;
-    window.scrollTo(0, document.documentElement.scrollHeight);
+    const next = document.getElementById("chat-wall");
+    if (next) next.scrollTop = next.scrollHeight;
   }
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
-  if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
-  if (state.view === "subscribe" && state.subStatus?.status !== "active" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
+  if (state.view === "subscribe" && state.subView === "review" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
+}
+
+// The composer grows with the message, up to four lines, the way a chat input does.
+function bindGrow(root) {
+  root.querySelectorAll(".fq-inputg textarea, #composer textarea").forEach((node) => {
+    const grow = () => {
+      node.style.height = "auto";
+      node.style.height = `${Math.min(node.scrollHeight, 96)}px`;
+    };
+    node.addEventListener("input", grow);
+    grow();
+  });
+}
+
+function toast(message) {
+  state.toast = message;
+  render();
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => {
+    state.toast = "";
+    render();
+  }, 2600);
 }
 
 // «٢٠ جهة مطابقة» counts up to the new number instead of jumping.
@@ -1309,10 +2032,20 @@ function openQuote(key) {
   render();
 }
 
+// M09_SendingProcessing then M10_RequestSent — nodes 85:338 and 27:374.
 async function sendRequest() {
   const city = customerCity();
   if (!state.selected.size || !city || state.busy) return;
+  if (!isSubscribed() && trialUsed() >= TRIAL_ITEMS) {
+    state.view = "subscribe";
+    state.subView = "limit";
+    state.resumeAfterPay = true;
+    render();
+    return;
+  }
   state.busy = true;
+  state.sendingTo = state.selected.size;
+  state.view = "sending";
   render();
   try {
     await ensureAuth();
@@ -1325,7 +2058,7 @@ async function sendRequest() {
       method: "POST",
       json: {
         original_text: state.query,
-        need: state.intent?.need || null,
+        need: state.intent?.need || (state.needs || []).filter((item) => item.on).map((item) => item.name).join(" + ") || null,
         notes: state.note || null,
         city,
         attributes,
@@ -1345,26 +2078,76 @@ async function sendRequest() {
       }
       await api(`/v1/requests/${created.id}/attachments`, { method: "POST", form }).catch(() => {});
     }
+    state.sentInfo = { sellers: created.recipients?.length || state.sendingTo, need: created.need || state.query, id: created.id };
     state.busy = false;
     state.files = [];
     state.note = "";
     state.notice = "";
     state.selected.clear();
-    state.thread = created;
     threadCache.set(created.id, created);
+    state.thread = null;
     state.replyTo = null;
-    // One seller: straight into the chat with him. Several: the item's group chat.
-    state.activeSeller = created.recipients?.length === 1 ? created.recipients[0].seller_id : "";
-    state.stickChat = true;
-    state.view = "thread";
+    state.view = "sent";
     history.pushState({}, "", "/");
-    await loadThread(created.id);
+    render();
+    loadRequests().catch(() => {});
+    if (!state.pushDismissed && state.pushState !== "on") {
+      state.pushAsk = true;
+      render();
+    }
   } catch (_error) {
     state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.busy = false;
     state.view = "review";
     render();
   }
+}
+
+// M01 → M02: the parser splits the sentence into needs before any search runs.
+async function startPricing(text) {
+  const query = (text || "").trim();
+  if (!query) return;
+  state.query = query;
+  state.city = state.city || cityInText(query);
+  if (!state.city) {
+    state.view = "city-ask";
+    render();
+    return;
+  }
+  state.view = "understand";
+  state.needs = null;
+  state.editing = null;
+  render();
+  let list = [];
+  try {
+    const data = await api("/v1/intent", { method: "POST", json: { query }, skipAuth: true });
+    list = (data.intents || []).length ? data.intents : [data.intent].filter(Boolean);
+    state.intent = list[0] || null;
+    state.clarification = data.clarification_question || "";
+  } catch (_error) {
+    list = [];
+  }
+  const cityOf = (intent) => (typeof intent?.location_city?.value === "string" ? intent.location_city.value : "") || state.city;
+  state.needs = (list.length ? list : [{ need: query }]).map((intent, index) => ({
+    key: `n${index}`,
+    name: arabicOnly(intent.model?.value) || arabicOnly(intent.subcategory?.value) || arabicOnly(intent.category?.value) || (intent.need || query).split(/\s+/).slice(0, 2).join(" "),
+    desc: intent.need || query,
+    city: cityOf(intent),
+    district: typeof intent?.location_district?.value === "string" ? intent.location_district.value : "",
+    when: "",
+    qty: intent?.quantity?.value || 1,
+    on: true,
+    intent,
+  }));
+  render();
+}
+
+function searchFromNeeds() {
+  const active = (state.needs || []).filter((item) => item.on);
+  if (!active.length) return;
+  const text = active.map((item) => [item.desc, item.qty > 1 ? `عدد ${item.qty}` : "", item.when].filter(Boolean).join(" ")).join(" و ");
+  state.intent = active[0].intent || state.intent;
+  runSearch(text || state.query, state.city);
 }
 
 // Screens switch at once: what we already have (or a placeholder) shows while the server answers.
@@ -1472,21 +2255,6 @@ async function loadThread(id, silent = false) {
   if (!silent || first || previous !== JSON.stringify(thread.messages || [])) render();
 }
 
-async function loadSeller(token, silent = false) {
-  state.view = "seller";
-  state.sellerToken = token;
-  if (!silent) state.notice = "";
-  try {
-    const seller = await api(`/v1/seller/${token}`, { skipAuth: true });
-    const previous = JSON.stringify(state.seller?.messages || []);
-    state.seller = seller;
-    if (!silent || previous !== JSON.stringify(seller.messages || [])) render();
-  } catch (_error) {
-    state.seller = null;
-    state.notice = "ما لقينا الطلب.";
-    render();
-  }
-}
 
 let moyasarScriptPromise = null;
 function loadMoyasarSdk() {
@@ -1511,11 +2279,11 @@ function loadMoyasarSdk() {
   return moyasarScriptPromise;
 }
 
-async function loadSubscribe() {
+async function loadSubscribe({ keepView = false } = {}) {
   await ensureAuth();
   state.view = "subscribe";
+  if (!keepView) state.subView = state.subView || "my-plan";
   state.subError = "";
-  state.subActivePlan = "";
   state.subMountedPlan = "";
   state.subMountFailed = false;
   render();
@@ -1523,11 +2291,40 @@ async function loadSubscribe() {
     const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
     state.subPlans = plans.plans || [];
     state.subStatus = me;
-    if (state.subPlans.length === 1) state.subActivePlan = state.subPlans[0].code;
   } catch (_error) {
     state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
   }
   render();
+}
+
+// «حسابي» needs the plan name and the usage count without leaving the account screen.
+async function loadSubStatus() {
+  if (!state.token) return;
+  try {
+    const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true, quiet: true }), api("/v1/subscriptions/me", { quiet: true })]);
+    state.subPlans = plans.plans || [];
+    state.subStatus = me;
+    if (state.view === "account" || state.view === "subscribe") render();
+  } catch (_error) {}
+}
+
+// N01 builds its feed from the requests list: each offer, reply and award is one line.
+function loadNotifications() {
+  state.view = "notifications";
+  render();
+  loadRequests()
+    .then(() => {
+      const feed = [];
+      for (const item of state.requests) {
+        const need = item.need || item.original_text || "";
+        if (item.awarded_seller_id) feed.push({ kind: "award", need, text: "تم اعتماد العرض الفائز", at: item.last_message_at || item.created_at, request_id: item.id, unread: false });
+        if (item.latest_offer_amount != null) feed.push({ kind: "offer", need, text: `وصل عرض بقيمة ${money(item.latest_offer_amount)}`, at: item.last_message_at || item.created_at, request_id: item.id, unread: Boolean(item.unread_count) });
+        if (item.unread_count) feed.push({ kind: "message", need, text: item.last_message || "رسالة جديدة في المحادثة", at: item.last_message_at || item.created_at, request_id: item.id, unread: true });
+      }
+      state.notifications = feed.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+      if (state.view === "notifications") render();
+    })
+    .catch(() => {});
 }
 
 async function handleSubscribeCallback() {
@@ -1650,40 +2447,36 @@ async function mountPayment(planCode) {
 
 document.addEventListener("submit", (event) => {
   const form = event.target;
-  if (form.id === "composer" || form.id === "refine") {
+  if (form.id === "composer") {
     event.preventDefault();
-    runSearch(new FormData(form).get("query"));
+    startPricing(new FormData(form).get("query"));
   } else if (form.id === "answer") {
     event.preventDefault();
     const value = new FormData(form).get("value");
-    if (value) runSearch(`${state.query} ${value}`);
+    if (value) runSearch(`${state.query} ${value}`, state.city);
   } else if (form.id === "auth-form") {
     event.preventDefault();
     submitAuth(form);
-  } else if (form.id === "user-reply") {
-    event.preventDefault();
-    const body = String(new FormData(form).get("body") || "").trim();
-    if ((!body && !state.chatFiles.length) || !state.thread || state.sending) return;
-    sendChatMessage(body);
-  } else if (form.id === "seller-reply") {
+  } else if (form.id === "edit-need") {
     event.preventDefault();
     const data = new FormData(form);
-    const amount = Number(String(data.get("amount") || "").replace(/[^\d.]/g, ""));
-    api(`/v1/seller/${state.sellerToken}/messages`, {
-      method: "POST",
-      skipAuth: true,
-      json: {
-        body: data.get("body") || "",
-        seller_id: data.get("seller_id") || null,
-        offer_amount: Number.isFinite(amount) && amount > 0 ? amount : null,
-        offer_currency: "SAR",
-      },
-    })
-      .then(() => loadSeller(state.sellerToken))
-      .catch(() => {
-        state.notice = "ما انرسل الرد.";
-        render();
-      });
+    const need = state.needs?.[Number(form.dataset.index)];
+    if (need) {
+      need.name = String(data.get("name") || need.name).trim() || need.name;
+      need.desc = String(data.get("desc") || need.desc).trim() || need.desc;
+      need.district = String(data.get("district") || "").trim();
+      need.qty = Math.max(1, Number(data.get("qty") || 1));
+      need.when = String(data.get("when") || "").trim();
+    }
+    state.editing = null;
+    render();
+  } else if (form.id === "user-reply") {
+    event.preventDefault();
+    const field = form.querySelector("textarea[name=body]");
+    const body = String(field?.value || "").trim();
+    if ((!body && !state.chatFiles.length) || !state.thread || state.sending) return;
+    if (field) field.value = "";
+    sendChatMessage(body);
   }
 });
 
@@ -1737,35 +2530,77 @@ document.addEventListener("change", async (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || event.shiftKey || event.target.name !== "query") return;
-  event.preventDefault();
-  runSearch(event.target.value);
+  if (event.key !== "Enter" || event.shiftKey) return;
+  if (event.target.name === "query") {
+    event.preventDefault();
+    startPricing(event.target.value);
+  } else if (event.target.name === "body" && event.target.closest("#user-reply")) {
+    event.preventDefault();
+    event.target.form?.requestSubmit();
+  }
 });
 
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
+  // A sheet's backdrop carries the close action; a tap inside the sheet must not close it.
+  if (target.classList.contains("fq-scrim") && event.target !== target) return;
   const action = target.dataset.action;
+  const go = (view) => {
+    state.view = view;
+    render();
+  };
   if (action === "home") {
     event.preventDefault();
     state.view = "home";
     history.pushState({}, "", "/");
     render();
-  } else if (action === "idea") runSearch(target.dataset.query);
+  } else if (action === "idea") startPricing(target.dataset.query);
   else if (action === "requests") loadRequests().catch(() => {});
-  else if (action === "subscribe") loadSubscribe().catch(() => {});
-  else if (action === "choose-plan") {
-    state.subActivePlan = target.dataset.plan;
-    state.subMountedPlan = "";
-    state.subMountFailed = false;
-    state.subError = "";
+  else if (action === "account") {
+    state.view = "account";
     render();
-  } else if (action === "retry-payment") {
-    state.subMountedPlan = "";
-    state.subMountFailed = false;
-    state.subError = "";
+    loadSubStatus().catch(() => {});
+  } else if (action === "notifications") loadNotifications();
+  else if (action === "notify-settings") go("notify-settings");
+  else if (action === "notify-toggle") {
+    const key = target.dataset.key;
+    state.notifyPrefs = { ...(state.notifyPrefs || {}), [key]: state.notifyPrefs?.[key] === false };
+    try {
+      localStorage.setItem("farq.notifyPrefs", JSON.stringify(state.notifyPrefs));
+    } catch (_error) {}
+    if (state.notifyPrefs[key] && state.pushState !== "on") enableNotifications(true).catch(() => {}).finally(render);
+    else render();
+  } else if (action === "read-all") {
+    state.notifications = (state.notifications || []).map((item) => ({ ...item, unread: false }));
     render();
-  }
+  } else if (action === "change-city") go("city-ask");
+  else if (action === "run-search") searchFromNeeds();
+  else if (action === "back-understand") go(state.needs ? "understand" : "home");
+  else if (action === "edit-need") {
+    state.editing = Number(target.dataset.index);
+    render();
+  } else if (action === "toggle-need") {
+    const need = state.needs?.[Number(target.dataset.index)];
+    if (need) need.on = !need.on;
+    render();
+  } else if (action === "qty") {
+    const field = document.getElementById("need-qty");
+    if (field) field.value = String(Math.max(1, Number(field.value || 1) + Number(target.dataset.step)));
+  } else if (action === "close-sheet") {
+    state.editing = null;
+    if (state.view === "detail") {
+      state.view = "flow";
+      state.active = null;
+    }
+    render();
+  } else if (action === "toggle-extra") {
+    state.reviewExtra = state.reviewExtra !== true;
+    render();
+  } else if (action === "filter-need") {
+    state.needFilter = state.needFilter === target.dataset.name ? "" : target.dataset.name;
+    render();
+  } else if (action === "open-sent") loadRequests().catch(() => {});
   else if (action === "remove-file") {
     const removed = state.files.splice(Number(target.dataset.index), 1)[0];
     if (removed?.preview) URL.revokeObjectURL(removed.preview);
@@ -1777,18 +2612,18 @@ document.addEventListener("click", (event) => {
     state.selected.delete(target.dataset.key);
     render();
   } else if (action === "search-city") {
-    runSearch(state.query, target.dataset.city || "");
-  } else if (action === "pick-city") {
+    state.city = target.dataset.city || "";
+    startPricing(state.query);
+  }
+  else if (action === "pick-city") {
     state.city = target.dataset.city || "";
     render();
   } else if (action === "review") {
     state.view = "review";
     render();
-  } else if (action === "back-results") {
-    state.view = "flow";
-    render();
-  } else if (action === "retry") runSearch(state.query);
-  else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`);
+  } else if (action === "back-results") go("flow");
+  else if (action === "retry") startPricing(state.query);
+  else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`, target.dataset.city || state.city);
   else if (action === "send") sendRequest();
   else if (action === "clear-notice") {
     state.notice = "";
@@ -1815,30 +2650,58 @@ document.addEventListener("click", (event) => {
     state.authMode = "login";
     requireSignIn();
   } else if (action === "open-compare") {
-    state.compareOpen = true;
+    state.view = "compare";
+    state.awardPick = null;
     render();
-  } else if (action === "close-compare") {
-    state.compareOpen = false;
+  } else if (action === "back-thread") go("thread");
+  else if (action === "pick-winner") {
+    state.awardPick = { sellerId: target.dataset.seller, price: Number(target.dataset.price || 0) };
     render();
-  } else if (action === "award") {
-    const seller = target.dataset.seller;
-    const price = Number(target.dataset.price || 0);
-    const who = sellerName(state.thread, seller);
-    if (!window.confirm(`تختار عرض ${who}${price ? ` بـ ${money(price)}` : ""}؟\nبنرسل له إشعار قبول.`)) return;
-    api(`/v1/requests/${state.thread.id}/award`, { method: "POST", json: { seller_id: seller, notify: true } })
+  } else if (action === "cancel-award") {
+    state.awardPick = null;
+    render();
+  } else if (action === "confirm-award") {
+    const pick = state.awardPick;
+    if (!pick || state.busy) return;
+    state.busy = true;
+    render();
+    api(`/v1/requests/${state.thread.id}/award`, { method: "POST", json: { seller_id: pick.sellerId, notify: true } })
       .then((record) => {
         threadCache.set(record.id, record);
         state.thread = record;
-        state.compareOpen = false;
-        state.stickChat = true;
+        state.awardPick = null;
+        state.busy = false;
+        state.view = "awarded";
         render();
       })
       .catch(() => {
-        state.notice = "ما قدرنا نسجّل الاختيار، جرّب مرة ثانية";
-        render();
+        state.busy = false;
+        state.awardPick = null;
+        toast("ما قدرنا نسجّل الاختيار، جرّب مرة ثانية");
       });
-    } else if (action === "toggle-picker") {
-    state.pickerOpen = state.pickerOpen === false;
+  } else if (action === "winner-chat") {
+    state.activeSeller = state.thread?.awarded_seller_id || "";
+    state.stickChat = true;
+    go("thread");
+  } else if (action === "thread-menu") {
+    if ((state.thread?.offers || []).some((item) => item.total_price != null)) {
+      state.view = "compare";
+      render();
+    } else toast("ما فيه عروض بأسعار بعد");
+  } else if (action === "req-filter") {
+    state.requestFilter = target.dataset.filter;
+    render();
+  } else if (action === "open-picker") {
+    state.pickerOpen = true;
+    render();
+  } else if (action === "close-picker") {
+    state.pickerOpen = false;
+    render();
+  } else if (action === "open-attach") {
+    state.attachOpen = true;
+    render();
+  } else if (action === "close-attach") {
+    state.attachOpen = false;
     render();
   } else if (action === "pick-all") {
     state.picked = new Set((state.thread?.recipients || []).map((item) => item.seller_id));
@@ -1857,18 +2720,21 @@ document.addEventListener("click", (event) => {
     if (removed?.preview) URL.revokeObjectURL(removed.preview);
     render();
   } else if (action === "enable-notify") {
+    state.pushAsk = false;
     enableNotifications(true)
       .catch(() => {
         state.pushState = "off";
       })
       .finally(() => render());
   } else if (action === "dismiss-notify") {
+    state.pushAsk = false;
     state.pushDismissed = true;
     try {
       localStorage.setItem("farq.pushDismissed", "1");
     } catch (_error) {}
     render();
   } else if (action === "thread") {
+    if (!target.dataset.id) return;
     state.activeSeller = "";
     state.replyTo = null;
     state.picked = null;
@@ -1879,36 +2745,73 @@ document.addEventListener("click", (event) => {
     state.activeSeller = target.dataset.seller || "";
     state.replyTo = null;
     state.stickChat = true;
+    state.view = "thread";
     render();
   } else if (action === "all-sellers") {
     state.activeSeller = "";
     state.stickChat = true;
+    state.view = "thread";
     render();
   } else if (action === "reply") {
     const message = (state.thread?.messages || []).find((item) => item.id === target.dataset.message);
     if (!message) return;
     state.replyTo = { id: message.id, sellerId: message.seller_id, name: sellerName(state.thread, message.seller_id), body: message.body };
     render();
-    document.querySelector("#user-reply input[name=body]")?.focus();
+    document.querySelector("#user-reply textarea")?.focus();
   } else if (action === "cancel-reply") {
     state.replyTo = null;
     render();
   } else if (action === "mention") {
-    const input = document.querySelector("#user-reply input[name=body]");
+    const input = document.querySelector("#user-reply textarea");
     const seller = target.dataset.seller;
     if (!input || !seller) return;
-    // Picking from «@» aims the message at that supplier alone.
     state.picked = new Set([seller]);
-    input.value = input.value.replace(/@[^@]*$/, "");
-    const list = document.getElementById("mention-list");
-    if (list) list.hidden = true;
+    const kept = input.value.replace(/@[^@]*$/, "");
     render();
-    const next = document.querySelector("#user-reply input[name=body]");
+    const next = document.querySelector("#user-reply textarea");
     if (next) {
-      next.value = input.value;
+      next.value = kept;
       next.focus();
     }
-  }
+  } else if (action === "subscribe" || action === "my-plan") {
+    state.subView = "my-plan";
+    loadSubscribe().catch(() => {});
+  } else if (action === "show-plans") {
+    state.subView = "plans";
+    state.view = "subscribe";
+    render();
+    loadSubscribe({ keepView: true }).catch(() => {});
+  } else if (action === "upgrade") {
+    state.subView = "upgrade";
+    state.view = "subscribe";
+    render();
+  } else if (action === "back-gate") {
+    state.resumeAfterPay = false;
+    go(state.selected.size ? "review" : "home");
+  } else if (action === "resume-request") {
+    state.resumeAfterPay = false;
+    state.subView = "resume";
+    render();
+    sendRequest();
+  } else if (action === "choose-plan") {
+    state.subActivePlan = target.dataset.plan;
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
+    state.subError = "";
+    state.subView = "review";
+    render();
+  } else if (action === "retry-payment") {
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
+    state.subError = "";
+    state.subView = "review";
+    render();
+  } else if (action === "profile") toast("صفحة بياناتي قيد الإعداد");
+  else if (action === "support") toast("الدعم: support@farq.sa");
+  else if (action === "privacy" || action === "terms") toast("الصفحة قيد الإعداد");
+  else if (action === "lang") toast("الواجهة الإنجليزية قيد الإعداد");
+  else if (action === "forgot") toast("تواصل مع الدعم لإعادة تعيين كلمة المرور");
+  else if (action === "emoji") document.querySelector("#user-reply textarea")?.focus();
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -1918,26 +2821,30 @@ document.addEventListener("visibilitychange", () => {
 });
 
 const openRequest = new URLSearchParams(location.search).get("r");
-if (!sellerRoute && !state.token) {
+if (!state.token) {
   state.view = "auth";
   if (openRequest) state.returnView = "requests";
-} else if (!sellerRoute) {
+  render();
+} else {
   api("/v1/auth/me", { quiet: true })
     .then((account) => {
       state.account = account;
-      if (state.view === "requests") render();
+      if (state.view === "account" || state.view === "requests") render();
     })
     .catch(() => {});
+  loadSubStatus().catch(() => {});
+  try {
+    state.notifyPrefs = JSON.parse(localStorage.getItem("farq.notifyPrefs") || "{}");
+  } catch (_error) {
+    state.notifyPrefs = {};
+  }
+  if (subscribeCallback) handleSubscribeCallback().catch(() => render());
+  else if (openRequest) {
+    history.replaceState({}, "", "/");
+    state.stickChat = true;
+    loadThread(openRequest).catch(() => render());
+  } else render();
 }
-if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
-else if (!state.token) render();
-else if (subscribeCallback) handleSubscribeCallback().catch(() => render());
-else if (openRequest) {
-  // Opened from a notification: straight into that conversation.
-  history.replaceState({}, "", "/");
-  state.stickChat = true;
-  loadThread(openRequest).catch(() => render());
-} else render();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker
