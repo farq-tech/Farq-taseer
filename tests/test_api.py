@@ -403,3 +403,35 @@ def test_cron_route_is_not_swallowed_by_the_web_app(tmp_path: Path, monkeypatch)
     ran = api.get("/v1/internal/haraj-sync", headers={"Authorization": "Bearer s3cret"})
     assert ran.status_code == 200
     assert ran.json() == {"sent": 0, "received": 0}
+
+
+def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):
+    sent = []
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "pub")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "priv")
+    import pywebpush
+
+    monkeypatch.setattr(pywebpush, "webpush", lambda **kwargs: sent.append(kwargs))
+    api = client(tmp_path)
+    headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={"original_text": "سباك", "need": "سباك", "city": "الرياض", "recipients": [{"seller_id": "11", "seller_name": "محمد"}]},
+    ).json()
+    assert api.get("/v1/push/key").json() == {"public_key": "pub"}
+    subscription = {"endpoint": "https://push.example/abc", "keys": {"p256dh": "k", "auth": "a"}}
+    assert api.post("/v1/push/subscribe", headers=headers, json=subscription).json() == {"subscribed": True}
+    assert api.post("/v1/push/subscribe", headers=headers, json={**subscription, "endpoint": "http://x"}).status_code == 422
+
+    token = created["recipients"][0]["reply_token"]
+    api.post(f"/v1/seller/{token}/messages", json={"body": "أقدر بكرة"})
+    listed = api.get("/v1/requests", headers=headers).json()["requests"][0]
+    assert listed["unread_count"] == 1
+    # The supplier's reply reached the customer's phone, titled with his name.
+    assert len(sent) == 1
+    assert sent[0]["subscription_info"]["endpoint"] == "https://push.example/abc"
+    assert '"title": "محمد"' in sent[0]["data"] and f"/?r={created['id']}" in sent[0]["data"]
+
+    api.get(f"/v1/requests/{created['id']}", headers=headers)  # opening the chat reads it
+    assert api.get("/v1/requests", headers=headers).json()["requests"][0]["unread_count"] == 0

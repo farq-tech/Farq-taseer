@@ -16,6 +16,7 @@ import threading
 import time
 from typing import Callable
 
+from farq.push import notify_reply
 from farq.store import QUOTE_LINK
 from farq.haraj_chat import (
     READ_PAUSE_SECONDS,
@@ -145,6 +146,7 @@ def sync_replies(
         for item in inbound:
             if store.record_inbound(thread, item) is not None:
                 received += 1
+                notify_reply(store, thread["request_id"], thread["seller_id"], item.body)
         store.thread_checked(thread, now=clock())
         synced.add(thread["request_id"])
     for request_id in synced:

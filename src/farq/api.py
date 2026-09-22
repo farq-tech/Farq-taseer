@@ -10,7 +10,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPExcepti
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from farq import subscriptions
+from farq import push, subscriptions
 from farq.cities import city_choices
 from farq.config import PaymentsConfig, SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
@@ -75,6 +75,16 @@ class SellerReplyBody(ApiModel):
     phone: str | None = None
     delivery_included: bool | None = None
     delivery_price: float | None = None
+
+
+class PushKeys(ApiModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionBody(ApiModel):
+    endpoint: str
+    keys: PushKeys
 
 
 class CheckoutBody(ApiModel):
@@ -317,6 +327,8 @@ def create_app(
         record = store.get_request(request_id, user_id)
         if record is None:
             raise HTTPException(status_code=404, detail="request not found")
+        # Opening the conversation reads it.
+        store.mark_read(request_id, user_id)
         return record.model_dump(mode="json")
 
     @app.get("/v1/seller/{token}")
@@ -326,8 +338,19 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found")
         return view
 
+    @app.get("/v1/push/key")
+    def push_key() -> dict:
+        return {"public_key": push.public_key()}
+
+    @app.post("/v1/push/subscribe")
+    def push_subscribe(body: PushSubscriptionBody, user_id: str = Depends(current_user)) -> dict:
+        if not body.endpoint.startswith("https://"):
+            raise HTTPException(status_code=422, detail="invalid endpoint")
+        store.add_push_subscription(user_id, body.endpoint, body.keys.p256dh, body.keys.auth)
+        return {"subscribed": True}
+
     @app.post("/v1/seller/{token}/messages")
-    def seller_reply(token: str, body: SellerReplyBody) -> dict:
+    def seller_reply(token: str, body: SellerReplyBody, background: BackgroundTasks) -> dict:
         if not body.body.strip() and body.offer_amount is None:
             raise HTTPException(status_code=422, detail="message or price is required")
         offer = None
@@ -348,6 +371,7 @@ def create_app(
         except ValueError as exc:
             status = 404 if str(exc) == "request not found" else 422
             raise HTTPException(status_code=status, detail=str(exc)) from exc
+        background.add_task(push.notify_reply, store, created.request_id, created.seller_id, created.body)
         return created.model_dump(mode="json")
 
     @app.get("/v1/seller/{token}/attachments/{attachment_id}")

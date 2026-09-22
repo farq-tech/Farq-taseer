@@ -650,6 +650,34 @@ class PgStore:
             conn.execute(advance, (inbound.seq, request_id, seller_id, thread["need"]))
         return message
 
+    def mark_read(self, request_id: str, owner_user_id: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("update requests set customer_read_at = now() where id = %s and owner_user_id = %s", (request_id, owner_user_id))
+
+    def recipient_name(self, request_id: str, seller_id: str | None) -> str | None:
+        with self._pool.connection() as conn:
+            row = conn.execute("select seller_name from request_recipients where request_id = %s and seller_id = %s limit 1", (request_id, seller_id)).fetchone()
+        return None if row is None else row["seller_name"]
+
+    def add_push_subscription(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                "insert into push_subscriptions (endpoint, user_id, p256dh, auth) values (%s, %s, %s, %s)"
+                " on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth",
+                (endpoint, user_id, p256dh, auth),
+            )
+
+    def remove_push_subscription(self, endpoint: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("delete from push_subscriptions where endpoint = %s", (endpoint,))
+
+    def push_subscriptions_for_request(self, request_id: str) -> list[dict]:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select s.* from push_subscriptions s join requests r on r.owner_user_id = s.user_id where r.id = %s", (request_id,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def mark_synced(self, request_id: str | None = None) -> None:
         with self._pool.connection() as conn:
             if request_id:

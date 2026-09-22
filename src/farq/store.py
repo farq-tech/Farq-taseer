@@ -119,8 +119,25 @@ def priced_offer(offer: Offer, body: str, seller_name: str, need: str | None) ->
     )
 
 
+def _moment(value):
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer], messages) -> dict:
     recipient_count = len(recipients)
+    read_at = _moment(row["customer_read_at"]) if "customer_read_at" in row.keys() else None
+    unread = sum(
+        1
+        for message in messages
+        if message["sender_role"] == "seller" and (read_at is None or (_moment(message["created_at"]) or read_at) > read_at)
+    )
     sent_count = sum(1 for item in recipients if item.send_status == "sent")
     failed_count = sum(1 for item in recipients if item.send_status == "failed")
     replied: set[str] = set()
@@ -158,6 +175,7 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "failed_count": failed_count,
         "queued_count": recipient_count - sent_count - failed_count,
         "replied_count": replies,
+        "unread_count": unread,
         "waiting_count": max(0, recipient_count - replies),
         "has_new_offer": newest_offer or bool(offers),
         "latest_offer_amount": latest_amount if not offers else min((item.total_price for item in offers if item.total_price is not None), default=None),
@@ -304,6 +322,10 @@ class Store:
         self._ensure_column("messages", "haraj_conversation_id", "text")
         self._ensure_column("messages", "haraj_message_id", "text")
         self._ensure_column("messages", "haraj_text", "text")
+        self._ensure_column("requests", "customer_read_at", "text")
+        self._connection.execute(
+            "create table if not exists push_subscriptions (endpoint text primary key, user_id text not null, p256dh text not null, auth text not null, created_at text not null)"
+        )
         self._connection.executescript(
             """
             create unique index if not exists messages_haraj_message on messages (haraj_message_id) where haraj_message_id is not null;
@@ -965,6 +987,32 @@ class Store:
         )
         self._connection.commit()
         return message
+
+    def mark_read(self, request_id: str, owner_user_id: str) -> None:
+        self._connection.execute("update requests set customer_read_at = ? where id = ? and owner_user_id = ?", (_now(), request_id, owner_user_id))
+        self._connection.commit()
+
+    def recipient_name(self, request_id: str, seller_id: str | None) -> str | None:
+        row = self._connection.execute("select seller_name from request_recipients where request_id = ? and seller_id = ?", (request_id, seller_id)).fetchone()
+        return None if row is None else row["seller_name"]
+
+    def add_push_subscription(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> None:
+        self._connection.execute(
+            "insert into push_subscriptions (endpoint, user_id, p256dh, auth, created_at) values (?, ?, ?, ?, ?)"
+            " on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth",
+            (endpoint, user_id, p256dh, auth, _now()),
+        )
+        self._connection.commit()
+
+    def remove_push_subscription(self, endpoint: str) -> None:
+        self._connection.execute("delete from push_subscriptions where endpoint = ?", (endpoint,))
+        self._connection.commit()
+
+    def push_subscriptions_for_request(self, request_id: str) -> list[dict]:
+        rows = self._connection.execute(
+            "select s.* from push_subscriptions s join requests r on r.owner_user_id = s.user_id where r.id = ?", (request_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def mark_synced(self, request_id: str | None = None) -> None:
         stamp = _now()

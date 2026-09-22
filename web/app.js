@@ -16,6 +16,15 @@ const state = {
   thread: null,
   activeSeller: "",
   replyTo: null,
+  unreadTotal: 0,
+  pushState: "",
+  pushDismissed: (() => {
+    try {
+      return localStorage.getItem("farq.pushDismissed") === "1";
+    } catch (_error) {
+      return false;
+    }
+  })(),
   seller: null,
   sellerToken: "",
   token: localStorage.getItem("farq.token") || "",
@@ -264,7 +273,7 @@ function topBar({ title = "فرق تسعير", back = "", end = '<span class="sl
 function tabBar(active) {
   return `<nav class="tab-bar" aria-label="التنقل">
     <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
-    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests">${icon("briefcase")}<span>طلباتي</span></button>
+    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests"><span class="tab-icon">${icon("briefcase")}<span class="unread-dot" data-unread-total ${state.unreadTotal ? "" : "hidden"}>${formatCount(state.unreadTotal || 0)}</span></span><span>طلباتي</span></button>
     <button class="tab${active === "subscribe" ? " active" : ""}" type="button" data-action="subscribe">${icon("check-square")}<span>الاشتراك</span></button>
   </nav>`;
 }
@@ -428,6 +437,62 @@ function renderReview() {
   </section>`;
 }
 
+// Phone notifications when a supplier replies. iPhone only allows them for a site added to the home screen.
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isStandalone = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+function notifyBanner() {
+  if (state.pushState === "on" || state.pushDismissed) return "";
+  if (isIOS && !isStandalone) {
+    return `<div class="notify-banner"><div><strong>تبي تنبيه لما يردون عليك؟</strong><span>اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»، وافتح تسعير من هناك.</span></div><button type="button" data-action="dismiss-notify" aria-label="إغلاق">✕</button></div>`;
+  }
+  if (!pushSupported || typeof Notification === "undefined" || Notification.permission === "denied") return "";
+  if (Notification.permission === "granted" && state.pushState !== "off") return "";
+  return `<div class="notify-banner"><div><strong>تبي تنبيه لما يردون عليك؟</strong><span>يوصلك إشعار على جوالك أول ما يرد أي بائع.</span></div><button class="notify-on" type="button" data-action="enable-notify">فعّل التنبيهات</button></div>`;
+}
+
+function urlKey(base64) {
+  const padded = (base64 + "=".repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
+async function enableNotifications(fromClick = false) {
+  if (!pushSupported) return;
+  const registration = await navigator.serviceWorker.ready;
+  if (fromClick && Notification.permission === "default") await Notification.requestPermission();
+  if (Notification.permission !== "granted") {
+    state.pushState = "off";
+    return;
+  }
+  const { public_key: key } = await api("/v1/push/key", { skipAuth: true });
+  if (!key) return;
+  const subscription = (await registration.pushManager.getSubscription()) || (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlKey(key) }));
+  await ensureAuth();
+  await api("/v1/push/subscribe", { method: "POST", json: subscription.toJSON() });
+  state.pushState = "on";
+}
+
+function setUnread(requests) {
+  state.unreadTotal = (requests || []).reduce((sum, item) => sum + (item.unread_count || 0), 0);
+  document.querySelectorAll("[data-unread-total]").forEach((node) => {
+    node.hidden = !state.unreadTotal;
+    node.textContent = formatCount(state.unreadTotal);
+  });
+}
+
+// Keep the unread count fresh on every screen except the open conversation.
+async function refreshUnread() {
+  if (!state.token || state.view === "thread" || state.view === "seller" || document.visibilityState !== "visible") return;
+  try {
+    const data = await api("/v1/requests");
+    const changed = JSON.stringify(data.requests || []) !== JSON.stringify(state.requests);
+    state.requests = data.requests || [];
+    setUnread(state.requests);
+    if (changed && state.view === "requests") render();
+  } catch (_error) {}
+}
+
 function renderRequests() {
   const logo = `<span class="slot" aria-hidden="true"></span>`;
   const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
@@ -435,24 +500,30 @@ function renderRequests() {
   if (!state.requests.length) {
     return `${head}<section class="page soft requests-page"><p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>${tabBar("requests")}`;
   }
-  return `${head}<section class="page soft requests-page">${state.requests
+  // A chat list, like WhatsApp's: each request is a conversation you tap to open.
+  return `${head}<section class="page soft requests-page">${notifyBanner()}<div class="chat-list">${state.requests
     .map((item) => {
       const need = item.need || item.original_text;
+      const names = item.seller_names || [];
+      const one = names.length === 1;
       const when = ago(item.last_message_at || item.created_at);
-      const replied = item.replied_count || 0;
-      const sent = item.recipient_count || 0;
-      const from = item.latest_offer_amount != null ? `من ${money(item.latest_offer_amount)}` : "";
-      return `<button class="request-card" type="button" data-action="thread" data-id="${esc(item.id)}">
-        <div class="row"><span class="when">${esc(when || "")}</span><strong class="title">${esc(need)}</strong></div>
-        <hr>
-        <div class="row">
-          <div class="stats"><strong>${replied ? `وصلت ${formatCount(replied)} أسعار` : "بانتظار الرد"}</strong><span>أرسل إلى ${formatCount(sent)} جهات</span></div>
-          <span class="from">${esc(from || "بانتظار السعر")}</span>
-        </div>
-        ${item.last_message ? `<div class="request-foot"><span>${esc(item.last_message)}</span></div>` : ""}
+      const unread = item.unread_count || 0;
+      const price = item.latest_offer_amount != null ? `أرخص سعر ${money(item.latest_offer_amount)}` : item.replied_count ? `ردّ ${formatCount(item.replied_count)} من ${formatCount(item.recipient_count || 0)}` : `بانتظار الرد من ${formatCount(item.recipient_count || 0)}`;
+      const avatar = one
+        ? `<span class="chat-avatar" style="background:${SELLER_COLORS[0]}">${initial(names[0])}</span>`
+        : `<span class="chat-avatar group">${formatCount(names.length || item.recipient_count || 0)}</span>`;
+      return `<button class="chat-row${unread ? " has-unread" : ""}" type="button" data-action="thread" data-id="${esc(item.id)}" aria-label="افتح محادثة ${esc(need)}">
+        ${avatar}
+        <span class="chat-main">
+          <span class="chat-top"><strong>${esc(one ? names[0] : need)}</strong><time>${esc(when || "")}</time></span>
+          <span class="chat-sub">${esc(one ? need : names.join("، "))}</span>
+          <span class="chat-bottom"><span class="chat-last">${esc(item.last_message || "")}</span>${unread ? `<span class="unread-count">${formatCount(unread)}</span>` : ""}</span>
+          <span class="chat-price">${esc(price)}</span>
+        </span>
+        <span class="chat-open" aria-hidden="true">${icon("chevron", { size: 18 })}</span>
       </button>`;
     })
-    .join("")}</section>${tabBar("requests")}`;
+    .join("")}</div></section>${tabBar("requests")}`;
 }
 
 function snippet(text, size = 50) {
@@ -868,6 +939,7 @@ async function loadRequests() {
   await ensureAuth();
   state.view = "requests";
   state.requests = (await api("/v1/requests")).requests || [];
+  setUnread(state.requests);
   render();
 }
 
@@ -1195,7 +1267,19 @@ document.addEventListener("click", (event) => {
   } else if (action === "retry") runSearch(state.query);
   else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`);
   else if (action === "send") sendRequest();
-  else if (action === "thread") {
+  else if (action === "enable-notify") {
+    enableNotifications(true)
+      .catch(() => {
+        state.pushState = "off";
+      })
+      .finally(() => render());
+  } else if (action === "dismiss-notify") {
+    state.pushDismissed = true;
+    try {
+      localStorage.setItem("farq.pushDismissed", "1");
+    } catch (_error) {}
+    render();
+  } else if (action === "thread") {
     state.activeSeller = "";
     state.replyTo = null;
     state.stickChat = true;
@@ -1233,9 +1317,24 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+const openRequest = new URLSearchParams(location.search).get("r");
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
 else if (subscribeCallback) handleSubscribeCallback().catch(() => render());
-else render();
+else if (openRequest) {
+  // Opened from a notification: straight into that conversation.
+  history.replaceState({}, "", "/");
+  state.stickChat = true;
+  loadThread(openRequest).catch(() => render());
+} else render();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register("/sw.js")
+    .then(() => (pushSupported && Notification.permission === "granted" ? enableNotifications() : null))
+    .catch(() => {});
+}
+setInterval(refreshUnread, 30000);
+refreshUnread();
 
 api("/v1/cities", { skipAuth: true })
   .then((data) => {
