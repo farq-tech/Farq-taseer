@@ -1643,3 +1643,91 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq-entry .go { color: var(--fq-muted); display: grid; place-items: center; order: -1; }
 .fq-entry.danger { color: #c0392b; }
 .fq-entry.danger .go { color: #c0392b; }
+
+/* =====================================================================
+   FARQ — motion. A screen arrives: the header drops, then its cards come
+   in one after another on a spring. Everything here is gated on
+   prefers-reduced-motion, which is exactly what that setting is for.
+   ===================================================================== */
+:root {
+  --fq-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --fq-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --fq-step: 80ms;
+}
+
+@keyframes fq-drop { from { transform: translateY(-100%); opacity: 0; } }
+@keyframes fq-lift { from { transform: translateY(16px) scale(0.98); opacity: 0; } }
+@keyframes fq-pop { from { transform: translateY(22px) scale(0.96); opacity: 0; } }
+@keyframes fq-from-right { from { transform: translateX(40px) scale(0.97); opacity: 0; } }
+@keyframes fq-from-left { from { transform: translateX(-40px) scale(0.97); opacity: 0; } }
+@keyframes fq-unfold { from { transform: translateY(10px); opacity: 0; clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes fq-nav-up { from { transform: translateY(100%); } }
+
+/* the entrance, once per screen */
+.fq[data-enter] .fq-head { animation: fq-drop 380ms var(--fq-ease) both; }
+.fq[data-enter] .fq-nav { animation: fq-nav-up 380ms var(--fq-ease) 120ms both; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *,
+.fq[data-enter] .fq-offers-bar,
+.fq[data-enter] .fq-profile-banner,
+.fq[data-enter] .fq-filters { animation: fq-lift 460ms var(--fq-spring) both; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(1) { animation-delay: 80ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(2) { animation-delay: 160ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(3) { animation-delay: 240ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(4) { animation-delay: 320ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(5) { animation-delay: 400ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(6) { animation-delay: 480ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(n + 7) { animation-delay: 560ms; }
+.fq[data-enter] .fq-profile-banner { animation-delay: 100ms; }
+.fq[data-enter] .fq-filters { animation-delay: 140ms; }
+
+/* a list that cascades: one card every 80ms, landing with a little bounce */
+.fq-stagger > * { animation: fq-pop 520ms var(--fq-spring) both; }
+.fq-stagger > *:nth-child(1) { animation-delay: calc(var(--fq-step) * 1); }
+.fq-stagger > *:nth-child(2) { animation-delay: calc(var(--fq-step) * 2); }
+.fq-stagger > *:nth-child(3) { animation-delay: calc(var(--fq-step) * 3); }
+.fq-stagger > *:nth-child(4) { animation-delay: calc(var(--fq-step) * 4); }
+.fq-stagger > *:nth-child(5) { animation-delay: calc(var(--fq-step) * 5); }
+.fq-stagger > *:nth-child(6) { animation-delay: calc(var(--fq-step) * 6); }
+.fq-stagger > *:nth-child(7) { animation-delay: calc(var(--fq-step) * 7); }
+.fq-stagger > *:nth-child(8) { animation-delay: calc(var(--fq-step) * 8); }
+.fq-stagger > *:nth-child(n + 9) { animation-delay: calc(var(--fq-step) * 9); }
+.fq-stagger.unfold > * { animation-name: fq-unfold; animation-timing-function: var(--fq-ease); }
+
+/* the price face-off: the first offer swings in from the right, the next from the left */
+.fq-faceoff > *:nth-child(odd) { animation-name: fq-from-right; }
+.fq-faceoff > *:nth-child(even) { animation-name: fq-from-left; }
+
+/* a card that arrives later, while you are looking at the list */
+.fq-in { animation: fq-pop 480ms var(--fq-spring) both; }
+
+/* the home call to action breathes, so the thumb knows where to go */
+@keyframes fq-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 2px 8px -2px rgba(0, 159, 103, 0.15), 0 10px 20px -6px rgba(0, 159, 103, 0.2); }
+  50% { transform: scale(1.015); box-shadow: 0 4px 14px -2px rgba(0, 159, 103, 0.28), 0 14px 28px -6px rgba(0, 159, 103, 0.3); }
+}
+.fq-btn.breathe { animation: fq-breathe 2.8s var(--fq-ease) 1.2s infinite; }
+
+/* the skeletons shimmer in sequence rather than all at once */
+.fq-stagger .fq-skel, .fq-skel { animation: fq-shim 1.2s infinite; }
+.fq-stagger > *:nth-child(2) .fq-skel { animation-delay: 0.15s; }
+.fq-stagger > *:nth-child(3) .fq-skel { animation-delay: 0.3s; }
+.fq-stagger > *:nth-child(4) .fq-skel { animation-delay: 0.45s; }
+
+/* the celebration: the glows turn and breathe, the badge floats, the tick lands */
+@keyframes fq-orbit { to { transform: rotate(360deg); } }
+@keyframes fq-swell { 0%, 100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.12); opacity: 1; } }
+@keyframes fq-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes fq-land { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.18); opacity: 1; } 100% { transform: scale(1); } }
+.fq-celebrate .fq-glow:nth-of-type(1) { animation: fq-orbit 14s linear infinite, fq-swell 3.2s var(--fq-ease) infinite; }
+.fq-celebrate .fq-glow:nth-of-type(2) { animation: fq-orbit 9s linear reverse infinite, fq-swell 2.4s var(--fq-ease) 0.3s infinite; }
+.fq-celebrate .fq-ringstack { animation: fq-float 3.4s var(--fq-ease) infinite; }
+.fq-celebrate .fq-ringstack > span { animation: fq-land 620ms var(--fq-spring) both; }
+.fq-blob.land { animation: fq-land 620ms var(--fq-spring) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fq[data-enter] .fq-head, .fq[data-enter] .fq-nav, .fq[data-enter] .fq-body > *, .fq-body > *,
+  .fq[data-enter] .fq-offers-bar, .fq[data-enter] .fq-profile-banner, .fq[data-enter] .fq-filters,
+  .fq-stagger > *, .fq-in, .fq-btn.breathe, .fq-celebrate .fq-glow,
+  .fq-celebrate .fq-ringstack, .fq-celebrate .fq-ringstack > span, .fq-blob.land,
+  .fq-pulse::after, .fq-dots i { animation: none !important; }
+}

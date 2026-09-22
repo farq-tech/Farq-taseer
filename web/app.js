@@ -672,7 +672,7 @@ function renderHome() {
     <div class="fq-pills" style="gap:10px">${HOME_CHIPS.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
     <div style="margin-top:auto;display:flex;flex-direction:column;gap:16px">
       <hr class="fq-line">
-      <button class="fq-btn" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
+      <button class="fq-btn breathe" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
     </div>
   </section>
   ${fqNav("home")}`;
@@ -704,7 +704,7 @@ function renderSearching() {
         return `<div class="fq-step ${cls}"><span class="mark">${index < at ? ic("check", 14) : ""}</span><span>${esc(label)}</span></div>`;
       }).join("")}</div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px">${card.repeat(3)}</div>
+    <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${card.repeat(3)}</div>
   </section>`;
 }
 
@@ -788,7 +788,7 @@ function renderFlow() {
     ${asking ? "" : `<p class="fq-small" data-count="${state.results.length}" style="font-weight:600">تم العثور على ${formatCount(state.shownCount || state.results.length)} نتيجة</p>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
     ${showEmpty ? `<div class="fq-body center" style="padding:24px 0"><div class="fq-blob warn">${ic("search", 48)}</div><h2 class="fq-h2">${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="fq-link" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${state.results.length ? `<div style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
+    ${state.results.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
     ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة بـ ${formatCount(count)} ${count === 1 ? "خيار" : "خيارات"}</button></div>` : ""}
   </section>
   ${state.view === "detail" ? detailSheet() : ""}
@@ -837,7 +837,7 @@ function detailSheet() {
       <h2 style="font-size:15px">عن المورد والخدمة</h2>
       ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">ما فيه وصف إضافي من المورد.</p>`}
       ${price ? `<div><span class="fq-price" style="font-size:32px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span><p class="fq-meta" style="margin:4px 0 0">قيمة العرض الإجمالية</p></div>` : ""}
-      ${gallery.length ? `<h2 style="font-size:15px">أعمال سابقة للمورد</h2>
+      ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)
           .join("")}</div>` : ""}
@@ -862,7 +862,7 @@ function renderReview() {
       <p class="fq-lead">${esc([state.query, cityLabel(city)].filter(Boolean).join(" · "))}</p></div>
     <div><span class="fq-tag deep">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
     ${Number.isFinite(sellerCap()) ? `<p class="fq-meta">يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</p>` : ""}
-    <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
       ${chosen
         .map(([key, result]) => {
           const seller = sellerOf(result);
@@ -942,7 +942,7 @@ function renderSent() {
   const info = state.sentInfo || {};
   return `${fqHead({ title: "تم الإرسال" })}
   <section class="fq-body center">
-    <div class="fq-blob">${ic("check", 56)}</div>
+    <div class="fq-blob land">${ic("check", 56)}</div>
     <div><h1 class="fq-h1">تم إرسال طلبك!</h1>
       <p class="fq-lead">أرسلنا طلب التسعير لـ ${formatCount(info.sellers || 0)} بائعين. راح يوصلك رد خلال دقائق قليلة.</p></div>
     <div class="fq-card pad" style="width:100%">
@@ -1054,7 +1054,7 @@ function renderRequests() {
     <div class="fq-row"><span class="fq-small" style="font-weight:600">تابع عروضك وطلباتك من مكان واحد</span>
       <button class="fq-addbtn" type="button" data-action="home">${ic("plus", 14)}طلب جديد</button></div>
     <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تمت الترسية")}${pill("done", "مكتملة")}</div>
-    <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
       ${state.requests.filter(match).map((item) => {
         const need = item.need || item.original_text;
         const status = requestStatus(item);
@@ -1312,7 +1312,7 @@ function renderCompare() {
   const awarded = thread.awarded_seller_id;
   const chat = `<button class="fq-ibtn light" type="button" data-action="all-sellers" aria-label="المحادثة">${ic("message-circle", 20)}</button>`;
   return `${fqHead({ title: "قارن العروض", sub: `${formatCount(offers.length)} عروض · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat })}
-  <section class="fq-body tight">
+  <section class="fq-body tight fq-stagger fq-faceoff">
     ${offers.length ? "" : `<div class="fq-body center"><div class="fq-blob warn">${ic("tag", 48)}</div><h2 class="fq-h2">ما وصلت عروض بأسعار بعد</h2><p class="fq-lead">أول ما يرسل مورد سعرًا يظهر هنا للمقارنة.</p></div>`}
     ${offers
       .map((offer, index) => {
@@ -1632,7 +1632,7 @@ function renderAccount() {
     <span class="pic">${initial(name)}</span>
     <span><b><bdi>${esc(name)}</bdi></b><span dir="ltr">${esc(contact)}</span></span>
   </div>
-  <section class="fq-body tight">
+  <section class="fq-body tight fq-stagger unfold">
     ${item("بياناتي", "profile")}
     ${item("اشتراكي", "subscribe", plan)}
     ${item("الإشعارات", "notifications")}
@@ -1826,7 +1826,7 @@ function renderSubscribe() {
   if (view === "paid") {
     return `${fqHead({ title: "تم التفعيل", mark: true })}
     <section class="fq-body center">
-      <div class="fq-blob">${ic("check", 56)}</div>
+      <div class="fq-blob land">${ic("check", 56)}</div>
       <div><h1 class="fq-h1">تم تفعيل اشتراكك</h1>
         <p class="fq-lead">باقة: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p>
         <span class="fq-tag ok" style="font-size:13px">نشط الآن</span></div>
@@ -2008,9 +2008,14 @@ function render() {
   const keepScroll = state.view === "flow" && lastView === "flow" ? window.scrollY : null;
   const wall = document.getElementById("chat-wall");
   const stick = state.view === "thread" && (state.stickChat || !wall || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 140);
+  const arriving = state.view !== lastView;
   app.innerHTML = shell(`${view()}${state.pushAsk ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
   document.body.classList.toggle("fq-web", window.innerWidth >= 900);
-  if (state.view !== lastView) lastView = state.view;
+  // the choreographed entrance belongs to the screen, not to every render of it
+  if (arriving) {
+    app.firstElementChild?.setAttribute("data-enter", "");
+    lastView = state.view;
+  }
   bindImages(app);
   bindGallery(app);
   bindCounter(app);
