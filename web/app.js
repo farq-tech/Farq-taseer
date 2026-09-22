@@ -779,7 +779,7 @@ function mediaHtml(media) {
     .join("");
 }
 
-function waBubble(thread, message, { group, byId }) {
+function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const mine = message.sender_role !== "seller";
   const body = esc(message.body || "").replace(/\n/g, "<br>");
   const media = mediaHtml(message.media);
@@ -793,24 +793,42 @@ function waBubble(thread, message, { group, byId }) {
     const only = group && message.scope === "single_seller" && message.seller_id ? `<div class="wa-to">إلى ${esc(sellerName(thread, message.seller_id))} فقط</div>` : group && some ? `<div class="wa-to">إلى ${esc(some)}</div>` : "";
     const failed = message.delivery_state === "failed" ? `<div class="wa-to warn">ما وصلت الرسالة</div>` : "";
     const progress = deliveryProgress(message);
-    return `<div class="wa-row out"><div class="wa-bubble${media && !body ? " media-only" : ""}">${quote}${media}${body ? `<div class="wa-text">${body}</div>` : ""}${only}${failed}${progress ? `<div class="wa-to">${esc(progress)}</div>` : ""}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
+    return `<div class="wa-row out${first ? " first" : ""}"><div class="wa-bubble${media && !body ? " media-only" : ""}">${quote}${media}${body ? `<div class="wa-text">${body}</div>` : ""}${only}${failed}${progress ? `<div class="wa-to">${esc(progress)}</div>` : ""}<span class="wa-meta">${time}${deliveryTick(message)}</span></div></div>`;
   }
+  // A group chat: each supplier keeps his colour, his avatar and his name, and his price stands out.
+  const color = sellerColor(thread, message.seller_id);
+  const who = sellerName(thread, message.seller_id);
   const price = messagePrice(message);
-  const name = group
-    ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${sellerColor(thread, message.seller_id)}"><bdi>${esc(sellerName(thread, message.seller_id))}</bdi></button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
+  const cheapest = price != null && best != null && price === best;
+  const avatar = group ? `<span class="wa-avatar-sm"${first ? ` style="background:${color}"` : ""}>${first ? initial(who) : ""}</span>` : "";
+  const name = group && first
+    ? `<button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${color}"><bdi>${esc(who)}</bdi></button>`
     : "";
-  return `<div class="wa-row in" style="--seller:${sellerColor(thread, message.seller_id)}"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}${media}${body ? `<div class="wa-text">${body}</div>` : ""}<span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
+  const offer = price != null
+    ? `<div class="wa-offer${cheapest ? " is-cheapest" : ""}">
+        <span class="wa-offer-head">عرض سعر${cheapest ? `<span class="wa-cheapest">الأرخص</span>` : ""}</span>
+        <strong>${esc(money(price))}</strong>
+      </div>`
+    : "";
+  return `<div class="wa-row in${first ? " first" : ""}" style="--seller:${color}">${avatar}<div class="wa-bubble${price != null ? " has-offer" : ""}">${name}${quote}${offer}${media}${body ? `<div class="wa-text">${body}</div>` : ""}<span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
 }
 
 function waMessages(thread, messages, group) {
   const byId = new Map((thread.messages || []).map((item) => [item.id, item]));
+  const prices = (thread.offers || []).map((item) => item.total_price).filter((value) => value != null);
+  const best = prices.length ? Math.min(...prices) : null;
   let lastDay = "";
+  let lastSender = "";
   return messages
     .map((message) => {
       const day = chatDay(message.created_at);
       const divider = day && day !== lastDay ? `<div class="wa-day"><span>${esc(day)}</span></div>` : "";
+      const sender = message.sender_role === "seller" ? `s:${message.seller_id}` : "me";
+      // Messages in a row from the same sender group together, the way WhatsApp stacks them.
+      const first = Boolean(divider) || sender !== lastSender;
       lastDay = day || lastDay;
-      return divider + waBubble(thread, message, { group, byId });
+      lastSender = sender;
+      return divider + waBubble(thread, message, { group, byId, first, best });
     })
     .join("");
 }

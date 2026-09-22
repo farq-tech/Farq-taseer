@@ -864,37 +864,56 @@ apple-pay-button {
 .wa-system.subtle { background: var(--white); color: var(--chat-meta); border-color: var(--line); }
 .wa-day { display: flex; justify-content: center; margin: 8px 0 4px; }
 .wa-day span { background: var(--white); color: var(--chat-meta); font-size: 12px; padding: 5px 12px; border-radius: var(--radius-sm); box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13); }
-.wa-row { display: flex; margin-top: 4px; }
+.wa-row { display: flex; align-items: flex-end; gap: 6px; margin-top: 2px; }
+.wa-row.first { margin-top: 10px; }
 .wa-row.in { justify-content: flex-start; }
 .wa-row.out { justify-content: flex-end; }
+.wa-avatar-sm {
+  width: 28px; height: 28px; flex: none; align-self: flex-start; margin-top: 2px;
+  border-radius: var(--radius-full); display: grid; place-items: center;
+  color: var(--white); font-size: 12px; font-weight: 800;
+}
 .wa-bubble {
-  position: relative; width: fit-content; max-width: 82%; min-width: 96px; padding: 6px 9px 18px;
-  border-radius: var(--radius-md); font-size: 14.5px; line-height: 1.45; color: var(--ink);
-  box-shadow: var(--shadow-soft); text-align: start; overflow-wrap: break-word;
+  position: relative; max-width: 78%; min-width: 96px; padding: 6px 9px 20px;
+  border-radius: var(--radius-md); font-size: 14.5px; line-height: var(--lh-arabic); color: var(--ink);
+  box-shadow: var(--shadow-soft); word-wrap: break-word;
 }
 .wa-row.in .wa-bubble {
   --chat-in: color-mix(in srgb, var(--seller, var(--white)) 13%, var(--white));
   background: var(--chat-in);
-  border-start-start-radius: 0;
   border-inline-end: 3px solid color-mix(in srgb, var(--seller, transparent) 70%, transparent);
 }
+.wa-row.in.first .wa-bubble { border-start-start-radius: 0; }
 .wa-row.in .wa-price { color: var(--seller, var(--brand-900)); }
-.wa-row.out .wa-bubble { background: var(--chat-out); color: var(--chat-out-text); border-start-end-radius: 0; }
+.wa-row.out .wa-bubble { background: var(--chat-out); color: var(--chat-out-text); }
+.wa-row.out.first .wa-bubble { border-start-end-radius: 0; }
 .wa-row.out .wa-meta, .wa-row.out .wa-to { color: var(--chat-out-meta); }
 .wa-row.out .wa-tick { stroke: var(--chat-out-meta); }
-.wa-row.out .wa-quote { background: rgba(255, 255, 255, 0.1); border-inline-start-color: var(--mint-500); }
+.wa-row.out .wa-quote { background: rgba(255, 255, 255, 0.1); }
+.wa-row.out .wa-quote { border-inline-start-color: var(--mint-500); }
 .wa-row.out .wa-quote strong { color: var(--mint-300); }
 .wa-row.out .wa-quote span { color: var(--fareeq-ice); }
 .wa-row.out .wa-to.warn { color: var(--coral-500); }
-.wa-row.in .wa-bubble::before, .wa-row.out .wa-bubble::before {
+.wa-row.in.first .wa-bubble::before, .wa-row.out.first .wa-bubble::before {
   content: ""; position: absolute; top: 0; width: 8px; height: 13px;
 }
-.wa-row.in .wa-bubble::before { inset-inline-start: -8px; background: linear-gradient(to bottom left, var(--chat-in) 50%, transparent 50%); }
-.wa-row.out .wa-bubble::before { inset-inline-end: -8px; background: linear-gradient(to bottom right, var(--chat-out) 50%, transparent 50%); }
-[dir="rtl"] .wa-row.in .wa-bubble::before { background: linear-gradient(to bottom right, var(--chat-in) 50%, transparent 50%); }
-[dir="rtl"] .wa-row.out .wa-bubble::before { background: linear-gradient(to bottom left, var(--chat-out) 50%, transparent 50%); }
-.wa-sender { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; }
-.wa-name { padding: 0; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.wa-row.in.first .wa-bubble::before { inset-inline-start: -8px; background: linear-gradient(to bottom right, var(--chat-in) 50%, transparent 50%); }
+.wa-row.out.first .wa-bubble::before { inset-inline-end: -8px; background: linear-gradient(to bottom left, var(--chat-out) 50%, transparent 50%); }
+.wa-row.in:not(.first) { padding-inline-start: 34px; }
+
+/* A supplier's price, told apart from his words */
+.wa-offer {
+  display: flex; flex-direction: column; gap: 2px; margin: 4px 0 6px; padding: 8px 10px;
+  background: var(--white); border: 1px solid color-mix(in srgb, var(--seller, var(--line)) 35%, var(--line));
+  border-radius: 10px;
+}
+.wa-offer-head { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800; color: var(--chat-meta); }
+.wa-offer strong { font-size: 22px; font-weight: 900; color: var(--seller, var(--brand-900)); line-height: 1.2; }
+.wa-offer.is-cheapest { border-color: var(--status-success); background: var(--feedback-success-bg); }
+.wa-offer.is-cheapest strong { color: var(--feedback-success-fg); }
+.wa-cheapest { background: var(--status-success); color: var(--white); border-radius: var(--radius-full); padding: 1px 8px; font-size: 10.5px; font-weight: 800; }
+
+.wa-name { display: block; padding: 0 0 2px; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; text-align: start; }
 .wa-verb { font-size: 11.5px; color: var(--chat-meta); }
 .wa-price { font-size: 20px; font-weight: 800; color: var(--brand-900); line-height: 1.3; }
 .wa-text { display: block; text-align: start; line-height: 1.45; unicode-bidi: plaintext; overflow-wrap: break-word; }
