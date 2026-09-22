@@ -856,7 +856,8 @@ function detailSheet() {
       <hr class="fq-line">
       <h2 style="font-size:15px">عن المورد والخدمة</h2>
       ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">ما فيه وصف إضافي من المورد.</p>`}
-      ${price ? `<div><span class="fq-price" style="font-size:32px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span><p class="fq-meta" style="margin:4px 0 0">قيمة العرض الإجمالية</p></div>` : ""}
+      ${price ? `<div class="fq-pricecard"><span class="fq-meta">قيمة العرض الإجمالية</span>
+        <span class="fq-price" style="font-size:32px;color:var(--fq-success)">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span></div>` : ""}
       ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)
@@ -961,10 +962,12 @@ function renderSent() {
     <div class="fq-blob land">${ic("check", 56)}</div>
     <div><h1 class="fq-h1">تم إرسال طلبك!</h1>
       <p class="fq-lead">أرسلنا طلب التسعير لـ ${formatCount(info.sellers || 0)} بائعين. راح يوصلك رد خلال دقائق قليلة.</p></div>
-    <div class="fq-card pad" style="width:100%">
+    <div class="fq-card pad fq-facts" style="width:100%">
       <div class="fq-row"><span class="fq-meta">تم التواصل معهم</span><strong>${formatCount(info.sellers || 0)} بائعين</strong></div>
-      <div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong>${esc(info.need || state.query || "")}</strong></div>
-      <div class="fq-row"><span class="fq-meta">الرد المتوقع</span><strong>خلال دقائق</strong></div>
+      <hr class="fq-line">
+      <div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong><bdi>${esc(info.need || state.query || "")}</bdi></strong></div>
+      <hr class="fq-line">
+      <div class="fq-row"><span class="fq-meta">الرد المتوقع</span><strong style="color:var(--fq-success)">خلال دقائق</strong></div>
     </div>
     <div class="fq-actions" style="width:100%;margin-top:auto">
       <button class="fq-btn" type="button" data-action="open-sent">طلباتي</button>
@@ -2322,12 +2325,17 @@ async function sendRequest() {
     state.replyTo = null;
     state.view = "sent";
     history.pushState({}, "", "/");
+    // N02 asks over the success screen, which is where the frame draws it
+    if (!state.pushDismissed && state.pushState !== "on") state.pushAsk = true;
     render();
-    loadRequests().catch(() => {});
-    if (!state.pushDismissed && state.pushState !== "on") {
-      state.pushAsk = true;
-      render();
-    }
+    // refresh the list behind the screen without navigating away from it
+    api("/v1/requests", { quiet: true })
+      .then((data) => {
+        state.requests = data.requests || [];
+        state.requestsLoaded = true;
+        setUnread(state.requests);
+      })
+      .catch(() => {});
   } catch (_error) {
     state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.busy = false;

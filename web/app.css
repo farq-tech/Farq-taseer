@@ -1821,3 +1821,9 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-seller > .fq-row { direction: ltr; }
 .fq-seller > .fq-row > span { direction: rtl; }
 .fq-count-pill { display: inline-flex; padding: 6px 12px; border-radius: 999px; background: var(--fq-surface); border: 1px solid var(--fq-line); font-size: 13px; font-weight: 700; color: var(--fq-deep-green); box-shadow: var(--fq-shadow-card); }
+/* M06: the total sits on a mint card, its label opposite */
+.fq-pricecard { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--fq-soft); border: 1px solid #cfe9dc; border-radius: var(--fq-r-input); padding: 14px 16px; direction: ltr; }
+.fq-pricecard > * { direction: rtl; }
+.fq-facts .fq-row { direction: ltr; }
+.fq-facts .fq-row > * { direction: rtl; }
+.fq-facts strong { font-size: 16px; font-weight: 700; }
