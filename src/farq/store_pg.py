@@ -305,6 +305,8 @@ class PgStore:
             messages=messages,
             offers=offers,
             reply_token=row["reply_token"],
+            awarded_seller_id=row["awarded_seller_id"],
+            awarded_at=_iso(row["awarded_at"]),
             last_synced_at=_iso(row["last_synced_at"]),
             created_at=_iso(row["created_at"]),
         )
@@ -753,6 +755,24 @@ class PgStore:
             )
             conn.execute(advance, (inbound.seq, request_id, seller_id, thread["need"]))
         return message
+
+    AWARD_TEXT = "تم اختيار عرضك. سنتواصل معك لإكمال التفاصيل."
+
+    def award(self, request_id: str, owner_user_id: str, seller_id: str, notify: bool = True) -> Message | None:
+        with self._pool.connection() as conn:
+            known = conn.execute(
+                "select 1 from request_recipients r join requests q on q.id = r.request_id where r.request_id = %s and r.seller_id = %s and q.owner_user_id = %s",
+                (request_id, seller_id, owner_user_id),
+            ).fetchone()
+            if known is None:
+                raise ValueError("unknown seller")
+            conn.execute(
+                "update requests set awarded_seller_id = %s, awarded_at = now() where id = %s and owner_user_id = %s",
+                (seller_id, request_id, owner_user_id),
+            )
+        if not notify:
+            return None
+        return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
 
     def mark_read(self, request_id: str, owner_user_id: str) -> None:
         with self._pool.connection() as conn:

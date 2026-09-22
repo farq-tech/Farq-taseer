@@ -163,6 +163,7 @@ def _moment(value):
 
 
 def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer], messages) -> dict:
+    awarded = row["awarded_seller_id"] if "awarded_seller_id" in (row.keys() if hasattr(row, "keys") else row) else None
     recipient_count = len(recipients)
     read_at = _moment(row["customer_read_at"]) if "customer_read_at" in row.keys() else None
     unread = sum(
@@ -213,6 +214,7 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "latest_offer_amount": latest_amount if not offers else min((item.total_price for item in offers if item.total_price is not None), default=None),
         "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
         "needs": need_cards,
+        "awarded_seller_id": awarded,
     }
 
 
@@ -355,6 +357,8 @@ class Store:
         self._ensure_column("messages", "haraj_message_id", "text")
         self._ensure_column("messages", "haraj_text", "text")
         self._ensure_column("requests", "customer_read_at", "text")
+        self._ensure_column("requests", "awarded_seller_id", "text")
+        self._ensure_column("requests", "awarded_at", "text")
         self._ensure_column("messages", "media_json", "text")
         self._ensure_column("users", "name", "text")
         self._connection.execute(
@@ -676,6 +680,8 @@ class Store:
             messages=messages,
             offers=self._offers_for_request(request_id),
             reply_token=row["reply_token"],
+            awarded_seller_id=self._col(row, "awarded_seller_id"),
+            awarded_at=self._col(row, "awarded_at"),
             last_synced_at=row["last_synced_at"] if "last_synced_at" in row.keys() else None,
             created_at=row["created_at"],
         )
@@ -1122,6 +1128,24 @@ class Store:
         )
         self._connection.commit()
         return message
+
+    AWARD_TEXT = "تم اختيار عرضك. سنتواصل معك لإكمال التفاصيل."
+
+    def award(self, request_id: str, owner_user_id: str, seller_id: str, notify: bool = True) -> Message | None:
+        """The customer picks the winning offer. The supplier hears it from us only if the customer says so."""
+        if self._connection.execute(
+            "select 1 from request_recipients r join requests q on q.id = r.request_id where r.request_id = ? and r.seller_id = ? and q.owner_user_id = ?",
+            (request_id, seller_id, owner_user_id),
+        ).fetchone() is None:
+            raise ValueError("unknown seller")
+        self._connection.execute(
+            "update requests set awarded_seller_id = ?, awarded_at = ? where id = ? and owner_user_id = ?",
+            (seller_id, _now(), request_id, owner_user_id),
+        )
+        self._connection.commit()
+        if not notify:
+            return None
+        return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
 
     def mark_read(self, request_id: str, owner_user_id: str) -> None:
         self._connection.execute("update requests set customer_read_at = ? where id = ? and owner_user_id = ?", (_now(), request_id, owner_user_id))

@@ -19,6 +19,7 @@ const state = {
   account: null,
   authMode: "login",
   showPassword: false,
+  compareOpen: false,
   authError: "",
   returnView: "home",
   picked: null,
@@ -492,7 +493,7 @@ function renderCard(result) {
   if (fresh) newCardsInBatch += 1;
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
-  const name = result.ad?.title || seller.name || "جهة";
+  const name = result.ad?.title || tidyName(seller.name) || "جهة";
   const price = money(result.ad?.price_amount);
   const city = result.ad?.city || seller.city || "";
   const blurb = snip(result);
@@ -503,7 +504,7 @@ function renderCard(result) {
       ${thumb}
       <span class="vendor-copy">
         <strong><bdi>${esc(name)}</bdi></strong>
-        <span class="vendor-meta">${seller.name ? `<bdi>${esc(seller.name)}</bdi>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
+        <span class="vendor-meta">${seller.name ? `<bdi>${esc(tidyName(seller.name))}</bdi>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
         ${blurb ? `<span class="snip">${esc(blurb)}</span>` : ""}
         <span class="price${price ? "" : " on-ask"}">${esc(price || "السعر عند الطلب")}</span>
       </span>
@@ -568,7 +569,7 @@ function renderDetail() {
     ${gallery.length > 1 ? `<div class="gallery-dots" id="gallery-dots">${gallery.map((_item, index) => `<span class="dot${index ? "" : " is-on"}"></span>`).join("")}</div>` : ""}
     <h1 style="font-size:22px"><bdi>${esc(result.ad?.title || seller.name || "")}</bdi></h1>
     <p class="price big">${esc(price || "السعر عند الطلب")}</p>
-    <p class="meta">${esc(place(result))}${seller.name ? ` · ` : ""}${seller.name ? `<bdi>${esc(seller.name)}</bdi>` : ""}</p>
+    <p class="meta">${esc(place(result))}${seller.name ? ` · ` : ""}${seller.name ? `<bdi>${esc(tidyName(seller.name))}</bdi>` : ""}</p>
     ${adStory(result.ad?.description) ? `<p class="story">${esc(adStory(result.ad.description))}</p>` : ""}
     ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
     <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
@@ -577,7 +578,7 @@ function renderDetail() {
 }
 
 function renderReview() {
-  const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: sellerOf(result).name || "بائع" }));
+  const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: tidyName(sellerOf(result).name) || "بائع" }));
   const city = customerCity();
   const ready = state.selected.size > 0 && Boolean(city);
   return `${appBar({ title: "طلب عرض سعر", back: "back-results" })}
@@ -669,7 +670,7 @@ function renderRequests() {
   return `${head}<section class="page soft requests-page">${notifyBanner()}<div class="chat-list">${state.requests
     .map((item) => {
       const need = item.need || item.original_text;
-      const names = item.seller_names || [];
+      const names = (item.seller_names || []).map(tidyName);
       const one = names.length === 1;
       const when = ago(item.last_message_at || item.created_at);
       const unread = item.unread_count || 0;
@@ -694,14 +695,6 @@ function snippet(text, size = 50) {
   return value.length > size ? `${value.slice(0, size)}…` : value;
 }
 
-function sellerName(thread, sellerId) {
-  return (thread.recipients || []).find((item) => item.seller_id === sellerId)?.seller_name || "جهة";
-}
-
-function messagePrice(message) {
-  return message.offer?.total_price ?? message.offer?.amount ?? null;
-}
-
 const CHAT_ZONE = "Asia/Riyadh";
 const chatClock = new Intl.DateTimeFormat("ar-SA", { hour: "numeric", minute: "2-digit", timeZone: CHAT_ZONE });
 const chatDate = new Intl.DateTimeFormat("ar-SA", { day: "numeric", month: "long", timeZone: CHAT_ZONE });
@@ -722,8 +715,43 @@ function chatDay(iso) {
   return chatDate.format(date);
 }
 
-// Colored sender names in the item conversation, the way a WhatsApp group shows them.
-// One color per supplier, from the Farq token palette, handed out in the request's order so no two
+function messagePrice(message) {
+  return message.offer?.total_price ?? message.offer?.amount ?? null;
+}
+
+// «@» suggests whoever answered most recently first; suppliers who never replied come last.
+function byLatestReply(thread) {
+  const latest = new Map();
+  for (const message of thread?.messages || []) {
+    if (message.sender_role === "seller" && message.seller_id) latest.set(message.seller_id, message.created_at);
+  }
+  return (thread?.recipients || [])
+    .map((item) => ({ seller_id: item.seller_id, repliedAt: latest.get(item.seller_id) || "" }))
+    .sort((a, b) => (b.repliedAt || "").localeCompare(a.repliedAt || ""));
+}
+
+// Haraj usernames arrive decorated: emoji, stars, dashes, phone numbers, ALL CAPS. Tidy them for reading,
+// without renaming anyone: the supplier keeps his name, just legible.
+const NAME_NOISE = /[\u{1F300}-\u{1FAFF}\u{2190}-\u{2BFF}\u{FE0F}\u{2600}-\u{27BF}]/gu;
+function tidyName(raw) {
+  let name = String(raw || "").replace(NAME_NOISE, " ");
+  name = name.replace(/[ـ_|•·●◆★☆✦✿❀~^]+/g, " ");
+  name = name.replace(/\b0\d{8,9}\b|\+9665\d{8}/g, " ");
+  name = name.replace(/\s+/g, " ").replace(/^[\s\-–—.,،/\\]+|[\s\-–—.,،/\\]+$/g, "").trim();
+  name = name.replace(/\b[a-z]+\b/g, (word) => word[0].toUpperCase() + word.slice(1));
+  name = name.replace(/\b[A-Z]{4,}\b/g, (word) => word[0] + word.slice(1).toLowerCase());
+  return name || "جهة";
+}
+
+function sellerIndex(thread, sellerId) {
+  return [...new Set((thread?.recipients || []).map((item) => item.seller_id))].indexOf(sellerId);
+}
+
+function sellerName(thread, sellerId) {
+  return tidyName((thread?.recipients || []).find((item) => item.seller_id === sellerId)?.seller_name || "جهة");
+}
+
+// One colour per supplier, from the Farq token palette, handed out in the request's order so no two
 // suppliers in the same conversation share one.
 const SELLER_COLORS = ["#0B6A63", "#22577A", "#DC6E41", "#C7911E", "#248F5C", "#22162B", "#065656", "#BE5532"];
 function sellerColor(thread, sellerId) {
@@ -800,9 +828,10 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const who = sellerName(thread, message.seller_id);
   const price = messagePrice(message);
   const cheapest = price != null && best != null && price === best;
+  const won = thread.awarded_seller_id && thread.awarded_seller_id === message.seller_id;
   const avatar = group ? `<span class="wa-avatar-sm"${first ? ` style="background:${color}"` : ""}>${first ? initial(who) : ""}</span>` : "";
   const name = group && first
-    ? `<button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${color}"><bdi>${esc(who)}</bdi></button>`
+    ? `<button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${color}"><bdi>${esc(who)}</bdi>${won ? `<span class="won-tag">الفائز</span>` : ""}</button>`
     : "";
   const offer = price != null
     ? `<div class="wa-offer${cheapest ? " is-cheapest" : ""}">
@@ -836,6 +865,58 @@ function waMessages(thread, messages, group) {
 // The customer's conversation, laid out like WhatsApp. With one seller it is a private chat;
 // with several it is the item's group chat. Sellers never see it: each has only their own Haraj
 // conversation, and every message here is routed to or synced from those.
+// The offers, side by side: sorted by price, each with the gap to the cheapest, and one tap to pick a winner.
+function compareSheet(thread, offers) {
+  const sorted = [...offers].sort((a, b) => a.total_price - b.total_price);
+  const cheapest = sorted[0]?.total_price ?? 0;
+  const awarded = thread.awarded_seller_id;
+  return `<div class="compare" role="dialog" aria-label="مقارنة العروض">
+    <div class="compare-head">
+      <strong>مقارنة ${formatCount(sorted.length)} عروض</strong>
+      <button type="button" class="plain-btn" data-action="close-compare">إغلاق</button>
+    </div>
+    <ol class="compare-list">
+      ${sorted
+        .map((offer, index) => {
+          const gap = offer.total_price - cheapest;
+          const won = awarded && awarded === offer.seller_id;
+          return `<li class="compare-row${won ? " is-won" : ""}" style="--seller:${sellerColor(thread, offer.seller_id)}">
+            <span class="compare-rank">${formatCount(index + 1)}</span>
+            <span class="compare-who">
+              <bdi>${esc(sellerName(thread, offer.seller_id))}</bdi>
+              <span>${index === 0 ? "الأرخص" : `أغلى بـ ${esc(money(gap))}`}</span>
+            </span>
+            <span class="compare-price">${esc(money(offer.total_price))}</span>
+            ${won
+              ? `<span class="compare-won">الفائز</span>`
+              : `<button class="compare-pick" type="button" data-action="award" data-seller="${esc(offer.seller_id)}" data-price="${esc(String(offer.total_price))}">اختر</button>`}
+          </li>`;
+        })
+        .join("")}
+    </ol>
+    ${awarded ? `<p class="compare-note">تقدر تغيّر الفائز في أي وقت.</p>` : `<p class="compare-note">لما تختار، نرسل للبائع إشعار قبول ونعلّم عرضه هنا.</p>`}
+  </div>`;
+}
+
+function pinnedBar(thread, offers, best, one) {
+  const awarded = thread.awarded_seller_id;
+  if (awarded) {
+    const won = offers.find((item) => item.seller_id === awarded) || (thread.offers || []).find((item) => item.seller_id === awarded);
+    return `<button class="wa-pinned is-won" type="button" data-action="${one ? "all-sellers" : "open-compare"}">
+      <span class="wa-pin won">الفائز</span><strong><bdi>${esc(sellerName(thread, awarded))}</bdi></strong>
+      ${won?.total_price != null ? `<span>${esc(money(won.total_price))}</span>` : ""}
+      ${one ? "" : `<span class="wa-pinned-go">غيّر</span>`}
+    </button>`;
+  }
+  if (!best) return "";
+  if (one) return `<div class="wa-pinned"><span class="wa-pin">عرضه</span><strong>${esc(money(best.total_price))}</strong></div>`;
+  return `<button class="wa-pinned" type="button" data-action="open-compare">
+    <span class="wa-pin">أرخص عرض</span><strong>${esc(money(best.total_price))}</strong>
+    <span><bdi>${esc(sellerName(thread, best.seller_id))}</bdi></span>
+    <span class="wa-pinned-go">قارن ${formatCount(offers.length)}</span>
+  </button>`;
+}
+
 function renderThread() {
   const thread = state.thread;
   if (!thread) {
@@ -854,15 +935,14 @@ function renderThread() {
   const recipients = thread.recipients || [];
   const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
   const group = !one;
+  const namesOf = (items) => items.map((item) => sellerName(thread, item.seller_id));
   const messages = (thread.messages || []).filter(
     (message) => !one || message.seller_id === one || (message.deliveries || []).some((item) => item.seller_id === one),
   );
   const offers = (thread.offers || []).filter((item) => item.total_price != null && (!one || item.seller_id === one));
   const best = [...offers].sort((a, b) => a.total_price - b.total_price)[0];
   const title = one ? sellerName(thread, one) : thread.need || thread.original_text || "المحادثة";
-  const status = one
-    ? thread.need || thread.original_text || ""
-    : recipients.map((item) => item.seller_name).join("، ");
+  const status = one ? thread.need || thread.original_text || "" : namesOf(recipients).join("، ");
   const backAction = state.activeSeller && recipients.length > 1 ? "all-sellers" : "requests";
   const avatar = one
     ? `<span class="wa-avatar" style="background:${sellerColor(thread, one)}">${initial(title)}</span>`
@@ -897,7 +977,7 @@ function renderThread() {
                 const on = state.picked.has(item.seller_id);
                 return `<li><button type="button" class="wa-recipient${on ? " is-on" : ""}" style="--seller:${sellerColor(thread, item.seller_id)}" data-action="toggle-recipient" data-seller="${esc(item.seller_id)}" role="checkbox" aria-checked="${on}">
                   <span class="wa-check" aria-hidden="true">${on ? "✓" : ""}</span>
-                  <span class="wa-recipient-name"><bdi>${esc(item.seller_name)}</bdi></span>
+                  <span class="wa-recipient-name"><bdi>${esc(sellerName(thread, item.seller_id))}</bdi></span>
                 </button></li>`;
               })
               .join("")}</ul>`
@@ -912,13 +992,14 @@ function renderThread() {
         .join("")}</div>`
     : "";
   const nonePicked = pickable && !picked.length;
-  const placeholder = target ? `ردّ على ${target.name}` : !group ? "اكتب رسالة" : picked.length === recipients.length ? "اكتب رسالة للكل" : picked.length ? `اكتب رسالة لـ ${picked.length === 1 ? picked[0].seller_name : `${formatCount(picked.length)} بائعين`}` : "اختر بائع واحد على الأقل";
+  const placeholder = target ? `ردّ على ${target.name}` : !group ? "اكتب رسالة" : picked.length === recipients.length ? "اكتب رسالة للكل" : picked.length ? `اكتب رسالة لـ ${picked.length === 1 ? sellerName(thread, picked[0].seller_id) : `${formatCount(picked.length)} بائعين`}` : "اختر بائع واحد على الأقل";
   const headAvatar = one
     ? `<span class="bar-avatar" style="background:${sellerColor(thread, one)}">${initial(title)}</span>`
     : `<span class="bar-avatar group">${formatCount(recipients.length)}</span>`;
   return `<div class="wa-screen">
     ${appBar({ title, subtitle: status, back: backAction, avatar: headAvatar })}
-    ${best ? `<div class="wa-pinned"><span class="wa-pin">${one ? "عرضه" : "أرخص عرض"}</span><strong>${esc(money(best.total_price))}</strong>${one ? "" : `<span>${esc(best.provider_name || sellerName(thread, best.seller_id))}</span>`}</div>` : ""}
+    ${pinnedBar(thread, offers, best, one)}
+    ${state.compareOpen && !one ? compareSheet(thread, offers) : ""}
     <section class="wa-wall" id="chat-wall">
       <div class="wa-system">${esc(notice)}</div>
       ${waMessages(thread, messages, group) || `<div class="wa-system">بانتظار الرد.</div>`}
@@ -928,6 +1009,7 @@ function renderThread() {
       ${target ? `<div class="wa-replying" style="--who:${sellerColor(state.thread, target.sellerId)}"><div><strong>${esc(target.name)}</strong><span>${esc(snippet(target.body, 60))}</span></div><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
       ${state.notice ? `<div class="wa-notice" role="alert">${esc(state.notice)}<button type="button" data-action="clear-notice" aria-label="إغلاق">✕</button></div>` : ""}
       ${picker}
+      <div class="mention-list" id="mention-list" hidden></div>
       ${files}
       <form class="wa-compose" id="user-reply">
         <div class="wa-field">
@@ -944,7 +1026,7 @@ function renderSeller() {
   const seller = state.seller;
   if (!seller) return `<section class="page"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
-  const partner = options[0]?.seller_name || "الجهة";
+  const partner = tidyName(options[0]?.seller_name) || "الجهة";
   return `${appBar({ title: partner, subtitle: [seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "), avatar: `<span class="bar-avatar" style="background:${SELLER_COLORS[0]}">${initial(partner)}</span>` })}
     <section class="page soft">
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
@@ -1611,10 +1693,16 @@ document.addEventListener("input", (event) => {
   if (event.target.closest("#user-reply") && event.target.name === "body" && !state.activeSeller && state.thread) {
     const list = document.getElementById("mention-list");
     const typed = event.target.value.match(/@([^@]*)$/);
-    const names = typed ? (state.thread.recipients || []).filter((item) => item.seller_name.includes(typed[1].trim())) : [];
+    const wanted = typed ? typed[1].trim() : "";
+    const suggestions = typed ? byLatestReply(state.thread).filter((item) => !wanted || sellerName(state.thread, item.seller_id).includes(wanted)) : [];
     if (list) {
-      list.hidden = !names.length;
-      list.innerHTML = names.map((item) => `<button type="button" data-action="mention" data-name="${esc(item.seller_name)}">${esc(item.seller_name)}</button>`).join("");
+      list.hidden = !suggestions.length;
+      list.innerHTML = suggestions
+        .map((item, index) => {
+          const when = item.repliedAt ? ago(item.repliedAt) : "ما ردّ بعد";
+          return `<button type="button" data-action="mention" data-seller="${esc(item.seller_id)}" style="--seller:${sellerColor(state.thread, item.seller_id)}">${index === 0 && item.repliedAt ? `<span class="mention-flag">آخر رد</span>` : ""}<bdi>${esc(sellerName(state.thread, item.seller_id))}</bdi><span class="mention-when">${esc(when)}</span></button>`;
+        })
+        .join("");
     }
   }
 });
@@ -1726,7 +1814,30 @@ document.addEventListener("click", (event) => {
     state.returnView = "home";
     state.authMode = "login";
     requireSignIn();
-  } else if (action === "toggle-picker") {
+  } else if (action === "open-compare") {
+    state.compareOpen = true;
+    render();
+  } else if (action === "close-compare") {
+    state.compareOpen = false;
+    render();
+  } else if (action === "award") {
+    const seller = target.dataset.seller;
+    const price = Number(target.dataset.price || 0);
+    const who = sellerName(state.thread, seller);
+    if (!window.confirm(`تختار عرض ${who}${price ? ` بـ ${money(price)}` : ""}؟\nبنرسل له إشعار قبول.`)) return;
+    api(`/v1/requests/${state.thread.id}/award`, { method: "POST", json: { seller_id: seller, notify: true } })
+      .then((record) => {
+        threadCache.set(record.id, record);
+        state.thread = record;
+        state.compareOpen = false;
+        state.stickChat = true;
+        render();
+      })
+      .catch(() => {
+        state.notice = "ما قدرنا نسجّل الاختيار، جرّب مرة ثانية";
+        render();
+      });
+    } else if (action === "toggle-picker") {
     state.pickerOpen = state.pickerOpen === false;
     render();
   } else if (action === "pick-all") {
@@ -1784,10 +1895,19 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "mention") {
     const input = document.querySelector("#user-reply input[name=body]");
-    if (!input) return;
-    input.value = input.value.replace(/@[^@]*$/, `@${target.dataset.name} `);
-    document.getElementById("mention-list").hidden = true;
-    input.focus();
+    const seller = target.dataset.seller;
+    if (!input || !seller) return;
+    // Picking from «@» aims the message at that supplier alone.
+    state.picked = new Set([seller]);
+    input.value = input.value.replace(/@[^@]*$/, "");
+    const list = document.getElementById("mention-list");
+    if (list) list.hidden = true;
+    render();
+    const next = document.querySelector("#user-reply input[name=body]");
+    if (next) {
+      next.value = input.value;
+      next.focus();
+    }
   }
 });
 

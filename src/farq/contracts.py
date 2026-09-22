@@ -206,5 +206,7 @@ class RequestRecord(ContractModel):
     messages: list[Message] = Field(default_factory=list)
     offers: list[Offer] = Field(default_factory=list)
     reply_token: str | None = None
+    awarded_seller_id: str | None = None
+    awarded_at: str | None = None
     last_synced_at: str | None = None
     created_at: str

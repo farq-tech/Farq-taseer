@@ -87,6 +87,11 @@ class SellerReplyBody(ApiModel):
     delivery_price: float | None = None
 
 
+class AwardBody(ApiModel):
+    seller_id: str
+    notify: bool = True
+
+
 class PushKeys(ApiModel):
     p256dh: str
     auth: str
@@ -405,6 +410,18 @@ def create_app(
         if view is None:
             raise HTTPException(status_code=404, detail="request not found")
         return view
+
+    @app.post("/v1/requests/{request_id}/award")
+    def award(request_id: str, body: AwardBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        record = store.get_request(request_id, user_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        try:
+            store.award(request_id, user_id, body.seller_id, body.notify)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        return store.get_request(request_id, user_id).model_dump(mode="json")
 
     @app.get("/v1/push/key")
     def push_key() -> dict:
