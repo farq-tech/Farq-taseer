@@ -16,8 +16,8 @@ from farq.config import PaymentsConfig, SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.intent import analyze, analyze_needs
-from farq.haraj_chat import HarajChat, NotConnectedChat
-from farq.worker import dispatch_pending, start_poller
+from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
+from farq.worker import dispatch_pending, poll_once, start_poller
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
@@ -269,7 +269,7 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        background.add_task(dispatch_pending, store, chat)
+        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         record = store.get_request(request_id, user_id)
         return record.model_dump(mode="json")
 
@@ -309,7 +309,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        background.add_task(dispatch_pending, store, chat)
+        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return created.model_dump(mode="json")
 
     @app.get("/v1/requests/{request_id}")
@@ -447,6 +447,17 @@ def create_app(
                 return FileResponse(candidate)
             return FileResponse(WEB_DIR / "index.html")
 
+    @app.get("/v1/internal/haraj-sync")
+    def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
+        # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
+        secret = os.environ.get("CRON_SECRET")
+        if not secret:
+            raise HTTPException(status_code=503, detail="CRON_SECRET is not set")
+        if authorization != f"Bearer {secret}":
+            raise HTTPException(status_code=401, detail="unauthorized")
+        sent, received = poll_once(store, chat, budget_seconds=25)
+        return {"sent": sent, "received": received}
+
     return app
 
 
@@ -482,8 +493,8 @@ def create_default_app() -> FastAPI:
     config = SearchConfig()
     live = HarajLiveClient(config) if config.enable_live else None
     moyasar = MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
-    # No Haraj messaging adapter exists yet: messages queue until one is plugged in here.
-    chat = NotConnectedChat()
+    # Taseer's own Haraj account from its own server settings; without them nothing is sent.
+    chat = chat_from_env(cache=store)
     application = create_app(store, corpus, live, config, payments, moyasar, chat)
     # Serverless instances do not keep a thread alive; on Vercel the cron route drives the sync.
     if not os.environ.get("VERCEL"):

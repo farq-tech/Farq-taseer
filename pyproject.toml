@@ -10,6 +10,7 @@ dependencies = [
   "python-multipart>=0.0.9",
   "httpx>=0.27",
   "psycopg[binary,pool]>=3.2",
+  "websockets>=13",
 ]
 
 [project.optional-dependencies]

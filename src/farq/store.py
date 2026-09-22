@@ -28,6 +28,24 @@ def _hash_password(password: str, salt: str) -> str:
     return digest.hex()
 
 
+QUOTE_LINK = "{quote_link}"
+
+
+def invite_text(item: str, city: str | None) -> str:
+    """Farq's fixed invite: the item only, no quantities, prices, notes or buyer number.
+    The link is each seller's own quote page, filled in when the message is sent."""
+    line = f"{item.strip()} في {city}" if city else item.strip()
+    return "\n".join(
+        [
+            "السلام عليكم عزيزي البائع",
+            "لدينا مشتري يطلب توفير:",
+            line,
+            "في حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك",
+            QUOTE_LINK,
+        ]
+    )
+
+
 def _delivery_state(deliveries: list[dict]) -> str:
     statuses = {item["status"] for item in deliveries}
     if statuses == {"sent"}:
@@ -182,6 +200,7 @@ class Store:
         self._ensure_column("messages", "scope", "text")
         self._ensure_column("messages", "haraj_conversation_id", "text")
         self._ensure_column("messages", "haraj_message_id", "text")
+        self._ensure_column("messages", "haraj_text", "text")
         self._connection.executescript(
             """
             create unique index if not exists messages_haraj_message on messages (haraj_message_id) where haraj_message_id is not null;
@@ -208,8 +227,18 @@ class Store:
               created_at text not null
             );
             update message_deliveries set delivery_status = 'queued' where delivery_status = 'sending';
+            create table if not exists haraj_channel (
+              key text primary key,
+              value text,
+              updated_at text not null
+            );
             """
         )
+        self._ensure_column("haraj_threads", "high_water", "integer")
+        self._ensure_column("haraj_threads", "checked_at", "text")
+        self._ensure_column("haraj_threads", "retry_at", "text")
+        self._ensure_column("haraj_threads", "failure_code", "text")
+        self._ensure_column("message_deliveries", "last_attempt_at", "text")
         self._ensure_column("request_recipients", "need", "text")
         self._ensure_column("request_recipients", "reply_token", "text")
         self._ensure_column("request_recipients", "send_status", "text")
@@ -359,7 +388,15 @@ class Store:
             lines = ["طلب عرض سعر", (item_need or need or original_text or "").strip(), f"المدينة: {city_name}"]
             if notes and notes.strip():
                 lines.append(notes.strip())
-            self._enqueue(request_id, "\n".join(line for line in lines if line), item_need or None, None, None, owner_user_id)
+            self._enqueue(
+                request_id,
+                "\n".join(line for line in lines if line),
+                item_need or None,
+                None,
+                None,
+                owner_user_id,
+                haraj_text=invite_text(item_need or need or original_text, city_name),
+            )
         self._connection.commit()
         return request_id
 
@@ -500,7 +537,16 @@ class Store:
 
     # --- Router: customer -> Haraj conversations -------------------------------------------------
 
-    def _enqueue(self, request_id: str, body: str, need: str | None, seller_id: str | None, reply_to: str | None, owner_user_id: str | None = None) -> Message:
+    def _enqueue(
+        self,
+        request_id: str,
+        body: str,
+        need: str | None,
+        seller_id: str | None,
+        reply_to: str | None,
+        owner_user_id: str | None = None,
+        haraj_text: str | None = None,
+    ) -> Message:
         recipients = self._connection.execute("select * from request_recipients where request_id = ?", (request_id,)).fetchall()
         default_need = self._connection.execute("select need from requests where id = ?", (request_id,)).fetchone()["need"]
         item_of = lambda row: self._col(row, "need") or default_need or ""
@@ -518,6 +564,8 @@ class Store:
                 raise ValueError("unknown item")
         scope = SINGLE_SELLER if seller_id is not None else ALL_SELLERS
         message = self.add_message(request_id, "user", owner_user_id, body, None, seller_id=seller_id, need=need, reply_to=reply_to, scope=scope)
+        if haraj_text is not None:
+            self._connection.execute("update messages set haraj_text = ? where id = ?", (haraj_text, message.id))
         created = _now()
         for row in targets:
             self._connection.execute(
@@ -555,7 +603,9 @@ class Store:
     def claim_deliveries(self, limit: int = 50) -> list[dict]:
         rows = self._connection.execute(
             """
-            select d.id, d.request_id, d.seller_id, d.need, m.body, t.ad_id, t.haraj_conversation_id
+            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, t.ad_id, t.haraj_conversation_id,
+              (select r.reply_token from request_recipients r where r.request_id = d.request_id and r.seller_id = d.seller_id
+               order by coalesce(r.need, '') = d.need desc limit 1) as reply_token
             from message_deliveries d
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
@@ -566,7 +616,7 @@ class Store:
             (limit,),
         ).fetchall()
         for row in rows:
-            self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1 where id = ?", (row["id"],))
+            self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1, last_attempt_at = ? where id = ?", (_now(), row["id"]))
         self._connection.commit()
         return [dict(row) for row in rows]
 
@@ -580,9 +630,10 @@ class Store:
                 "update message_deliveries set delivery_status = 'sent', haraj_message_id = ?, sent_at = ?, error = null where id = ?",
                 (sent.haraj_message_id, _now(), delivery_id),
             )
+            # Replies are read from our first message on: older history in the conversation is not imported.
             self._connection.execute(
-                "update haraj_threads set haraj_conversation_id = ? where request_id = ? and seller_id = ? and need = ?",
-                (sent.haraj_conversation_id, *key),
+                "update haraj_threads set haraj_conversation_id = ?, high_water = coalesce(high_water, ?) where request_id = ? and seller_id = ? and need = ?",
+                (sent.haraj_conversation_id, sent.seq, *key),
             )
             status = "sent"
         else:
@@ -601,13 +652,43 @@ class Store:
 
     # --- Sync: Haraj -> item conversation ---------------------------------------------------------
 
-    def threads_to_sync(self) -> list[dict]:
-        rows = self._connection.execute("select * from haraj_threads where haraj_conversation_id is not null").fetchall()
+    def threads_to_sync(self, limit: int = 20, now: float | None = None) -> list[dict]:
+        stamp = datetime.fromtimestamp(now, tz=timezone.utc).isoformat() if now is not None else _now()
+        rows = self._connection.execute(
+            "select * from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?) order by checked_at is not null, checked_at limit ?",
+            (stamp, limit),
+        ).fetchall()
         return [dict(row) for row in rows]
+
+    def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None) -> None:
+        now = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
+        self._connection.execute(
+            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ? where request_id = ? and seller_id = ? and need = ?",
+            (now.isoformat(), (now + timedelta(seconds=retry_seconds)).isoformat(), failure_code, thread["request_id"], thread["seller_id"], thread["need"]),
+        )
+        self._connection.commit()
+
+    # --- Channel state shared by every instance: session tokens, pauses, pacing ------------------
+
+    def get_value(self, key: str) -> str | None:
+        row = self._connection.execute("select value from haraj_channel where key = ?", (key,)).fetchone()
+        return None if row is None else row["value"]
+
+    def set_value(self, key: str, value: str | None) -> None:
+        self._connection.execute(
+            "insert into haraj_channel (key, value, updated_at) values (?, ?, ?) on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at",
+            (key, value, _now()),
+        )
+        self._connection.commit()
 
     def record_inbound(self, thread: dict, inbound: InboundMessage) -> Message | None:
         """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
         if self._connection.execute("select 1 from messages where haraj_message_id = ?", (inbound.haraj_message_id,)).fetchone():
+            self._connection.execute(
+                "update haraj_threads set high_water = max(coalesce(high_water, 0), ?) where request_id = ? and seller_id = ? and need = ?",
+                (inbound.seq, thread["request_id"], thread["seller_id"], thread["need"]),
+            )
+            self._connection.commit()
             return None
         request_id, seller_id, need = thread["request_id"], thread["seller_id"], thread["need"] or None
         recipient = self._connection.execute(
@@ -651,8 +732,8 @@ class Store:
             (uuid4().hex, owner["owner_user_id"], request_id, "seller_reply", message.created_at),
         )
         self._connection.execute(
-            "update haraj_threads set last_fetched_at = max(coalesce(last_fetched_at, ''), ?) where request_id = ? and seller_id = ? and need = ?",
-            (inbound.sent_at, request_id, seller_id, thread["need"]),
+            "update haraj_threads set last_fetched_at = ?, high_water = max(coalesce(high_water, 0), ?) where request_id = ? and seller_id = ? and need = ?",
+            (_now(), inbound.seq, request_id, seller_id, thread["need"]),
         )
         self._connection.commit()
         return message

@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -271,18 +272,33 @@ class FakeHaraj:
     def __init__(self):
         self.sent: list[tuple[str, str, str]] = []
         self.inbox: dict[str, list[InboundMessage]] = {}
+        self.seq = 0
 
     def send(self, *, conversation_id, seller_id, ad_id, body):
-        conversation = conversation_id or f"conv-{seller_id}-{ad_id}"
+        conversation = conversation_id or f"p2p1_{seller_id}"
+        self.seq += 1
         self.sent.append((conversation, seller_id, body))
-        return SentMessage(haraj_conversation_id=conversation, haraj_message_id=f"out-{len(self.sent)}")
+        return SentMessage(haraj_conversation_id=conversation, haraj_message_id=f"{conversation}:{self.seq}", seq=self.seq)
 
-    def fetch(self, *, conversation_id, since):
-        return [item for item in self.inbox.get(conversation_id, []) if since is None or item.sent_at > since]
+    def fetch(self, *, conversation_id, seller_id, after_seq):
+        return [item for item in self.inbox.get(conversation_id, []) if item.seq > after_seq]
+
+
+class Clock:
+    def __init__(self):
+        self.now = time.time()
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
 
 
 def test_item_conversation_routes_through_haraj(tmp_path: Path):
     haraj = FakeHaraj()
+    clock = Clock()
+    run = lambda: poll_once(store, haraj, budget_seconds=600, sleep=clock.sleep, clock=clock)
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
     api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False), chat=haraj))
     headers = {"Authorization": f"Bearer {api.post('/v1/auth/guest').json()['token']}"}
@@ -294,47 +310,64 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
             "need": "سباك",
             "city": "الرياض",
             "recipients": [
-                {"seller_id": "p1", "seller_name": "محمد", "need": "سباك", "ad_id": "a1"},
-                {"seller_id": "p2", "seller_name": "خالد", "need": "سباك", "ad_id": "a2"},
-                {"seller_id": "e1", "seller_name": "أحمد", "need": "كهربائي", "ad_id": "a3"},
+                {"seller_id": "11", "seller_name": "محمد", "need": "سباك", "ad_id": "a1"},
+                {"seller_id": "12", "seller_name": "خالد", "need": "سباك", "ad_id": "a2"},
+                {"seller_id": "21", "seller_name": "أحمد", "need": "كهربائي", "ad_id": "a3"},
             ],
         },
     ).json()
     request_id = created["id"]
     url = f"/v1/requests/{request_id}/messages"
-    # Opening message: one per item, into each seller's own Haraj conversation.
+    # The request goes out at once to one seller; the rest wait their 20 seconds.
+    assert len(haraj.sent) == 1
+    run()
+    tokens = {item["seller_id"]: item["reply_token"] for item in created["recipients"]}
+
+    def invite(item, seller):
+        return (
+            "السلام عليكم عزيزي البائع\nلدينا مشتري يطلب توفير:\n"
+            f"{item} في الرياض\nفي حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك\n"
+            f"https://taseer.farq.sa/s/{tokens[seller]}"
+        )
+
+    # Farq's fixed invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
     assert sorted((seller, body) for _conv, seller, body in haraj.sent) == [
-        ("e1", "طلب عرض سعر\nكهربائي\nالمدينة: الرياض"),
-        ("p1", "طلب عرض سعر\nسباك\nالمدينة: الرياض"),
-        ("p2", "طلب عرض سعر\nسباك\nالمدينة: الرياض"),
+        ("11", invite("سباك", "11")),
+        ("12", invite("سباك", "12")),
+        ("21", invite("كهربائي", "21")),
     ]
+    assert len(set(tokens.values())) == 3
     assert {item["send_status"] for item in api.get(f"/v1/requests/{request_id}", headers=headers).json()["recipients"]} == {"sent"}
 
-    haraj.inbox["conv-p1-a1"] = [InboundMessage("in-1", "أقدر بكرة والسعر ٢٥٠ ريال", "2099-01-01T00:00:01+00:00")]
-    haraj.inbox["conv-p2-a2"] = [InboundMessage("in-2", "كم نقطة تسريب؟", "2099-01-01T00:00:02+00:00")]
-    assert poll_once(store, haraj) == (0, 2)
-    assert poll_once(store, haraj) == (0, 0)  # already recorded, not duplicated
+    haraj.inbox["p2p1_11"] = [InboundMessage("p2p1_11:90", "أقدر بكرة والسعر ٢٥٠ ريال", "2099-01-01T00:00:01+00:00", 90)]
+    haraj.inbox["p2p1_12"] = [InboundMessage("p2p1_12:91", "كم نقطة تسريب؟", "2099-01-01T00:00:02+00:00", 91)]
+    clock.sleep(31)  # a conversation read a moment ago waits 30 seconds
+    assert run() == (0, 2)
+    clock.sleep(60)
+    assert run() == (0, 0)  # read position moved past them: nothing is recorded twice
 
     thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
     question = next(item for item in thread["messages"] if item["body"] == "كم نقطة تسريب؟")
     assert question["direction"] == "seller_to_customer"
-    assert question["haraj_conversation_id"] == "conv-p2-a2"
+    assert question["haraj_conversation_id"] == "p2p1_12"
     offer = thread["offers"][0]
-    assert (offer["seller_id"], offer["provider_name"], offer["total_price"]) == ("p1", "محمد", 250)
+    assert (offer["seller_id"], offer["provider_name"], offer["total_price"]) == ("11", "محمد", 250)
 
     haraj.sent.clear()
     broadcast = api.post(url, headers=headers, json={"body": "أبي الشغل الخميس", "need": "سباك"}).json()
     reply = api.post(url, headers=headers, json={"body": "نقطتين", "reply_to": question["id"]}).json()
-    direct = api.post(url, headers=headers, json={"body": "تقدر الصبح؟", "seller_id": "p1"}).json()
+    direct = api.post(url, headers=headers, json={"body": "تقدر الصبح؟", "seller_id": "11"}).json()
+    clock.sleep(60)
+    run()
     assert (broadcast["scope"], broadcast["seller_id"]) == ("all_sellers", None)
-    assert (reply["scope"], reply["seller_id"]) == ("single_seller", "p2")
-    assert (direct["scope"], direct["seller_id"]) == ("single_seller", "p1")
+    assert (reply["scope"], reply["seller_id"]) == ("single_seller", "12")
+    assert (direct["scope"], direct["seller_id"]) == ("single_seller", "11")
     # Broadcast reaches only this item's sellers; replies and picks reach one seller's Haraj conversation.
     assert haraj.sent == [
-        ("conv-p1-a1", "p1", "أبي الشغل الخميس"),
-        ("conv-p2-a2", "p2", "أبي الشغل الخميس"),
-        ("conv-p2-a2", "p2", "نقطتين"),
-        ("conv-p1-a1", "p1", "تقدر الصبح؟"),
+        ("p2p1_11", "11", "أبي الشغل الخميس"),
+        ("p2p1_12", "12", "أبي الشغل الخميس"),
+        ("p2p1_12", "12", "نقطتين"),
+        ("p2p1_11", "11", "تقدر الصبح؟"),
     ]
     assert api.post(url, headers=headers, json={"body": "x"}).status_code == 422  # several items: pick one
     assert api.post(url, headers=headers, json={"body": "x", "seller_id": "nobody"}).status_code == 422

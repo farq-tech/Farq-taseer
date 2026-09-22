@@ -1,9 +1,12 @@
 """Haraj router and sync.
 
 Outgoing: queued deliveries from the item conversation go to each seller's Haraj
-conversation. Incoming: seller replies are pulled from those conversations and
-attached to their item and seller. Nothing is marked sent unless Haraj accepted it,
-and last_synced_at only moves when Haraj was actually read.
+conversation, one at a time, at least 20 seconds apart. A refusal (401, 402, 403,
+429, 451) stops sending for 30 minutes. A message whose POST may have reached
+Haraj is never sent again. Incoming: seller replies are read from those
+conversations only, at least 2 seconds apart, with 15 minutes of quiet after a
+refusal. Pacing and pauses live in the store, so every instance (and every
+serverless invocation) sees them.
 """
 
 from __future__ import annotations
@@ -11,77 +14,162 @@ from __future__ import annotations
 import os
 import threading
 import time
+from typing import Callable
 
-from farq.haraj_chat import HarajChat, HarajChatUnavailable, NotConnectedChat
-from farq.store import Store
+from farq.store import QUOTE_LINK
+from farq.haraj_chat import (
+    READ_PAUSE_SECONDS,
+    READ_SPACING_SECONDS,
+    SEND_PAUSE_SECONDS,
+    SEND_SPACING_SECONDS,
+    HarajChat,
+    HarajChatUnavailable,
+    HarajNotSent,
+    HarajRefused,
+    HarajSendUncertain,
+    NotConnectedChat,
+)
 
 MAX_ATTEMPTS = 5
+
+
+def public_base_url() -> str:
+    return os.environ.get("PUBLIC_BASE_URL", "https://taseer.farq.sa").rstrip("/")
 
 _started = False
 _lock = threading.Lock()
 
 
-def dispatch_pending(store: Store, chat: HarajChat) -> int:
+def _paused(store, key: str, now: float) -> bool:
+    value = store.get_value(key)
+    return bool(value) and float(value) > now
+
+
+def dispatch_pending(
+    store,
+    chat: HarajChat,
+    budget_seconds: float = 50,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.time,
+) -> int:
+    if isinstance(chat, NotConnectedChat):
+        return 0
     sent = 0
     with _lock:
-        for item in store.claim_deliveries():
+        deadline = clock() + budget_seconds
+        while True:
+            now = clock()
+            if _paused(store, "send_paused_until", now):
+                break
+            wait = max(0.0, float(store.get_value("last_send_at") or 0) + SEND_SPACING_SECONDS - now)
+            if now + wait > deadline:
+                break
+            claimed = store.claim_deliveries(limit=1)
+            if not claimed:
+                break
+            item = claimed[0]
+            body = item["body"]
+            if QUOTE_LINK in body:
+                if not item.get("reply_token"):
+                    store.finish_delivery(item["id"], error="NO_QUOTE_LINK", retry=False)
+                    continue
+                body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
+            sleep(wait)
             try:
                 result = chat.send(
                     conversation_id=item["haraj_conversation_id"],
                     seller_id=item["seller_id"],
                     ad_id=item["ad_id"],
-                    body=item["body"],
+                    body=body,
                 )
             except HarajChatUnavailable as exc:
-                store.finish_delivery(item["id"], error=str(exc), retry=True)
+                store.finish_delivery(item["id"], error=exc.code, retry=True)
+                break
+            except HarajRefused as exc:
+                store.set_value("last_send_at", str(clock()))
+                retry = store.delivery_attempts(item["id"]) < MAX_ATTEMPTS
+                store.finish_delivery(item["id"], error=f"REFUSED_{exc.status}", retry=retry)
+                if exc.hard_stop:
+                    store.set_value("send_paused_until", str(clock() + SEND_PAUSE_SECONDS))
+                    break
                 continue
-            except Exception as exc:  # noqa: BLE001 - one seller failing must not stop the others
-                attempts = store.delivery_attempts(item["id"])
-                store.finish_delivery(item["id"], error=str(exc), retry=attempts < MAX_ATTEMPTS)
+            except HarajSendUncertain as exc:
+                store.set_value("last_send_at", str(clock()))
+                store.finish_delivery(item["id"], error=exc.code, retry=False)
                 continue
+            except (HarajNotSent, Exception) as exc:  # noqa: BLE001 - nothing was posted
+                retry = store.delivery_attempts(item["id"]) < MAX_ATTEMPTS
+                store.finish_delivery(item["id"], error=str(exc) or type(exc).__name__, retry=retry)
+                continue
+            store.set_value("last_send_at", str(clock()))
             store.finish_delivery(item["id"], sent=result)
             sent += 1
     return sent
 
 
-def sync_replies(store: Store, chat: HarajChat) -> int:
+def sync_replies(
+    store,
+    chat: HarajChat,
+    budget_seconds: float = 40,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.time,
+) -> int:
+    if isinstance(chat, NotConnectedChat) or _paused(store, "inbox_paused_until", clock()):
+        return 0
     received = 0
+    deadline = clock() + budget_seconds
     synced: set[str] = set()
-    for thread in store.threads_to_sync():
+    for index, thread in enumerate(store.threads_to_sync(now=clock())):
+        if clock() + READ_SPACING_SECONDS > deadline:
+            break
+        if index:
+            sleep(READ_SPACING_SECONDS)
         try:
-            inbound = chat.fetch(conversation_id=thread["haraj_conversation_id"], since=thread["last_fetched_at"])
-        except HarajChatUnavailable:
-            return received
-        except Exception:  # noqa: BLE001
-            continue
+            inbound = chat.fetch(
+                conversation_id=thread["haraj_conversation_id"],
+                seller_id=thread["seller_id"],
+                after_seq=int(thread.get("high_water") or 0),
+            )
+        except HarajRefused as exc:
+            store.thread_checked(thread, f"HTTP_{exc.status}", READ_PAUSE_SECONDS if exc.hard_stop else 60, now=clock())
+            if exc.hard_stop:
+                store.set_value("inbox_paused_until", str(clock() + READ_PAUSE_SECONDS))
+            break
+        except HarajChatUnavailable as exc:
+            if exc.code in ("DISABLED", "CONFIGURATION_REQUIRED"):
+                break
+            store.thread_checked(thread, exc.code, 3600 if exc.code == "AMBIGUOUS" else 60, now=clock())
+            if exc.code == "AMBIGUOUS":
+                continue
+            break
         for item in inbound:
             if store.record_inbound(thread, item) is not None:
                 received += 1
+        store.thread_checked(thread, now=clock())
         synced.add(thread["request_id"])
     for request_id in synced:
         store.mark_synced(request_id)
     return received
 
 
-def poll_once(store: Store, chat: HarajChat | None = None) -> tuple[int, int]:
+def poll_once(store, chat: HarajChat | None = None, **kwargs) -> tuple[int, int]:
     chat = chat or NotConnectedChat()
-    return dispatch_pending(store, chat), sync_replies(store, chat)
+    return dispatch_pending(store, chat, **kwargs), sync_replies(store, chat, **kwargs)
 
 
-def start_poller(store: Store, chat: HarajChat | None = None, interval_seconds: int | None = None) -> None:
+def start_poller(store, chat: HarajChat | None = None, interval_seconds: int | None = None) -> None:
+    """Long-running hosts only. On Vercel the cron route drives poll_once instead."""
     global _started
-    if os.environ.get("FARQ_ENABLE_POLL", "1") != "1":
-        return
-    if _started:
+    if os.environ.get("FARQ_ENABLE_POLL", "1") != "1" or _started:
         return
     _started = True
-    delay = interval_seconds if interval_seconds is not None else int(os.environ.get("FARQ_POLL_SECONDS", "120"))
+    delay = interval_seconds if interval_seconds is not None else int(os.environ.get("FARQ_POLL_SECONDS", "60"))
 
     def loop() -> None:
         while True:
             try:
                 poll_once(store, chat)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
             time.sleep(max(30, delay))
 
