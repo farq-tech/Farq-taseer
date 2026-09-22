@@ -839,7 +839,13 @@ apple-pay-button {
   border-radius: var(--radius-md); font-size: 14.5px; line-height: var(--lh-arabic); color: var(--ink);
   box-shadow: var(--shadow-soft); word-wrap: break-word;
 }
-.wa-row.in .wa-bubble { background: var(--chat-in); border-start-start-radius: 0; }
+.wa-row.in .wa-bubble {
+  --chat-in: color-mix(in srgb, var(--seller, var(--white)) 13%, var(--white));
+  background: var(--chat-in);
+  border-start-start-radius: 0;
+  border-inline-end: 3px solid color-mix(in srgb, var(--seller, transparent) 70%, transparent);
+}
+.wa-row.in .wa-price { color: var(--seller, var(--brand-900)); }
 .wa-row.out .wa-bubble { background: var(--chat-out); color: var(--chat-out-text); border-start-end-radius: 0; }
 .wa-row.out .wa-meta, .wa-row.out .wa-to { color: var(--chat-out-meta); }
 .wa-row.out .wa-tick { stroke: var(--chat-out-meta); }

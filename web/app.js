@@ -489,12 +489,16 @@ function chatDay(iso) {
 }
 
 // Colored sender names in the item conversation, the way a WhatsApp group shows them.
-// Farq token colors that read on white bubbles and behind white initials.
-const NAME_COLORS = ["#0B6A63", "#22577A", "#DC6E41", "#248F5C", "#C7911E", "#065656", "#BE5532", "#22162B"];
-function nameColor(sellerId) {
+// One color per supplier, from the Farq token palette, handed out in the request's order so no two
+// suppliers in the same conversation share one.
+const SELLER_COLORS = ["#0B6A63", "#22577A", "#DC6E41", "#C7911E", "#248F5C", "#22162B", "#065656", "#BE5532"];
+function sellerColor(thread, sellerId) {
+  const ids = [...new Set((thread?.recipients || []).map((item) => item.seller_id))];
+  const index = ids.indexOf(sellerId);
+  if (index >= 0) return SELLER_COLORS[index % SELLER_COLORS.length];
   let hash = 0;
   for (const char of String(sellerId || "")) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return NAME_COLORS[hash % NAME_COLORS.length];
+  return SELLER_COLORS[hash % SELLER_COLORS.length];
 }
 
 const TICK = {
@@ -515,7 +519,7 @@ function waBubble(thread, message, { group, byId }) {
   const body = esc(message.body || "").replace(/\n/g, "<br>");
   const quoted = message.reply_to ? byId.get(message.reply_to) : null;
   const quote = quoted
-    ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? nameColor(quoted.seller_id) : "#83F1B1"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
+    ? `<div class="wa-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#83F1B1"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
     : "";
   const time = `<time>${esc(chatTime(message.created_at))}</time>`;
   if (mine) {
@@ -525,9 +529,9 @@ function waBubble(thread, message, { group, byId }) {
   }
   const price = messagePrice(message);
   const name = group
-    ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${nameColor(message.seller_id)}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
+    ? `<div class="wa-sender"><button class="wa-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${sellerColor(thread, message.seller_id)}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="wa-verb">قدّم سعر</span>` : ""}</div>`
     : "";
-  return `<div class="wa-row in"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}<div class="wa-text">${body}</div><span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
+  return `<div class="wa-row in" style="--seller:${sellerColor(thread, message.seller_id)}"><div class="wa-bubble">${name}${quote}${price != null ? `<div class="wa-price">${esc(money(price))}</div>` : ""}<div class="wa-text">${body}</div><span class="wa-meta"><button class="wa-reply" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ">ردّ</button>${time}</span></div></div>`;
 }
 
 function waMessages(thread, messages, group) {
@@ -563,7 +567,7 @@ function renderThread() {
     : recipients.map((item) => item.seller_name).join("، ");
   const backAction = state.activeSeller && recipients.length > 1 ? "all-sellers" : "requests";
   const avatar = one
-    ? `<span class="wa-avatar" style="background:${nameColor(one)}">${initial(title)}</span>`
+    ? `<span class="wa-avatar" style="background:${sellerColor(thread, one)}">${initial(title)}</span>`
     : `<span class="wa-avatar group">${formatCount(recipients.length)}</span>`;
   const notice = group
     ? `رسالتك توصل لكل الجهات (${formatCount(recipients.length)}). «ردّ» أو @الاسم توصل له بس.`
@@ -582,7 +586,7 @@ function renderThread() {
       <div class="wa-system subtle">${esc(thread.last_synced_at ? `آخر تحديث ${ago(thread.last_synced_at)}` : "بانتظار أول تحديث")}</div>
     </section>
     <div class="wa-dock">
-      ${target ? `<div class="wa-replying" style="--who:${nameColor(target.sellerId)}"><div><strong>${esc(target.name)}</strong><span>${esc(snippet(target.body, 60))}</span></div><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
+      ${target ? `<div class="wa-replying" style="--who:${sellerColor(state.thread, target.sellerId)}"><div><strong>${esc(target.name)}</strong><span>${esc(snippet(target.body, 60))}</span></div><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
       <div class="mention-list" id="mention-list" hidden></div>
       <form class="wa-compose" id="user-reply">
         <div class="wa-field">
