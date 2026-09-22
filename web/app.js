@@ -2309,22 +2309,28 @@ async function loadSubStatus() {
 }
 
 // N01 builds its feed from the requests list: each offer, reply and award is one line.
-function loadNotifications() {
+// N01 builds its feed from the requests list: each offer, reply and award is one line.
+// It loads the list itself, because loadRequests() would switch the screen to «طلباتي».
+async function loadNotifications() {
   state.view = "notifications";
   render();
-  loadRequests()
-    .then(() => {
-      const feed = [];
-      for (const item of state.requests) {
-        const need = item.need || item.original_text || "";
-        if (item.awarded_seller_id) feed.push({ kind: "award", need, text: "تم اعتماد العرض الفائز", at: item.last_message_at || item.created_at, request_id: item.id, unread: false });
-        if (item.latest_offer_amount != null) feed.push({ kind: "offer", need, text: `وصل عرض بقيمة ${money(item.latest_offer_amount)}`, at: item.last_message_at || item.created_at, request_id: item.id, unread: Boolean(item.unread_count) });
-        if (item.unread_count) feed.push({ kind: "message", need, text: item.last_message || "رسالة جديدة في المحادثة", at: item.last_message_at || item.created_at, request_id: item.id, unread: true });
-      }
-      state.notifications = feed.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
-      if (state.view === "notifications") render();
-    })
-    .catch(() => {});
+  try {
+    await ensureAuth();
+    state.requests = (await api("/v1/requests")).requests || [];
+    setUnread(state.requests);
+  } catch (_error) {
+    return;
+  }
+  const feed = [];
+  for (const item of state.requests) {
+    const need = item.need || item.original_text || "";
+    const at = item.last_message_at || item.created_at;
+    if (item.awarded_seller_id) feed.push({ kind: "award", need, text: "تم اعتماد العرض الفائز", at, request_id: item.id, unread: false });
+    if (item.latest_offer_amount != null) feed.push({ kind: "offer", need, text: `وصل عرض بقيمة ${money(item.latest_offer_amount)}`, at, request_id: item.id, unread: Boolean(item.unread_count) });
+    if (item.unread_count) feed.push({ kind: "message", need, text: item.last_message || "رسالة جديدة في المحادثة", at, request_id: item.id, unread: true });
+  }
+  state.notifications = feed.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  if (state.view === "notifications") render();
 }
 
 async function handleSubscribeCallback() {
