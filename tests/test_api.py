@@ -53,8 +53,9 @@ def test_request_message_and_attachment_round_trip(tmp_path: Path):
     fetched = api.get(f"/v1/requests/{request_id}", headers=headers)
     body = fetched.json()
     assert body["attachments"]
-    # The request opens the item conversation; nothing reaches Haraj without a connected channel.
-    assert [item["body"] for item in body["messages"]] == ["أبي نجار يسوي دولاب\nشمال الرياض", "كم السعر؟"]
+    quote = body["messages"][0]
+    assert quote["body"].startswith("طلب عرض سعر")
+    assert body["messages"][1]["body"] == "كم السعر؟"
     assert {item["delivery_state"] for item in body["messages"]} == {"queued"}
     assert body["recipients"][0]["send_status"] == "queued"
     assert "rfq" not in fetched.text.lower()
@@ -130,9 +131,54 @@ def test_guest_request_seller_price_and_activity(tmp_path: Path):
     assert listed["waiting_count"] == 1
     assert listed["has_new_offer"] is True
     assert listed["latest_offer_amount"] == 2800
+    assert listed["seller_names"]
+    assert "يشمل التوصيل" in listed["last_message"]
+    assert listed["last_message_at"]
     thread = api.get(f"/v1/requests/{request_id}", headers=headers).json()
-    assert thread["messages"][-1]["offer"]["amount"] == 2800
-    assert thread["messages"][-1]["sender_role"] == "seller"
+    assert thread["messages"][0]["body"].startswith("طلب عرض سعر")
+    assert thread["messages"][0]["sender_role"] == "user"
+    assert "الرياض" in thread["messages"][0]["body"]
+    offer = thread["messages"][1]
+    assert offer["offer"]["amount"] == 2800
+    assert offer["sender_role"] == "seller"
+    seller = api.get(f"/v1/seller/{token}")
+    assert seller.status_code == 200
+    follow = api.post(
+        f"/v1/requests/{request_id}/messages",
+        headers=headers,
+        json={"body": "هل السعر شامل التركيب؟"},
+    )
+    assert follow.status_code == 200
+    conversation = api.get(f"/v1/seller/{token}").json()["messages"]
+    assert conversation[-1]["body"] == "هل السعر شامل التركيب؟"
+    assert conversation[-1]["sender_role"] == "user"
+    chat = api.post(
+        f"/v1/seller/{token}/messages",
+        json={"seller_id": "1", "body": "نعم شامل"},
+    )
+    assert chat.status_code == 200
+    updated = api.get(f"/v1/requests/{request_id}", headers=headers).json()
+    assert updated["messages"][-1]["body"] == "نعم شامل"
+    assert updated["messages"][-1]["sender_role"] == "seller"
+
+
+def test_quote_requires_a_city(tmp_path: Path):
+    api = client(tmp_path)
+    token = api.post("/v1/auth/guest").json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    missing = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={
+            "original_text": "تركيب واجهات",
+            "need": "تركيب واجهات",
+            "recipients": [{"seller_id": "1", "seller_name": "لمسة معدن"}],
+        },
+    )
+    assert missing.status_code == 422
+    cities = api.get("/v1/cities")
+    assert cities.status_code == 200
+    assert any(item["value"] == "الرياض" for item in cities.json()["cities"])
 
 
 def test_unique_reply_tokens_and_delivery_total(tmp_path: Path):
@@ -258,9 +304,9 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     url = f"/v1/requests/{request_id}/messages"
     # Opening message: one per item, into each seller's own Haraj conversation.
     assert sorted((seller, body) for _conv, seller, body in haraj.sent) == [
-        ("e1", "كهربائي في الرياض"),
-        ("p1", "سباك في الرياض"),
-        ("p2", "سباك في الرياض"),
+        ("e1", "طلب عرض سعر\nكهربائي\nالمدينة: الرياض"),
+        ("p1", "طلب عرض سعر\nسباك\nالمدينة: الرياض"),
+        ("p2", "طلب عرض سعر\nسباك\nالمدينة: الرياض"),
     ]
     assert {item["send_status"] for item in api.get(f"/v1/requests/{request_id}", headers=headers).json()["recipients"]} == {"sent"}
 
@@ -301,7 +347,7 @@ def test_not_connected_keeps_messages_queued(tmp_path: Path):
     created = api.post(
         "/v1/requests",
         headers=headers,
-        json={"original_text": "أبي نجار", "need": "نجار", "recipients": [{"seller_id": "n1", "seller_name": "نجار"}]},
+        json={"original_text": "أبي نجار", "need": "نجار", "city": "الرياض", "recipients": [{"seller_id": "n1", "seller_name": "نجار"}]},
     ).json()
     assert poll_once(store) == (0, 0)
     thread = api.get(f"/v1/requests/{created['id']}", headers=headers).json()

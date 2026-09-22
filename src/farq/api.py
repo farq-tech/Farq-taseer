@@ -10,6 +10,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPExcepti
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
+from farq.cities import city_choices
 from farq.config import SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
@@ -139,6 +140,10 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "contract_version": "1"}
+
+    @app.get("/v1/cities")
+    def cities() -> dict:
+        return {"cities": city_choices()}
 
     @app.post("/v1/auth/register")
     def register(body: RegisterBody) -> dict:
@@ -357,8 +362,18 @@ def create_app(
     return app
 
 
-def app() -> FastAPI:
-    root = Path(os.environ.get("FARQ_DATA_DIR", "data/runtime"))
+def default_data_dir() -> Path:
+    configured = os.environ.get("FARQ_DATA_DIR")
+    if configured:
+        return Path(configured)
+    # Vercel functions can write only under /tmp.
+    if os.environ.get("VERCEL"):
+        return Path("/tmp/farq")
+    return Path("data/runtime")
+
+
+def create_default_app() -> FastAPI:
+    root = default_data_dir()
     root.mkdir(parents=True, exist_ok=True)
     store = Store(root / "farq.sqlite3", root / "uploads")
     corpus = MemoryCorpus.from_json(Path(os.environ.get("FARQ_CORPUS_PATH", default_sample_path())))
@@ -369,3 +384,8 @@ def app() -> FastAPI:
     application = create_app(store, corpus, live, config, chat)
     start_poller(store, chat)
     return application
+
+
+# Vercel imports this object and serves it as ASGI. A zero-argument factory
+# is not an ASGI callable (scope, receive, send).
+app = create_default_app()

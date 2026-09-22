@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 
@@ -33,6 +34,14 @@ def _delivery_state(deliveries: list[dict]) -> str:
     if statuses & {"queued", "sending"}:
         return "queued"
     return "partial" if "sent" in statuses else "failed"
+
+
+def _visible_to_seller(message: Message, seller_id: str | None, need: str | None) -> bool:
+    if message.sender_role == "seller":
+        return seller_id is not None and message.seller_id == seller_id
+    if message.seller_id is not None:
+        return message.seller_id == seller_id
+    return message.need is None or need is None or message.need == need
 
 
 class Store:
@@ -240,12 +249,15 @@ class Store:
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
+        city_name = known_city(city)
+        if city_name is None:
+            raise ValueError("city is required")
         request_id = uuid4().hex
         first_token = secrets.token_urlsafe(16)
         created = _now()
         self._connection.execute(
             "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, reply_token, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, owner_user_id, original_text, need, notes, city, json.dumps(attributes, ensure_ascii=False), first_token, created),
+            (request_id, owner_user_id, original_text, need, notes, city_name, json.dumps(attributes, ensure_ascii=False), first_token, created),
         )
         for index, item in enumerate(recipients):
             token = item.reply_token or (first_token if index == 0 else secrets.token_urlsafe(16))
@@ -262,15 +274,13 @@ class Store:
                     item.listing_url,
                 ),
             )
-        # The request itself is the first message on each item, routed to every seller on that item.
+        # The quote request is the first message on each item, routed to every seller on that item.
         needs = list(dict.fromkeys((item.need or need or "") for item in recipients))
         for item_need in needs:
-            text = original_text if len(needs) == 1 or not item_need else item_need
-            if city and len(needs) > 1:
-                text = f"{text} في {city}"
-            if notes:
-                text = f"{text}\n{notes}"
-            self._enqueue(request_id, text, item_need or None, None, None)
+            lines = ["طلب عرض سعر", (item_need or need or original_text or "").strip(), f"المدينة: {city_name}"]
+            if notes and notes.strip():
+                lines.append(notes.strip())
+            self._enqueue(request_id, "\n".join(line for line in lines if line), item_need or None, None, None, owner_user_id)
         self._connection.commit()
         return request_id
 
@@ -440,7 +450,7 @@ class Store:
                 (uuid4().hex, message.id, request_id, row["seller_id"], item_of(row), created),
             )
         self._connection.commit()
-        return message
+        return next(item for item in self._messages_for_request(request_id) if item.id == message.id)
 
     def route_customer_message(
         self,
@@ -581,8 +591,9 @@ class Store:
             recipient_count = len(recipients)
             sent_count = sum(1 for item in recipients if item.send_status == "sent")
             failed_count = sum(1 for item in recipients if item.send_status == "failed")
+            seller_names = [item.seller_name for item in recipients]
             messages = self._connection.execute(
-                "select sender_role, seller_id, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
+                "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
                 (request_id,),
             ).fetchall()
             replied: set[str] = set()
@@ -608,6 +619,8 @@ class Store:
                         "lowest_total": min(totals) if totals else None,
                     }
                 )
+            last = messages[-1] if messages else None
+            preview = " ".join((last["body"] or "").split()) if last is not None else ""
             items.append(
                 {
                     "id": request_id,
@@ -616,6 +629,9 @@ class Store:
                     "city": row["city"],
                     "created_at": row["created_at"],
                     "last_synced_at": row["last_synced_at"] if "last_synced_at" in row.keys() else None,
+                    "seller_names": seller_names,
+                    "last_message": preview[:180],
+                    "last_message_at": None if last is None else last["created_at"],
                     "recipient_count": recipient_count,
                     "sent_count": sent_count,
                     "failed_count": failed_count,
@@ -708,6 +724,12 @@ class Store:
             "city": row["city"],
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
+            # Legacy seller link only: each seller sees their own thread, never another seller's messages.
+            "messages": [
+                item.model_dump(mode="json")
+                for item in self._messages_for_request(row["id"])
+                if _visible_to_seller(item, recipient_row["seller_id"] if recipient_row is not None else None, need)
+            ],
         }
 
     def add_seller_reply(self, token: str, seller_id: str | None, body: str, offer: Offer | None) -> Message:

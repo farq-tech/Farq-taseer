@@ -48,6 +48,17 @@ def test_spelling_and_two_digit_year_are_not_silently_certain():
     assert any(item.value == "full-options" for item in full.attributes)
 
 
+def test_facade_installation_requires_a_city():
+    missing = analyze("تركيب واجهات")
+    assert missing.type.value == "service"
+    assert missing.subcategory.value == "glazing"
+    assert missing.location_city.value is None
+    assert missing.clarification_question == "في أي مدينة؟"
+    picked = analyze("تركيب واجهات في الرياض")
+    assert picked.location_city.value == "الرياض"
+    assert picked.clarification_question is None
+
+
 def test_service_without_city_asks_instead_of_guessing_riyadh():
     intent = analyze("أبي نجار يسوي لي دولاب")
     assert intent.type.value == "service"

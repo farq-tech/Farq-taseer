@@ -6,44 +6,34 @@ const state = {
   searchState: "",
   clarification: "",
   results: [],
-  groups: [],
-  intents: [],
   partial: false,
   notice: "",
   selected: new Map(),
   active: null,
-  activeNeed: "",
-  activeSeller: "",
   gallery: [],
   note: "",
   requests: [],
   thread: null,
+  activeSeller: "",
+  replyTo: null,
   seller: null,
   sellerToken: "",
   token: localStorage.getItem("farq.token") || "",
   busy: false,
-  sort: "cheap",
-  filterCity: "",
-  pricedOnly: false,
-  credits: 50,
-  copied: false,
-  replyTo: null,
+  city: "",
+  cities: [
+    { value: "الرياض", label: "الرياض" },
+    { value: "جده", label: "جدة" },
+    { value: "مكه", label: "مكة" },
+    { value: "المدينة", label: "المدينة" },
+    { value: "الدمام", label: "الدمام" },
+    { value: "الخبر", label: "الخبر" },
+  ],
 };
 
 const app = document.querySelector("#app");
 let poll = 0;
 const sellerRoute = location.pathname.match(/^\/s\/([^/]+)\/?$/);
-
-const icons = {
-  edit: '<svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  search: '<svg class="icon icon-24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
-  check: '<svg class="icon icon-14" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>',
-  checkSq: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="m8 12 3 3 5-6"/></svg>',
-  pencil: '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  spark: '<svg class="icon icon-16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>',
-  back: '<svg class="icon icon-24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>',
-  bell: '<svg class="icon icon-24" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 7 3 7H3s3 0 3-7"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
-};
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -53,14 +43,22 @@ function formatCount(value) {
   return new Intl.NumberFormat("ar-SA").format(value);
 }
 
+function ago(iso) {
+  const then = Date.parse(iso || "");
+  if (Number.isNaN(then)) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (minutes < 1) return "الآن";
+  if (minutes < 60) return `منذ ${formatCount(minutes)} د`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours === 1 ? "منذ ساعة" : `منذ ${formatCount(hours)} س`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "منذ يوم";
+  return `منذ ${formatCount(days)} ي`;
+}
+
 function money(amount) {
   if (amount == null || Number.isNaN(Number(amount))) return "";
   return `${new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 0 }).format(amount)} ر.س`;
-}
-
-function initial(name) {
-  const text = String(name || "ج").trim();
-  return esc(text[0] || "ج");
 }
 
 async function api(path, { method = "GET", json, form, skipAuth = false } = {}) {
@@ -109,21 +107,9 @@ function sellerOf(result) {
   return result.seller || result.ad?.seller || {};
 }
 
-function resultKey(result, need = result.need || "") {
+function resultKey(result) {
   const seller = sellerOf(result);
-  return `${need}:${seller.id || ""}:${result.ad?.id || ""}`;
-}
-
-function needGroups() {
-  if (state.groups?.length) return state.groups;
-  const label = state.intent?.need || state.query || "الطلب";
-  return [{ need: label, results: state.results, intent: state.intent }];
-}
-
-function ago(iso) {
-  if (!iso) return "";
-  const mins = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 60000));
-  return `آخر تحديث قبل ${formatCount(mins)} دقيقة`;
+  return `${seller.id || ""}:${result.ad?.id || ""}`;
 }
 
 function place(result) {
@@ -131,18 +117,13 @@ function place(result) {
   return [result.ad?.city || seller.city, result.ad?.district || seller.district].filter(Boolean).join(" · ");
 }
 
-function categoryLabel(intent) {
-  const type = intent?.type?.value;
-  const sub = intent?.subcategory?.value;
-  if (sub === "carpenter") return "نجارة وأثاث";
-  if (sub === "plumber") return "سباكة";
-  if (sub === "electrician") return "كهرباء";
-  if (sub === "railings") return "مقاولات";
-  if (type === "vehicle") return "سيارات";
-  if (type === "product") return "منتجات";
-  if (type === "property") return "عقارات";
-  if (type === "service") return "خدمات";
-  return "طلب";
+function evidenceLines(result) {
+  const lines = [];
+  if (result.ad?.title) lines.push(result.ad.title);
+  for (const item of result.match_evidence || []) {
+    if (item && item.length > 12 && !lines.includes(item)) lines.push(item);
+  }
+  return lines.slice(0, 3);
 }
 
 function facts(intent) {
@@ -175,14 +156,40 @@ function facts(intent) {
   return items;
 }
 
-function parsedNeed() {
-  const items = facts(state.intent);
-  return items.slice(0, 3).join(" ") || state.query;
+function customerCity() {
+  if (state.city) return state.city;
+  const value = state.intent?.location_city?.value;
+  return typeof value === "string" ? value : "";
+}
+
+function cityLabel(value) {
+  const found = state.cities.find((item) => item.value === value || item.label === value);
+  return found?.label || value || "";
+}
+
+function cityChoices(action) {
+  return `<div class="choices">${state.cities
+    .map(
+      (city) =>
+        `<button type="button" data-action="${action}" data-value="${esc(city.label)}" data-city="${esc(city.value)}">${esc(city.label)}</button>`,
+    )
+    .join("")}</div>`;
+}
+
+function bubbles(messages, mine) {
+  return (messages || [])
+    .map((message) => {
+      const role = message.sender_role === mine ? "user" : "seller";
+      const price = message.offer?.amount != null ? `<div class="offer"><strong>${esc(money(message.offer.amount))}</strong></div>` : "";
+      const body = esc(message.body || "").replace(/\n/g, "<br>");
+      return `<div class="bubble ${role}">${price}<div>${body}</div></div>`;
+    })
+    .join("");
 }
 
 function finalNotice(status, count) {
-  if (status === "PARTIAL_RESULTS") return count ? "لقينا خيارات مناسبة، وهذي اللي وصلت." : "البحث ما اكتمل.";
-  if (status === "LIVE_UNAVAILABLE") return "المصدر ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
+  if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث من حراج. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
+  if (status === "LIVE_UNAVAILABLE") return "حراج ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
   if (status === "TIMEOUT") return count ? "البحث طال، وهذي الخيارات اللي وصلت." : "انقطع البحث قبل ما يكتمل. جرّب مرة ثانية.";
   if (status === "NO_QUALIFIED_RESULTS") return "شفت إعلانات، بس ما فيه شيء يطابق طلبك.";
   if (status === "LIVE_EMPTY" || status === "LOCAL_EMPTY") return "ما رجع المصدر إعلان يطابق هذا الطلب.";
@@ -213,12 +220,12 @@ function bindImages(root) {
   });
 }
 
-function frame(ad, { eager = false, size = "thumb" } = {}) {
+function frame(ad, { eager = false, thumb = false } = {}) {
   const sources = imageSources(ad);
-  const cls = size === "cover" ? "cover" : "thumb";
-  if (!sources.length) return `<div class="${cls} is-missing" data-frame></div>`;
+  const className = thumb ? "frame thumb" : "frame";
+  if (!sources.length) return `<div class="${className} is-missing" data-frame></div>`;
   const loading = eager ? "eager" : "lazy";
-  return `<div class="${cls}" data-frame><img alt="" data-src="${esc(sources.join("|"))}" loading="${loading}" decoding="async"></div>`;
+  return `<div class="${className}" data-frame><img alt="" data-src="${esc(sources.join("|"))}" loading="${loading}" decoding="async"></div>`;
 }
 
 function filePreview() {
@@ -232,194 +239,132 @@ function filePreview() {
     .join("")}</div>`;
 }
 
-function brandLockup() {
-  return `<a class="brand-lockup brand-center" href="/" data-action="home"><span class="wordmark">فرق تسعير</span></a>`;
+function icon(name, { size = 20, flip = false, label = "" } = {}) {
+  return `<img class="${flip ? "flip" : ""}" src="/icons/${name}.svg" width="${size}" height="${size}" alt="${esc(label)}">`;
 }
 
-function avatarBtn() {
-  return `<button class="avatar" type="button" data-action="requests" aria-label="طلباتي"><span class="avatar-mark">ف</span></button>`;
+function initial(name) {
+  const text = String(name || "ف").trim();
+  return esc(text.charAt(0) || "ف");
 }
 
-function homeHeader() {
-  return `<header class="top"><button class="avatar" type="button" data-action="requests" aria-label="طلباتي"><span class="avatar-mark">ف</span></button><div class="brand-center">${brandLockup()}</div><span class="icon-btn" aria-hidden="true"></span></header>`;
+function topBar({ title = "فرق تسعير", back = "", end = '<span class="slot" aria-hidden="true"></span>', lined = false } = {}) {
+  const start = back || '<span class="slot" aria-hidden="true"></span>';
+  return `<header class="top-bar${lined ? " lined" : ""}">${end}<a class="brand-title" href="/" data-action="home">${esc(title)}</a>${start}</header>`;
 }
 
-function nav({ title, subtitle = "", back = "back-results", extra = "none" } = {}) {
-  const trailing =
-    extra === "bell"
-      ? `<button class="icon-btn" type="button" data-action="requests" aria-label="العروض">${icons.bell}</button>`
-      : extra === "search"
-        ? `<button class="icon-btn" type="button" data-action="home" aria-label="بحث جديد">${icons.search}</button>`
-        : `<span class="icon-btn" aria-hidden="true"></span>`;
-  return `<header class="nav">${trailing}<div class="nav-title"><strong>${esc(title)}</strong>${subtitle ? `<span>${esc(subtitle)}</span>` : ""}</div><button class="icon-btn" type="button" data-action="${esc(back)}" aria-label="رجوع">${icons.back}</button></header>`;
+function tabBar(active) {
+  return `<nav class="tab-bar" aria-label="التنقل">
+    <button class="tab${active === "home" ? " active" : ""}" type="button" data-action="home">${icon("home")}<span>الرئيسية</span></button>
+    <button class="tab${active === "requests" ? " active" : ""}" type="button" data-action="requests">${icon("briefcase")}<span>طلباتي</span></button>
+    <button class="tab" type="button" disabled aria-disabled="true">${icon("settings")}<span>الإعدادات</span></button>
+  </nav>`;
 }
 
-function displayNeed(label) {
-  const raw = String(label || "").trim();
-  if (/سباك/.test(raw)) return "سباك";
-  if (/كهرب/.test(raw)) return "كهربائي";
-  if (/نجار/.test(raw)) return "نجار";
-  if (/درابزين|حديد/.test(raw)) return "درابزين";
-  return raw.replace(/\s*(بالرياض|الرياض|بجدة|جدة|بالدمام|الدمام)\s*/g, " ").replace(/\s+/g, " ").trim() || raw;
-}
-
-function creditPill() {
-  return `<div class="credit-pill"><span class="dot"></span>رصيدك: ${formatCount(state.credits)} كريدت</div>`;
-}
-
-function composer({ id = "composer-query", compact = false } = {}) {
-  return `<form class="composer" id="${compact ? "refine" : "composer"}">
-    <label class="sr" for="${id}">${compact ? "عدّل الطلب" : "أدخل طلباتك هنا"}</label>
-    <textarea id="${id}" name="query" rows="${compact ? 2 : 4}" maxlength="500" placeholder="مثال: أبي سباك وأبي كهربائي بالرياض">${esc(state.query)}</textarea>
-    ${filePreview()}
-  </form>`;
+function shell(body, { bare = false } = {}) {
+  if (bare) return `<main class="shell">${body}</main>`;
+  return `<main class="shell">${body}</main>`;
 }
 
 function renderHome() {
-  const ideas = [
-    { label: "سباك بالرياض", query: "أبي سباك بالرياض" },
-    { label: "كهربائي بجدة", query: "أبي كهربائي بجدة" },
-    { label: "نقل عفش", query: "أبي نقل عفش بالرياض" },
-  ];
-  return `${homeHeader()}
-    <section class="hero center">
-      <h1>وش تبي نسعّر لك؟</h1>
-      <p>اكتب اللي تحتاجه وخلنا ندور لك</p>
-    </section>
-    ${composer()}
-    <p class="hint">اقتراحات سريعة</p>
-    <div class="chips">${ideas
-      .map((idea) => `<button class="chip" type="button" data-action="idea" data-query="${esc(idea.query)}">${esc(idea.label)}</button>`)
-      .join("")}</div>
-    <div class="pad"><button class="primary" type="button" data-action="search-now">ابحث</button></div>`;
-}
-
-function understoodNeeds() {
-  if (state.intents?.length) return state.intents.map((item) => item.need || item.original_query).filter(Boolean);
-  const fromGroups = (state.groups || []).map((item) => item.need).filter(Boolean);
-  if (fromGroups.length) return fromGroups;
-  return facts(state.intent).slice(0, 3);
+  const chips = ["سباك بالرياض", "كهربائي بجدة", "نقل عفش"];
+  return `${topBar()}
+  <section class="page home">
+    <h1>وش تبي نسعّر لك؟</h1>
+    <p class="lede">اكتب اللي تحتاجه وخلنا ندور لك</p>
+    <form class="composer" id="composer">
+      <div class="field">
+        <label class="sr" for="composer-query">وش تبي؟</label>
+        <textarea id="composer-query" name="query" placeholder="مثال: أبي سباك وأبي كهربائي بالرياض">${esc(state.query)}</textarea>
+      </div>
+      <div class="suggestions">
+        <span>اقتراحات سريعة</span>
+        <div class="chips">${chips.map((idea) => `<button type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+      </div>
+      <button class="primary block" type="submit">ابحث</button>
+    </form>
+  </section>
+  ${tabBar("home")}`;
 }
 
 function renderSearching() {
-  return `<header class="top"><span></span>${brandLockup()}<span class="icon-btn"></span></header>
-    <section class="searching">
-      <div class="search-orb">${icons.search}</div>
-      <h1>ندور لك...</h1>
-      <p>نبحث في أكثر من 20,000 جهة</p>
-      <div class="search-dots"><i class="is-on"></i><i></i><i></i></div>
-      <div class="raw-card"><em>طلبك الأصلي</em><p>${esc(state.query)}</p></div>
-    </section>`;
+  return `${topBar()}
+  <section class="page searching" aria-live="polite">
+    <div class="pulse"><div class="pulse-mid"><div class="pulse-core">${icon("search-white", { size: 20 })}</div></div></div>
+    <div><h2>ندور لك...</h2><p class="lede">نبحث في أكثر من 2,000 جهة</p></div>
+    <div class="dots" aria-hidden="true"><span class="on"></span><span class="on"></span><span></span></div>
+    <div class="original-card"><span>طلبك الأصلي</span><strong>${esc(state.query)}</strong></div>
+  </section>`;
 }
 
-function renderParse() {
-  if (state.partial && !state.results.length) return renderSearching();
-  const items = understoodNeeds();
-  const asking = state.searchState === "CLARIFICATION_REQUIRED" || state.searchState === "LOCATION_AMBIGUOUS";
+function renderFacts() {
+  const items = facts(state.intent);
+  if (!items.length) return "";
   const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : "";
-  return `${nav({ title: "فرق تسعير", back: "home", extra: "none" })}
-    <section class="page-head">
-      <h1>فهمنا طلبك</h1>
-      <p class="lede">قسمنا الطلب وحددنا الخدمات المطلوبة</p>
-    </section>
-    ${asking ? renderQuestion() : ""}
-    <div class="need-list">${items
-      .map((item) => {
-        const name = displayNeed(item);
-        return `<article class="need-row">
-          <div class="need-ico">${name === "كهربائي" ? "⚡" : "🔧"}</div>
-          <div><strong>${esc(name)}</strong><span>${esc(categoryLabel(state.intent))}</span></div>
-          ${city ? `<span class="city-chip">${esc(city)}</span>` : ""}
-        </article>`;
-      })
-      .join("")}</div>
-    <div class="dock">
-      <button class="linkish" type="button" data-action="home">عدّل الطلبات</button>
-      <button class="primary" type="button" data-action="show-results" ${state.results.length || !state.partial ? "" : "disabled"}>اعرض النتائج</button>
-    </div>`;
+  const need = items.filter((item) => item !== city)[0] || state.intent?.need || state.query;
+  return `<div class="need-card">${city ? `<span class="loc">${esc(cityLabel(city))}</span>` : "<span></span>"}<div class="copy"><div class="glyph">${initial(need)}</div><div><strong>${esc(need)}</strong><em>فهمنا طلبك وجاهزين ندور</em></div></div></div>`;
 }
 
 function renderQuestion() {
   const question = state.clarification || "";
-  const cities = question.includes("مدينة")
-    ? ["الرياض", "جدة", "الدمام", "الخبر", "مكة", "المدينة", "الطائف", "أبها", "القصيم", "تبوك"]
-    : [];
-  return `<section class="question">
-    <p>${esc(question)}</p>
-    ${cities.length ? `<div class="choices">${cities.map((city) => `<button type="button" data-action="answer" data-value="${esc(city)}">${esc(city)}</button>`).join("")}</div>` : ""}
-    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>
-  </section>`;
+  const aboutCity = question.includes("مدينة");
+  return `<section class="section-head"><h1>${aboutCity ? "حدد المدينة" : "كمّل الطلب"}</h1><p class="lede">${esc(question)}</p></section>
+    ${aboutCity ? cityChoices("answer") : ""}
+    <form id="answer" class="answer"><input name="value" placeholder="جوابك" autocomplete="off"><button class="primary" type="submit">كمّل</button></form>`;
 }
 
-function resultCity(result) {
-  return result.ad?.city || sellerOf(result).city || "";
+function snip(result) {
+  const lines = evidenceLines(result);
+  const text = result.ad?.description || lines[1] || lines[0] || "";
+  return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
 }
 
-function visibleResults(rows = state.results) {
-  let list = [...rows];
-  if (state.filterCity) list = list.filter((item) => resultCity(item) === state.filterCity);
-  if (state.pricedOnly) list = list.filter((item) => item.ad?.price_amount != null);
-  if (state.sort === "cheap") {
-    list.sort((a, b) => (a.ad?.price_amount ?? 1e12) - (b.ad?.price_amount ?? 1e12));
-  } else if (state.sort === "new") {
-    list.sort((a, b) => String(b.ad?.posted_at || "").localeCompare(String(a.ad?.posted_at || "")));
-  }
-  return list;
-}
-
-function cityFilters() {
-  return [...new Set(state.results.map(resultCity).filter(Boolean))].slice(0, 8);
-}
-
-function renderCard(result, index, need) {
-  const tagged = { ...result, need };
-  const key = resultKey(tagged, need);
+function renderCard(result) {
+  const key = resultKey(result);
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
+  const name = result.ad?.title || seller.name || "جهة";
   const price = money(result.ad?.price_amount);
-  const city = resultCity(result);
-  const preview = (result.ad?.description || "").trim().slice(0, 70);
-  return `<article class="listing">
-    <button class="listing-photo" type="button" data-action="open" data-key="${esc(key)}" aria-label="التفاصيل">
-      ${result.ad ? frame(result.ad, { eager: index < 4, size: "thumb" }) : `<div class="thumb mark-cover">${initial(seller.name)}</div>`}
+  const city = result.ad?.city || seller.city || "";
+  const blurb = snip(result);
+  const thumb = result.ad && imageSources(result.ad).length ? frame(result.ad, { thumb: true }) : `<span class="mark">${initial(seller.name || name)}</span>`;
+  return `<article class="vendor${selected ? " is-selected" : ""}">
+    <button class="vendor-body" type="button" data-action="open" data-key="${esc(key)}">
+      ${thumb}
+      <span class="vendor-copy">
+        <strong>${esc(name)}</strong>
+        <span class="vendor-meta">${seller.name ? `<span>${esc(seller.name)}</span>` : ""}${seller.name && city ? " · " : ""}${city ? `<span class="muted">${esc(cityLabel(city))}</span>` : ""}</span>
+        ${blurb ? `<span class="snip">${esc(blurb)}</span>` : ""}
+        <span class="price">${esc(price || "السعر عند الطلب")}</span>
+      </span>
     </button>
-    <div class="listing-body">
-      <p class="vendor-name">${esc(result.ad?.title || seller.name || "جهة")}</p>
-      <p class="meta">${esc([seller.name, city].filter(Boolean).join(" · "))}</p>
-      ${preview ? `<p class="meta">${esc(preview)}${(result.ad?.description || "").length > 70 ? "…" : ""}</p>` : ""}
-      ${price ? `<p class="price">${esc(price)}</p>` : ""}
-    </div>
-    <button class="box ${selected ? "is-on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "مختارة" : "اختَر"}">${selected ? icons.check : ""}</button>
+    <button class="tick" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? icon("check", { size: 12 }) : ""}</button>
   </article>`;
 }
 
 function renderFlow() {
   const asking = state.searchState === "CLARIFICATION_REQUIRED" || state.searchState === "LOCATION_AMBIGUOUS";
-  if ((state.partial || asking) && !state.results.length) return renderParse();
-  const groups = needGroups();
-  const showEmpty = !asking && !state.partial && !groups.some((item) => item.results?.length);
-  return `${nav({ title: "النتائج", back: "home", extra: "none" })}
-    ${asking ? renderQuestion() : ""}
-    ${showEmpty ? `<div class="empty"><h2>${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="linkish" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${groups
-      .map((group) => {
-        const rows = visibleResults(group.results || []);
-        return `<section class="need-block">
-          <div class="need-head">
-            <h2>${esc(displayNeed(group.need))}</h2>
-            <span>${formatCount(rows.length)} جهة مطابقة</span>
-          </div>
-          ${rows.length ? `<div class="feed">${rows.map((item, index) => renderCard(item, index, group.need)).join("")}</div>` : `<p class="status">ما ظهرت جهات لهذا الطلب بعد.</p>`}
-        </section>`;
-      })
-      .join("")}
-    ${dock()}`;
+  const live = state.partial && (state.searchState === "LIVE_SEARCHING" || state.searchState === "PARTIAL_RESULTS");
+  const showEmpty = !asking && !state.partial && state.results.length === 0;
+  if (live && !state.results.length && !asking) return renderSearching();
+  const need = state.intent?.need || facts(state.intent)[0] || state.query || "النتائج";
+  const back = `<button class="icon-btn" type="button" data-action="home" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: asking ? "فرق تسعير" : "النتائج", back })}
+  <section class="page tight flow">
+    ${asking ? "" : `<div class="group-head"><span>${formatCount(state.results.length)} جهة مطابقة</span><strong>${esc(need)}</strong></div>`}
+    ${asking ? renderFacts() + renderQuestion() : ""}
+    <p class="status ${live ? "live" : ""}" aria-live="polite">${esc(showEmpty ? "" : state.notice)}</p>
+    ${showEmpty ? `<div class="empty"><h2>${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="text-btn" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
+    ${state.results.length ? `<div class="cards">${state.results.map(renderCard).join("")}</div>` : ""}
+    ${dock()}
+  </section>`;
 }
 
 function dock() {
   const count = state.selected.size;
-  if (state.view === "review") return "";
-  return `<div class="dock"><button class="primary" type="button" data-action="review" ${count ? "" : "disabled"}>اطلب السعر من ${formatCount(count)} جهة</button></div>`;
+  if (!count || state.view === "review") return "";
+  const label = count === 1 ? "اطلب السعر من جهة واحدة" : `اطلب السعر من ${formatCount(count)} جهات`;
+  return `<div class="dock"><p class="hint">سنرسل طلبك لكل الجهات المختارة</p><button class="primary compact" type="button" data-action="review">${esc(label)}</button></div>`;
 }
 
 function renderDetail() {
@@ -438,161 +383,87 @@ function renderDetail() {
   const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  return `${nav({ title: seller.name || result.ad?.title || "التفاصيل" })}
-    <article class="detail">
-      <div class="gallery">${frames}</div>
-      <div class="detail-body">
-        ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">ما فيه سعر معلن في الإعلان</p>`}
-        <h2>${esc(result.ad?.title || seller.name || "")}</h2>
-        <p class="meta">${esc([seller.name, place(result)].filter(Boolean).join(" · "))}</p>
-        ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
-        ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان الأصلي</a></p>` : ""}
-        ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
-      </div>
-    </article>
-    <div class="dock"><button class="primary" type="button" data-action="toggle" data-key="${esc(key)}">${selected ? "تم الاختيار" : "اختَر هذي الجهة"}</button></div>`;
+  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: "التفاصيل", back })}
+  <article class="page tight detail">
+    <div class="gallery">${frames}</div>
+    <h1 style="font-size:22px">${esc(result.ad?.title || seller.name || "")}</h1>
+    ${price ? `<p class="price">${esc(price)}</p>` : `<p class="meta">السعر عند الطلب</p>`}
+    <p class="meta">${esc(place(result))}${seller.name ? ` · ${esc(seller.name)}` : ""}</p>
+    ${result.ad?.description ? `<p class="story">${esc(result.ad.description)}</p>` : ""}
+    ${result.ad?.url ? `<p><a href="${esc(result.ad.url)}" target="_blank" rel="noopener">الإعلان في حراج</a></p>` : ""}
+    ${result.ad?.listing_state === "deleted" ? `<p class="warn">هذا الإعلان محذوف.</p>` : ""}
+    <div class="detail-actions"><button class="primary" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "كمّل طلب عرض السعر" : "طلب عرض سعر"}</button></div>
+    ${dock()}
+  </article>`;
 }
 
 function renderReview() {
-  const picked = [...state.selected.values()];
-  const ready = picked.length > 0;
-  return `${nav({ title: "تأكيد الطلب", back: "back-results" })}
-    <section class="review">
-      <h1>اطلب السعر من ${formatCount(picked.length)} جهة</h1>
-      <p class="lede">نرسل طلبك للجهات المختارة، والأسعار ترجع هنا.</p>
-      <ul class="who">${picked
-        .map((result) => `<li><span>${esc(sellerOf(result).name || result.ad?.title || "جهة")}</span><span class="badge">${esc(result.need || "")}</span></li>`)
-        .join("")}</ul>
-      <label class="sr" for="note">ملاحظة</label>
-      <textarea class="note" id="note" placeholder="تفاصيل إضافية (اختياري)">${esc(state.note)}</textarea>
-      <div class="composer-bar">
-        <label class="file-btn">صورة<input type="file" accept="image/*" data-action="add-files"></label>
-        <label class="file-btn">ملف<input type="file" data-action="add-files"></label>
-      </div>
-      ${filePreview()}
-    </section>
-    <div class="dock"><button class="primary" type="button" data-action="send" ${ready ? "" : "disabled"}>${state.busy ? "نرسل…" : `اطلب السعر من ${formatCount(picked.length)} جهة`}</button></div>`;
+  const names = [...state.selected.entries()].map(([key, result]) => ({ key, name: sellerOf(result).name || "بائع" }));
+  const city = customerCity();
+  const ready = state.selected.size > 0 && Boolean(city);
+  const back = `<button class="icon-btn" type="button" data-action="back-results" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  return `${topBar({ title: "طلب عرض سعر", back })}
+  <section class="page tight review">
+    <h1>جاهز نرسله؟</h1>
+    <p class="summary">${esc(state.query)}</p>
+    <ul class="who">${names.map((item) => `<li><span>${esc(item.name)}</span><button class="text-btn" type="button" data-action="unselect" data-key="${esc(item.key)}">شيل</button></li>`).join("")}</ul>
+    ${city ? `<p class="meta">المدينة: ${esc(cityLabel(city))}</p>` : `<div class="section-head"><h1 style="font-size:20px">في أي مدينة؟</h1></div>${cityChoices("pick-city")}`}
+    <label>ملاحظة<textarea class="note" id="note" placeholder="اختياري">${esc(state.note)}</textarea></label>
+    <p class="optional">الصورة والفيديو اختياريين. تقدر ترسل الطلب بدونها.</p>
+    <div class="composer-bar">
+      <label class="file-btn">${icon("camera")} صورة<input type="file" accept="image/*" data-action="add-files"></label>
+      <label class="file-btn">${icon("paperclip")} فيديو<input type="file" accept="video/*" data-action="add-files"></label>
+    </div>
+    ${filePreview()}
+    <button class="primary block" type="button" data-action="send" ${ready ? "" : "disabled"}>${state.busy ? "نرسل…" : "أرسل طلب عرض السعر"}</button>
+  </section>`;
 }
 
 function renderRequests() {
-  const cards = [];
-  for (const item of state.requests) {
-    const groups = item.needs?.length ? item.needs : [{ need: item.need || item.original_text, recipient_count: item.recipient_count, offer_count: item.replied_count, lowest_total: item.latest_offer_amount }];
-    for (const group of groups) {
-      const city = item.city ? ` بال${item.city.replace(/^ال/, "")}` : "";
-      const status = group.offer_count ? `وصلت ${formatCount(group.offer_count)} أسعار` : "بانتظار الأسعار";
-      cards.push(`<button class="request-card" type="button" data-action="offers" data-id="${esc(item.id)}" data-need="${esc(group.need || "")}">
-        <strong>${esc(displayNeed(group.need || item.original_text))}${esc(city)}</strong>
-        <p class="hits">${esc(status)}</p>
-        <em>أرسل إلى ${formatCount(group.recipient_count || item.recipient_count || 0)} جهة</em>
-        ${group.lowest_total != null ? `<p class="request-low">من ${esc(money(group.lowest_total))}</p>` : ""}
-        ${item.sent_count != null ? `<p class="send-status">${[
-          item.sent_count ? `${formatCount(item.sent_count)} وصل في حراج` : "",
-          item.queued_count ? `${formatCount(item.queued_count)} بانتظار الإرسال` : "",
-          item.failed_count ? `${formatCount(item.failed_count)} تعذر الإرسال` : "",
-        ].filter(Boolean).join(" · ")}</p>` : ""}
-      </button>`);
-    }
+  const logo = `<span class="slot" aria-hidden="true"></span>`;
+  const title = `<a class="brand-mark" href="/" data-action="home"><span class="logo" aria-hidden="true"></span><span class="farq-en">Farq</span> <span class="farq-ar">فرق</span></a>`;
+  const head = `<header class="top-bar lined">${logo}${title}${logo}</header>`;
+  if (!state.requests.length) {
+    return `${head}<section class="page soft requests-page"><p class="lede">لما ترسل طلب عرض سعر، يبين هنا.</p></section>${tabBar("requests")}`;
   }
-  return `<header class="top">${brandLockup()}<span></span></header>
-    <section style="display:flex;flex-direction:column;padding-top:8px">
-      ${cards.join("") || `<p class="lede" style="padding:0 24px">لما تطلب سعر، يبين هنا.</p>`}
-    </section>`;
+  return `${head}<section class="page soft requests-page">${state.requests
+    .map((item) => {
+      const need = item.need || item.original_text;
+      const when = ago(item.last_message_at || item.created_at);
+      const replied = item.replied_count || 0;
+      const sent = item.recipient_count || 0;
+      const from = item.latest_offer_amount != null ? `من ${money(item.latest_offer_amount)}` : "";
+      return `<button class="request-card" type="button" data-action="thread" data-id="${esc(item.id)}">
+        <div class="row"><span class="when">${esc(when || "")}</span><strong class="title">${esc(need)}</strong></div>
+        <hr>
+        <div class="row">
+          <div class="stats"><strong>${replied ? `وصلت ${formatCount(replied)} أسعار` : "بانتظار الرد"}</strong><span>أرسل إلى ${formatCount(sent)} جهات</span></div>
+          <span class="from">${esc(from || "بانتظار السعر")}</span>
+        </div>
+        ${item.last_message ? `<div class="request-foot"><span>${esc(item.last_message)}</span></div>` : ""}
+      </button>`;
+    })
+    .join("")}</section>${tabBar("requests")}`;
 }
 
-function offersForNeed(thread, need) {
-  const offers = (thread.offers || []).filter((item) => !need || !item.need || item.need === need);
-  return [...offers].sort((a, b) => (a.total_price ?? 1e12) - (b.total_price ?? 1e12));
-}
-
-function renderOffers() {
-  const thread = state.thread;
-  if (!thread) return `${nav({ title: "الأسعار", back: "requests" })}<section class="thread-page"><p>نحمّل الأسعار…</p></section>`;
-  const need = state.activeNeed || thread.need || "";
-  const offers = offersForNeed(thread, need);
-  const recipients = (thread.recipients || []).filter((item) => !need || !item.need || item.need === need);
-  const title = `${displayNeed(need)}${thread.city ? ` بال${thread.city.replace(/^ال/, "")}` : ""}`;
-  return `${nav({ title, back: "requests" })}
-    <div class="need-head">
-      <h2>${formatCount(offers.length)} عروض أسعار</h2>
-      <span>ترتيب حسب الأرخص</span>
-    </div>
-    ${offers.length || (thread.messages || []).some((item) => item.sender_role === "seller") ? `<button class="ghost-btn all-replies-btn" type="button" data-action="chat" data-seller="">محادثة البند</button>` : ""}
-    <section style="display:flex;flex-direction:column">
-      ${offers
-        .map((offer) => {
-          const seller = recipientForOffer(recipients, offer);
-          const sellerId = seller?.seller_id || "";
-          const breakdown = offer.delivery_included
-            ? "السعر يشمل الوصول"
-            : `الخدمة ${money(offer.base_price)} + الوصول ${money(offer.delivery_price)}`;
-          return `<article class="quote-card ${offer.cheapest ? "is-cheapest" : ""}">
-            <div class="need-head" style="padding:0">
-              <strong>${esc(offer.provider_name || seller?.seller_name || "جهة")}</strong>
-              ${offer.cheapest ? `<span class="cheap-badge">الأرخص</span>` : ""}
-            </div>
-            <p class="total">الإجمالي: ${esc(money(offer.total_price))}</p>
-            <p class="meta">${esc(breakdown)}</p>
-            <button class="ghost-btn" type="button" data-action="chat" data-seller="${esc(sellerId)}">محادثة</button>
-          </article>`;
-        })
-        .join("") || `<p class="lede" style="padding:0 24px">بانتظار الأسعار.</p>`}
-    </section>`;
-}
-
-function recipientForOffer(recipients, offer) {
-  return (
-    recipients.find((item) => offer.seller_id && item.seller_id === offer.seller_id) ||
-    recipients.find((item) => item.seller_name === offer.provider_name || item.seller_id === offer.phone) ||
-    recipients.find((item) => item.need === offer.need) ||
-    recipients[0]
-  );
-}
-
-function offerForSeller(thread, recipient) {
-  const offers = thread.offers || [];
-  return (
-    offers.find((item) => item.seller_id && item.seller_id === recipient.seller_id && (!item.need || !recipient.need || item.need === recipient.need)) ||
-    offers.find((item) => !item.seller_id && item.provider_name === recipient.seller_name)
-  );
-}
-
-function itemRecipients(thread) {
-  const need = state.activeNeed || thread.need || "";
-  return (thread.recipients || []).filter((item) => !need || !item.need || item.need === need);
-}
-
-function offerBreakdown(offer) {
-  if (!offer || offer.base_price == null) return "";
-  return offer.delivery_included ? "السعر يشمل الوصول" : `الخدمة ${money(offer.base_price)} + الوصول ${money(offer.delivery_price)}`;
-}
-
-function snippet(text, size = 60) {
+function snippet(text, size = 50) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
   return value.length > size ? `${value.slice(0, size)}…` : value;
 }
 
-function mentionedSeller(body, recipients) {
-  const matches = recipients.filter((item) => item.seller_name && body.includes(`@${item.seller_name}`));
-  return matches.sort((a, b) => b.seller_name.length - a.seller_name.length)[0] || null;
+function sellerName(thread, sellerId) {
+  return (thread.recipients || []).find((item) => item.seller_id === sellerId)?.seller_name || "جهة";
 }
 
-function replyForm(placeholder) {
-  const target = state.replyTo;
-  return `<form class="reply-form" id="user-reply">
-    ${target ? `<div class="reply-target"><span>ترد على <strong>${esc(target.name)}</strong>: ${esc(snippet(target.body, 40))}</span><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
-    <div class="mention-list" id="mention-list" hidden></div>
-    <div class="reply-row"><input name="body" placeholder="${esc(placeholder)}" autocomplete="off"><button class="primary" type="submit">إرسال</button></div>
-  </form>`;
+function messagePrice(message) {
+  return message.offer?.total_price ?? message.offer?.amount ?? null;
 }
 
-function harajSync(thread) {
-  return thread.last_synced_at ? `${ago(thread.last_synced_at)} من حراج` : "ما تمت مزامنة حراج بعد";
-}
-
-function deliveryLabel(message, nameOf) {
+function deliveryLabel(thread, message) {
   const deliveries = message.deliveries || [];
-  const to = message.scope === "single_seller" && message.seller_id ? `إلى ${nameOf(message.seller_id)} فقط` : `للكل (${formatCount(deliveries.length)})`;
+  if (!deliveries.length) return "";
+  const to = message.scope === "single_seller" && message.seller_id ? `إلى ${sellerName(thread, message.seller_id)} فقط` : `للكل (${formatCount(deliveries.length)})`;
   const sent = deliveries.filter((item) => item.status === "sent").length;
   const failed = deliveries.filter((item) => item.status === "failed").length;
   let status = "بانتظار الإرسال لحراج";
@@ -602,146 +473,102 @@ function deliveryLabel(message, nameOf) {
   return `${to} · ${status}`;
 }
 
-function sellerBubble(thread, message, nameOf, firstOffer) {
-  const recipient = (thread.recipients || []).find((item) => item.seller_id === message.seller_id) || {};
-  const offer = offerForSeller(thread, recipient);
-  const name = recipient.seller_name || offer?.provider_name || "جهة";
-  const amount = message.offer?.total_price ?? message.offer?.amount;
-  const isOffer = amount != null;
-  const cheapest = firstOffer && offer?.cheapest && offer.total_price === amount;
-  return `<div class="bubble seller ${cheapest ? "is-cheapest" : ""}">
-    <div class="bubble-head">
-      <span><button class="bubble-name" type="button" data-action="chat" data-seller="${esc(recipient.seller_id || "")}">${esc(name)}</button>${isOffer ? ` <span class="bubble-verb">قدّم سعر</span>` : ""}</span>
-      ${cheapest ? `<span class="cheap-badge">الأرخص</span>` : ""}
-    </div>
-    ${isOffer ? `<strong class="offer-amt">${esc(money(amount))}</strong>` : ""}
-    ${firstOffer && offerBreakdown(offer) ? `<p class="bubble-meta">${esc(offerBreakdown(offer))}</p>` : ""}
-    ${message.body ? `<div>${esc(message.body)}</div>` : ""}
-    <button class="bubble-reply" type="button" data-action="reply" data-message="${esc(message.id)}">ردّ عليه</button>
-  </div>`;
-}
-
-function conversationBubbles(thread, messages) {
-  const byMessage = new Map((thread.messages || []).map((item) => [item.id, item]));
-  const nameOf = (sellerId) => (thread.recipients || []).find((item) => item.seller_id === sellerId)?.seller_name || "جهة";
-  const priced = new Set();
+// The customer's conversation for one item. Sellers never see it: each has only their own Haraj
+// conversation, and every message here is routed to or synced from those.
+function threadBubbles(thread, messages) {
+  const byId = new Map((thread.messages || []).map((item) => [item.id, item]));
   return messages
     .map((message) => {
-      if (message.sender_role === "seller") {
-        const hasPrice = (message.offer?.total_price ?? message.offer?.amount) != null;
-        const firstOffer = hasPrice && !priced.has(message.seller_id);
-        if (hasPrice) priced.add(message.seller_id);
-        return sellerBubble(thread, message, nameOf, firstOffer);
+      const body = esc(message.body || "").replace(/\n/g, "<br>");
+      const quoted = message.reply_to ? byId.get(message.reply_to) : null;
+      const quote = quoted ? `<span class="bubble-quote">${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}: ${esc(snippet(quoted.body))}</span>` : "";
+      if (message.sender_role !== "seller") {
+        const label = deliveryLabel(thread, message);
+        return `<div class="bubble user">${quote}<div>${body}</div>${label ? `<span class="bubble-to">${esc(label)}</span>` : ""}</div>`;
       }
-      const quoted = message.reply_to ? byMessage.get(message.reply_to) : null;
-      const quote = quoted ? `<span class="bubble-quote">${esc(quoted.sender_role === "seller" ? nameOf(quoted.seller_id) : "أنت")}: ${esc(snippet(quoted.body, 50))}</span>` : "";
-      return `<div class="bubble user">${quote}<div>${esc(message.body || "")}</div><span class="bubble-to">${esc(deliveryLabel(message, nameOf))}</span></div>`;
+      const price = messagePrice(message);
+      return `<div class="bubble seller">
+        <div class="bubble-head"><button class="bubble-name" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}">${esc(sellerName(thread, message.seller_id))}</button>${price != null ? `<span class="bubble-verb">قدّم سعر</span>` : ""}</div>
+        ${price != null ? `<div class="offer"><strong>${esc(money(price))}</strong></div>` : ""}
+        <div>${body}</div>
+        <button class="bubble-reply" type="button" data-action="reply" data-message="${esc(message.id)}">ردّ عليه</button>
+      </div>`;
     })
     .join("");
 }
 
-function itemMessages(thread) {
-  const need = state.activeNeed || thread.need || "";
-  return (thread.messages || []).filter((message) => !need || !message.need || message.need === need);
-}
-
-// One conversation per item, for the customer only. Sellers never see it: each of them only has
-// their own Haraj conversation, and every message here is routed to or synced from those.
-function renderAllReplies(thread) {
-  const need = state.activeNeed || thread.need || "";
-  const recipients = itemRecipients(thread);
-  const messages = itemMessages(thread);
-  const replied = new Set(messages.filter((item) => item.sender_role === "seller").map((item) => item.seller_id));
-  return `${nav({ title: displayNeed(need) || "المحادثة", subtitle: `مع ${formatCount(recipients.length)} جهة عبر حراج`, back: "offers-back" })}
-    <section class="thread-page">
-      <p class="sync">${replied.size ? `ردّ ${formatCount(replied.size)} من ${formatCount(recipients.length)} جهة · ` : ""}${esc(harajSync(thread))}</p>
-      <p class="thread-hint">رسالتك توصل لكل الجهات في حراج. «ردّ عليه» أو @الاسم توصل له بس. اضغط اسم الجهة تشوف رسايلكم معه.</p>
-      <div class="thread">${conversationBubbles(thread, messages) || `<p class="meta">ما وصلت ردود للحين.</p>`}</div>
-      ${replyForm("اكتب للكل، أو @ لجهة معيّنة")}
-    </section>`;
-}
-
-// One seller's view: a filter on the item conversation, not a separate chat.
-// It holds everything that went into or came from this seller's Haraj conversation.
 function renderThread() {
   const thread = state.thread;
-  if (!thread) return `${nav({ title: "المحادثة", back: "offers-back" })}<section class="thread-page"><p>نحمّل المحادثة…</p></section>`;
-  if (!state.activeSeller) return renderAllReplies(thread);
-  const seller = itemRecipients(thread).find((item) => item.seller_id === state.activeSeller) || (thread.recipients || []).find((item) => item.seller_id === state.activeSeller) || {};
-  const offer = offerForSeller(thread, seller);
-  const messages = itemMessages(thread).filter(
-    (message) => message.seller_id === state.activeSeller || (message.scope === "all_sellers" && (message.deliveries || []).some((item) => item.seller_id === state.activeSeller)),
+  if (!thread) return `<section class="page"><p>نحمّل المحادثة…</p></section>`;
+  const one = state.activeSeller;
+  const recipients = thread.recipients || [];
+  // Tapping a seller only filters this conversation to what went into or came from their Haraj chat.
+  const messages = (thread.messages || []).filter(
+    (message) => !one || message.seller_id === one || (message.scope === "all_sellers" && (message.deliveries || []).some((item) => item.seller_id === one)),
   );
-  return `${nav({ title: seller.seller_name || "محادثة", subtitle: "محادثته في حراج", back: "all-replies" })}
-    <section class="thread-page">
-      ${offer ? `<article class="quote-card ${offer.cheapest ? "is-cheapest" : ""}">
-        <div class="need-head" style="padding:0">
-          <p class="total">الإجمالي: ${esc(money(offer.total_price))}</p>
-          ${offer.cheapest ? `<span class="cheap-badge">الأرخص</span>` : ""}
-        </div>
-        ${offerBreakdown(offer) ? `<p class="meta">${esc(offerBreakdown(offer))}</p>` : ""}
-      </article>` : ""}
-      <p class="sync">${esc(harajSync(thread))}</p>
-      <div class="thread">${conversationBubbles(thread, messages) || `<p class="meta">ما فيه رسايل معه للحين.</p>`}</div>
-      <form class="reply-form" id="user-reply"><div class="reply-row"><input name="body" placeholder="رسالة له بس" autocomplete="off"><button class="primary" type="submit">إرسال</button></div></form>
-    </section>`;
+  const offers = (thread.offers || []).filter((item) => item.total_price != null && (!one || item.seller_id === one));
+  const best = [...offers].sort((a, b) => a.total_price - b.total_price)[0];
+  const replied = new Set((thread.messages || []).filter((item) => item.sender_role === "seller").map((item) => item.seller_id));
+  const title = one ? sellerName(thread, one) : recipients.map((item) => item.seller_name).join(" · ");
+  const subtitle = one ? "محادثته في حراج" : thread.need || thread.original_text || "";
+  const back = `<button class="icon-btn" type="button" data-action="${one ? "all-sellers" : "requests"}" aria-label="رجوع">${icon("chevron", { size: 20 })}</button>`;
+  const phone = `<span class="icon-btn" aria-hidden="true">${icon("phone", { size: 20 })}</span>`;
+  const sync = thread.last_synced_at ? `آخر مزامنة مع حراج ${ago(thread.last_synced_at)}` : "ما تمت مزامنة حراج بعد";
+  const target = state.replyTo;
+  return `<header class="chat-head">${phone}<div class="who-line"><strong>${esc(title || "المحادثة")}</strong><span class="meta">${esc(subtitle)}</span></div>${back}</header>
+  <section class="page soft chat-page">
+    ${best ? `<div class="quote-card"><div class="row"><span class="tag">${one ? "عرضه" : "أرخص عرض"}</span><strong>الإجمالي: ${esc(money(best.total_price))}</strong></div><p>${one ? "" : `${esc(best.provider_name || sellerName(thread, best.seller_id))} · `}${esc(thread.need || thread.original_text || "")}${thread.city ? ` في ${esc(cityLabel(thread.city))}` : ""}</p></div>` : ""}
+    <p class="chat-hint">${one ? "رسايلك هنا توصل له بس." : `${replied.size ? `ردّ ${formatCount(replied.size)} من ${formatCount(recipients.length)} · ` : ""}رسالتك توصل للكل في حراج. «ردّ عليه» أو @الاسم توصل له بس.`}</p>
+    <div class="thread"><p class="day">${esc(sync)}</p>${threadBubbles(thread, messages) || `<p class="meta">بانتظار الرد.</p>`}</div>
+  </section>
+  ${target ? `<div class="reply-target"><span>ترد على <strong>${esc(target.name)}</strong>: ${esc(snippet(target.body, 40))}</span><button type="button" data-action="cancel-reply" aria-label="إلغاء">✕</button></div>` : ""}
+  <div class="mention-list" id="mention-list" hidden></div>
+  <form class="reply-form" id="user-reply">
+    <label class="icon-btn" aria-label="إرفاق اختياري">${icon("camera")}<input type="file" accept="image/*,video/*" data-action="add-files"></label>
+    <input name="body" placeholder="${one ? "رسالة له بس..." : "اكتب للكل، أو @ لجهة معيّنة..."}" autocomplete="off">
+    <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
+  </form>`;
 }
 
 function renderSeller() {
   const seller = state.seller;
-  if (!seller) return `<main class="shell"><section class="seller"><h1>${esc(state.notice || "نحمّل الطلب…")}</h1></section></main>`;
+  if (!seller) return `<section class="page"><h1>${esc(state.notice || "نحمّل المحادثة…")}</h1></section>`;
   const options = seller.recipients || [];
-  return `<section class="seller">
-    <header class="top" style="padding:0 0 16px">${brandLockup()}<span></span></header>
-    <h1>قدّم سعرك</h1>
-    <p class="lede">املأ البيانات لتقديم السعر للعميل مباشرة</p>
-    <div class="ask-box">
-      <em style="display:block;font-style:normal;color:var(--ink-muted);font-size:12px">الطلب المطلوب</em>
-      <p style="margin:6px 0 0;font-weight:600">${esc(seller.need || seller.original_text)}${seller.city ? ` في ${esc(seller.city)}` : ""}</p>
-    </div>
-    ${seller.notes ? `<p>${esc(seller.notes)}</p>` : ""}
+  const partner = options[0]?.seller_name || "الجهة";
+  return `<header class="seller-head">
+      <span class="mark round">${initial(partner)}</span>
+      <div class="who-line"><strong>${esc(partner)}</strong><span class="meta">${esc([seller.need || seller.original_text, seller.city ? cityLabel(seller.city) : ""].filter(Boolean).join(" · "))}</span></div>
+    </header>
+    <section class="page soft">
     ${(seller.attachments || []).map((item) => `<p><a href="/v1/seller/${esc(state.sellerToken)}/attachments/${esc(item.id)}">${esc(item.filename)}</a></p>`).join("")}
+    <div class="thread"><p class="day">اليوم</p>${bubbles(seller.messages, "seller") || `<p class="meta">بانتظار الرسالة.</p>`}</div>
     <form id="seller-reply">
-      ${options.length > 1 ? `<label class="field"><span>الجهة</span><select name="seller_id">${options.map((item) => `<option value="${esc(item.seller_id)}">${esc(item.seller_name)}</option>`).join("")}</select></label>` : `<input type="hidden" name="seller_id" value="${esc(options[0]?.seller_id || "")}">`}
-      <label class="field"><span>الاسم</span><input name="provider_name" value="${esc(options[0]?.seller_name || "")}" required></label>
-      <label class="field"><span>رقم الجوال</span><input name="phone" inputmode="tel" placeholder="+966" required></label>
-      <label class="field"><span>سعر الخدمة</span><input name="amount" inputmode="decimal" placeholder="ر.س" required></label>
-      <p>هل السعر يشمل الوصول / التوصيل؟</p>
-      <div class="choice-row">
-        <button type="button" class="is-on" data-action="delivery" data-value="yes">نعم، يشمل</button>
-        <button type="button" data-action="delivery" data-value="no">لا، السعر لا يشمل</button>
-      </div>
-      <input type="hidden" name="delivery_included" value="1">
-      <label class="field" id="delivery-field" hidden><span>تكلفة الوصول / التوصيل</span><input name="delivery_price" inputmode="decimal" placeholder="ر.س" value="0"></label>
-      <div class="total-box">الإجمالي المتوقع: <strong id="seller-total">—</strong></div>
-      <label class="field"><span>ملاحظة</span><textarea name="body" rows="3"></textarea></label>
-      <button class="primary" type="submit">أرسل عرضك</button>
+      ${options.length > 1 ? `<select name="seller_id">${options.map((item) => `<option value="${esc(item.seller_id)}">${esc(item.seller_name)}</option>`).join("")}</select>` : `<input type="hidden" name="seller_id" value="${esc(options[0]?.seller_id || "")}">`}
+      <input name="amount" inputmode="decimal" placeholder="السعر، إذا عندك" autocomplete="off">
+      <textarea name="body" rows="2" placeholder="اكتب رسالة..."></textarea>
+      <button class="send-icon" type="submit" aria-label="إرسال">${icon("send", { size: 18 })}</button>
     </form>
     ${state.notice ? `<p class="status">${esc(state.notice)}</p>` : ""}
-  </section>`;
+    </section>`;
 }
 
 function render() {
   clearInterval(poll);
   const view = {
     home: renderHome,
-    parse: renderParse,
     flow: renderFlow,
     detail: renderDetail,
     review: renderReview,
     requests: renderRequests,
     thread: renderThread,
-    offers: renderOffers,
     seller: renderSeller,
   }[state.view] || renderHome;
   const focused = document.activeElement?.id;
-  app.innerHTML = state.view === "seller" ? `<main class="shell">${view()}</main>` : `<main class="shell">${view()}</main>`;
+  app.innerHTML = shell(view());
   bindImages(app);
-  updateSellerTotal();
   if (focused) document.getElementById(focused)?.focus();
-  if ((state.view === "thread" || state.view === "offers") && state.thread?.id) {
-    poll = setInterval(() => loadThread(state.thread.id, true), 60000);
-  }
+  if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true), 4000);
+  if (state.view === "seller" && state.sellerToken) poll = setInterval(() => loadSeller(state.sellerToken, true), 4000);
 }
 
 function rememberFiles(fileList) {
@@ -770,33 +597,26 @@ async function readNdjson(response, onEvent) {
 
 function applyDone(event) {
   state.intent = event.intent;
-  state.intents = event.intents || event.groups?.map((item) => item.intent).filter(Boolean) || state.intents;
   state.results = event.results || [];
-  state.groups = event.groups || [];
   state.searchState = event.state;
   state.clarification = event.clarification_question || "";
   state.partial = false;
   const asking = event.state === "CLARIFICATION_REQUIRED" || event.state === "LOCATION_AMBIGUOUS";
   state.notice = asking ? "" : finalNotice(event.state, state.results.length);
-  if (asking) state.view = "parse";
-  else state.view = "flow";
 }
 
 async function runSearch(text) {
   const query = (text || "").trim();
   if (!query) return;
   state.query = query;
-  state.view = "parse";
+  state.city = "";
+  state.view = "flow";
   state.partial = true;
   state.searchState = "";
   state.results = [];
-  state.groups = [];
-  state.intents = [];
   state.intent = null;
   state.clarification = "";
-  state.notice = "ندور لك";
-  state.filterCity = "";
-  state.pricedOnly = false;
+  state.notice = "نفهم طلبك…";
   state.selected.clear();
   render();
   try {
@@ -807,19 +627,17 @@ async function runSearch(text) {
     await readNdjson(response, (event) => {
       if (event.type === "intent") {
         state.intent = event.intent;
-        state.intents = event.intents || [];
         state.clarification = event.clarification_question || "";
-        if (!state.results.length && state.partial) state.notice = "ندور لك";
+        if (!state.results.length && state.partial) state.notice = "نفهم طلبك…";
       } else if (event.type === "status") {
         state.searchState = event.state;
         state.partial = true;
-        state.notice = "ندور لك";
+        state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور في حراج…";
       } else if (event.type === "results") {
         state.results = event.results || [];
-        if (event.groups) state.groups = event.groups;
         state.partial = true;
         state.searchState = event.state;
-        state.notice = "ندور لك";
+        if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
       } else if (event.type === "done") applyDone(event);
       render();
     });
@@ -836,19 +654,8 @@ async function runSearch(text) {
   }
 }
 
-function findResult(key) {
-  if (state.selected.has(key)) return state.selected.get(key);
-  if (state.active && resultKey(state.active, state.active.need) === key) return state.active;
-  for (const group of needGroups()) {
-    for (const result of group.results || []) {
-      if (resultKey(result, group.need) === key) return { ...result, need: group.need };
-    }
-  }
-  return state.results.find((item) => resultKey(item) === key);
-}
-
 async function openResult(key) {
-  const result = findResult(key);
+  const result = state.results.find((item) => resultKey(item) === key);
   if (!result) return;
   state.active = result;
   state.gallery = imageSources(result.ad);
@@ -866,34 +673,31 @@ async function openResult(key) {
   }
 }
 
+function selectResult(key) {
+  const result = state.results.find((item) => resultKey(item) === key) || (state.active && resultKey(state.active) === key ? state.active : null);
+  if (result && sellerOf(result).id) state.selected.set(key, result);
+}
+
 function toggle(key) {
   if (state.selected.has(key)) state.selected.delete(key);
-  else {
-    const result = findResult(key);
-    if (result && sellerOf(result).id) state.selected.set(key, result);
-  }
+  else selectResult(key);
   render();
 }
 
-function selectNeed(need, all = false) {
-  for (const group of needGroups()) {
-    if (!all && group.need !== need) continue;
-    for (const result of group.results || []) {
-      const tagged = { ...result, need: group.need };
-      const key = resultKey(tagged, group.need);
-      if (sellerOf(result).id) state.selected.set(key, tagged);
-    }
-  }
+function openQuote(key) {
+  selectResult(key);
+  if (!state.selected.has(key)) return;
+  state.view = "review";
   render();
 }
 
 async function sendRequest() {
-  if (!state.selected.size || state.busy) return;
+  const city = customerCity();
+  if (!state.selected.size || !city || state.busy) return;
   state.busy = true;
   render();
   try {
     await ensureAuth();
-    const city = typeof state.intent?.location_city?.value === "string" ? state.intent.location_city.value : null;
     const attributes = {};
     if (state.intent?.material?.value) attributes.material = state.intent.material.value;
     if (state.intent?.condition?.value === "used") attributes.condition = "مستعمل";
@@ -909,13 +713,7 @@ async function sendRequest() {
         attributes,
         recipients: [...state.selected.values()].map((result) => {
           const seller = sellerOf(result);
-          return {
-            seller_id: seller.id,
-            seller_name: seller.name || result.ad?.title || "جهة",
-            ad_id: result.ad?.id || null,
-            need: result.need || state.intent?.need || null,
-            listing_url: result.ad?.url || null,
-          };
+          return { seller_id: seller.id, seller_name: seller.name || "بائع", ad_id: result.ad?.id || null };
         }),
       },
     });
@@ -926,11 +724,14 @@ async function sendRequest() {
     }
     state.busy = false;
     state.files = [];
-    state.selected.clear();
-    await loadRequests();
+    state.note = "";
+    state.thread = created;
+    state.view = "thread";
+    await loadThread(created.id);
   } catch (_error) {
     state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.busy = false;
+    state.view = "review";
     render();
   }
 }
@@ -947,21 +748,24 @@ async function loadThread(id, silent = false) {
   const thread = await api(`/v1/requests/${id}`);
   const previous = JSON.stringify(state.thread?.messages || []);
   state.thread = thread;
-  if (!silent && state.view !== "offers" && state.view !== "thread") state.view = "thread";
+  state.view = "thread";
   if (!silent || previous !== JSON.stringify(thread.messages || [])) render();
 }
 
-async function loadSeller(token) {
+async function loadSeller(token, silent = false) {
   state.view = "seller";
   state.sellerToken = token;
-  state.notice = "";
+  if (!silent) state.notice = "";
   try {
-    state.seller = await api(`/v1/seller/${token}`, { skipAuth: true });
+    const seller = await api(`/v1/seller/${token}`, { skipAuth: true });
+    const previous = JSON.stringify(state.seller?.messages || []);
+    state.seller = seller;
+    if (!silent || previous !== JSON.stringify(seller.messages || [])) render();
   } catch (_error) {
     state.seller = null;
     state.notice = "ما لقينا الطلب.";
+    render();
   }
-  render();
 }
 
 document.addEventListener("submit", (event) => {
@@ -977,15 +781,17 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     const body = String(new FormData(form).get("body") || "").trim();
     if (!body || !state.thread) return;
-    const need = state.activeNeed || state.thread.need || null;
-    const json = { body, need };
+    const recipients = state.thread.recipients || [];
+    const json = { body, need: state.thread.need || null };
     if (state.activeSeller) json.seller_id = state.activeSeller;
     else if (state.replyTo) json.reply_to = state.replyTo.id;
-    else json.seller_id = mentionedSeller(body, itemRecipients(state.thread))?.seller_id || null;
+    else {
+      const named = recipients.filter((item) => item.seller_name && body.includes(`@${item.seller_name}`));
+      json.seller_id = named.sort((a, b) => b.seller_name.length - a.seller_name.length)[0]?.seller_id || null;
+    }
     api(`/v1/requests/${state.thread.id}/messages`, { method: "POST", json })
       .then(() => {
         state.replyTo = null;
-        state.view = "thread";
         return loadThread(state.thread.id);
       })
       .catch(() => {});
@@ -993,25 +799,17 @@ document.addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(form);
     const amount = Number(String(data.get("amount") || "").replace(/[^\d.]/g, ""));
-    const extra = Number(String(data.get("delivery_price") || "").replace(/[^\d.]/g, ""));
     api(`/v1/seller/${state.sellerToken}/messages`, {
       method: "POST",
       skipAuth: true,
       json: {
         body: data.get("body") || "",
         seller_id: data.get("seller_id") || null,
-        provider_name: data.get("provider_name") || null,
-        phone: data.get("phone") || null,
         offer_amount: Number.isFinite(amount) && amount > 0 ? amount : null,
         offer_currency: "SAR",
-        delivery_included: data.get("delivery_included") !== "0",
-        delivery_price: Number.isFinite(extra) ? extra : 0,
       },
     })
-      .then(() => {
-        state.notice = "وصل الرد لصاحب الطلب.";
-        render();
-      })
+      .then(() => loadSeller(state.sellerToken))
       .catch(() => {
         state.notice = "ما انرسل الرد.";
         render();
@@ -1019,39 +817,41 @@ document.addEventListener("submit", (event) => {
   }
 });
 
-function updateSellerTotal() {
-  const form = document.getElementById("seller-reply");
-  const total = document.getElementById("seller-total");
-  if (!form || !total) return;
-  const base = Number(String(form.amount.value || "").replace(/[^\d.]/g, ""));
-  const extra = form.delivery_included.value === "0" ? Number(String(form.delivery_price.value || "").replace(/[^\d.]/g, "")) || 0 : 0;
-  total.textContent = Number.isFinite(base) && base > 0 ? money(base + extra) : "—";
-}
-
 document.addEventListener("input", (event) => {
   if (event.target.id === "note") state.note = event.target.value;
-  if (event.target.closest("#seller-reply")) updateSellerTotal();
-  if (event.target.closest("#user-reply") && !state.activeSeller && state.thread) {
+  if (event.target.name === "query") state.query = event.target.value;
+  if (event.target.closest("#user-reply") && event.target.name === "body" && !state.activeSeller && state.thread) {
     const list = document.getElementById("mention-list");
     const typed = event.target.value.match(/@([^@]*)$/);
+    const names = typed ? (state.thread.recipients || []).filter((item) => item.seller_name.includes(typed[1].trim())) : [];
     if (list) {
-      const names = typed ? itemRecipients(state.thread).filter((item) => item.seller_name.includes(typed[1].trim())) : [];
       list.hidden = !names.length;
       list.innerHTML = names.map((item) => `<button type="button" data-action="mention" data-name="${esc(item.seller_name)}">${esc(item.seller_name)}</button>`).join("");
     }
   }
-  if (event.target.name === "query") {
-    state.query = event.target.value;
-    const counter = document.querySelector(".counter");
-    if (counter) counter.textContent = `${formatCount(Math.min(500, state.query.length))}/٥٠٠`;
-  }
 });
 
-document.addEventListener("change", (event) => {
-  if (event.target.dataset.action === "add-files") {
-    rememberFiles(event.target.files || []);
-    render();
+document.addEventListener("change", async (event) => {
+  if (event.target.dataset.action !== "add-files") return;
+  const files = [...(event.target.files || [])];
+  if (!files.length) return;
+  if (state.view === "thread" && state.thread?.id) {
+    try {
+      await ensureAuth();
+      for (const file of files) {
+        const form = new FormData();
+        form.append("file", file);
+        await api(`/v1/requests/${state.thread.id}/attachments`, { method: "POST", form });
+      }
+      await loadThread(state.thread.id);
+    } catch (_error) {
+      state.notice = "ما انرفق الملف. تقدر ترسل الرسالة بدونه.";
+      render();
+    }
+    return;
   }
+  rememberFiles(files);
+  render();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1070,7 +870,6 @@ document.addEventListener("click", (event) => {
     history.pushState({}, "", "/");
     render();
   } else if (action === "idea") runSearch(target.dataset.query);
-  else if (action === "search-now") runSearch(state.query || document.querySelector("[name=query]")?.value);
   else if (action === "requests") loadRequests().catch(() => {});
   else if (action === "remove-file") {
     const removed = state.files.splice(Number(target.dataset.index), 1)[0];
@@ -1078,22 +877,15 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "open") openResult(target.dataset.key);
   else if (action === "toggle") toggle(target.dataset.key);
-  else if (action === "select-need") selectNeed(target.dataset.need);
-  else if (action === "select-all") selectNeed("", true);
-  else if (action === "review") {
+  else if (action === "quote") openQuote(target.dataset.key);
+  else if (action === "unselect") {
+    state.selected.delete(target.dataset.key);
+    render();
+  } else if (action === "pick-city") {
+    state.city = target.dataset.city || "";
+    render();
+  } else if (action === "review") {
     state.view = "review";
-    render();
-  } else if (action === "show-results") {
-    state.view = "flow";
-    render();
-  } else if (action === "sort") {
-    state.sort = target.dataset.sort;
-    render();
-  } else if (action === "city") {
-    state.filterCity = target.dataset.city || "";
-    render();
-  } else if (action === "priced") {
-    state.pricedOnly = !state.pricedOnly;
     render();
   } else if (action === "back-results") {
     state.view = "flow";
@@ -1103,66 +895,30 @@ document.addEventListener("click", (event) => {
   else if (action === "send") sendRequest();
   else if (action === "thread") {
     state.activeSeller = "";
-    loadThread(target.dataset.id).catch(() => {});
-  } else if (action === "offers") {
-    state.activeNeed = target.dataset.need || "";
-    ensureAuth()
-      .then(() => api(`/v1/requests/${target.dataset.id}`))
-      .then((thread) => {
-        state.thread = thread;
-        state.view = "offers";
-        render();
-      })
-      .catch(() => {});
-  } else if (action === "chat") {
     state.replyTo = null;
+    loadThread(target.dataset.id).catch(() => {});
+  } else if (action === "seller-filter") {
     state.activeSeller = target.dataset.seller || "";
-    state.view = "thread";
+    state.replyTo = null;
     render();
-  } else if (action === "all-replies") {
+  } else if (action === "all-sellers") {
     state.activeSeller = "";
-    state.view = "thread";
     render();
   } else if (action === "reply") {
     const message = (state.thread?.messages || []).find((item) => item.id === target.dataset.message);
     if (!message) return;
-    const recipient = (state.thread.recipients || []).find((item) => item.seller_id === message.seller_id);
-    state.replyTo = { id: message.id, name: recipient?.seller_name || "جهة", body: message.body };
+    state.replyTo = { id: message.id, name: sellerName(state.thread, message.seller_id), body: message.body };
     render();
-    document.querySelector("#user-reply input")?.focus();
+    document.querySelector("#user-reply input[name=body]")?.focus();
   } else if (action === "cancel-reply") {
     state.replyTo = null;
     render();
   } else if (action === "mention") {
-    const input = document.querySelector("#user-reply input");
+    const input = document.querySelector("#user-reply input[name=body]");
     if (!input) return;
     input.value = input.value.replace(/@[^@]*$/, `@${target.dataset.name} `);
     document.getElementById("mention-list").hidden = true;
     input.focus();
-  } else if (action === "offers-back") {
-    state.view = "offers";
-    render();
-  } else if (action === "delivery") {
-    const form = document.getElementById("seller-reply");
-    if (!form) return;
-    form.delivery_included.value = target.dataset.value === "yes" ? "1" : "0";
-    form.querySelectorAll("[data-action=delivery]").forEach((btn) => btn.classList.toggle("is-on", btn === target));
-    const field = document.getElementById("delivery-field");
-    if (field) field.hidden = target.dataset.value === "yes";
-    updateSellerTotal();
-  }
-  else if (action === "copy-reply" && state.thread?.reply_token) {
-    const url = `${location.origin}/s/${state.thread.reply_token}`;
-    const done = () => {
-      state.copied = true;
-      render();
-      setTimeout(() => {
-        state.copied = false;
-        if (state.view === "thread") render();
-      }, 2000);
-    };
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(done);
-    else done();
   }
 });
 
@@ -1172,14 +928,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-window.addEventListener("popstate", () => {
-  const match = location.pathname.match(/^\/s\/([^/]+)\/?$/);
-  if (match) loadSeller(decodeURIComponent(match[1]));
-  else if (state.view === "seller") {
-    state.view = "home";
-    render();
-  }
-});
-
 if (sellerRoute) loadSeller(decodeURIComponent(sellerRoute[1]));
 else render();
+
+api("/v1/cities", { skipAuth: true })
+  .then((data) => {
+    if (data.cities?.length) state.cities = data.cities;
+    if (state.view === "flow" || state.view === "review") render();
+  })
+  .catch(() => {});
