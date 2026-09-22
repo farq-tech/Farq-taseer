@@ -801,15 +801,30 @@ function renderThread() {
     state.pickedFor = thread.id;
   }
   const picked = pickable ? recipients.filter((item) => state.picked.has(item.seller_id)) : [];
+  const open = state.pickerOpen !== false;
   const picker = pickable
     ? `<div class="wa-recipients" role="group" aria-label="المستلمين">
-        <span class="wa-recipients-label">إلى:</span>
-        ${recipients
-          .map((item) => {
-            const on = state.picked.has(item.seller_id);
-            return `<button type="button" class="wa-recipient${on ? " is-on" : ""}" style="--seller:${sellerColor(thread, item.seller_id)}" data-action="toggle-recipient" data-seller="${esc(item.seller_id)}" aria-pressed="${on}">${on ? "✓ " : ""}${esc(item.seller_name)}</button>`;
-          })
-          .join("")}
+        <div class="wa-recipients-head">
+          <button type="button" class="wa-recipients-toggle" data-action="toggle-picker" aria-expanded="${open}">
+            <span>إلى ${picked.length === recipients.length ? "الكل" : `${formatCount(picked.length)} من ${formatCount(recipients.length)}`}</span>
+            <span class="wa-caret${open ? " is-open" : ""}" aria-hidden="true">${icon("chevron", { size: 14 })}</span>
+          </button>
+          <span class="wa-recipients-actions">
+            <button type="button" class="text-btn" data-action="pick-all" ${picked.length === recipients.length ? "disabled" : ""}>تحديد الكل</button>
+            <button type="button" class="text-btn" data-action="pick-none" ${picked.length ? "" : "disabled"}>إزالة الكل</button>
+          </span>
+        </div>
+        ${open
+          ? `<ul class="wa-recipient-list">${recipients
+              .map((item) => {
+                const on = state.picked.has(item.seller_id);
+                return `<li><button type="button" class="wa-recipient${on ? " is-on" : ""}" style="--seller:${sellerColor(thread, item.seller_id)}" data-action="toggle-recipient" data-seller="${esc(item.seller_id)}" role="checkbox" aria-checked="${on}">
+                  <span class="wa-check" aria-hidden="true">${on ? "✓" : ""}</span>
+                  <span class="wa-recipient-name">${esc(item.seller_name)}</span>
+                </button></li>`;
+              })
+              .join("")}</ul>`
+          : ""}
       </div>`
     : "";
   const files = state.chatFiles.length
@@ -1554,6 +1569,15 @@ document.addEventListener("click", (event) => {
     state.returnView = "home";
     state.authMode = "login";
     requireSignIn();
+  } else if (action === "toggle-picker") {
+    state.pickerOpen = state.pickerOpen === false;
+    render();
+  } else if (action === "pick-all") {
+    state.picked = new Set((state.thread?.recipients || []).map((item) => item.seller_id));
+    render();
+  } else if (action === "pick-none") {
+    state.picked = new Set();
+    render();
   } else if (action === "toggle-recipient") {
     const id = target.dataset.seller;
     if (!state.picked) return;

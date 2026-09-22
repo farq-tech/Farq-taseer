@@ -1021,19 +1021,30 @@ button, .chat-row, .request-card, .vendor-body, .tab { -webkit-tap-highlight-col
 
 /* Who the message goes to */
 .wa-recipients {
-  display: flex; align-items: center; gap: 6px; overflow-x: auto; margin: 0 8px; padding: 8px 10px;
-  background: var(--white); border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0;
-  scrollbar-width: none;
+  margin: 0 8px; padding: 8px 10px; background: var(--white); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 14px 14px 0 0;
 }
-.wa-recipients::-webkit-scrollbar { display: none; }
-.wa-recipients-label { flex: none; font-size: 12.5px; font-weight: 800; color: var(--secondary); }
+.wa-recipients-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wa-recipients-toggle { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 2px 0; font: inherit; font-size: 13px; font-weight: 800; color: var(--brand-900); cursor: pointer; }
+.wa-caret { display: inline-grid; place-items: center; transition: transform var(--duration-fast) var(--ease-smooth); transform: rotate(-90deg); }
+.wa-caret.is-open { transform: rotate(90deg); }
+.wa-recipients-actions { display: flex; gap: 10px; }
+.wa-recipients-actions .text-btn { font-size: 12.5px; font-weight: 800; color: var(--brand-700); }
+.wa-recipients-actions .text-btn:disabled { color: var(--muted); cursor: default; }
+.wa-recipient-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 34vh; overflow-y: auto; }
 .wa-recipient {
-  flex: none; padding: 6px 12px; border-radius: var(--radius-full); font: inherit; font-size: 13px; cursor: pointer;
-  border: 1.5px solid color-mix(in srgb, var(--seller) 40%, transparent); background: var(--white); color: var(--secondary);
-  transition: background var(--duration-fast), color var(--duration-fast), transform var(--duration-fast);
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--white); font: inherit; font-size: 14px; color: var(--secondary); cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast), transform var(--duration-fast);
 }
-.wa-recipient.is-on { background: color-mix(in srgb, var(--seller) 14%, var(--white)); border-color: var(--seller); color: var(--seller); font-weight: 800; }
-.wa-recipient:active { transform: scale(0.96); }
+.wa-recipient .wa-check {
+  width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 7px;
+  border: 1.5px solid var(--line-strong); background: var(--white); color: var(--white); font-size: 13px; font-weight: 800;
+}
+.wa-recipient.is-on { background: color-mix(in srgb, var(--seller) 8%, var(--white)); border-color: color-mix(in srgb, var(--seller) 45%, transparent); color: var(--ink); font-weight: 700; }
+.wa-recipient.is-on .wa-check { background: var(--seller); border-color: var(--seller); }
+.wa-recipient-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
+.wa-recipient:active { transform: scale(0.99); }
 
 /* Files before sending */
 .wa-files { display: flex; gap: 8px; overflow-x: auto; margin: 0 8px; padding: 8px 10px; background: var(--white); border: 1px solid var(--line); border-bottom: 0; }
