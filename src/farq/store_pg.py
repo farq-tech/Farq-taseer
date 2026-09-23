@@ -38,6 +38,7 @@ from farq.store import (
     reply_audience,
     request_summary,
     route_targets,
+    seller_key,
     seller_message,
     session_cutoff,
     session_keys,
@@ -503,10 +504,16 @@ class PgStore:
                 for item in conn.execute("select id, haraj_text from messages where request_id = %s and haraj_text is not null", (row["id"],))
             }
         seller_id = own["seller_id"] if own is not None else None
+        awarded_to_me = row["awarded_seller_id"] is not None and seller_id is not None and seller_key(row["awarded_seller_id"]) == seller_key(seller_id)
         # The invite promises the item and the city only: the customer's own words and notes stay with him.
+        # The phone and the place are here only when this supplier won AND the customer chose to share them.
         return {
+            "request_id": row["id"],
+            "ref_code": row.get("ref_code"),
             "need": need,
             "city": row["city"],
+            "awarded_to_me": awarded_to_me,
+            "contact": self.shared_contact(row["id"], seller_id) if awarded_to_me else None,
             "offers_open": row["awarded_seller_id"] in (None, seller_id),
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
@@ -599,17 +606,230 @@ class PgStore:
             conn, request_id, "user", owner_user_id, body, None, seller_id=single, need=need, reply_to=reply_to, scope=scope, haraj_text=haraj_text, media=media
         )
         created = _now()
+        in_app = self._registered_sellers(conn, [row["seller_id"] for row in targets])
         for row in targets:
             item_need = row["need"] or default_need or ""
             conn.execute(
                 "insert into haraj_threads (request_id, seller_id, need, ad_id) values (%s, %s, %s, %s) on conflict do nothing",
                 (request_id, row["seller_id"], item_need, row["ad_id"]),
             )
+            # A registered supplier reads this in his own app, so it is not a Haraj send: it
+            # skips the queue entirely and never spends a slot of the platform-wide 20-second
+            # spacing. The worker claims 'queued' only, so 'in_app' is invisible to it.
+            direct = seller_key(row["seller_id"]) in in_app
             conn.execute(
-                "insert into message_deliveries (id, message_id, request_id, seller_id, need, delivery_status, created_at) values (%s, %s, %s, %s, %s, 'queued', %s)",
-                (uuid4().hex, message.id, request_id, row["seller_id"], item_need, created),
+                "insert into message_deliveries (id, message_id, request_id, seller_id, need, delivery_status, sent_at, created_at)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (uuid4().hex, message.id, request_id, row["seller_id"], item_need,
+                 "in_app" if direct else "queued", created if direct else None, created),
             )
+            if direct:
+                conn.execute(
+                    "update request_recipients set send_status = 'sent' where request_id = %s and seller_id = %s and coalesce(need, '') = %s",
+                    (request_id, row["seller_id"], item_need),
+                )
         return message
+
+    def _registered_sellers(self, conn, seller_ids) -> set[str]:
+        """Which of these Haraj sellers already have an active Taseer account."""
+        keys = sorted({seller_key(item) for item in seller_ids if item})
+        if not keys:
+            return set()
+        rows = conn.execute(
+            "select haraj_seller_id from suppliers where status = 'active' and haraj_seller_id = any(%s)", (keys,)
+        ).fetchall()
+        return {row["haraj_seller_id"] for row in rows}
+
+    # -- supplier accounts ----------------------------------------------------
+
+    def _supplier_row(self, row) -> dict:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "email": row["email"],
+            "phone": row["phone"],
+            "activity_type": row["activity_type"],
+            "description": row["description"],
+            "categories": row["categories"] or [],
+            "haraj_seller_id": row["haraj_seller_id"],
+            "status": row["status"],
+            "created_at": _iso(row["created_at"]),
+        }
+
+    def seller_id_for_reply_token(self, token: str) -> str | None:
+        """The Haraj seller an invite link already proves. Registration binds to this and
+        never to a seller id the account asks for."""
+        if not token:
+            return None
+        with self._pool.connection() as conn:
+            row = conn.execute("select seller_id from request_recipients where reply_token = %s", (token,)).fetchone()
+        return None if row is None else seller_key(row["seller_id"])
+
+    def register_supplier(self, *, name: str, email: str, phone: str, password: str,
+                          activity_type: str = "both", description: str | None = None,
+                          categories=None, haraj_seller_id: str | None = None) -> dict:
+        supplier_id = uuid4().hex
+        salt = secrets.token_hex(16)
+        bound = seller_key(haraj_seller_id) if haraj_seller_id else None
+        with self._pool.connection() as conn:
+            if bound and conn.execute("select 1 from suppliers where haraj_seller_id = %s", (bound,)).fetchone():
+                raise ValueError("seller already registered")
+            try:
+                conn.execute(
+                    "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
+                    " categories, haraj_seller_id, status, created_at, updated_at)"
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (supplier_id, name.strip(), email.lower().strip(), phone.strip(),
+                     _hash_password(password, salt), salt, activity_type, (description or "").strip() or None,
+                     Jsonb(list(categories or [])), bound, "active" if bound else "pending", _now(), _now()),
+                )
+            except psycopg.errors.UniqueViolation as exc:
+                raise ValueError("email already registered") from exc
+            row = conn.execute("select * from suppliers where id = %s", (supplier_id,)).fetchone()
+        return self._supplier_row(row)
+
+    def login_supplier(self, email: str, password: str) -> str | None:
+        with self._pool.connection() as conn:
+            row = conn.execute("select * from suppliers where email = %s", (email.lower().strip(),)).fetchone()
+        if not password_matches(password, row):
+            return None
+        token = secrets.token_urlsafe(32)
+        with self._pool.connection() as conn:
+            conn.execute(
+                "insert into supplier_sessions (token, supplier_id, created_at) values (%s, %s, %s)",
+                (token_digest(token), row["id"], _now()),
+            )
+            conn.execute("delete from supplier_sessions where supplier_id = %s and created_at < %s", (row["id"], session_cutoff()))
+        return token
+
+    def supplier_for_token(self, token: str) -> dict | None:
+        if not token:
+            return None
+        keys = list(session_keys(token))
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select s.token as session_token, s.created_at as session_created, p.* from supplier_sessions s"
+                " join suppliers p on p.id = s.supplier_id where s.token = any(%s)",
+                (keys,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["session_created"] < session_cutoff():
+                conn.execute("delete from supplier_sessions where token = %s", (row["session_token"],))
+                return None
+        return self._supplier_row(row)
+
+    def logout_supplier(self, token: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("delete from supplier_sessions where token = any(%s)", (list(session_keys(token)),))
+
+    def claim_supplier_link(self, supplier_id: str, reply_token: str) -> dict | None:
+        """Bind a pending account to the Haraj seller an invite link proves."""
+        bound = self.seller_id_for_reply_token(reply_token)
+        if bound is None:
+            return None
+        with self._pool.connection() as conn:
+            taken = conn.execute("select id from suppliers where haraj_seller_id = %s", (bound,)).fetchone()
+            if taken is not None and taken["id"] != supplier_id:
+                raise ValueError("seller already registered")
+            conn.execute(
+                "update suppliers set haraj_seller_id = %s, status = 'active', updated_at = %s where id = %s",
+                (bound, _now(), supplier_id),
+            )
+            row = conn.execute("select * from suppliers where id = %s", (supplier_id,)).fetchone()
+        return None if row is None else self._supplier_row(row)
+
+    def supplier_requests(self, supplier_id: str) -> list[dict]:
+        """Every request this supplier was written to, newest first, with the state the
+        list screen colours by: new, quoted, awarded to him, or awarded to someone else."""
+        with self._pool.connection() as conn:
+            supplier = conn.execute("select haraj_seller_id, status from suppliers where id = %s", (supplier_id,)).fetchone()
+            if supplier is None or supplier["status"] != "active" or not supplier["haraj_seller_id"]:
+                return []
+            seller = supplier["haraj_seller_id"]
+            rows = conn.execute(
+                """
+                select r.id, r.ref_code, r.city, r.created_at, r.awarded_seller_id, r.contact_shared_at,
+                       p.need, p.reply_token, p.seller_id,
+                       (select min(o.total_price) from offers o
+                         where o.request_id = r.id and o.seller_id = p.seller_id) as my_offer,
+                       (select count(*) from messages m
+                         where m.request_id = r.id and m.sender_role = 'seller' and m.seller_id = p.seller_id) as my_messages
+                  from request_recipients p join requests r on r.id = p.request_id
+                 where p.seller_id = %s or p.seller_id = %s
+                 order by r.created_at desc
+                 limit 100
+                """,
+                (seller, f"haraj:seller:{seller}"),
+            ).fetchall()
+        out = []
+        for row in rows:
+            awarded = row["awarded_seller_id"]
+            mine = awarded is not None and seller_key(awarded) == seller
+            if awarded is not None:
+                state = "awarded" if mine else "lost"
+            elif row["my_offer"] is not None:
+                state = "quoted"
+            else:
+                state = "new"
+            out.append({
+                "request_id": row["id"],
+                "ref_code": row["ref_code"],
+                "need": row["need"],
+                "city": row["city"],
+                "created_at": _iso(row["created_at"]),
+                "state": state,
+                "offer": None if row["my_offer"] is None else float(row["my_offer"]),
+                "messages": int(row["my_messages"] or 0),
+                "token": row["reply_token"],
+                "contact_shared": bool(row["contact_shared_at"]) and mine,
+            })
+        return out
+
+    # -- contact sharing after an award ---------------------------------------
+
+    def share_contact(self, request_id: str, owner_user_id: str, *, phone: str,
+                      lat: float | None = None, lng: float | None = None) -> dict:
+        """The customer's own phone and place, given to the winning supplier by his own
+        action. Refused before a winner exists, so it can never leak to a losing bidder."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select awarded_seller_id from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)
+            ).fetchone()
+            if row is None:
+                raise LookupError("request not found")
+            if not row["awarded_seller_id"]:
+                raise ValueError("award a supplier first")
+            conn.execute(
+                "update requests set contact_phone = %s, contact_lat = %s, contact_lng = %s, contact_shared_at = %s where id = %s",
+                (phone.strip(), lat, lng, _now(), request_id),
+            )
+        return {"shared": True, "phone": phone.strip(), "lat": lat, "lng": lng}
+
+    def revoke_contact(self, request_id: str, owner_user_id: str) -> dict:
+        with self._pool.connection() as conn:
+            updated = conn.execute(
+                "update requests set contact_phone = null, contact_lat = null, contact_lng = null, contact_shared_at = null"
+                " where id = %s and owner_user_id = %s returning id",
+                (request_id, owner_user_id),
+            ).fetchone()
+            if updated is None:
+                raise LookupError("request not found")
+        return {"shared": False}
+
+    def shared_contact(self, request_id: str, seller_id: str) -> dict | None:
+        """Only the awarded supplier, and only once the customer has shared."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select awarded_seller_id, contact_phone, contact_lat, contact_lng, contact_shared_at"
+                " from requests where id = %s",
+                (request_id,),
+            ).fetchone()
+        if row is None or not row["contact_shared_at"] or not row["awarded_seller_id"]:
+            return None
+        if seller_key(row["awarded_seller_id"]) != seller_key(seller_id):
+            return None
+        return {"phone": row["contact_phone"], "lat": row["contact_lat"], "lng": row["contact_lng"]}
 
     def route_customer_message(
         self,

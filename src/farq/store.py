@@ -646,6 +646,35 @@ class Store:
             """
         )
         self._ensure_column("requests", "ref_code", "text")
+        self._connection.executescript(
+            """
+            create table if not exists suppliers (
+              id text primary key,
+              name text not null,
+              email text unique not null,
+              phone text not null,
+              password_hash text not null,
+              salt text not null,
+              activity_type text not null default 'both',
+              description text,
+              categories_json text not null default '[]',
+              haraj_seller_id text unique,
+              status text not null default 'pending',
+              created_at text not null,
+              updated_at text not null
+            );
+            create table if not exists supplier_sessions (
+              token text primary key,
+              supplier_id text not null references suppliers(id) on delete cascade,
+              created_at text not null
+            );
+            """
+        )
+        self._ensure_column("requests", "contact_phone", "text")
+        self._ensure_column("requests", "contact_lat", "real")
+        self._ensure_column("requests", "contact_lng", "real")
+        self._ensure_column("requests", "contact_shared_at", "text")
+        self._ensure_column("message_deliveries", "sent_at", "text")
         self._ensure_column("subscription_plans", "monthly_items", "integer")
         self._ensure_column("subscription_plans", "sellers_per_item", "integer")
         self._ensure_column("subscription_plans", "daily_contacts", "integer")
@@ -1073,17 +1102,214 @@ class Store:
         if media:
             self._connection.execute("update messages set media_json = ? where id = ?", (json.dumps(media, ensure_ascii=False), message.id))
         created = _now()
+        in_app = self._registered_sellers([row["seller_id"] for row in targets])
         for row in targets:
             self._connection.execute(
                 "insert or ignore into haraj_threads (request_id, seller_id, need, ad_id) values (?, ?, ?, ?)",
                 (request_id, row["seller_id"], item_of(row), row["ad_id"]),
             )
+            # A registered supplier reads this in his own app: not a Haraj send, so it never
+            # spends a slot of the platform-wide 20-second spacing. See PgStore._enqueue.
+            direct = seller_key(row["seller_id"]) in in_app
             self._connection.execute(
-                "insert into message_deliveries (id, message_id, request_id, seller_id, need, delivery_status, created_at) values (?, ?, ?, ?, ?, 'queued', ?)",
-                (uuid4().hex, message.id, request_id, row["seller_id"], item_of(row), created),
+                "insert into message_deliveries (id, message_id, request_id, seller_id, need, delivery_status, sent_at, created_at)"
+                " values (?, ?, ?, ?, ?, ?, ?, ?)",
+                (uuid4().hex, message.id, request_id, row["seller_id"], item_of(row),
+                 "in_app" if direct else "queued", created if direct else None, created),
             )
+            if direct:
+                self._connection.execute(
+                    "update request_recipients set send_status = 'sent' where request_id = ? and seller_id = ? and coalesce(need, '') = ?",
+                    (request_id, row["seller_id"], item_of(row)),
+                )
         self._connection.commit()
         return next(item for item in self._messages_for_request(request_id) if item.id == message.id)
+
+    def _registered_sellers(self, seller_ids) -> set[str]:
+        keys = sorted({seller_key(item) for item in seller_ids if item})
+        if not keys:
+            return set()
+        marks = ",".join("?" * len(keys))
+        rows = self._connection.execute(
+            f"select haraj_seller_id from suppliers where status = 'active' and haraj_seller_id in ({marks})", keys
+        ).fetchall()
+        return {row["haraj_seller_id"] for row in rows}
+
+    # -- supplier accounts ----------------------------------------------------
+
+    def _supplier_row(self, row) -> dict:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "email": row["email"],
+            "phone": row["phone"],
+            "activity_type": row["activity_type"],
+            "description": row["description"],
+            "categories": json.loads(row["categories_json"] or "[]"),
+            "haraj_seller_id": row["haraj_seller_id"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+        }
+
+    def seller_id_for_reply_token(self, token: str) -> str | None:
+        if not token:
+            return None
+        row = self._connection.execute("select seller_id from request_recipients where reply_token = ?", (token,)).fetchone()
+        return None if row is None else seller_key(row["seller_id"])
+
+    def register_supplier(self, *, name: str, email: str, phone: str, password: str,
+                          activity_type: str = "both", description: str | None = None,
+                          categories=None, haraj_seller_id: str | None = None) -> dict:
+        supplier_id = uuid4().hex
+        salt = secrets.token_hex(16)
+        bound = seller_key(haraj_seller_id) if haraj_seller_id else None
+        if bound and self._connection.execute("select 1 from suppliers where haraj_seller_id = ?", (bound,)).fetchone():
+            raise ValueError("seller already registered")
+        try:
+            self._connection.execute(
+                "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
+                " categories_json, haraj_seller_id, status, created_at, updated_at)"
+                " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (supplier_id, name.strip(), email.lower().strip(), phone.strip(),
+                 _hash_password(password, salt), salt, activity_type, (description or "").strip() or None,
+                 json.dumps(list(categories or []), ensure_ascii=False), bound,
+                 "active" if bound else "pending", _now(), _now()),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("email already registered") from exc
+        self._connection.commit()
+        return self._supplier_row(self._connection.execute("select * from suppliers where id = ?", (supplier_id,)).fetchone())
+
+    def login_supplier(self, email: str, password: str) -> str | None:
+        row = self._connection.execute("select * from suppliers where email = ?", (email.lower().strip(),)).fetchone()
+        if not password_matches(password, row):
+            return None
+        token = secrets.token_urlsafe(32)
+        self._connection.execute(
+            "insert into supplier_sessions (token, supplier_id, created_at) values (?, ?, ?)",
+            (token_digest(token), row["id"], _now()),
+        )
+        self._connection.execute(
+            "delete from supplier_sessions where supplier_id = ? and created_at < ?",
+            (row["id"], session_cutoff().isoformat()),
+        )
+        self._connection.commit()
+        return token
+
+    def supplier_for_token(self, token: str) -> dict | None:
+        if not token:
+            return None
+        keys = list(session_keys(token))
+        marks = ",".join("?" * len(keys))
+        row = self._connection.execute(
+            f"select s.token as session_token, s.created_at as session_created, p.* from supplier_sessions s"
+            f" join suppliers p on p.id = s.supplier_id where s.token in ({marks})",
+            keys,
+        ).fetchone()
+        if row is None:
+            return None
+        if row["session_created"] < session_cutoff().isoformat():
+            self._connection.execute("delete from supplier_sessions where token = ?", (row["session_token"],))
+            self._connection.commit()
+            return None
+        return self._supplier_row(row)
+
+    def logout_supplier(self, token: str) -> None:
+        keys = list(session_keys(token))
+        marks = ",".join("?" * len(keys))
+        self._connection.execute(f"delete from supplier_sessions where token in ({marks})", keys)
+        self._connection.commit()
+
+    def claim_supplier_link(self, supplier_id: str, reply_token: str) -> dict | None:
+        bound = self.seller_id_for_reply_token(reply_token)
+        if bound is None:
+            return None
+        taken = self._connection.execute("select id from suppliers where haraj_seller_id = ?", (bound,)).fetchone()
+        if taken is not None and taken["id"] != supplier_id:
+            raise ValueError("seller already registered")
+        self._connection.execute(
+            "update suppliers set haraj_seller_id = ?, status = 'active', updated_at = ? where id = ?",
+            (bound, _now(), supplier_id),
+        )
+        self._connection.commit()
+        row = self._connection.execute("select * from suppliers where id = ?", (supplier_id,)).fetchone()
+        return None if row is None else self._supplier_row(row)
+
+    def supplier_requests(self, supplier_id: str) -> list[dict]:
+        supplier = self._connection.execute("select haraj_seller_id, status from suppliers where id = ?", (supplier_id,)).fetchone()
+        if supplier is None or supplier["status"] != "active" or not supplier["haraj_seller_id"]:
+            return []
+        seller = supplier["haraj_seller_id"]
+        rows = self._connection.execute(
+            """
+            select r.id, r.ref_code, r.city, r.created_at, r.awarded_seller_id, r.contact_shared_at,
+                   p.need, p.reply_token, p.seller_id,
+                   (select min(o.total_price) from offers o where o.request_id = r.id and o.seller_id = p.seller_id) as my_offer,
+                   (select count(*) from messages m where m.request_id = r.id and m.sender_role = 'seller' and m.seller_id = p.seller_id) as my_messages
+              from request_recipients p join requests r on r.id = p.request_id
+             where p.seller_id = ? or p.seller_id = ?
+             order by r.created_at desc limit 100
+            """,
+            (seller, f"haraj:seller:{seller}"),
+        ).fetchall()
+        out = []
+        for row in rows:
+            awarded = row["awarded_seller_id"]
+            mine = awarded is not None and seller_key(awarded) == seller
+            state = ("awarded" if mine else "lost") if awarded else ("quoted" if row["my_offer"] is not None else "new")
+            out.append({
+                "request_id": row["id"],
+                "ref_code": row["ref_code"],
+                "need": row["need"],
+                "city": row["city"],
+                "created_at": row["created_at"],
+                "state": state,
+                "offer": None if row["my_offer"] is None else float(row["my_offer"]),
+                "messages": int(row["my_messages"] or 0),
+                "token": row["reply_token"],
+                "contact_shared": bool(row["contact_shared_at"]) and mine,
+            })
+        return out
+
+    # -- contact sharing after an award ---------------------------------------
+
+    def share_contact(self, request_id: str, owner_user_id: str, *, phone: str,
+                      lat: float | None = None, lng: float | None = None) -> dict:
+        row = self._connection.execute(
+            "select awarded_seller_id from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)
+        ).fetchone()
+        if row is None:
+            raise LookupError("request not found")
+        if not row["awarded_seller_id"]:
+            raise ValueError("award a supplier first")
+        self._connection.execute(
+            "update requests set contact_phone = ?, contact_lat = ?, contact_lng = ?, contact_shared_at = ? where id = ?",
+            (phone.strip(), lat, lng, _now(), request_id),
+        )
+        self._connection.commit()
+        return {"shared": True, "phone": phone.strip(), "lat": lat, "lng": lng}
+
+    def revoke_contact(self, request_id: str, owner_user_id: str) -> dict:
+        cursor = self._connection.execute(
+            "update requests set contact_phone = null, contact_lat = null, contact_lng = null, contact_shared_at = null"
+            " where id = ? and owner_user_id = ?",
+            (request_id, owner_user_id),
+        )
+        if cursor.rowcount == 0:
+            raise LookupError("request not found")
+        self._connection.commit()
+        return {"shared": False}
+
+    def shared_contact(self, request_id: str, seller_id: str) -> dict | None:
+        row = self._connection.execute(
+            "select awarded_seller_id, contact_phone, contact_lat, contact_lng, contact_shared_at from requests where id = ?",
+            (request_id,),
+        ).fetchone()
+        if row is None or not row["contact_shared_at"] or not row["awarded_seller_id"]:
+            return None
+        if seller_key(row["awarded_seller_id"]) != seller_key(seller_id):
+            return None
+        return {"phone": row["contact_phone"], "lat": row["contact_lat"], "lng": row["contact_lng"]}
 
     def route_customer_message(
         self,
@@ -1519,11 +1745,18 @@ class Store:
             item["id"]: item["haraj_text"]
             for item in self._connection.execute("select id, haraj_text from messages where request_id = ? and haraj_text is not null", (row["id"],))
         }
+        awarded = self._col(row, "awarded_seller_id")
+        awarded_to_me = awarded is not None and own is not None and seller_key(awarded) == seller_key(own)
         # The invite promises the item and the city only: the customer's own words and notes stay with him.
+        # The phone and the place are here only when this supplier won AND the customer chose to share them.
         return {
+            "request_id": row["id"],
+            "ref_code": self._col(row, "ref_code"),
             "need": need,
             "city": row["city"],
-            "offers_open": self._col(row, "awarded_seller_id") in (None, own),
+            "awarded_to_me": awarded_to_me,
+            "contact": self.shared_contact(row["id"], own) if awarded_to_me else None,
+            "offers_open": awarded in (None, own),
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
             # Each seller sees their own thread, never another seller's messages or who else was asked.

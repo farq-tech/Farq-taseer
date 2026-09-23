@@ -24,7 +24,7 @@ from farq.config import PaymentsConfig, SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
-from farq.intent import analyze, analyze_needs, split_need_texts
+from farq.intent import analyze, analyze_needs, category_catalog, split_need_texts, suggest_categories
 from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
@@ -61,6 +61,41 @@ class RegisterBody(ApiModel):
 
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
 GUEST_DOMAIN = "@users.farq.local"
+
+
+class SupplierRegisterBody(ApiModel):
+    name: str
+    email: str
+    phone: str
+    password: str
+    activity_type: str = "both"
+    description: str | None = None
+    categories: list[str] = Field(default_factory=list, max_length=12)
+    # An invite link proves which Haraj seller this is. Registration binds to that and never
+    # to a seller id the caller names, so an account cannot claim someone else's requests.
+    token: str | None = None
+
+
+class SupplierLoginBody(ApiModel):
+    email: str
+    password: str
+
+
+class SupplierClaimBody(ApiModel):
+    token: str
+
+
+class DescribeBody(ApiModel):
+    text: str
+
+
+class ShareContactBody(ApiModel):
+    phone: str
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
+
+
+SAUDI_MOBILE = re.compile(r"^(?:\+9665|009665|05)\d{8}$")
 
 
 class SearchBody(ApiModel):
@@ -323,6 +358,124 @@ def create_app(
         if authorization and authorization.startswith("Bearer "):
             store.logout(authorization.removeprefix("Bearer ").strip())
         return {"signed_out": True}
+
+    # -- supplier accounts ----------------------------------------------------
+    # A supplier who registers from an invite link is bound to the Haraj seller that link
+    # proves and is active at once. A supplier who registers cold has nothing to prove who
+    # he is, so his account is 'pending' and shows no requests until a link is claimed.
+
+    def current_supplier(authorization: str | None = Header(default=None)) -> dict:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="authentication required")
+        supplier = store.supplier_for_token(authorization.removeprefix("Bearer ").strip())
+        if supplier is None:
+            raise HTTPException(status_code=401, detail="invalid session")
+        return supplier
+
+    def _clean_supplier(body) -> tuple[str, str, str]:
+        email = body.email.strip().lower()
+        name = (body.name or "").strip()
+        phone = re.sub(r"[\s-]", "", (body.phone or "").strip())
+        if not EMAIL.match(email) or email.endswith(GUEST_DOMAIN):
+            raise HTTPException(status_code=422, detail="invalid email")
+        if not 2 <= len(name) <= 80:
+            raise HTTPException(status_code=422, detail="name required")
+        if not SAUDI_MOBILE.match(phone):
+            raise HTTPException(status_code=422, detail="invalid phone")
+        if len(body.password) < 8:
+            raise HTTPException(status_code=422, detail="password too short")
+        if body.activity_type not in {"both", "services", "products"}:
+            raise HTTPException(status_code=422, detail="invalid activity type")
+        return name, email, phone
+
+    @app.get("/v1/supplier/categories")
+    def supplier_categories() -> dict:
+        # Only what the matcher routes on: a category outside HEADS is one no request is
+        # ever filed under, so offering it would promise work that cannot arrive.
+        return {"categories": category_catalog()}
+
+    @app.post("/v1/supplier/categories/suggest")
+    def supplier_category_suggest(body: DescribeBody) -> dict:
+        return {"categories": suggest_categories(body.text or "")}
+
+    @app.post("/v1/supplier/register")
+    def supplier_register(body: SupplierRegisterBody, request: Request) -> dict:
+        if not register_limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
+        name, email, phone = _clean_supplier(body)
+        bound = store.seller_id_for_reply_token((body.token or "").strip()) if body.token else None
+        known = {item["key"] for item in category_catalog()}
+        try:
+            supplier = store.register_supplier(
+                name=name, email=email, phone=phone, password=body.password,
+                activity_type=body.activity_type, description=body.description,
+                categories=[key for key in body.categories if key in known],
+                haraj_seller_id=bound,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        token = store.login_supplier(email, body.password)
+        return {"token": token, "supplier": supplier}
+
+    @app.post("/v1/supplier/login")
+    def supplier_login(body: SupplierLoginBody, request: Request) -> dict:
+        ip = client_ip(request)
+        key = f"sup:{_hashed(ip + '|' + body.email.strip().lower())}"
+        if store.login_failures(key, LOGIN_WINDOW_SECONDS) >= LOGIN_MAX_PER_ACCOUNT:
+            raise HTTPException(status_code=429, detail="too many sign-in attempts, try again later", headers={"Retry-After": str(LOGIN_WINDOW_SECONDS)})
+        token = store.login_supplier(body.email.strip().lower(), body.password)
+        if token is None:
+            store.record_login_failure([key])
+            raise HTTPException(status_code=401, detail="invalid credentials")
+        store.clear_login_failures(key)
+        return {"token": token, "supplier": store.supplier_for_token(token)}
+
+    @app.post("/v1/supplier/logout")
+    def supplier_logout(authorization: str | None = Header(default=None)) -> dict:
+        if authorization and authorization.startswith("Bearer "):
+            store.logout_supplier(authorization.removeprefix("Bearer ").strip())
+        return {"signed_out": True}
+
+    @app.get("/v1/supplier/me")
+    def supplier_me(supplier: dict = Depends(current_supplier)) -> dict:
+        return {"supplier": supplier}
+
+    @app.post("/v1/supplier/claim")
+    def supplier_claim(body: SupplierClaimBody, supplier: dict = Depends(current_supplier)) -> dict:
+        try:
+            updated = store.claim_supplier_link(supplier["id"], body.token.strip())
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail="invalid link")
+        return {"supplier": updated}
+
+    @app.get("/v1/supplier/requests")
+    def supplier_request_list(supplier: dict = Depends(current_supplier)) -> dict:
+        rows = store.supplier_requests(supplier["id"])
+        counts = {state: sum(1 for row in rows if row["state"] == state) for state in ("new", "quoted", "awarded", "lost")}
+        return {"requests": rows, "counts": {**counts, "all": len(rows)}, "supplier": supplier}
+
+    # -- contact sharing, by the customer, after an award ----------------------
+
+    @app.post("/v1/requests/{request_id}/contact")
+    def share_contact(request_id: str, body: ShareContactBody, user_id: str = Depends(current_user)) -> dict:
+        phone = re.sub(r"[\s-]", "", body.phone.strip())
+        if not SAUDI_MOBILE.match(phone):
+            raise HTTPException(status_code=422, detail="invalid phone")
+        try:
+            return store.share_contact(request_id, user_id, phone=phone, lat=body.lat, lng=body.lng)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.delete("/v1/requests/{request_id}/contact")
+    def revoke_contact(request_id: str, user_id: str = Depends(current_user)) -> dict:
+        try:
+            return store.revoke_contact(request_id, user_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
 
     @app.post("/v1/intent")
     def intent_only(body: SearchBody, request: Request) -> dict:
