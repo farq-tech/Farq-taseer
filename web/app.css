@@ -2016,3 +2016,14 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-suprow { border: 1px solid var(--fq-line); cursor: pointer; }
 .fq-suprow .fq-row { width: 100%; }
 .fq-suprow.won { border-color: var(--fq-success); }
+
+/* The supplier's conversation: the price is a drawer above the composer, not a form page. */
+#seller-reply { background: var(--fq-surface); border-top: 1px solid var(--fq-line); }
+.fq-pricebar { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 0; }
+.fq-pricebar .fields { display: flex; flex-direction: column; gap: 10px; }
+.fq-pricetoggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--fq-success); background: var(--fq-soft); color: var(--fq-success); font: inherit; font-size: 13px; font-weight: 700; }
+.fq-pricebar.shut .fq-pricetoggle { border-color: var(--fq-line); background: var(--fq-app-bg); color: var(--fq-text-2); }
+.fq-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--fq-text); }
+.fq-check input { width: 18px; height: 18px; accent-color: var(--fq-success); }
+#seller-reply .fq-composer { border-top: 0; }
+.fq-offers-bar .mini .fq-meta { flex: none; }

@@ -3383,10 +3383,23 @@ function renderSupplierRequests() {
   </div></nav>`;
 }
 
+// The supplier's side of the item, reached from the link in his Haraj message. It is the same
+// conversation the customer sees, from the other end: his own messages on the right, the
+// customer's on the left, his prices drawn as offer cards. He never sees another supplier.
 function renderSeller() {
   const fromList = state.sellerFrom === "supplier-requests" && state.supplierToken;
-  const head = fqHead({ title: "عرض سعر", mark: true, back: fromList ? "supplier-home" : "", backStart: fromList });
   const view = state.seller;
+  const need = view?.need || view?.original_text || "";
+  const priced = (view?.messages || []).filter((item) => item.sender_role === "seller" && messagePrice(item) != null);
+  const mine = priced.length ? messagePrice(priced[priced.length - 1]) : null;
+  const head = fqHead({
+    title: need || "عرض سعر",
+    sub: view ? [cityLabel(view.city), mine != null ? money(mine) : "لم تقدّم سعرًا بعد"].filter(Boolean).join(" · ") : "",
+    mark: !fromList,
+    back: fromList ? "supplier-home" : "",
+    backStart: fromList,
+  });
+
   if (state.sellerError) {
     const missing = state.sellerError === "missing";
     return `${head}<section class="fq-body center" role="alert">
@@ -3397,61 +3410,93 @@ function renderSeller() {
     </section>`;
   }
   if (!view) {
-    const card = `<div class="fq-card"><span class="fq-skel" style="height:22px;width:45%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:85%;border-radius:8px"></span></div>`;
-    return `${head}<section class="fq-body" aria-busy="true">${card.repeat(2)}</section>`;
+    return `${head}<section class="fq-chat" aria-busy="true">
+      <div class="fq-msg"><div class="fq-skel" style="width:64%;height:62px;border-radius:18px"></div></div>
+      <div class="fq-msg mine"><div class="fq-skel" style="width:52%;height:70px;border-radius:18px"></div></div>
+    </section>`;
   }
-  const need = view.need || view.original_text || "";
+
+  const closed = view.offers_open === false;
   const draft = state.sellerDraft || { body: "", amount: "", included: true, delivery: "" };
-  const messages = (view.messages || []).filter((item) => item.body || item.offer);
-  const line = (label, value) => (value ? `<div class="fq-row" style="align-items:flex-start;gap:12px"><span class="fq-meta" style="flex:none">${esc(label)}</span><strong style="text-align:end;white-space:pre-line"><bdi>${esc(value)}</bdi></strong></div>` : "");
+  // The invite already reached him in Haraj; repeating it here is noise.
+  const messages = (view.messages || [])
+    .filter((item) => item.body || item.offer)
+    .filter((item) => !(item.sender_role !== "seller" && /^\s*السلام عليكم عزيزي البائع/.test(item.body || "")));
+  const facts = [
+    ["المطلوب", need],
+    ["المدينة", view.city ? cityLabel(view.city) : ""],
+    ["التفاصيل", view.notes || ""],
+  ].filter(([, value]) => value);
+
+  const bubbles = messages
+    .map((item) => {
+      const me = item.sender_role === "seller";
+      const price = messagePrice(item);
+      const time = `<span class="fq-time">${esc(chatTime(item.created_at))}</span>`;
+      const body = esc(item.body || "").replace(/\n/g, "<br>");
+      if (me) {
+        const offer = price != null
+          ? `<div class="fq-offer" style="color:var(--fq-success)">
+              <div class="head"><span></span><span class="amount">${esc(money(price))}</span></div>
+              ${body ? `<p class="fq-offer-note">${body}</p>` : ""}
+            </div>
+            <div class="fq-offer-foot">${time}<span style="color:var(--fq-success)">سعرك المقدَّم ⚡</span></div>`
+          : "";
+        return `<div class="fq-msg mine"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+          <span class="fq-who mineName">أنت (المورد)</span>
+          <div class="fq-mine-bub">${offer || `${body ? `<p>${body}</p>` : ""}${time}`}</div></div></div>`;
+      }
+      return `<div class="fq-msg">
+        <span class="fq-av" style="background:var(--fq-mint);color:var(--fq-deep-green)">ع</span>
+        <div class="fq-grp">
+          <span class="fq-who" style="color:var(--fq-deep-green)">العميل</span>
+          <div class="fq-bub" style="background:var(--fq-surface);border-left-color:var(--fq-line);border:1px solid var(--fq-line);border-left-width:2px">
+            ${body ? `<p>${body}</p>` : ""}${time}</div>
+        </div></div>`;
+    })
+    .join("");
+
   return `${head}
-  <section class="fq-body tight">
-    <div><h1 class="fq-h2">طلب تسعير من عميل عبر فرق</h1><p class="fq-lead">قدّم سعرك أو اسأل العميل، ويوصله ردّك مباشرة في محادثته.</p></div>
-    <div class="fq-card pad fq-facts">
-      ${line("المطلوب", need)}
-      ${view.original_text && view.original_text !== need ? `<hr class="fq-line">${line("نص الطلب", view.original_text)}` : ""}
-      ${view.city ? `<hr class="fq-line">${line("المدينة", cityLabel(view.city))}` : ""}
-      ${view.notes ? `<hr class="fq-line">${line("التفاصيل", view.notes)}` : ""}
+    <div class="fq-offers-bar">
+      ${facts.map(([label, value]) => `<div class="mini"><span><bdi>${esc(value)}</bdi></span><span class="fq-meta">${esc(label)}</span></div>`).join("")}
       ${(view.attachments || []).length
-        ? `<hr class="fq-line"><div style="display:flex;flex-direction:column;gap:8px"><span class="fq-meta">مرفقات من العميل</span>${view.attachments
+        ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${view.attachments
             .map((item) => `<a class="fq-link" href="/v1/seller/${encodeURIComponent(state.sellerToken)}/attachments/${encodeURIComponent(item.id)}" target="_blank" rel="noopener">${ic("paperclip", 14)} ${esc(item.filename || "مرفق")}</a>`)
             .join("")}</div>`
         : ""}
     </div>
-    ${messages.length
-      ? `<div style="display:flex;flex-direction:column;gap:8px"><p class="fq-sec-title"><span>المحادثة</span></p>${messages
-          .map((item) => {
-            const me = item.sender_role === "seller";
-            const price = messagePrice(item);
-            return `<div class="fq-card flat fq-seller-msg${me ? " me" : ""}"><span class="fq-meta">${me ? "أنت" : "العميل"} · ${esc(chatTime(item.created_at))}</span>
-              ${price != null ? `<strong style="color:var(--fq-success)">${esc(money(price))}</strong>` : ""}
-              ${item.body ? `<p style="margin:0;white-space:pre-line"><bdi>${esc(item.body)}</bdi></p>` : ""}</div>`;
-          })
-          .join("")}</div>`
-      : ""}
-    ${state.sellerSent ? `<div class="fq-notice" role="status">${ic("check-circle", 16)} وصل ردّك للعميل. تقدر ترسل تحديث إذا تغيّر السعر.</div>` : ""}
-    ${view.awarded_to_me ? sellerAwarded(view) : ""}
-    ${view.offers_open === false
-      ? `<div class="fq-card pad grey" role="status">
+    <section class="fq-chat" id="chat-wall">
+      <div class="fq-sys">طلب تسعير من عميل عبر فرق — ردّك يوصله مباشرة</div>
+      ${bubbles || `<div class="fq-sys">ابدأ بتقديم سعرك أو اسأل العميل عن التفاصيل.</div>`}
+      ${view.awarded_to_me ? sellerAwarded(view) : ""}
+    </section>
+    ${closed
+      ? `<div class="fq-card pad grey" style="margin:16px" role="status">
           <h2 class="fq-h2" style="font-size:17px">لم يتم اختيار عرضك لهذا الطلب</h2>
           <p class="fq-lead">اختار العميل مورداً آخر. لا تقلق — بنرسل لك فرص تسعير جديدة ومناسبة لمجالك.</p>
           ${state.supplierToken
             ? `<button class="fq-btn ghost r14" type="button" data-action="supplier-home">شاهد الفرص المتاحة ←</button>`
             : `<button class="fq-btn ghost r14" type="button" data-action="supplier-join">سجّل كمورد لتوصلك الطلبات مباشرة</button>`}
         </div>`
-      : `<form id="seller-reply" class="fq-card pad" style="gap:14px" novalidate>
-      <div class="fq-field"><label for="seller-amount">سعرك (ر.س)</label>
-        <div class="fq-inp"><input id="seller-amount" name="offer_amount" inputmode="decimal" autocomplete="off" placeholder="مثلاً: 350" value="${esc(draft.amount)}" dir="ltr" style="text-align:end"></div></div>
-      <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>السعر شامل التوصيل أو الوصول للموقع</span></label>
-      <div class="fq-field"><label for="seller-delivery">سعر التوصيل إذا غير شامل (ر.س)</label>
-        <div class="fq-inp"><input id="seller-delivery" name="delivery_price" inputmode="decimal" autocomplete="off" placeholder="اختياري" value="${esc(draft.delivery)}" dir="ltr" style="text-align:end"></div></div>
-      <div class="fq-field"><label for="seller-body">رسالتك للعميل</label>
-        <div class="fq-inp" style="min-height:90px;align-items:flex-start"><textarea id="seller-body" name="body" rows="3" maxlength="1000" placeholder="تفاصيل السعر، مدة التنفيذ، أو سؤال للعميل">${esc(draft.body)}</textarea></div></div>
-      ${state.sellerFormError ? `<p class="fq-small" role="alert" style="color:#b3402a;margin:0">${esc(state.sellerFormError)}</p>` : ""}
-      <button class="fq-btn" type="submit" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? "لحظة…" : "أرسل ردّك"}</button>
-    </form>`}
-    <p class="fq-meta" style="text-align:center">فرق ما يطلب منك أي دفع أو بيانات بنكية أو كلمة مرور على هذه الصفحة.</p>
-  </section>`;
+      : `<form id="seller-reply" novalidate>
+          ${state.sellerFormError ? `<div class="fq-target" style="background:#fdeee9;color:#b3402a" role="alert">${esc(state.sellerFormError)}</div>` : ""}
+          ${state.sellerSent ? `<div class="fq-target" role="status">${ic("check-circle", 14)}<span>وصل ردّك للعميل. تقدر ترسل تحديث إذا تغيّر السعر.</span></div>` : ""}
+          <div class="fq-pricebar${state.sellerPriceOpen ? "" : " shut"}">
+            <button class="fq-pricetoggle" type="button" data-action="toggle-price">${ic("tag", 14)}<span>${mine != null ? "حدّث السعر" : "أضف سعرك"}</span></button>
+            ${state.sellerPriceOpen ? `<div class="fields">
+              <div class="fq-inp"><input name="offer_amount" inputmode="decimal" autocomplete="off" placeholder="السعر (ر.س)" value="${esc(draft.amount)}" dir="ltr" style="text-align:end"></div>
+              <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>شامل التوصيل</span></label>
+              <div class="fq-inp"><input name="delivery_price" inputmode="decimal" autocomplete="off" placeholder="سعر التوصيل (اختياري)" value="${esc(draft.delivery)}" dir="ltr" style="text-align:end"></div>
+            </div>` : ""}
+          </div>
+          <div class="fq-composer">
+            <button class="fq-send" type="submit" aria-label="إرسال" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? `<span class="fq-arc" style="width:18px;height:18px"></span>` : ic("send", 18)}</button>
+            <div class="fq-inputg">
+              <textarea name="body" rows="1" maxlength="1000" placeholder="اكتب للعميل… تفاصيل السعر أو سؤال">${esc(draft.body)}</textarea>
+            </div>
+          </div>
+          <p class="fq-meta" style="text-align:center;padding:0 16px 12px">فرق ما يطلب منك أي دفع أو بيانات بنكية أو كلمة مرور على هذه الصفحة.</p>
+        </form>`}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -3628,7 +3673,7 @@ function render() {
   const focused = document.activeElement?.id;
   const keepScroll = state.view === "flow" && lastView === "flow" ? window.scrollY : null;
   const wall = document.getElementById("chat-wall");
-  const stick = state.view === "thread" && (state.stickChat || !wall || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 140);
+  const stick = (state.view === "thread" || state.view === "seller") && (state.stickChat || !wall || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 140);
   // A streaming search re-renders the list many times; that is not an arrival.
   const arriving = state.view !== lastView && !(state.view === "flow" && state.results.length);
   const banner = state.token && !SUPPLIER_VIEWS.has(state.view) && state.view !== "verify" ? verifyBanner() : "";
@@ -4800,6 +4845,9 @@ document.addEventListener("click", (event) => {
       state.view = state.token ? "home" : "auth";
       render();
     }
+  } else if (action === "toggle-price") {
+    state.sellerPriceOpen = !state.sellerPriceOpen;
+    render();
   } else if (action === "seller-reload") openSellerPage(state.sellerToken);
   else if (action === "edit-request") {
     state.intentError = false;
