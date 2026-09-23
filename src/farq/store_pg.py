@@ -629,6 +629,15 @@ class PgStore:
                     "update request_recipients set send_status = 'sent' where request_id = %s and seller_id = %s and coalesce(need, '') = %s",
                     (request_id, row["seller_id"], item_need),
                 )
+            # Step 1 the first time we write to him about this request, and step 6 once he
+            # has already priced it and the customer is answering him.
+            lane = "in_app" if direct else "haraj"
+            self._track(conn, "invite_received", row["seller_id"], request_id=request_id, need=item_need, channel=lane)
+            priced = conn.execute(
+                "select 1 from offers where request_id = %s and seller_id = %s limit 1", (request_id, row["seller_id"])
+            ).fetchone()
+            if priced is not None:
+                self._track(conn, "buyer_replied", row["seller_id"], request_id=request_id, need=item_need, channel=lane)
         return message
 
     def _registered_sellers(self, conn, seller_ids) -> set[str]:
@@ -640,6 +649,63 @@ class PgStore:
             "select haraj_seller_id from suppliers where status = 'active' and haraj_seller_id = any(%s)", (keys,)
         ).fetchall()
         return {row["haraj_seller_id"] for row in rows}
+
+    # -- the supplier funnel --------------------------------------------------
+
+    def _track(self, conn, step: str, seller_id: str | None, *, request_id: str | None = None,
+               supplier_id: str | None = None, need: str | None = None, channel: str = "haraj") -> None:
+        """Write a step on a connection the caller already holds, so tracking inside a
+        transaction never reaches back into the pool for a second one."""
+        key = seller_key(seller_id) if seller_id else None
+        if not key:
+            return
+        conn.execute(
+            "insert into supplier_funnel (step, seller_id, supplier_id, request_id, need, channel)"
+            " values (%s, %s, %s, %s, %s, %s) on conflict do nothing",
+            (step, key, supplier_id, request_id, need, channel),
+        )
+
+    def track_supplier(self, step: str, seller_id: str | None, *, request_id: str | None = None,
+                       supplier_id: str | None = None, need: str | None = None, channel: str = "haraj") -> None:
+        """Record a step once. Opening the same link twice is one 'opened', not two, so the
+        conversion between steps is a count of suppliers and not of taps."""
+        try:
+            with self._pool.connection() as conn:
+                self._track(conn, step, seller_id, request_id=request_id, supplier_id=supplier_id,
+                            need=need, channel=channel)
+        except Exception:  # noqa: BLE001 - measurement must never break the journey it measures
+            pass
+
+    def supplier_funnel(self, since_days: int = 30) -> dict:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select step, channel, count(distinct seller_id) as suppliers, count(*) as events"
+                " from supplier_funnel where created_at >= now() - make_interval(days => %s)"
+                " group by step, channel",
+                (since_days,),
+            ).fetchall()
+        steps = ["invite_received", "opened", "registered", "request_viewed", "quote_submitted", "buyer_replied", "awarded"]
+        by_step = {step: {"suppliers": 0, "events": 0, "haraj": 0, "in_app": 0} for step in steps}
+        for row in rows:
+            slot = by_step.setdefault(row["step"], {"suppliers": 0, "events": 0, "haraj": 0, "in_app": 0})
+            slot["suppliers"] += int(row["suppliers"])
+            slot["events"] += int(row["events"])
+            slot[row["channel"]] = slot.get(row["channel"], 0) + int(row["events"])
+        out = []
+        previous = None
+        for step in steps:
+            slot = by_step[step]
+            out.append({
+                "step": step,
+                **slot,
+                # Against the step before it, so the drop-off is where it happened.
+                "from_previous": None if previous in (None, 0) else round(slot["suppliers"] / previous, 4),
+            })
+            previous = slot["suppliers"]
+        top = by_step[steps[0]]["suppliers"]
+        for row in out:
+            row["from_invite"] = None if not top else round(row["suppliers"] / top, 4)
+        return {"days": since_days, "steps": out}
 
     # -- supplier accounts ----------------------------------------------------
 

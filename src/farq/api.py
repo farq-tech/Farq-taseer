@@ -435,6 +435,8 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        store.track_supplier("registered", supplier["haraj_seller_id"], supplier_id=supplier["id"],
+                             channel="in_app" if supplier["haraj_seller_id"] else "haraj")
         token = store.login_supplier(email, body.password)
         return {"token": token, "supplier": supplier}
 
@@ -469,7 +471,15 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         if updated is None:
             raise HTTPException(status_code=404, detail="invalid link")
+        store.track_supplier("registered", updated["haraj_seller_id"], supplier_id=updated["id"], channel="in_app")
         return {"supplier": updated}
+
+    @app.get("/v1/internal/supplier-funnel")
+    def supplier_funnel_report(days: int = 30) -> dict:
+        # invite_received -> opened -> registered -> request_viewed -> quote_submitted ->
+        # buyer_replied -> awarded. Where a supplier stops is the number that decides
+        # whether moving more of them onto the in-app lane is a gain or a loss.
+        return store.supplier_funnel(max(1, min(days, 365)))
 
     @app.get("/v1/supplier/requests")
     def supplier_request_list(supplier: dict = Depends(current_supplier)) -> dict:
@@ -706,10 +716,20 @@ def create_app(
         return record.model_dump(mode="json")
 
     @app.get("/v1/seller/{token}")
-    def seller_request(token: str) -> dict:
+    def seller_request(token: str, authorization: str | None = Header(default=None)) -> dict:
         view = store.seller_view(token)
         if view is None:
             raise HTTPException(status_code=404, detail="request not found")
+        seller = store.seller_id_for_reply_token(token)
+        supplier = None
+        if authorization and authorization.startswith("Bearer "):
+            supplier = store.supplier_for_token(authorization.removeprefix("Bearer ").strip())
+        # Opening the invite is the step an unregistered supplier reaches; a supplier with an
+        # account who opens the same screen has gone one further and viewed the request.
+        store.track_supplier("opened", seller, request_id=view.get("request_id"), need=view.get("need"))
+        if supplier:
+            store.track_supplier("request_viewed", seller, request_id=view.get("request_id"),
+                                 supplier_id=supplier["id"], need=view.get("need"), channel="in_app")
         return view
 
     @app.post("/v1/requests/{request_id}/award")
@@ -723,6 +743,7 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        store.track_supplier("awarded", body.seller_id, request_id=request_id)
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return store.get_request(request_id, user_id).model_dump(mode="json")
 
@@ -765,6 +786,9 @@ def create_app(
         except ValueError as exc:
             status = 404 if str(exc) == "request not found" else 422
             raise HTTPException(status_code=status, detail=str(exc)) from exc
+        if offer is not None:
+            store.track_supplier("quote_submitted", created.seller_id or body.seller_id,
+                                 request_id=created.request_id, need=created.need)
         background.add_task(push.notify_reply, store, created.request_id, created.seller_id, created.body)
         return created.model_dump(mode="json")
 

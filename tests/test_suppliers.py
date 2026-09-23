@@ -260,3 +260,61 @@ def test_one_customer_cannot_share_on_another_customers_request(tmp_path: Path):
     stranger = signed_in(api)
     assert api.post(f"/v1/requests/{request_id}/contact", headers=stranger, json={"phone": "0501112233"}).status_code == 404
     assert api.delete(f"/v1/requests/{request_id}/contact", headers=stranger).status_code == 404
+
+
+def funnel(api, store=None):
+    return {row["step"]: row for row in api.get("/v1/internal/supplier-funnel").json()["steps"]}
+
+
+def test_the_funnel_records_where_a_supplier_stops(tmp_path: Path):
+    """Not "did he answer" but "how far did he get": invite_received -> opened ->
+    registered -> request_viewed -> quote_submitted -> buyer_replied -> awarded."""
+    store, api = make(tmp_path)
+    customer = signed_in(api)
+    request_id = ask(api, customer, ["5001"]).json()["id"]
+    token = store._connection.execute(
+        "select reply_token from request_recipients where request_id = ?", (request_id,)
+    ).fetchone()["reply_token"]
+
+    steps = funnel(api)
+    assert steps["invite_received"]["suppliers"] == 1
+    assert steps["opened"]["suppliers"] == 0
+
+    # Opening the invite twice is one 'opened', not two.
+    api.get(f"/v1/seller/{token}")
+    api.get(f"/v1/seller/{token}")
+    steps = funnel(api)
+    assert (steps["opened"]["suppliers"], steps["opened"]["events"]) == (1, 1)
+    assert steps["opened"]["from_previous"] == 1.0
+
+    created = register(api, token=token)
+    headers = {"Authorization": f"Bearer {created.json()['token']}"}
+    assert funnel(api)["registered"]["suppliers"] == 1
+
+    # Signed in, the same screen is a view of the request, on the in-app lane.
+    api.get(f"/v1/seller/{token}", headers=headers)
+    assert funnel(api)["request_viewed"]["in_app"] == 1
+
+    # A message with no price is not a quote.
+    api.post(f"/v1/seller/{token}/messages", json={"body": "وش نوع التسريب؟"})
+    assert funnel(api)["quote_submitted"]["suppliers"] == 0
+    api.post(f"/v1/seller/{token}/messages", json={"body": "أقدر أجيك", "offer_amount": 250})
+    assert funnel(api)["quote_submitted"]["suppliers"] == 1
+
+    # The customer answering a supplier who has already priced is step six.
+    api.post(f"/v1/requests/{request_id}/messages", headers=customer, json={"body": "تمام، متى تقدر؟"})
+    assert funnel(api)["buyer_replied"]["suppliers"] == 1
+
+    api.post(f"/v1/requests/{request_id}/award", headers=customer, json={"seller_id": "5001"})
+    steps = funnel(api)
+    assert steps["awarded"]["suppliers"] == 1
+    assert steps["awarded"]["from_invite"] == 1.0
+
+
+def test_tracking_never_breaks_the_journey_it_measures(tmp_path: Path):
+    store, api = make(tmp_path)
+    store._connection.execute("drop table supplier_funnel")
+    store._connection.commit()
+    customer = signed_in(api)
+    # The request still goes through with the funnel table missing.
+    assert ask(api, customer, ["5002"]).status_code == 200

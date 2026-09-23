@@ -668,6 +668,18 @@ class Store:
               supplier_id text not null references suppliers(id) on delete cascade,
               created_at text not null
             );
+            create table if not exists supplier_funnel (
+              id integer primary key autoincrement,
+              step text not null,
+              seller_id text not null,
+              supplier_id text,
+              request_id text,
+              need text,
+              channel text not null default 'haraj',
+              created_at text not null
+            );
+            create unique index if not exists supplier_funnel_once
+              on supplier_funnel (step, seller_id, coalesce(request_id, ''));
             """
         )
         self._ensure_column("suppliers", "capabilities_json", "text")
@@ -1126,6 +1138,15 @@ class Store:
                     "update request_recipients set send_status = 'sent' where request_id = ? and seller_id = ? and coalesce(need, '') = ?",
                     (request_id, row["seller_id"], item_of(row)),
                 )
+            # Step 1 the first time we write to him about this request, and step 6 once he
+            # has already priced it and the customer is answering him. See PgStore._enqueue.
+            lane = "in_app" if direct else "haraj"
+            self.track_supplier("invite_received", row["seller_id"], request_id=request_id, need=item_of(row), channel=lane)
+            priced = self._connection.execute(
+                "select 1 from offers where request_id = ? and seller_id = ? limit 1", (request_id, row["seller_id"])
+            ).fetchone()
+            if priced is not None:
+                self.track_supplier("buyer_replied", row["seller_id"], request_id=request_id, need=item_of(row), channel=lane)
         self._connection.commit()
         return next(item for item in self._messages_for_request(request_id) if item.id == message.id)
 
@@ -1138,6 +1159,50 @@ class Store:
             f"select haraj_seller_id from suppliers where status = 'active' and haraj_seller_id in ({marks})", keys
         ).fetchall()
         return {row["haraj_seller_id"] for row in rows}
+
+    # -- the supplier funnel --------------------------------------------------
+
+    def track_supplier(self, step: str, seller_id: str | None, *, request_id: str | None = None,
+                       supplier_id: str | None = None, need: str | None = None, channel: str = "haraj") -> None:
+        """See PgStore.track_supplier. Recorded once per supplier per request."""
+        key = seller_key(seller_id) if seller_id else None
+        if not key:
+            return
+        try:
+            self._connection.execute(
+                "insert or ignore into supplier_funnel (step, seller_id, supplier_id, request_id, need, channel, created_at)"
+                " values (?, ?, ?, ?, ?, ?, ?)",
+                (step, key, supplier_id, request_id, need, channel, _now()),
+            )
+            self._connection.commit()
+        except Exception:  # noqa: BLE001 - measurement must never break the journey it measures
+            pass
+
+    def supplier_funnel(self, since_days: int = 30) -> dict:
+        since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+        rows = self._connection.execute(
+            "select step, channel, count(distinct seller_id) as suppliers, count(*) as events"
+            " from supplier_funnel where created_at >= ? group by step, channel",
+            (since,),
+        ).fetchall()
+        steps = ["invite_received", "opened", "registered", "request_viewed", "quote_submitted", "buyer_replied", "awarded"]
+        by_step = {step: {"suppliers": 0, "events": 0, "haraj": 0, "in_app": 0} for step in steps}
+        for row in rows:
+            slot = by_step.setdefault(row["step"], {"suppliers": 0, "events": 0, "haraj": 0, "in_app": 0})
+            slot["suppliers"] += int(row["suppliers"])
+            slot["events"] += int(row["events"])
+            slot[row["channel"]] = slot.get(row["channel"], 0) + int(row["events"])
+        out = []
+        previous = None
+        for step in steps:
+            slot = by_step[step]
+            out.append({"step": step, **slot,
+                        "from_previous": None if previous in (None, 0) else round(slot["suppliers"] / previous, 4)})
+            previous = slot["suppliers"]
+        top = by_step[steps[0]]["suppliers"]
+        for row in out:
+            row["from_invite"] = None if not top else round(row["suppliers"] / top, 4)
+        return {"days": since_days, "steps": out}
 
     # -- supplier accounts ----------------------------------------------------
 
