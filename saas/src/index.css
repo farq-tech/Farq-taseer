@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-900: #043434;
+  --brand-700: #0a4a46;
+  --mint-500: #83f1b1;
+  --mint-600: #4fd494;
+  --ink: #0e2622;
+  --ink-subtle: #4a5f5a;
+  --ink-muted: #829691;
+  --surface: #ffffff;
+  --success: #0f8a4d;
+  --coral: #dc6e41;
+  --amber: #c7911e;
+  --price-high: #b4462f;
+  --sector-surface: #e7f6ef;
+  --sector-accent: #83f1b1;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: Huwiya, "Noto Sans Arabic", "Geeza Pro", Tahoma, sans-serif;
+}
+
+* {
+  letter-spacing: 0;
+}
+
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(14, 38, 34, 0.06);
+  }
+  .cta {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-900 px-5 py-3 text-white font-semibold transition hover:bg-brand-700 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-500;
+  }
+  .cta-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-ink/10 bg-white px-5 py-3 font-semibold text-ink transition hover:border-brand-900/20 hover:bg-sector focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-500;
+  }
+}

@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "paths": {
+    "asset/2x/3x": "relative to this file",
+    "master/original": "relative to the repository root (kept out of web/ so they are not served)"
+  },
+  "display_size_px": 80,
+  "background": "transparent (removed after generation with briaai/RMBG-2.0)",
+  "base_prompt": "Premium soft 3D clay-style marketplace category icon of [SUBJECT], single centered subject, three-quarter top view at approximately 30 degrees, matte premium materials, rounded refined geometry, warm ivory and sand color palette, subtle FARQ dark green #123F3A details, very restrained amber #F4A340 accent where appropriate, soft studio lighting from upper-left, gentle realistic ambient occlusion, very subtle contact shadow, quiet luxury mobile app aesthetic, friendly Saudi marketplace visual language, isolated object on a plain seamless flat pale warm grey background, generous negative space, consistent scale and camera angle, no text, no letters, no numbers, no logo, no trademark, no watermark, no people, no scenery, no busy background, high-end mobile app category icon",
+  "negative_prompt": "text, letters, numbers, logo, trademark, brand name, watermark, license plate, people, hands, scenery, busy background, photorealistic photo, cartoon character, neon colors, strong gradient, cropped object, blurry, low resolution",
+  "categories": [
+    {
+      "code": "vehicles",
+      "arabic_name": "سيارات",
+      "asset": "category-vehicles.webp",
+      "2x": "category-vehicles@2x.webp",
+      "3x": "category-vehicles@3x.webp",
+      "master": "design/taseer-categories/masters/category-vehicles.png",
+      "original": "design/taseer-categories/originals/category-vehicles.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "chunky rounded soft clay toy-like generic white SUV with simplified smooth body panels, plain closed grille with no emblem, oversized soft rounded wheels, subtle dark green detail, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 2
+    },
+    {
+      "code": "property",
+      "arabic_name": "عقار",
+      "asset": "category-property.webp",
+      "2x": "category-property@2x.webp",
+      "3x": "category-property@3x.webp",
+      "master": "design/taseer-categories/masters/category-property.png",
+      "original": "design/taseer-categories/originals/category-property.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "small elegant Saudi-style modern villa with flat clean smooth roof terraces and soft arched windows, ivory walls, warm sand details, subtle greenery, standing on a small rounded ivory base with a dark-green edge, with one oversized dark-green key standing upright on the base beside the villa with clear space between them, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 4
+    },
+    {
+      "code": "trades",
+      "arabic_name": "صيانة وحرفيين",
+      "asset": "category-trades.webp",
+      "2x": "category-trades@2x.webp",
+      "3x": "category-trades@3x.webp",
+      "master": "design/taseer-categories/masters/category-trades.png",
+      "original": "design/taseer-categories/originals/category-trades.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "premium open dark-green toolbox containing a hammer, wrench, screwdriver and measuring tape, neat composition",
+      "takes": 1
+    },
+    {
+      "code": "electronics",
+      "arabic_name": "إلكترونيات",
+      "asset": "category-electronics.webp",
+      "2x": "category-electronics@2x.webp",
+      "3x": "category-electronics@3x.webp",
+      "master": "design/taseer-categories/masters/category-electronics.png",
+      "original": "design/taseer-categories/originals/category-electronics.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "generic smartphone lying face down showing its perfectly plain smooth matte dark-green back with one small single round camera lens in the corner, next to a small rounded pebble-shaped ivory earbuds charging case with two earbuds, completely unbranded, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 4
+    },
+    {
+      "code": "appliances",
+      "arabic_name": "أجهزة منزلية",
+      "asset": "category-appliances.webp",
+      "2x": "category-appliances@2x.webp",
+      "3x": "category-appliances@3x.webp",
+      "master": "design/taseer-categories/masters/category-appliances.png",
+      "original": "design/taseer-categories/originals/category-appliances.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "minimal modern wall-mounted split air conditioner indoor unit, long slim horizontal rounded shape, wide curved air outlet flap along the bottom edge with soft dark-green louvers, perfectly plain smooth ivory front with no markings, no display, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 3
+    },
+    {
+      "code": "furniture",
+      "arabic_name": "أثاث",
+      "asset": "category-furniture.webp",
+      "2x": "category-furniture@2x.webp",
+      "3x": "category-furniture@3x.webp",
+      "master": "design/taseer-categories/masters/category-furniture.png",
+      "original": "design/taseer-categories/originals/category-furniture.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "premium comfortable Saudi-living-room inspired armchair, warm ivory fabric, subtle dark-green cushion, wooden legs, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 2
+    },
+    {
+      "code": "moving",
+      "arabic_name": "نقل وسطحات",
+      "asset": "category-moving.webp",
+      "2x": "category-moving@2x.webp",
+      "3x": "category-moving@3x.webp",
+      "master": "design/taseer-categories/masters/category-moving.png",
+      "original": "design/taseer-categories/originals/category-moving.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "small generic white moving box truck with several neatly stacked cardboard boxes visible in the rear, subtle dark-green accent, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 1
+    },
+    {
+      "code": "building_materials",
+      "arabic_name": "مواد بناء ومقاولات",
+      "asset": "category-building-materials.webp",
+      "2x": "category-building-materials@2x.webp",
+      "3x": "category-building-materials@3x.webp",
+      "master": "design/taseer-categories/masters/category-building-materials.png",
+      "original": "design/taseer-categories/originals/category-building-materials.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "small neat stack of construction bricks and concrete blocks with one construction helmet placed beside them, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 1
+    },
+    {
+      "code": "parts",
+      "arabic_name": "قطع غيار السيارات",
+      "asset": "category-parts.webp",
+      "2x": "category-parts@2x.webp",
+      "3x": "category-parts@3x.webp",
+      "master": "design/taseer-categories/masters/category-parts.png",
+      "original": "design/taseer-categories/originals/category-parts.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "single premium car tire with generic alloy wheel, slightly angled three-quarter view, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 1
+    },
+    {
+      "code": "equipment",
+      "arabic_name": "معدات",
+      "asset": "category-equipment.webp",
+      "2x": "category-equipment@2x.webp",
+      "3x": "category-equipment@3x.webp",
+      "master": "design/taseer-categories/masters/category-equipment.png",
+      "original": "design/taseer-categories/originals/category-equipment.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "compact portable industrial electric generator with a fuel tank and carry handle on top, round engine cooling fan grille on the side, control panel with plain round knobs and sockets and no labels, generic design, pale warm sand beige body, subtle dark-green tubular frame, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 3
+    },
+    {
+      "code": "animals",
+      "arabic_name": "حلال وحيوانات",
+      "asset": "category-animals.webp",
+      "2x": "category-animals@2x.webp",
+      "3x": "category-animals@3x.webp",
+      "master": "design/taseer-categories/masters/category-animals.png",
+      "original": "design/taseer-categories/originals/category-animals.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "elegant simplified soft-clay Najdi Naemi sheep standing alone in calm side three-quarter pose, creamy ivory wool, warm tan head, small curled horns, calm dignified natural expression, no smile, refined adult proportions, not childish, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 2
+    },
+    {
+      "code": "general_services",
+      "arabic_name": "خدمات عامة",
+      "asset": "category-general-services.webp",
+      "2x": "category-general-services@2x.webp",
+      "3x": "category-general-services@3x.webp",
+      "master": "design/taseer-categories/masters/category-general-services.png",
+      "original": "design/taseer-categories/originals/category-general-services.png",
+      "model": "Qwen/Qwen-Image-2512",
+      "provider": "fal-ai via Hugging Face Inference Providers",
+      "seed": 3040,
+      "steps": 40,
+      "guidance": 4.0,
+      "generated_size": [
+        1328,
+        1328
+      ],
+      "subject": "premium cleaning spray bottle with neatly folded microfiber cloth, minimal composition, ivory bottle with dark-green trigger, seen from a high three-quarter angle looking down so the top surface is visible, matching an isometric toy-like icon set",
+      "takes": 1
+    }
+  ]
+}

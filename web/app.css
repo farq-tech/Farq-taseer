@@ -2027,3 +2027,12 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-check input { width: 18px; height: 18px; accent-color: var(--fq-success); }
 #seller-reply .fq-composer { border-top: 0; }
 .fq-offers-bar .mini .fq-meta { flex: none; }
+
+/* The category grid on the home screen: three across, the clay icon over its name. */
+.fq-cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fq-cat { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; padding: 14px 8px 12px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-card); font: inherit; font-size: 12px; font-weight: 600; color: var(--fq-text); text-align: center; line-height: 1.35; min-height: 112px; transition: border-color 160ms var(--fq-ease), background 160ms var(--fq-ease), transform 160ms var(--fq-spring); }
+.fq-cat img { width: 64px; height: 64px; object-fit: contain; }
+.fq-cat span { display: block; }
+.fq-cat.on { border-color: var(--fq-success); background: var(--fq-soft); }
+.fq-cat:active { transform: scale(0.96); }
+@media (prefers-reduced-motion: reduce) { .fq-cat { transition: none; } .fq-cat:active { transform: none; } }

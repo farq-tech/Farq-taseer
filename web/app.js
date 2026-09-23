@@ -869,6 +869,33 @@ function showAuthError(message) {
   return null;
 }
 
+// The twelve categories on the home screen, each with its clay icon. Tapping one narrows
+// what the composer suggests — it does not search on its own, because a bare category is
+// not a request: «سيارات» tells us nothing to price.
+const CATEGORIES = [
+  { code: "trades", name: "صيانة وحرفيين", examples: ["سباك يصلح تسريب حمام", "كهربائي يركب 3 أفياش", "دهان غرفتين"] },
+  { code: "building_materials", name: "مواد بناء ومقاولات", examples: ["مقاول تشطيب شقة", "طوب أحمر 5000 حبة", "صبة خرسانة جاهزة"] },
+  { code: "vehicles", name: "سيارات", examples: ["لاندكروزر ٢٠٢٥ لون ابيض", "كامري مستعملة موديل ٢٠٢٠", "هايلكس غمارتين"] },
+  { code: "parts", name: "قطع غيار السيارات", examples: ["إطارات 265/60 R18", "بطارية 100 أمبير", "دبل كلتش هايلكس"] },
+  { code: "property", name: "عقار", examples: ["شقة إيجار سنوي بالملقا", "أرض تجارية شمال الرياض", "فيلا للبيع بالياسمين"] },
+  { code: "appliances", name: "أجهزة منزلية", examples: ["تركيب مكيف سبليت", "غسالة أوتوماتيك 8 كيلو", "ثلاجة بابين"] },
+  { code: "electronics", name: "إلكترونيات", examples: ["تلفزيون سامسونج ٦٥ بوصة", "آيفون 15 برو ماكس", "لابتوب للتصميم"] },
+  { code: "furniture", name: "أثاث", examples: ["كنب زاوية 6 مقاعد", "غرفة نوم كاملة", "طاولة طعام 8 كراسي"] },
+  { code: "moving", name: "نقل وسطحات", examples: ["نقل عفش شقة من الرياض لجدة", "سطحة نقل سيارة", "دينا نقل أغراض"] },
+  { code: "equipment", name: "معدات", examples: ["مولد كهرباء 10 كيلو", "ضاغط هواء", "سقالات للإيجار"] },
+  { code: "animals", name: "حلال وحيوانات", examples: ["خروف نعيمي للذبح", "أعلاف برسيم", "نقل مواشي"] },
+  { code: "general_services", name: "خدمات عامة", examples: ["تنظيف شقة بعد الترميم", "مكافحة حشرات", "تنظيف خزان"] },
+];
+
+function categoryIcon(code) {
+  const name = `category-${code.replace(/_/g, "-")}`;
+  return `/assets/taseer/categories/${name}.webp`;
+}
+
+function activeCategory() {
+  return CATEGORIES.find((item) => item.code === state.category) || null;
+}
+
 // M01_Home — node 27:10.
 const QUERY_MAX = 500;
 function composerCount(text) {
@@ -882,21 +909,34 @@ function coarsePointer() {
 const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر ٢٠٢٥ لون ابيض", "تركيب مكيف", "تلفزيون سامسونج ٦٥ بوصة"];
 function renderHome() {
   const place = `<button class="fq-place" type="button" data-action="change-city">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
+  const picked = activeCategory();
+  const chips = picked ? picked.examples : HOME_CHIPS;
+  const hint = picked ? `مثلاً: ${picked.examples[0]}` : "مثلاً: أبي سباك يوم السبت وكهربائي يركب 3 أفياش";
   return `${fqHead({ title: "فرق Farq", end: place })}
   <section class="fq-body">
     <div class="fq-hero">
       <span class="halo" aria-hidden="true"></span>
       <h1>وش تبي نسعّر لك؟</h1>
-      <p>قل لنا وش تحتاج وماعليك، فرق بيجيب الفرق من عدة مصادر وفي محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
+      <p>قل لنا وش تحتاج و ماعليك فرق بيجيب الفرق من عدت مصادر و في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
     </div>
     <form class="fq-card pad" id="composer" style="gap:10px">
       <label class="sr" for="composer-query">وش تبي نسعّر لك؟</label>
-      <textarea id="composer-query" name="query" rows="2" maxlength="${QUERY_MAX}" aria-describedby="composer-count" placeholder="مثلاً: أبي سباك يوم السبت وكهربائي يركب 3 أفياش"
-        style="border:0;outline:none;resize:none;font:inherit;font-size:15px;line-height:1.7;color:var(--fq-text);background:none;width:100%">${esc(state.query)}</textarea>
-      <span class="fq-row" style="color:var(--fq-muted)">${ic("edit", 20)}<span class="fq-meta" id="composer-count" aria-live="polite">${composerCount(state.query)}</span></span>
-      ${state.composerHint ? `<p class="fq-small" role="alert" style="margin:0;color:#b3402a">${esc(state.composerHint)}</p>` : ""}
+      <textarea id="composer-query" name="query" rows="2" placeholder="${esc(hint)}"
+        style="border:0;outline:none;resize:none;font:inherit;font-size:16px;line-height:30px;color:var(--fq-text);background:none;width:100%">${esc(state.query)}</textarea>
+      <span style="color:var(--fq-muted)">${ic("edit", 20)}</span>
     </form>
-    <div class="fq-pills" style="gap:10px">${HOME_CHIPS.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+    <div>
+      <div class="fq-row" style="margin-bottom:12px">
+        <p class="fq-sec-title"><span>وش تبي تسعّر؟</span></p>
+        ${picked ? `<button class="fq-link" type="button" data-action="clear-category">كل التصنيفات</button>` : ""}
+      </div>
+      <div class="fq-cats">${CATEGORIES.map((item) => `
+        <button class="fq-cat${state.category === item.code ? " on" : ""}" type="button" data-action="category" data-code="${esc(item.code)}" aria-pressed="${state.category === item.code}">
+          <img src="${categoryIcon(item.code)}" alt="" width="64" height="64" loading="lazy" decoding="async">
+          <span>${esc(item.name)}</span>
+        </button>`).join("")}</div>
+    </div>
+    <div class="fq-pills" style="gap:10px">${chips.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
     <div style="margin-top:auto;display:flex;flex-direction:column;gap:16px">
       <hr class="fq-line">
       <button class="fq-btn breathe" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
@@ -4833,6 +4873,13 @@ document.addEventListener("click", (event) => {
     event.preventDefault();
     state.view = "home";
     state.cityMode = "";
+    render();
+  } else if (action === "category") {
+    const code = target.dataset.code;
+    state.category = state.category === code ? "" : code;
+    render();
+  } else if (action === "clear-category") {
+    state.category = "";
     render();
   } else if (action === "idea") startPricing(target.dataset.query);
   else if (action === "legal") {
