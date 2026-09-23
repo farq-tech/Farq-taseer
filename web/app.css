@@ -1973,3 +1973,40 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 /* FT12: a pale tile with a mint ring and a thin green tick */
 .fq-squircle.pale { background: #ecfcf5; box-shadow: 0 0 0 1px #a7f3d0 inset, 0 10px 28px rgba(0, 159, 103, 0.12); color: var(--fq-success); }
 .fq-squircle.pale svg { stroke-width: 1.8; width: 64px; height: 64px; }
+
+/* ---------- QA fixes, 2026-09 ---------- */
+/* Tap targets: the small controls keep their look, and their hit area grows to 44 px. */
+.fq-replybtn, .fq-who, .fq-iconbtn, .fq-tick, .fq-checkbadge, .fq-lang, .fq-place, .fq-editbtn, .fq-link, .fq-fpill, .fq-legal a { position: relative; }
+.fq-replybtn::after, .fq-who::after, .fq-iconbtn::after, .fq-tick::after, .fq-checkbadge::after, .fq-lang::after, .fq-place::after, .fq-editbtn::after, .fq-link::after, .fq-fpill::after, .fq-legal a::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);
+}
+.fq-replybtn { padding: 4px 6px; margin: -4px -6px; }
+.fq-iconbtn { width: 32px; height: 32px; }
+/* the city in use, on the city screen */
+.fq-chip.on { background: var(--fq-deep-green); color: #fff; border-color: var(--fq-deep-green); }
+/* an item left out of the search reads as such */
+.fq-needcard.is-off { opacity: 0.6; }
+.fq-btn.danger-text { color: var(--fq-danger, #d85050); }
+/* tags on a result: which item it answers, how old the ad is */
+.fq-cardtags { display: flex; flex-wrap: wrap; gap: 6px; }
+.fq-handle { font-size: 11px; color: var(--fq-muted); unicode-bidi: plaintext; }
+.fq-pricecard { flex-wrap: wrap; }
+.fq-pricecard .note { flex-basis: 100%; font-size: 12px; line-height: 1.6; text-align: start; }
+/* a long list scrolls the body; it never squashes the rows above it (the filter row went to 0 px) */
+.fq-body > * { flex-shrink: 0; }
+/* nothing hides under a sticky button: a focused field scrolls clear of it */
+.fq-body { scroll-padding-bottom: calc(96px + var(--safe-bottom, 0px)); }
+.fq-sticky { padding-bottom: var(--safe-bottom, 0px); z-index: 5; }
+/* supplier quote page */
+.fq-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; font-weight: 600; color: var(--fq-text); }
+.fq-check input { width: 22px; height: 22px; accent-color: var(--fq-success); flex: none; }
+.fq-seller-msg { gap: 6px; padding: 12px 14px; }
+.fq-seller-msg.me { background: var(--fq-soft); border-color: #cfe9dc; }
+.fq-notice svg { vertical-align: -3px; }
+/* terms and privacy */
+.fq-legaldoc { display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.8; color: var(--fq-text); }
+.fq-legaldoc h2 { font-size: 22px; font-weight: 800; margin: 0; }
+.fq-legaldoc h3 { font-size: 17px; font-weight: 800; margin: 12px 0 0; }
+.fq-legaldoc h4 { font-size: 15px; font-weight: 700; margin: 8px 0 0; }
+.fq-legaldoc p { margin: 0; color: var(--fq-text-2); }
+.fq-legaldoc ul { margin: 0; padding-inline-start: 20px; color: var(--fq-text-2); }
