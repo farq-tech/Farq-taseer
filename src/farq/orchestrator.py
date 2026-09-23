@@ -136,9 +136,22 @@ def _final_state(
     return SearchState.RESULTS
 
 
+def _drop_stale(results: list[SearchResult]) -> list[SearchResult]:
+    """Ads older than recent_days are left out while anything fresher qualifies.
+
+    They are kept (and the state says STALE_AD) only when nothing else matched;
+    every ad also carries posted_at and listing_state in the payload.
+    """
+
+    fresh = [item for item in results if item.ad is None or item.ad.listing_state != "stale"]
+    return fresh if fresh else results
+
+
 def _ordered(intent: IntentResponse, local_results: list[SearchResult], live_results: list[SearchResult], config: SearchConfig, now: datetime) -> tuple[list[SearchResult], int]:
     merged, removed = deduplicate(local_results + live_results)
-    return rank(intent, merged, config, now), removed
+    kept = _drop_stale(merged)
+    removed += len(merged) - len(kept)
+    return rank(intent, kept, config, now), removed
 
 
 def _search_need(

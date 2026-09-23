@@ -68,6 +68,11 @@ class IntentResponse(ContractModel):
     contract_version: str = CONTRACT_VERSION
     original_query: str
     need: str | None = None
+    # This need's own words as the customer typed them (unfolded spelling, with
+    # the leading "ابي/ابغى" dropped and the shared city appended when the city
+    # was said once for several needs). Searching this text again keeps the
+    # material, the job and the quantity that the short `need` label leaves out.
+    segment_text: str | None = None
     type: FieldValue = Field(default_factory=unknown)
     category: FieldValue = Field(default_factory=unknown)
     subcategory: FieldValue = Field(default_factory=unknown)
@@ -77,15 +82,22 @@ class IntentResponse(ContractModel):
     material: FieldValue = Field(default_factory=unknown)
     condition: FieldValue = Field(default_factory=unknown)
     quantity: FieldValue = Field(default_factory=unknown)
+    quantity_unit: str | None = None
     price_min: FieldValue = Field(default_factory=unknown)
     price_max: FieldValue = Field(default_factory=unknown)
     attributes: list[FieldValue] = Field(default_factory=list)
     location_city: FieldValue = Field(default_factory=unknown)
     location_district: FieldValue = Field(default_factory=unknown)
+    # "نقل عفش من الرياض للدمام": location_city is the origin, this is where it goes.
+    destination_city: FieldValue = Field(default_factory=unknown)
     location_sensitivity: LocationSensitivity = LocationSensitivity.PREFERRED
     missing_decision_information: list[str] = Field(default_factory=list)
     search_terms: list[str] = Field(default_factory=list)
     eligibility_groups: list[list[str]] = Field(default_factory=list, exclude=True)
+    # When set, only this many of eligibility_groups must hit (long-tail phrases).
+    eligibility_min: int | None = Field(default=None, exclude=True)
+    # Groups that must hit in the ad title or seller name, not only the body.
+    title_groups: list[list[str]] = Field(default_factory=list, exclude=True)
     result_unit: ResultUnit = ResultUnit.AD
     clarification_question: str | None = None
     understood: bool = False
