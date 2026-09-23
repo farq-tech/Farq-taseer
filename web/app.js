@@ -3125,7 +3125,12 @@ function renderSupplierAuth() {
   const joining = state.supplierMode === "join";
   const picked = state.supplierPicked;
   const suggested = state.supplierSuggested.filter((item) => !picked.includes(item.key));
-  const catalog = state.supplierCatalog.filter((item) => !picked.includes(item.key) && !suggested.some((s) => s.key === item.key));
+  // The activity chips narrow the list: a services-only supplier is not shown products.
+  const activity = state.supplierActivity || "both";
+  const wanted = activity === "services" ? ["service"] : activity === "products" ? ["product"] : ["service", "product"];
+  const catalog = state.supplierCatalog.filter(
+    (item) => wanted.includes(item.type) && !picked.includes(item.key) && !suggested.some((s) => s.key === item.key),
+  );
   const pickedItems = picked
     .map((key) => state.supplierCatalog.find((item) => item.key === key) || state.supplierSuggested.find((item) => item.key === key))
     .filter(Boolean);

@@ -389,10 +389,10 @@ def create_app(
         return name, email, phone
 
     @app.get("/v1/supplier/categories")
-    def supplier_categories() -> dict:
+    def supplier_categories(activity: str | None = None) -> dict:
         # Only what the matcher routes on: a category outside HEADS is one no request is
         # ever filed under, so offering it would promise work that cannot arrive.
-        return {"categories": category_catalog()}
+        return {"categories": category_catalog(activity)}
 
     @app.post("/v1/supplier/categories/suggest")
     def supplier_category_suggest(body: DescribeBody) -> dict:

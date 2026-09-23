@@ -798,10 +798,20 @@ def _category_key(head: Head) -> str:
     return head.subcategory or head.category or head.label
 
 
-def category_catalog() -> list[dict]:
-    """Every category a request can be filed under, for the supplier to choose from."""
+# A supplier supplies a service or sells a product. The other head types are things a
+# customer searches for and an owner happens to hold - land, a villa, a Camry, a horse -
+# not a trade anyone registers to work in, so they are not offered as categories.
+SUPPLIER_TYPES = ("service", "product")
+
+
+def category_catalog(activity: str | None = None) -> list[dict]:
+    """The categories a supplier can be matched on. 'services' and 'products' narrow it the
+    same way the activity chips on the join screen do."""
+    wanted = {"services": ("service",), "products": ("product",)}.get(activity or "", SUPPLIER_TYPES)
     seen: dict[str, dict] = {}
     for head in HEADS:
+        if head.type not in wanted:
+            continue
         key = _category_key(head)
         if key not in seen:
             seen[key] = {"key": key, "label": head.label, "type": head.type}
@@ -841,6 +851,8 @@ def suggest_categories(text: str, limit: int = 8) -> list[dict]:
     found: list[dict] = []
     seen: set[str] = set()
     for head in HEADS:
+        if head.type not in SUPPLIER_TYPES:
+            continue
         best = max(
             (phrase for phrase in head.phrases if any(_phrase_at(words, at, phrase) for at in range(len(words)))),
             key=len,
