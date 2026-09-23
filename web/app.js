@@ -784,6 +784,7 @@ function renderAuth() {
         <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
     </div>
     <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a> و<a href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a></p>
+    <p class="fq-legal"><a href="/plans" data-action="show-plans">الباقات والأسعار</a></p>
   </section>`;
 }
 
@@ -2394,7 +2395,7 @@ function renderSubscribe() {
   // SUB02_Plans / FT09_PlansWithTrial — nodes 60:54 and 64:1001.
   if (view === "plans") {
     const upgrade = false;
-    return `${fqHead({ title: upgrade ? "ترقية الباقة" : "حسابي", back: "my-plan", mark: true })}
+    return `${fqHead({ title: upgrade ? "ترقية الباقة" : state.token ? "حسابي" : "الباقات والأسعار", back: state.token ? "my-plan" : "legal-back", mark: true })}
     <section class="fq-body tight">
       <div><h1 class="fq-h1">${upgrade ? "اختر الترقية المناسبة" : "اختر اللي يناسب استخدامك"}</h1>
         <p class="fq-lead">اشتراك شهري، وتقدر تبدأ بالباقة المناسبة لك وتعدلها بأي وقت.</p></div>
@@ -2408,6 +2409,13 @@ function renderSubscribe() {
           <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
       ${paymentsOff() ? paymentsOffNote() : state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
       ${plans.length ? plans.map((plan, index) => planCard(plan, { popular: index === popularIndex })).join("") : `<p class="fq-lead">لا توجد باقات متاحة حالياً.</p>`}
+      <p class="fq-small" style="text-align:center;line-height:1.9">
+        الأسعار شهرية ونهائية، بدون ضريبة قيمة مضافة. الاشتراك لا يتجدّد تلقائياً.<br>
+        <a class="fq-link" href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> ·
+        <a class="fq-link" href="/refunds" data-action="legal" data-doc="refunds">الإلغاء والاسترداد</a> ·
+        <a class="fq-link" href="/privacy" data-action="legal" data-doc="privacy">الخصوصية</a>
+      </p>
+      ${operatorNote()}
     </section>`;
   }
 
@@ -2536,7 +2544,7 @@ const ROUTE_OF = {
   account: () => "/account",
   notifications: () => "/notifications",
   "notify-settings": () => "/account/notifications",
-  subscribe: () => "/subscribe",
+  subscribe: () => (state.subView === "plans" ? "/plans" : "/subscribe"),
   legal: () => `/${state.legalDoc || "terms"}`,
   seller: () => `/s/${encodeURIComponent(state.sellerToken)}`,
   // «sending» and «auth» have no address of their own: they stand over the screen that led to them.
@@ -2584,6 +2592,15 @@ function applyRoute(path, { pop = false } = {}) {
     render();
   };
   if (LEGAL_TITLES[head]) return openLegal(head);
+  if (head === "plans") {
+    // Public on purpose: a payment provider reviewing the service, and anyone deciding
+    // whether to sign up, must be able to read the prices without creating an account.
+    state.view = "subscribe";
+    state.subView = "plans";
+    render();
+    loadSubscribe({ keepView: true }).catch(() => {});
+    return;
+  }
   if (head === "s" && id) return openSellerPage(id);
   if (!state.token) {
     state.returnRoute = path;
@@ -3738,10 +3755,14 @@ async function loadSubscribe({ keepView = false } = {}) {
   state.subMountFailed = false;
   render();
   try {
-    const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
+    // Signed out on /plans, only the public half of the pair can be asked for.
+    const [plans, me] = await Promise.all([
+      api("/v1/subscriptions/plans", { skipAuth: true }),
+      state.token ? api("/v1/subscriptions/me") : Promise.resolve(null),
+    ]);
     state.subPlans = plans.plans || [];
     state.paymentsAvailable = plans.payments_available;
-    state.subStatus = me;
+    if (me) state.subStatus = me;
   } catch (_error) {
     state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
   }
@@ -4477,6 +4498,12 @@ document.addEventListener("click", (event) => {
     render();
     sendRequest();
   } else if (action === "choose-plan") {
+    if (!state.token) {
+      state.returnRoute = "/plans";
+      state.view = "auth";
+      render();
+      return;
+    }
     state.subActivePlan = target.dataset.plan;
     state.subMountedPlan = "";
     state.subMountFailed = false;
