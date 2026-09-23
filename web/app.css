@@ -1369,7 +1369,7 @@ button.fq-card { cursor: pointer; }
 .fq-track.warn > span { background: var(--fq-warning); }
 .fq-steps { display: flex; flex-direction: column; gap: 12px; }
 .fq-step { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--fq-text-2); }
-.fq-step .mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--fq-line); display: grid; place-items: center; flex: none; }
+.fq-step .mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--fq-line); background: none; color: var(--fq-muted); display: grid; place-items: center; flex: none; font-size: 0; }
 .fq-step.done { color: var(--fq-text); font-weight: 600; }
 .fq-step.done .mark { background: var(--fq-success); border-color: var(--fq-success); color: #fff; }
 .fq-step.now .mark { border-color: var(--fq-success); }
@@ -1929,3 +1929,8 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-sendstep .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fq-success); flex: none; }
 .fq-sendstep.now { color: var(--fq-text); font-weight: 700; }
 .fq-sendstep.now .dot { background: var(--fq-deep-green); }
+
+/* M04: a step not reached yet is an empty ring beside muted text */
+.fq-step { color: var(--fq-muted); }
+.fq-step.done { color: var(--fq-text); }
+.fq-step.now { color: var(--fq-text); font-weight: 700; }

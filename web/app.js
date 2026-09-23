@@ -696,8 +696,8 @@ function renderSearching() {
   const at = state.results.length ? 2 : state.intent ? 1 : 0;
   const seen = state.scanned || 0;
   const card = `<div class="fq-card" style="gap:12px"><div style="display:flex;align-items:center;gap:12px">
-      <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span>
-      <span class="fq-skel" style="width:44px;height:44px;border-radius:50%"></span></div>
+      <span class="fq-skel" style="width:44px;height:44px;border-radius:50%"></span>
+      <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span></div>
     <span class="fq-skel" style="height:14px;width:70%;border-radius:8px"></span>
     <span class="fq-skel" style="height:22px;width:35%;border-radius:8px"></span></div>`;
   return `${fqHead({ title: "ماعليك فرق بيجيب الفرق" })}
@@ -3170,6 +3170,15 @@ window.addEventListener("farq:sub", (event) => {
 window.addEventListener("farq:view", (event) => {
   const view = String(event.detail || "home");
   if (view === "sending") state.sendingTo = state.sendingTo || state.selected.size || 6;
+  if (view === "searching") {
+    state.view = "flow";
+    state.searching = true;
+    state.partial = true;
+    state.results = [];
+    state.scanned = state.scanned || 147;
+    render();
+    return;
+  }
   state.view = view;
   render();
 });
