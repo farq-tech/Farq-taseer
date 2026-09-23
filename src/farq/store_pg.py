@@ -26,13 +26,17 @@ from farq.contracts import Attachment, Message, Offer, RequestRecipient, Request
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 from farq.store import (
     SINGLE_SELLER,
+    AwardConflict,
     _delivery_state,
+    current_offer_rows,
     media_entry,
     invite_text,
     mark_cheapest,
     priced_offer,
+    reply_audience,
     request_summary,
     route_targets,
+    seller_message,
     visible_to_seller,
 )
 
@@ -346,7 +350,7 @@ class PgStore:
         return messages
 
     def _offers(self, conn, request_id: str) -> list[Offer]:
-        rows = conn.execute("select * from offers where request_id = %s order by total_price is null, total_price", (request_id,)).fetchall()
+        rows = current_offer_rows(conn.execute("select * from offers where request_id = %s order by created_at desc", (request_id,)).fetchall())
         return mark_cheapest(
             [
                 Offer(
@@ -410,15 +414,20 @@ class PgStore:
                 for item in conn.execute("select * from attachments where request_id = %s", (row["id"],))
             ]
             messages = self._messages(conn, row["id"])
+            sent = {
+                item["id"]: item["haraj_text"]
+                for item in conn.execute("select id, haraj_text from messages where request_id = %s and haraj_text is not null", (row["id"],))
+            }
+        seller_id = own["seller_id"] if own is not None else None
+        # The invite promises the item and the city only: the customer's own words and notes stay with him.
         return {
             "need": need,
-            "original_text": row["original_text"],
-            "notes": row["notes"],
             "city": row["city"],
+            "offers_open": row["awarded_seller_id"] in (None, seller_id),
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
-            # Legacy seller link only: each seller sees their own thread, never another seller's messages.
-            "messages": [item.model_dump(mode="json") for item in messages if visible_to_seller(item, own["seller_id"] if own is not None else None, need)],
+            # Each seller sees their own thread, never another seller's messages or who else was asked.
+            "messages": [seller_message(item, seller_id, sent.get(item.id)) for item in messages if visible_to_seller(item, seller_id, need)],
         }
 
     def add_seller_reply(self, token: str, seller_id: str | None, body: str, offer: Offer | None) -> Message:
@@ -442,8 +451,13 @@ class PgStore:
             if seller_id not in ids:
                 raise ValueError("unknown seller")
             matched = next(item for item in recipients if item["seller_id"] == seller_id)
+            awarded = row["awarded_seller_id"]
+            if offer is not None and awarded is not None and awarded != seller_id:
+                raise ValueError("offers are closed: the customer has already chosen a supplier")
             if offer is not None:
                 offer = priced_offer(offer, body, matched["seller_name"], matched["need"] or row["need"])
+                # One current offer per supplier per item: a revised price replaces the earlier one.
+                conn.execute("delete from offers where request_id = %s and seller_id = %s and coalesce(need, '') = %s", (row["id"], seller_id, offer.need or ""))
                 conn.execute(
                     "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
                     " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -543,10 +557,9 @@ class PgStore:
                 quoted = conn.execute("select * from messages where id = %s and request_id = %s", (reply_to, request_id)).fetchone()
                 if quoted is None:
                     raise ValueError("unknown reply_to")
-                if quoted["seller_id"]:
-                    seller_id = quoted["seller_id"]
+                delivered = [item["seller_id"] for item in conn.execute("select seller_id from message_deliveries where message_id = %s order by created_at", (reply_to,))]
+                seller_id, seller_ids = reply_audience(quoted["seller_id"], delivered, seller_id, seller_ids)
                 need = need or quoted["need"]
-                seller_ids = None
             message = self._enqueue(conn, request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
             return next(item for item in self._messages(conn, request_id) if item.id == message.id)
 
@@ -725,6 +738,10 @@ class PgStore:
             ).fetchone()
             offer = None
             price = extract_price(inbound.body)
+            awarded = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
+            # After the award, a price from anyone but the winner is kept as a message, not an offer.
+            if price is not None and awarded not in (None, seller_id):
+                price = None
             if price is not None:
                 offer = Offer(amount=price, currency="SAR", note=inbound.body, provider_name=recipient["seller_name"] if recipient else None, seller_id=seller_id, total_price=price, need=need)
                 # Latest price from a seller on an item replaces the earlier one.
@@ -766,10 +783,16 @@ class PgStore:
             ).fetchone()
             if known is None:
                 raise ValueError("unknown seller")
-            conn.execute(
-                "update requests set awarded_seller_id = %s, awarded_at = now() where id = %s and owner_user_id = %s",
+            current = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
+            if current == seller_id:
+                return None
+            # Only the first award counts; a second one for another supplier is refused, not swapped in.
+            changed = conn.execute(
+                "update requests set awarded_seller_id = %s, awarded_at = now() where id = %s and owner_user_id = %s and awarded_seller_id is null",
                 (seller_id, request_id, owner_user_id),
-            )
+            ).rowcount
+            if not changed:
+                raise AwardConflict("request already awarded to another supplier")
         if not notify:
             return None
         return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
