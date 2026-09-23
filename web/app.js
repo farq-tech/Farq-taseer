@@ -1399,7 +1399,7 @@ function renderRequests() {
         const queued = item.queued_count || 0;
         const live = item.awarded_seller_id
           ? ""
-          : queued
+          : queued && !item.replied_count
             ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>نرسل طلبك إلى ${esc(suppliers(queued))}…</span></div>`
             : waiting
               ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>${waiting === 1 ? "مورد واحد يراجع" : `${esc(suppliers(waiting))} يراجعون`} طلبك</span></div>`
@@ -2951,6 +2951,9 @@ function render() {
   // the choreographed entrance belongs to the screen, not to every render of it
   if (arriving) {
     app.firstElementChild?.setAttribute("data-enter", "");
+    // a new screen starts at its top, not at the scroll position of the one before
+    const sheetOnly = (lastView === "flow" && state.view === "detail") || (lastView === "detail" && state.view === "flow");
+    if (!sheetOnly) window.scrollTo(0, 0);
     lastView = state.view;
   }
   bindImages(app);

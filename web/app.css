@@ -1992,6 +1992,8 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-handle { font-size: 11px; color: var(--fq-muted); unicode-bidi: plaintext; }
 .fq-pricecard { flex-wrap: wrap; }
 .fq-pricecard .note { flex-basis: 100%; font-size: 12px; line-height: 1.6; text-align: start; }
+/* a long list scrolls the body; it never squashes the rows above it (the filter row went to 0 px) */
+.fq-body > * { flex-shrink: 0; }
 /* nothing hides under a sticky button: a focused field scrolls clear of it */
 .fq-body { scroll-padding-bottom: calc(96px + var(--safe-bottom, 0px)); }
 .fq-sticky { padding-bottom: var(--safe-bottom, 0px); z-index: 5; }
