@@ -302,7 +302,7 @@ function editSheet(need, index) {
       <div class="fq-field"><label for="need-when">وقت التنفيذ المتوقع</label><div class="fq-inp">${ic("calendar", 18)}<input id="need-when" name="when" value="${esc(need.when || "")}" placeholder="مثلاً: السبت، 28 سبتمبر"></div></div>
       <div class="fq-actions">
         <button class="fq-btn sm" type="submit">حفظ التعديل</button>
-        <button class="fq-btn quiet" type="button" data-action="close-sheet">إلغاء</button>
+        <button class="fq-btn ghost sm" type="button" data-action="close-sheet">إلغاء</button>
       </div>
     </form>
   </div>`;
@@ -1733,21 +1733,21 @@ function renderNotifySettings() {
   const prefs = state.notifyPrefs || {};
   const on = sound.on;
   return `${fqHead({ title: "إعدادات الإشعارات", back: "account", backStart: true })}
-  <section class="fq-body tight" style="gap:0;padding:0">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-        <strong style="font-size:15px;font-weight:600">أصوات التطبيق</strong>
-        <span class="fq-meta" style="font-size:12px;line-height:1.5">أصوات خفيفة عند وصول الرسائل والعروض وإتمام العمليات المهمة.</span>
+  <section class="fq-body tight">
+    <div class="fq-setting">
+      <span class="meta">
+        <strong>أصوات التطبيق</strong>
+        <span class="fq-meta">أصوات خفيفة عند وصول الرسائل والعروض وإتمام العمليات المهمة.</span>
         <button class="fq-link" type="button" data-action="try-sound" style="align-self:flex-start">جرّب الصوت</button>
       </span>
       <button class="fq-switch${on ? " on" : ""}" type="button" data-action="sound-toggle" role="switch" aria-checked="${on}" aria-label="أصوات التطبيق"><span></span></button>
     </div>
     ${NOTIFY_ROWS.map(([key, title, desc]) => {
       const on = prefs[key] !== false;
-      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid var(--fq-line);background:var(--fq-surface)">
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-          <strong style="font-size:15px;font-weight:600">${esc(title)}</strong>
-          <span class="fq-meta" style="font-size:12px;line-height:1.5">${esc(desc)}</span>
+      return `<div class="fq-setting">
+        <span class="meta">
+          <strong>${esc(title)}</strong>
+          <span class="fq-meta">${esc(desc)}</span>
         </span>
         <button class="fq-switch${on ? " on" : ""}" type="button" data-action="notify-toggle" data-key="${key}" role="switch" aria-checked="${on}" aria-label="${esc(title)}"><span></span></button>
       </div>`;

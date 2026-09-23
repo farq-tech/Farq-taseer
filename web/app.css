@@ -1876,3 +1876,9 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 /* C03: the attachment options read right to left */
 .fq-attach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; direction: rtl; }
 .fq-attach-opt { background: var(--fq-surface); }
+/* N03: every setting is its own card, its switch on the left */
+.fq-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-card); box-shadow: var(--fq-shadow-card); direction: ltr; }
+.fq-setting .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; direction: rtl; text-align: right; }
+.fq-setting .meta strong { font-size: 15px; font-weight: 600; }
+.fq-setting .meta .fq-meta { font-size: 12px; line-height: 1.5; }
+.fq-setting .fq-switch { flex: none; }
