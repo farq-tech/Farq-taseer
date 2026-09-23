@@ -31,7 +31,7 @@ from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
-from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request
+from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware
 from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids
@@ -616,7 +616,11 @@ def create_app(
 
     @app.get("/v1/subscriptions/me")
     def subscription_me(user_id: str = Depends(current_user)) -> dict:
-        return subscriptions.get_status(store, user_id)
+        status = subscriptions.get_status(store, user_id)
+        # The app shows what is left before it lets someone pick suppliers, so the same
+        # numbers the server enforces travel with the status.
+        status["entitlement"] = entitlement(store, limits, user_id).as_dict()
+        return status
 
     @app.post("/v1/subscriptions/checkout")
     def subscription_checkout(body: CheckoutBody, user_id: str = Depends(current_user)) -> dict:

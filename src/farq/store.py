@@ -22,6 +22,34 @@ SOME_SELLERS = "some_sellers"
 MEDIA_TYPES = {"image/jpeg", "application/pdf"}
 MAX_FILE_BYTES = 4 * 1024 * 1024
 
+# (code, name_ar, name_en, description_ar, price_halalas, features, monthly_items,
+#  sellers_per_item, daily_contacts). Kept identical to the Postgres migration
+# 20260923160000_taseer_plan_quotas.sql. daily_contacts guards the shared Haraj send
+# capacity: 20s spacing platform-wide is 3 supplier contacts a minute, for everyone.
+PLAN_CATALOG = (
+    (
+        "starter", "بداية", "Starter",
+        "للاستخدام الشخصي والطلبات المتفرقة.",
+        7900,
+        ["100 بند شهرياً", "حتى 6 موردين لكل بند", "كل العروض في مكان واحد", "إشعار فوري عند وصول رد"],
+        100, 6, 100,
+    ),
+    (
+        "project", "مشروع", "Project",
+        "لمن يسعّر باستمرار: ضعف ونصف الكمية، وأولوية في الإرسال.",
+        18900,
+        ["250 بند شهرياً", "حتى 6 موردين لكل بند", "أولوية في إرسال الطلبات", "كل مزايا بداية"],
+        250, 6, 200,
+    ),
+    (
+        "large", "مشروع كبير", "Large project",
+        "للاستخدام الكثيف: أكبر كمية، وأكثر موردين لكل بند.",
+        42900,
+        ["600 بند شهرياً", "حتى 8 موردين لكل بند", "أولوية قصوى في الإرسال", "كل مزايا مشروع"],
+        600, 8, 400,
+    ),
+)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -618,6 +646,10 @@ class Store:
             """
         )
         self._ensure_column("requests", "ref_code", "text")
+        self._ensure_column("subscription_plans", "monthly_items", "integer")
+        self._ensure_column("subscription_plans", "sellers_per_item", "integer")
+        self._ensure_column("subscription_plans", "daily_contacts", "integer")
+        self._ensure_column("subscriptions", "period_anchor", "text")
         self._connection.executescript(
             """
             create unique index if not exists requests_ref_code on requests (ref_code) where ref_code is not null;
@@ -645,32 +677,32 @@ class Store:
         self._seed_plans()
 
     def _seed_plans(self) -> None:
-        existing = self._connection.execute("select count(*) as count from subscription_plans").fetchone()["count"]
-        if existing:
-            return
+        """The three plans sold from 2026-09-23 (OPTION B). Same rows as the Postgres
+        migration 20260923160000_taseer_plan_quotas.sql, so local runs and tests see the
+        prices and quotas production sells. Prices are in halalas (SAR x 100)."""
         now = _now()
+        for code, name_ar, name_en, description_ar, price, features, items, sellers, daily in PLAN_CATALOG:
+            self._connection.execute(
+                """
+                insert into subscription_plans
+                  (code, name_ar, name_en, description_ar, price_amount, currency, duration_days,
+                   features_json, is_active, is_placeholder_price, moyasar_metadata_json,
+                   monthly_items, sellers_per_item, daily_contacts, created_at, updated_at)
+                values (?, ?, ?, ?, ?, 'SAR', 30, ?, 1, 0, '{}', ?, ?, ?, ?, ?)
+                on conflict (code) do update set
+                  name_ar = excluded.name_ar, name_en = excluded.name_en,
+                  description_ar = excluded.description_ar, price_amount = excluded.price_amount,
+                  features_json = excluded.features_json, is_active = 1, is_placeholder_price = 0,
+                  monthly_items = excluded.monthly_items, sellers_per_item = excluded.sellers_per_item,
+                  daily_contacts = excluded.daily_contacts, updated_at = excluded.updated_at
+                """,
+                (code, name_ar, name_en, description_ar, price,
+                 json.dumps(features, ensure_ascii=False), items, sellers, daily, now, now),
+            )
+        # The 1 SAR sandbox placeholder is retired; any subscription on it keeps working.
         self._connection.execute(
-            """
-            insert into subscription_plans
-              (code, name_ar, name_en, description_ar, price_amount, currency, duration_days,
-               features_json, is_active, is_placeholder_price, moyasar_metadata_json, created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "monthly_placeholder",
-                "الاشتراك الشهري (سعر تجريبي مؤقت)",
-                "Monthly plan (placeholder test price)",
-                "سعر مؤقت لاختبار الدفع في وضع Sandbox فقط. يجب تحديد السعر النهائي قبل الإطلاق.",
-                100,
-                "SAR",
-                30,
-                json.dumps(["ميزات تجريبية سيتم تحديدها لاحقاً"], ensure_ascii=False),
-                1,
-                1,
-                json.dumps({}, ensure_ascii=False),
-                now,
-                now,
-            ),
+            "update subscription_plans set is_active = 0, updated_at = ? where code = 'monthly_placeholder'",
+            (now,),
         )
         self._connection.commit()
 
@@ -1249,6 +1281,26 @@ class Store:
         ).fetchone()
         return row["count"]
 
+    def count_items(self, user_id: str, since: str | None = None) -> int:
+        """Items, not requests - see PgStore.count_items."""
+        row = self._connection.execute(
+            "select count(*) as count from ("
+            " select distinct rr.request_id, coalesce(rr.need, '') from request_recipients rr"
+            " join requests r on r.id = rr.request_id"
+            " where r.owner_user_id = ? and (? is null or julianday(r.created_at) >= julianday(?))"
+            ")",
+            (user_id, since, since),
+        ).fetchone()
+        return row["count"]
+
+    def count_contacts(self, user_id: str, since: str | None = None) -> int:
+        row = self._connection.execute(
+            "select count(*) as count from request_recipients rr join requests r on r.id = rr.request_id"
+            " where r.owner_user_id = ? and (? is null or julianday(r.created_at) >= julianday(?))",
+            (user_id, since, since),
+        ).fetchone()
+        return row["count"]
+
     def count_customer_messages(self, user_id: str, since: str) -> int:
         row = self._connection.execute(
             "select count(*) as count from messages m join requests r on r.id = m.request_id"
@@ -1658,6 +1710,9 @@ class Store:
             "features": json.loads(row["features_json"]),
             "is_active": bool(row["is_active"]),
             "is_placeholder_price": bool(row["is_placeholder_price"]),
+            "monthly_items": row["monthly_items"],
+            "sellers_per_item": row["sellers_per_item"],
+            "daily_contacts": row["daily_contacts"],
         }
 
     def _subscription_row(self, row) -> dict:
@@ -1668,6 +1723,7 @@ class Store:
             "status": row["status"],
             "starts_at": row["starts_at"],
             "expires_at": row["expires_at"],
+            "period_anchor": row["period_anchor"] or row["starts_at"] or row["created_at"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -1812,15 +1868,16 @@ class Store:
 
             if latest is not None and latest["status"] == "active":
                 subscription_id = latest["id"]
+                anchor = latest["period_anchor"] if latest["plan"] == plan["code"] and latest["period_anchor"] else now_iso
                 self._connection.execute(
-                    "update subscriptions set plan = ?, status = 'active', expires_at = ?, updated_at = ? where id = ?",
-                    (plan["code"], expires_at, now_iso, subscription_id),
+                    "update subscriptions set plan = ?, status = 'active', expires_at = ?, period_anchor = ?, updated_at = ? where id = ?",
+                    (plan["code"], expires_at, anchor, now_iso, subscription_id),
                 )
             else:
                 subscription_id = uuid4().hex
                 self._connection.execute(
-                    "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, created_at, updated_at) values (?, ?, ?, 'active', ?, ?, ?, ?)",
-                    (subscription_id, payment["user_id"], plan["code"], now_iso, expires_at, now_iso, now_iso),
+                    "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, period_anchor, created_at, updated_at) values (?, ?, ?, 'active', ?, ?, ?, ?, ?)",
+                    (subscription_id, payment["user_id"], plan["code"], now_iso, expires_at, now_iso, now_iso, now_iso),
                 )
             self._connection.execute(
                 "update payments set status = 'paid', provider_payment_id = ?, provider_status = ?, subscription_id = ? where id = ?",

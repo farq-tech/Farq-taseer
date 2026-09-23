@@ -11,7 +11,7 @@ from farq.corpus import MemoryCorpus, default_sample_path
 from farq.moyasar import MoyasarError, MoyasarPayment
 from farq.store import Store
 
-PLAN = "monthly_placeholder"
+PLAN = "starter"
 
 
 class FakeMoyasar:
@@ -87,13 +87,24 @@ def checkout(api: TestClient, headers: dict, plan: str = PLAN) -> dict:
     return resp.json()
 
 
-def test_plans_are_public_and_flag_the_placeholder_price(tmp_path):
+def test_plans_are_public_and_carry_their_quotas(tmp_path):
+    """The three plans sold from 2026-09-23, cheapest first, each with the quotas the
+    server enforces. The 1 SAR sandbox placeholder is retired and must not be listed."""
     api, _ = client(tmp_path, FakeMoyasar())
     resp = api.get("/v1/subscriptions/plans")
     assert resp.status_code == 200
     plans = resp.json()["plans"]
-    assert plans
-    assert plans[0]["is_placeholder_price"] is True
+    assert [(plan["code"], plan["price_amount"]) for plan in plans] == [
+        ("starter", 7900),
+        ("project", 18900),
+        ("large", 42900),
+    ]
+    assert [(plan["monthly_items"], plan["sellers_per_item"], plan["daily_contacts"]) for plan in plans] == [
+        (100, 6, 100),
+        (250, 6, 200),
+        (600, 8, 400),
+    ]
+    assert all(plan["is_placeholder_price"] is False and plan["purchasable"] is True for plan in plans)
 
 
 def test_unsubscribed_user_has_no_entitlement(tmp_path):
@@ -468,19 +479,30 @@ def test_plans_say_whether_payments_are_available(tmp_path):
     assert api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN}).status_code == 503
 
 
-def test_live_keys_never_sell_the_placeholder_price(tmp_path):
-    """TSR-016: the 1 SAR sandbox plan must not take real money."""
+def test_live_keys_sell_real_plans_but_never_a_placeholder_price(tmp_path):
+    """TSR-016: a placeholder price must not take real money, while the real plans must."""
     moyasar = FakeMoyasar()
     api, store = client(tmp_path, moyasar, publishable_key="pk_live_x", secret_key="sk_live_x")
+    store._connection.execute(
+        "insert into subscription_plans (code, name_ar, name_en, description_ar, price_amount, currency,"
+        " duration_days, features_json, is_active, is_placeholder_price, moyasar_metadata_json, created_at, updated_at)"
+        " values ('sandbox', 'تجريبي', 'Sandbox', '', 100, 'SAR', 30, '[]', 1, 1, '{}', '2026-09-23', '2026-09-23')"
+    )
+    store._connection.commit()
+
     body = api.get("/v1/subscriptions/plans").json()
-    assert body["plans"][0]["is_placeholder_price"] is True
-    assert body["plans"][0]["purchasable"] is False
-    assert body["payments_available"] is False
+    by_code = {plan["code"]: plan for plan in body["plans"]}
+    assert by_code["sandbox"]["purchasable"] is False
+    assert by_code["starter"]["purchasable"] is True
+    # One unsellable plan must not switch payments off for the sellable ones.
+    assert body["payments_available"] is True
+
     headers = register(api)
-    resp = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN})
+    resp = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": "sandbox"})
     assert resp.status_code == 503 and resp.json()["detail"] == "payments_unavailable"
     user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
     assert store._connection.execute("select count(*) from payments where user_id = ?", (user_id,)).fetchone()[0] == 0
+    assert api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN}).status_code == 200
 
 
 def test_refunding_a_renewal_takes_back_only_that_term(tmp_path):

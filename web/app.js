@@ -783,7 +783,7 @@ function renderAuth() {
       <p class="fq-small" style="text-align:center">${register ? "عندك حساب؟" : "ليس لديك حساب؟"}
         <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
     </div>
-    <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a></p>
+    <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a> و<a href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a></p>
   </section>`;
 }
 
@@ -1223,16 +1223,19 @@ function renderReview() {
   ${state.capSheet ? capSheet() : ""}`;
 }
 
-// FT04_SupplierLimitReached — node 64:611.
+// FT04_SupplierLimitReached — node 64:611. Every plan has its own sellers-per-item cap,
+// so this sheet names the plan the customer is actually on.
 function capSheet() {
+  const cap = allowance();
+  const paid = cap.subscribed;
   return `<div class="fq-scrim" data-action="close-cap">
-    <div class="fq-sheet" role="dialog" aria-label="حد التجربة المجانية">
+    <div class="fq-sheet" role="dialog" aria-label="حد الموردين لكل بند">
       <span class="fq-grab" aria-hidden="true"></span>
-      <div><h2>وصلت لحد التجربة المجانية</h2>
-        <p class="fq-lead">التجربة المجانية تسمح لك بإرسال طلب التسعير إلى ${formatCount(TRIAL_SELLERS)} موردين كحد أقصى لكل بند لمقارنة أفضل الأسعار.</p></div>
+      <div><h2>${paid ? `وصلت لحد باقة «${esc(cap.plan_name)}»` : "وصلت لحد التجربة المجانية"}</h2>
+        <p class="fq-lead">${paid ? "باقتك تسمح" : "التجربة المجانية تسمح"} لك بإرسال طلب التسعير إلى ${formatCount(cap.sellers_per_item)} موردين كحد أقصى لكل بند لمقارنة أفضل الأسعار.</p></div>
       <div class="fq-actions">
-        <button class="fq-btn" type="button" data-action="close-cap">متابعة بـ ${formatCount(TRIAL_SELLERS)} موردين</button>
-        <button class="fq-btn ghost" type="button" data-action="show-plans">عرض الباقات</button>
+        <button class="fq-btn" type="button" data-action="close-cap">متابعة بـ ${formatCount(cap.sellers_per_item)} موردين</button>
+        <button class="fq-btn ghost" type="button" data-action="show-plans">${paid ? "ترقية الباقة" : "عرض الباقات"}</button>
       </div>
     </div>
   </div>`;
@@ -1996,8 +1999,10 @@ function renderAccount() {
     ${item("الدعم والمساعدة", "support")}
     ${item("سياسة الخصوصية", "privacy")}
     ${item("الشروط والأحكام", "terms")}
+    ${item("الإلغاء والاسترداد", "refunds")}
     ${item("تسجيل الخروج", "sign-out", "", true)}
     <p style="text-align:center;margin:8px 0 0"><span class="fq-chip-version">الإصدار 1.0.0</span></p>
+    ${operatorNote()}
   </section>
   ${fqNav("account")}`;
 }
@@ -2040,8 +2045,7 @@ function paymentsOffNote() {
 }
 
 function trialLabel() {
-  const used = state.usage?.items_used ?? state.requests.length;
-  return `التجربة المجانية · ${formatCount(Math.max(0, TRIAL_ITEMS - used))} بند متبقٍ`;
+  return `التجربة المجانية · ${formatCount(allowance().items_left)} بند متبقٍ`;
 }
 
 // N01_NotificationCenter — node 85:4.
@@ -2158,10 +2162,30 @@ function planPeriod(days) {
 }
 
 
-// Subscription + free trial. The free trial's rules (50 items, 6 suppliers per item) are shown and
-// counted here; the server enforces them too (farq/limits.py) and answers 402/403 with a message.
-const TRIAL_ITEMS = 50;
+// Subscription + free trial. Every number shown here comes from the server's own
+// entitlement (GET /v1/subscriptions/me -> entitlement), which is the same object
+// farq/limits.py enforces with, so the screen can never promise more than the server allows.
+// The constants below are only the fallback for a screen drawn before that call returns.
+const TRIAL_ITEMS = 10;
 const TRIAL_SELLERS = 6;
+
+function allowance() {
+  const server = state.subStatus?.entitlement;
+  if (server) return server;
+  const used = state.requests.length;
+  return {
+    plan: null,
+    plan_name: "التجربة المجانية",
+    subscribed: false,
+    items: TRIAL_ITEMS,
+    items_used: used,
+    items_left: Math.max(0, TRIAL_ITEMS - used),
+    sellers_per_item: TRIAL_SELLERS,
+    daily_contacts: 30,
+    contacts_today: 0,
+    contacts_left_today: 30,
+  };
+}
 
 // Arabic has a form for one, a form for two, and a form for the rest.
 function items(count) {
@@ -2172,7 +2196,7 @@ function items(count) {
 }
 
 function trialUsed() {
-  return state.usage?.items_used ?? state.requests.length;
+  return allowance().items_used;
 }
 
 function isSubscribed() {
@@ -2278,7 +2302,7 @@ function renderSubscribe() {
 
   // SUB01_SubscriptionGate / FT08_SubscriptionRequired — nodes 60:10 and 64:956.
   if (view === "gate") {
-    const exhausted = trialUsed() >= TRIAL_ITEMS;
+    const exhausted = allowance().items_left <= 0;
     return `${fqHead({ title: exhausted ? "اشترك للمتابعة" : "اشترك معنا", back: "back-gate", mark: true })}
     <section class="fq-body">
       <div class="fq-card pad grey">
@@ -2305,7 +2329,7 @@ function renderSubscribe() {
       <div class="fq-squircle warn">${ic("alert-triangle", 56)}</div>
       <div style="display:flex;flex-direction:column;gap:14px">
         <h1 class="fq-h1">استخدمت التجربة المجانية</h1>
-        <p class="fq-lead">${formatCount(TRIAL_ITEMS)} من ${formatCount(TRIAL_ITEMS)} بند</p>
+        <p class="fq-lead">${formatCount(allowance().items)} من ${formatCount(allowance().items)} بند</p>
         <span class="fq-tag deep" style="font-size:13px;padding:8px 14px;border-radius:999px">طلبك الأخير محفوظ ولن يضيع</span></div>
       ${paymentsOff() ? `<div style="width:100%">${paymentsOffNote()}</div>` : ""}
       <div class="fq-actions" style="width:100%;margin-top:auto;gap:12px">
@@ -2318,7 +2342,7 @@ function renderSubscribe() {
   if (view === "limit") {
     const planCode = state.subStatus?.subscription?.plan || "";
     const paid = plans.find((item) => item.code === planCode);
-    const cap = Number(paid?.features_limit || 250);
+    const cap = allowance().items;
     return `${fqHead({ title: "تجاوزت الحد المسموح", back: "back-gate", mark: true })}
     <section class="fq-body tight">
       <div class="fq-alert">عذرًا، لقد استهلكت كامل رصيد البنود المتاحة لباقة «${esc(planName(planCode))}».</div>
@@ -2346,7 +2370,7 @@ function renderSubscribe() {
     <section class="fq-body tight">
       <h1 class="fq-h2">اختر الترقية المناسبة</h1>
       <div class="fq-current-strip">
-        <span class="fq-meta">${current ? `${formatCount(Number(current.features_limit || 250))} بند شهريًا` : "التجربة المجانية"}</span>
+        <span class="fq-meta">${current ? `${formatCount(Number(current.monthly_items || allowance().items))} بند شهريًا` : "التجربة المجانية"}</span>
         <strong style="font-size:15px">الباقة الحالية: ${esc(current ? planName(current.code) : "التجربة المجانية")}</strong>
       </div>
       <div class="fq-arrow-down">${ic("arrow-down", 18)}</div>
@@ -2379,7 +2403,7 @@ function renderSubscribe() {
         : `<article class="fq-plan trial">
             <div class="fq-row"><span class="fq-tag ok">مفعلة حالياً</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
             <div class="fq-row"><span class="per">ابدأ بدون بطاقة</span><span class="amount">0 ر.س</span></div>
-            <p class="desc">✓ ${formatCount(TRIAL_ITEMS)} بند تسعير • ✓ حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند</p>
+            <p class="desc">✓ ${formatCount(allowance().items)} بند تسعير • ✓ حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند</p>
           </article>
           <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
       ${paymentsOff() ? paymentsOffNote() : state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
@@ -2424,10 +2448,16 @@ function renderSubscribe() {
             </div>`
           : ""}
       </div>
+      <p class="fq-small" style="text-align:center;line-height:1.9;margin-top:12px">
+        الاشتراك شهري ولا يتجدّد تلقائياً. السعر نهائي بدون ضريبة قيمة مضافة.<br>
+        بالمتابعة توافق على <a class="fq-link" href="/terms" data-action="legal" data-doc="terms">الشروط</a>
+        و<a class="fq-link" href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a>.
+      </p>
       <div class="fq-actions" style="margin-top:auto;gap:12px">
         ${state.subBusy || state.subMountedPlan === plan.code ? "" : `<button class="fq-btn r14" type="button" data-action="pay">متابعة الدفع</button>`}
         <button class="fq-btn ghost outline-deep r14" type="button" data-action="show-plans">تغيير الباقة</button>
       </div>
+      ${operatorNote()}
     </section>`}`;
   }
 
@@ -2435,7 +2465,7 @@ function renderSubscribe() {
   const used = trialUsed();
   const subscribed = isSubscribed();
   const plan = subscribed ? plans.find((item) => item.code === state.subStatus?.subscription?.plan) : null;
-  const limit = subscribed ? Number(plan?.features_limit || 250) : TRIAL_ITEMS;
+  const limit = allowance().items;
   const left = Math.max(0, limit - used);
   const near = left <= Math.max(2, Math.round(limit * 0.2));
   const critical = left <= 2;
@@ -2462,10 +2492,10 @@ function renderSubscribe() {
     ${subscribed
       ? upsell
       : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">مزايا الفترة التجريبية:</h2>
-          <div class="fq-feats">${[`حتى ${formatCount(TRIAL_ITEMS)} بند تسعير`, `حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
+          <div class="fq-feats">${[`حتى ${formatCount(allowance().items)} بند تسعير`, `حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
             .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
             .join("")}</div></div>
-        <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند مجاناً.</p>
+        <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند مجاناً.</p>
         <div class="fq-sticky">
           ${critical && !paymentsOff()
             ? `<button class="fq-btn r14" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
@@ -2553,7 +2583,7 @@ function applyRoute(path, { pop = false } = {}) {
     state.view = view;
     render();
   };
-  if (head === "terms" || head === "privacy") return openLegal(head);
+  if (LEGAL_TITLES[head]) return openLegal(head);
   if (head === "s" && id) return openSellerPage(id);
   if (!state.token) {
     state.returnRoute = path;
@@ -2862,13 +2892,13 @@ function renderSeller() {
 }
 
 // ---------------------------------------------------------------------------
-// Terms and privacy: the text lives in web/legal/*.ar.md and is drawn here, open to anyone
-// signed in or not. The documents are drafts until legal review signs them off.
+// Terms, privacy and the refund policy: the text lives in web/legal/*.ar.md and is drawn
+// here, open to anyone signed in or not.
 // ---------------------------------------------------------------------------
-const LEGAL_TITLES = { terms: "الشروط والأحكام", privacy: "سياسة الخصوصية" };
+const LEGAL_TITLES = { terms: "الشروط والأحكام", privacy: "سياسة الخصوصية", refunds: "الإلغاء والاسترداد" };
 
 async function openLegal(doc) {
-  const name = doc === "privacy" ? "privacy" : "terms";
+  const name = LEGAL_TITLES[doc] ? doc : "terms";
   if (state.view !== "legal") state.legalFrom = state.view === "auth" || !state.token ? "auth" : state.view;
   state.view = "legal";
   if (state.legalDoc !== name) state.legalText = "";
@@ -2923,9 +2953,20 @@ function markdownHtml(source) {
   return out.join("");
 }
 
+// The operator, its commercial registration and how to reach it. A paying customer and
+// the payment provider both need this visible, not buried in a document.
+const OPERATOR = { name: "مؤسسة فارق تكنولوجي", cr: "7052132144", email: "support@farq.sa" };
+
+function operatorNote() {
+  return `<p class="fq-meta" style="text-align:center;line-height:1.9;margin:4px 0 0">
+    ${esc(OPERATOR.name)} · السجل التجاري ${esc(OPERATOR.cr)}<br>
+    <a class="fq-link" href="mailto:${esc(OPERATOR.email)}">${esc(OPERATOR.email)}</a>
+  </p>`;
+}
+
 function renderLegal() {
   const title = LEGAL_TITLES[state.legalDoc] || LEGAL_TITLES.terms;
-  const other = state.legalDoc === "privacy" ? "terms" : "privacy";
+  const others = Object.keys(LEGAL_TITLES).filter((doc) => doc !== state.legalDoc);
   const body = state.legalError
     ? `<div class="fq-body center" role="alert"><h1 class="fq-h2">ما قدرنا نفتح الصفحة</h1><button class="fq-btn" type="button" data-action="legal" data-doc="${esc(state.legalDoc)}">حاول مرة ثانية</button></div>`
     : state.legalText
@@ -2934,7 +2975,10 @@ function renderLegal() {
   return `${fqHead({ title, back: "legal-back" })}
   <section class="fq-body tight">
     ${body}
-    <a class="fq-link" href="/${other}" data-action="legal" data-doc="${other}" style="align-self:center">${esc(LEGAL_TITLES[other])}</a>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+      ${others.map((doc) => `<a class="fq-link" href="/${doc}" data-action="legal" data-doc="${doc}">${esc(LEGAL_TITLES[doc])}</a>`).join("")}
+    </div>
+    ${operatorNote()}
   </section>`;
 }
 
@@ -3280,8 +3324,9 @@ function selectResult(key) {
   if (result && sellerOf(result).id) state.selected.set(key, result);
 }
 
+// Sellers per item is a plan property now, not "six on the trial and no ceiling after".
 function sellerCap() {
-  return isSubscribed() ? Infinity : TRIAL_SELLERS;
+  return allowance().sellers_per_item || TRIAL_SELLERS;
 }
 
 function toggle(key) {
@@ -3332,7 +3377,7 @@ function requestNotes(active) {
 async function sendRequest() {
   const city = customerCity();
   if (!state.selected.size || !city || state.busy) return;
-  if (!isSubscribed() && trialUsed() >= TRIAL_ITEMS) {
+  if (allowance().items_left <= 0) {
     state.view = "subscribe";
     state.subView = "limit";
     state.resumeAfterPay = true;

@@ -827,6 +827,30 @@ class PgStore:
             ).fetchone()
         return int(row["count"])
 
+    def count_items(self, user_id: str, since: str | None = None) -> int:
+        """Items, not requests: one request carries a distinct need per item, and the quota is
+        sold per item. Counting requests here would let ten items inside one request cost one."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select count(*) as count from ("
+                " select distinct rr.request_id, coalesce(rr.need, '') from request_recipients rr"
+                " join requests r on r.id = rr.request_id"
+                " where r.owner_user_id = %s and (%s::timestamptz is null or r.created_at >= %s::timestamptz)"
+                ") t",
+                (user_id, since, since),
+            ).fetchone()
+        return int(row["count"])
+
+    def count_contacts(self, user_id: str, since: str | None = None) -> int:
+        """Supplier contacts: what actually consumes the shared Haraj send capacity."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select count(*) as count from request_recipients rr join requests r on r.id = rr.request_id"
+                " where r.owner_user_id = %s and (%s::timestamptz is null or r.created_at >= %s::timestamptz)",
+                (user_id, since, since),
+            ).fetchone()
+        return int(row["count"])
+
     def count_customer_messages(self, user_id: str, since: str) -> int:
         with self._pool.connection() as conn:
             row = conn.execute(
@@ -1024,6 +1048,9 @@ class PgStore:
             "features": row["features"],
             "is_active": row["is_active"],
             "is_placeholder_price": row["is_placeholder_price"],
+            "monthly_items": row["monthly_items"],
+            "sellers_per_item": row["sellers_per_item"],
+            "daily_contacts": row["daily_contacts"],
         }
 
     def _subscription_row(self, row) -> dict:
@@ -1034,6 +1061,7 @@ class PgStore:
             "status": row["status"],
             "starts_at": _iso(row["starts_at"]),
             "expires_at": _iso(row["expires_at"]),
+            "period_anchor": _iso(row["period_anchor"]) or _iso(row["starts_at"]) or _iso(row["created_at"]),
             "created_at": _iso(row["created_at"]),
             "updated_at": _iso(row["updated_at"]),
         }
@@ -1176,16 +1204,19 @@ class PgStore:
 
             if latest is not None and latest["status"] == "active":
                 subscription_id = latest["id"]
+                # Renewing the same plan keeps the monthly rhythm; changing plan starts the new
+                # allowance now rather than part-way through the old plan's cycle.
+                anchor = latest["period_anchor"] if latest["plan"] == plan["code"] and latest["period_anchor"] else now
                 conn.execute(
-                    "update subscriptions set plan = %s, status = 'active', expires_at = %s, updated_at = %s where id = %s",
-                    (plan["code"], expires_at, now, subscription_id),
+                    "update subscriptions set plan = %s, status = 'active', expires_at = %s, period_anchor = %s, updated_at = %s where id = %s",
+                    (plan["code"], expires_at, anchor, now, subscription_id),
                 )
             else:
                 subscription_id = uuid4()
                 conn.execute(
-                    "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, created_at, updated_at)"
-                    " values (%s, %s, %s, 'active', %s, %s, %s, %s)",
-                    (subscription_id, payment["user_id"], plan["code"], now, expires_at, now, now),
+                    "insert into subscriptions (id, user_id, plan, status, starts_at, expires_at, period_anchor, created_at, updated_at)"
+                    " values (%s, %s, %s, 'active', %s, %s, %s, %s, %s)",
+                    (subscription_id, payment["user_id"], plan["code"], now, expires_at, now, now, now),
                 )
             conn.execute(
                 "update payments set status = 'paid', provider_payment_id = %s, provider_status = %s, subscription_id = %s where id = %s",

@@ -5,11 +5,18 @@ Every quote request and message leaves from one Haraj account. A refusal from Ha
 server, not the app, decides who may be written to and how often:
 
 - recipients must be Haraj sellers a search showed this customer (search_sellers);
-- sellers per item: 6 on the free trial, a hard ceiling for subscribers;
-- the free trial covers 50 items (requests);
-- a daily ceiling on requests and on messages per account.
+- an allowance is spent in **items**, not requests. One request carries a distinct need per
+  item, so counting requests would let ten items inside one request cost one;
+- how many items, how many sellers per item, and how many supplier contacts a day come from
+  the subscriber's own plan row (subscription_plans.monthly_items / sellers_per_item /
+  daily_contacts). The free trial's numbers are the environment defaults below;
+- daily_contacts exists because send capacity is shared and fixed: the 20-second spacing in
+  worker.py is platform-wide, so the whole product sends three supplier contacts a minute.
+  One customer must not be able to spend a day of it.
 
-Numbers are defaults, read from the environment like SearchConfig.
+The monthly allowance resets against subscriptions.period_anchor, not starts_at: a renewal
+updates the existing row and leaves starts_at at the original activation, so an allowance
+measured from starts_at would never reset.
 """
 
 from __future__ import annotations
@@ -23,8 +30,11 @@ from farq.store import seller_key
 
 @dataclass(frozen=True)
 class Limits:
-    trial_items: int = field(default_factory=lambda: _env_int("FARQ_TRIAL_ITEMS", 50))
+    """The free trial's allowance, plus ceilings no plan may exceed."""
+
+    trial_items: int = field(default_factory=lambda: _env_int("FARQ_TRIAL_ITEMS", 10))
     trial_sellers_per_item: int = field(default_factory=lambda: _env_int("FARQ_TRIAL_SELLERS_PER_ITEM", 6))
+    trial_daily_contacts: int = field(default_factory=lambda: _env_int("FARQ_TRIAL_DAILY_CONTACTS", 30))
     max_sellers_per_item: int = field(default_factory=lambda: _env_int("FARQ_MAX_SELLERS_PER_ITEM", 20))
     daily_requests: int = field(default_factory=lambda: _env_int("FARQ_DAILY_REQUEST_LIMIT", 30))
     daily_messages: int = field(default_factory=lambda: _env_int("FARQ_DAILY_MESSAGE_LIMIT", 200))
@@ -45,20 +55,146 @@ def _since(**delta) -> str:
     return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
 
 
-def check_new_request(store, limits: Limits, user_id: str, recipients, default_need: str | None, trace_id: str | None = None) -> None:
-    """recipients: objects with seller_id and need. Raises LimitExceeded."""
-    subscribed = store.is_subscribed(user_id)
-    if not subscribed and store.count_requests(user_id) >= limits.trial_items:
-        raise LimitExceeded(402, "TRIAL_ITEMS_EXHAUSTED", f"انتهت التجربة المجانية ({limits.trial_items} بند). اشترك لإرسال طلبات جديدة.", limits.trial_items)
+def _parse(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def current_period_start(anchor: str | None, duration_days: int, now: datetime | None = None) -> str | None:
+    """The start of the allowance window the subscriber is in right now.
+
+    Whole ``duration_days`` steps from the anchor, so stacked renewals (which push
+    expires_at forward without moving the anchor) keep one steady monthly rhythm.
+    """
+    start = _parse(anchor)
+    if start is None or duration_days <= 0:
+        return None
+    moment = now or datetime.now(timezone.utc)
+    if moment <= start:
+        return start.isoformat()
+    step = timedelta(days=duration_days)
+    return (start + (moment - start) // step * step).isoformat()
+
+
+@dataclass(frozen=True)
+class Entitlement:
+    """What this customer may send right now, and how much of it is already spent."""
+
+    plan_code: str | None  # None on the free trial
+    plan_name: str
+    items: int
+    sellers_per_item: int
+    daily_contacts: int
+    period_start: str | None  # None means the allowance is for the lifetime of the account
+    items_used: int
+    contacts_today: int
+
+    @property
+    def subscribed(self) -> bool:
+        return self.plan_code is not None
+
+    @property
+    def items_left(self) -> int:
+        return max(0, self.items - self.items_used)
+
+    @property
+    def contacts_left_today(self) -> int:
+        return max(0, self.daily_contacts - self.contacts_today)
+
+    def as_dict(self) -> dict:
+        return {
+            "plan": self.plan_code,
+            "plan_name": self.plan_name,
+            "subscribed": self.subscribed,
+            "items": self.items,
+            "items_used": self.items_used,
+            "items_left": self.items_left,
+            "sellers_per_item": self.sellers_per_item,
+            "daily_contacts": self.daily_contacts,
+            "contacts_today": self.contacts_today,
+            "contacts_left_today": self.contacts_left_today,
+            "period_start": self.period_start,
+        }
+
+
+def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
+    """Read the customer's allowance from their plan, or fall back to the free trial.
+
+    A plan row with no quotas set (the retired sandbox placeholder, or a plan added by hand)
+    falls back to the trial numbers rather than to no limit: an unknown allowance must not
+    become an unlimited one.
+    """
+    subscription = store.get_latest_subscription(user_id) if store.is_subscribed(user_id) else None
+    if subscription is None:
+        return Entitlement(
+            plan_code=None,
+            plan_name="التجربة المجانية",
+            items=limits.trial_items,
+            sellers_per_item=limits.trial_sellers_per_item,
+            daily_contacts=limits.trial_daily_contacts,
+            period_start=None,
+            items_used=store.count_items(user_id),
+            contacts_today=store.count_contacts(user_id, _since(days=1)),
+        )
+
+    plan = store.get_plan(subscription["plan"]) or {}
+    duration = int(plan.get("duration_days") or 30)
+    period_start = current_period_start(subscription.get("period_anchor"), duration)
+    sellers = int(plan.get("sellers_per_item") or limits.trial_sellers_per_item)
+    return Entitlement(
+        plan_code=subscription["plan"],
+        plan_name=plan.get("name_ar") or subscription["plan"],
+        items=int(plan.get("monthly_items") or limits.trial_items),
+        sellers_per_item=min(sellers, limits.max_sellers_per_item),
+        daily_contacts=int(plan.get("daily_contacts") or limits.trial_daily_contacts),
+        period_start=period_start,
+        items_used=store.count_items(user_id, period_start),
+        contacts_today=store.count_contacts(user_id, _since(days=1)),
+    )
+
+
+def _items_in(recipients, default_need: str | None) -> dict[str, set[str]]:
     per_item: dict[str, set[str]] = {}
     for item in recipients:
         per_item.setdefault(item.need or default_need or "", set()).add(seller_key(item.seller_id))
-    cap = limits.max_sellers_per_item if subscribed else limits.trial_sellers_per_item
-    if any(len(sellers) > cap for sellers in per_item.values()):
-        message = f"يمكن إرسال الطلب إلى {cap} موردين كحد أقصى لكل بند" + ("." if subscribed else " في التجربة المجانية.")
-        raise LimitExceeded(403, "TOO_MANY_SELLERS", message, cap)
+    return per_item
+
+
+def check_new_request(store, limits: Limits, user_id: str, recipients, default_need: str | None, trace_id: str | None = None) -> None:
+    """recipients: objects with seller_id and need. Raises LimitExceeded."""
+    per_item = _items_in(recipients, default_need)
+    allowance = entitlement(store, limits, user_id)
+
+    if len(per_item) > allowance.items_left:
+        if allowance.subscribed:
+            message = (
+                f"وصلت لحد باقتك ({allowance.items} بند في الشهر)."
+                f" استخدمت {allowance.items_used}. رقِّ باقتك أو انتظر تجديد الفترة."
+            )
+        else:
+            message = f"انتهت التجربة المجانية ({allowance.items} بنود). اشترك لإرسال طلبات جديدة."
+        raise LimitExceeded(402, "ITEM_ALLOWANCE_EXHAUSTED", message, allowance.items)
+
+    if any(len(sellers) > allowance.sellers_per_item for sellers in per_item.values()):
+        suffix = "." if allowance.subscribed else " في التجربة المجانية."
+        message = f"يمكن إرسال الطلب إلى {allowance.sellers_per_item} موردين كحد أقصى لكل بند" + suffix
+        raise LimitExceeded(403, "TOO_MANY_SELLERS", message, allowance.sellers_per_item)
+
+    if len(recipients) > allowance.contacts_left_today:
+        message = (
+            f"وصلت للحد اليومي ({allowance.daily_contacts} مورد في اليوم)."
+            " الإرسال مجدول بالتساوي على كل العملاء، فحاول مرة ثانية بكرة."
+        )
+        raise LimitExceeded(429, "DAILY_CONTACT_LIMIT", message, allowance.daily_contacts)
+
     if store.count_requests(user_id, since=_since(days=1)) >= limits.daily_requests:
         raise LimitExceeded(429, "DAILY_REQUEST_LIMIT", f"وصلت للحد اليومي ({limits.daily_requests} طلب). حاول مرة ثانية بكرة.", limits.daily_requests)
+
     if limits.recipients_from_search:
         shown = store.searched_sellers(user_id, trace_id, _since(days=limits.search_memory_days))
         if any(seller_key(item.seller_id) not in shown for item in recipients):
