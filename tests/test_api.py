@@ -425,7 +425,10 @@ def test_cron_route_is_not_swallowed_by_the_web_app(tmp_path: Path, monkeypatch)
     assert api.get("/v1/internal/haraj-sync").status_code == 401
     ran = api.get("/v1/internal/haraj-sync", headers={"Authorization": "Bearer s3cret"})
     assert ran.status_code == 200
-    assert ran.json() == {"sent": 0, "received": 0}
+    body = ran.json()
+    assert (body["sent"], body["received"], body["closing"]) == (0, 0, 0)
+    # The same run watches the Haraj backlog, which is empty and not alerting.
+    assert body["queue"]["queued"] == 0 and body["queue"]["alert"] is False
 
 
 def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):

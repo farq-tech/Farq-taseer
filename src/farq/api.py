@@ -26,6 +26,7 @@ from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
 from farq.intent import analyze, analyze_needs, split_need_texts
 from farq.taxonomy import GROUPS, catalog as category_catalog, known_keys, read_business
+from farq import mailer, notify
 from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
@@ -35,7 +36,7 @@ from farq.orchestrator import iter_search, run_search
 from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware
-from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids
+from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids, seller_key
 from farq.subscriptions import PaymentsUnavailable, SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -84,6 +85,16 @@ class SupplierLoginBody(ApiModel):
 
 class SupplierClaimBody(ApiModel):
     token: str
+
+
+class NotificationReadBody(ApiModel):
+    id: str | None = None
+
+
+class PushBody(ApiModel):
+    endpoint: str
+    p256dh: str
+    auth: str
 
 
 class DescribeBody(ApiModel):
@@ -474,6 +485,29 @@ def create_app(
         store.track_supplier("registered", updated["haraj_seller_id"], supplier_id=updated["id"], channel="in_app")
         return {"supplier": updated}
 
+    @app.get("/v1/supplier/notifications")
+    def supplier_inbox(supplier: dict = Depends(current_supplier)) -> dict:
+        return store.supplier_notifications(supplier["id"])
+
+    @app.post("/v1/supplier/notifications/read")
+    def supplier_inbox_read(body: NotificationReadBody, supplier: dict = Depends(current_supplier)) -> dict:
+        return {"read": store.mark_supplier_notifications_read(supplier["id"], body.id)}
+
+    @app.post("/v1/supplier/push")
+    def supplier_push_subscribe(body: PushBody, supplier: dict = Depends(current_supplier)) -> dict:
+        # Rung two of the ladder. The endpoint must be a browser's own push service, never
+        # an address the client picked, or the server becomes a blind proxy.
+        if not push.allowed_endpoint(body.endpoint):
+            raise HTTPException(status_code=422, detail="unsupported push endpoint")
+        store.save_supplier_push_subscription(supplier["id"], body.endpoint, body.p256dh, body.auth)
+        return {"subscribed": True}
+
+    @app.delete("/v1/supplier/push")
+    def supplier_push_unsubscribe(endpoint: str, supplier: dict = Depends(current_supplier)) -> dict:
+        del supplier
+        store.remove_supplier_push_subscription(endpoint)
+        return {"subscribed": False}
+
     @app.get("/v1/internal/supplier-funnel")
     def supplier_funnel_report(days: int = 30) -> dict:
         # invite_received -> opened -> registered -> request_viewed -> quote_submitted ->
@@ -617,6 +651,12 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        # Registered suppliers are told here, in the app, because nothing will be sent to
+        # them through Haraj. The rest are reached by the worker, as before.
+        background.add_task(
+            notify.notify_sellers, store, [item.seller_id for item in body.recipients],
+            "request_new", request_id=request_id, need=body.need,
+        )
         record = store.get_request(request_id, user_id)
         return record.model_dump(mode="json")
 
@@ -704,6 +744,26 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        # A message to a supplier who has already priced is an answer to him; to one who
+        # has not, it is a question about the job.
+        record = store.get_request(request_id, user_id)
+        priced = {seller_key(offer.seller_id) for offer in (record.offers if record else [])}
+        # Who this message actually reached: one supplier when it was a reply to him, else
+        # everyone on the item, else - with no item named - everyone on the request.
+        if created.seller_id:
+            targets = [created.seller_id]
+        else:
+            targets = [
+                item.seller_id
+                for item in (record.recipients if record else [])
+                if created.need is None or (item.need or None) == created.need
+            ]
+        for seller in targets:
+            event = "buyer_reply" if seller_key(seller) in priced else "question_new"
+            background.add_task(
+                notify.notify_sellers, store, [seller], event,
+                request_id=request_id, need=created.need, body=created.body[:140] or None,
+            )
         return created.model_dump(mode="json")
 
     @app.get("/v1/requests/{request_id}")
@@ -744,6 +804,10 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         store.track_supplier("awarded", body.seller_id, request_id=request_id)
+        background.add_task(notify.notify_sellers, store, [body.seller_id], "awarded", request_id=request_id)
+        others = [item.seller_id for item in record.recipients if seller_key(item.seller_id) != seller_key(body.seller_id)]
+        if others:
+            background.add_task(notify.notify_sellers, store, others, "request_cancelled", request_id=request_id)
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return store.get_request(request_id, user_id).model_dump(mode="json")
 
@@ -914,7 +978,46 @@ def create_app(
         started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
         received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
-        return {"sent": sent, "received": received}
+        return {"sent": sent, "received": received, "queue": _watch_queue(), "closing": _ring_closing_soon()}
+
+    # The backlog belongs to the Haraj lane only: the in-app lane has no queue. A backlog is
+    # a clock, because the whole platform sends three contacts a minute, so it is measured in
+    # how long it would take to drain rather than in rows.
+    QUEUE_ALERT_MINUTES = int(os.environ.get("FARQ_QUEUE_ALERT_MINUTES", "45"))
+
+    def _watch_queue() -> dict:
+        health = store.queue_health()
+        breached = health["drain_minutes"] >= QUEUE_ALERT_MINUTES or health["send_paused"]
+        health["alert"] = breached
+        if breached:
+            log.warning(
+                "haraj backlog: %s queued, ~%s min to drain, paused=%s, in-app share 30d=%s",
+                health["queued"], health["drain_minutes"], health["send_paused"], health["in_app_share_30d"],
+            )
+            where = os.environ.get("OPS_EMAIL", "").strip()
+            if where:
+                mailer.send(
+                    where,
+                    "تنبيه: طابور إرسال فرق",
+                    f"في الطابور {health['queued']} رسالة، وتحتاج ~{health['drain_minutes']} دقيقة للتصريف."
+                    f" الإرسال موقوف: {health['send_paused']}."
+                    f" نسبة التسليم داخل التطبيق آخر 30 يوم: {health['in_app_share_30d']}.",
+                )
+        return health
+
+    def _ring_closing_soon() -> int:
+        """A supplier who has not priced a request the customer is already deciding on is
+        about to miss it. Rung one dedupes, so this is safe to run every minute."""
+        rung = 0
+        for row in store.requests_closing_soon():
+            rung += notify.notify_sellers(
+                store, [row["seller_id"]], "closing_soon", request_id=row["request_id"], need=row.get("need"),
+            )
+        return rung
+
+    @app.get("/v1/internal/queue-health")
+    def queue_health_report() -> dict:
+        return _watch_queue()
 
     # Registered after every API route: an unknown /v1 path is a JSON 404, never the web app.
     @app.api_route("/v1/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

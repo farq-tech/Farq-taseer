@@ -318,3 +318,126 @@ def test_tracking_never_breaks_the_journey_it_measures(tmp_path: Path):
     customer = signed_in(api)
     # The request still goes through with the funnel table missing.
     assert ask(api, customer, ["5002"]).status_code == 200
+
+
+def bind(store, api, seller, need="سباك"):
+    """A registered, active supplier bound to `seller`, plus the request that bound him."""
+    customer = signed_in(api)
+    request_id = ask(api, customer, [seller], need=need).json()["id"]
+    token = store._connection.execute(
+        "select reply_token from request_recipients where request_id = ?", (request_id,)
+    ).fetchone()["reply_token"]
+    created = register(api, token=token)
+    return customer, request_id, token, {"Authorization": f"Bearer {created.json()['token']}"}
+
+
+def inbox(api, headers):
+    return api.get("/v1/supplier/notifications", headers=headers).json()
+
+
+def test_a_registered_supplier_is_told_in_app_about_a_new_request(tmp_path: Path):
+    """He has stopped reading Haraj, so rung one has to carry it."""
+    store, api = make(tmp_path)
+    customer, _first, _token, headers = bind(store, api, "6001")
+    ask(api, customer, ["6001"], need="كهربائي")
+    body = inbox(api, headers)
+    assert body["unread"] == 1
+    assert body["notifications"][0]["event"] == "request_new"
+    assert "كهربائي" in body["notifications"][0]["body"]
+
+
+def test_a_question_and_a_reply_are_different_events(tmp_path: Path):
+    store, api = make(tmp_path)
+    customer, request_id, token, headers = bind(store, api, "6002")
+    api.post(f"/v1/requests/{request_id}/messages", headers=customer, json={"body": "متى تقدر تجي؟"})
+    assert {n["event"] for n in inbox(api, headers)["notifications"]} == {"question_new"}
+
+    api.post(f"/v1/seller/{token}/messages", json={"body": "بكرة", "offer_amount": 300})
+    api.post(f"/v1/requests/{request_id}/messages", headers=customer, json={"body": "تمام، اعتمدنا"})
+    assert "buyer_reply" in {n["event"] for n in inbox(api, headers)["notifications"]}
+
+
+def test_the_winner_and_the_losers_hear_different_things(tmp_path: Path):
+    store, api = make(tmp_path)
+    customer, request_id, _token, winner = bind(store, api, "6003")
+    loser_request = ask(api, customer, ["6003", "6004"], need="نجار").json()["id"]
+    loser_token = store._connection.execute(
+        "select reply_token from request_recipients where request_id = ? and seller_id = '6004'", (loser_request,)
+    ).fetchone()["reply_token"]
+    loser_created = register(api, token=loser_token)
+    loser = {"Authorization": f"Bearer {loser_created.json()['token']}"}
+
+    api.post(f"/v1/requests/{loser_request}/award", headers=customer, json={"seller_id": "6003"})
+    assert "awarded" in {n["event"] for n in inbox(api, winner)["notifications"]}
+    assert "request_cancelled" in {n["event"] for n in inbox(api, loser)["notifications"]}
+    assert "awarded" not in {n["event"] for n in inbox(api, loser)["notifications"]}
+
+
+def test_a_once_only_event_never_rings_twice(tmp_path: Path):
+    store, api = make(tmp_path)
+    customer, request_id, _token, headers = bind(store, api, "6005")
+    for _ in range(3):
+        api.post(f"/v1/requests/{request_id}/award", headers=customer, json={"seller_id": "6005"})
+    awarded = [n for n in inbox(api, headers)["notifications"] if n["event"] == "awarded"]
+    assert len(awarded) == 1
+
+
+def test_notifications_are_read_and_counted(tmp_path: Path):
+    store, api = make(tmp_path)
+    customer, _r, _t, headers = bind(store, api, "6006")
+    ask(api, customer, ["6006"], need="دهان")
+    ask(api, customer, ["6006"], need="بلاط")
+    assert inbox(api, headers)["unread"] == 2
+    first = inbox(api, headers)["notifications"][0]["id"]
+    api.post("/v1/supplier/notifications/read", headers=headers, json={"id": first})
+    assert inbox(api, headers)["unread"] == 1
+    api.post("/v1/supplier/notifications/read", headers=headers, json={})
+    assert inbox(api, headers)["unread"] == 0
+
+
+def test_one_supplier_never_sees_another_suppliers_inbox(tmp_path: Path):
+    store, api = make(tmp_path)
+    customer, _r, _t, first = bind(store, api, "6007")
+    ask(api, customer, ["6007"], need="عزل")
+    _c2, _r2, _t2, second = bind(store, api, "6008")
+    assert inbox(api, first)["unread"] >= 1
+    assert inbox(api, second)["notifications"] == []
+    assert api.get("/v1/supplier/notifications").status_code == 401
+
+
+def test_push_only_accepts_a_browsers_own_push_service(tmp_path: Path):
+    store, api = make(tmp_path)
+    _c, _r, _t, headers = bind(store, api, "6009")
+    good = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "p256dh": "k", "auth": "a"}
+    assert api.post("/v1/supplier/push", headers=headers, json=good).status_code == 200
+    bad = {"endpoint": "https://attacker.example.com/hook", "p256dh": "k", "auth": "a"}
+    assert api.post("/v1/supplier/push", headers=headers, json=bad).status_code == 422
+
+
+def test_email_is_a_rung_that_degrades_instead_of_breaking(tmp_path: Path):
+    """No mail provider is configured, so the ladder records 'not_configured' and the
+    notification still exists in the app."""
+    store, api = make(tmp_path)
+    customer, _r, _t, headers = bind(store, api, "6010")
+    ask(api, customer, ["6010"], need="حدادة")
+    row = store._connection.execute(
+        "select delivered_json from supplier_notifications order by created_at desc limit 1"
+    ).fetchone()
+    import json as _json
+    delivered = _json.loads(row["delivered_json"])
+    assert delivered["in_app"] is True
+    assert delivered["push"] is False
+    assert delivered["email"] == "not_configured"
+    assert inbox(api, headers)["unread"] == 1
+
+
+def test_the_backlog_is_reported_as_the_time_it_takes_to_drain(tmp_path: Path):
+    store, api = make(tmp_path)
+    customer = signed_in(api)
+    ask(api, customer, [str(7000 + n) for n in range(6)], need="سباك")
+    health = store.queue_health()
+    # Six unregistered suppliers, three sends a minute for the whole platform.
+    assert health["queued"] == 6
+    assert health["drain_minutes"] == 2.0
+    assert health["send_paused"] is False
+    assert health["in_app_share_30d"] == 0.0

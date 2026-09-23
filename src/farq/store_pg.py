@@ -48,6 +48,10 @@ from farq.store import (
 )
 
 
+def _epoch_now() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -649,6 +653,147 @@ class PgStore:
             "select haraj_seller_id from suppliers where status = 'active' and haraj_seller_id = any(%s)", (keys,)
         ).fetchall()
         return {row["haraj_seller_id"] for row in rows}
+
+    def requests_closing_soon(self, after_hours: int = 20, before_hours: int = 72) -> list[dict]:
+        """Requests the customer is deciding on - priced, not yet awarded, old enough that
+        a supplier who has not quoted is about to miss it."""
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                """
+                select r.id as request_id, p.seller_id, p.need
+                  from requests r join request_recipients p on p.request_id = r.id
+                 where r.awarded_seller_id is null
+                   and r.created_at < now() - make_interval(hours => %s)
+                   and r.created_at > now() - make_interval(hours => %s)
+                   and exists (select 1 from offers o where o.request_id = r.id)
+                   and not exists (select 1 from offers o2 where o2.request_id = r.id and o2.seller_id = p.seller_id)
+                """,
+                (after_hours, before_hours),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def queue_health(self) -> dict:
+        """What the old lane looks like right now. The in-app lane has no queue, so a
+        growing backlog here is a statement about unregistered suppliers only."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select count(*) filter (where delivery_status = 'queued') as queued,"
+                " count(*) filter (where delivery_status = 'sending') as sending,"
+                " extract(epoch from (now() - min(created_at) filter (where delivery_status = 'queued'))) as oldest_seconds"
+                " from message_deliveries"
+            ).fetchone()
+            paused = conn.execute("select value from haraj_channel where key = 'send_paused_until'").fetchone()
+            in_app = conn.execute(
+                "select count(*) as count from message_deliveries where delivery_status = 'in_app'"
+                " and created_at > now() - interval '30 days'"
+            ).fetchone()["count"]
+            haraj = conn.execute(
+                "select count(*) as count from message_deliveries where delivery_status in ('sent', 'queued', 'sending')"
+                " and created_at > now() - interval '30 days'"
+            ).fetchone()["count"]
+        queued = int(row["queued"] or 0)
+        oldest = float(row["oldest_seconds"] or 0)
+        total = in_app + haraj
+        return {
+            "queued": queued,
+            "sending": int(row["sending"] or 0),
+            "oldest_queued_seconds": round(oldest),
+            # Three sends a minute is the whole platform, so the backlog is a clock.
+            "drain_minutes": round(queued / 3, 1),
+            "send_paused": bool(paused and paused["value"] and float(paused["value"]) > _epoch_now()),
+            "in_app_share_30d": None if not total else round(in_app / total, 4),
+        }
+
+    # -- supplier notifications -----------------------------------------------
+
+    def supplier_push_subscriptions(self, supplier_id: str) -> list[dict]:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select endpoint, p256dh, auth from supplier_push_subscriptions where supplier_id = %s", (supplier_id,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_supplier_push_subscription(self, supplier_id: str, endpoint: str, p256dh: str, auth: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                "insert into supplier_push_subscriptions (endpoint, supplier_id, p256dh, auth) values (%s, %s, %s, %s)"
+                " on conflict (endpoint) do update set supplier_id = excluded.supplier_id,"
+                " p256dh = excluded.p256dh, auth = excluded.auth",
+                (endpoint, supplier_id, p256dh, auth),
+            )
+
+    def remove_supplier_push_subscription(self, endpoint: str) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("delete from supplier_push_subscriptions where endpoint = %s", (endpoint,))
+
+    def suppliers_for_sellers(self, seller_ids) -> list[dict]:
+        keys = sorted({seller_key(item) for item in seller_ids or () if item})
+        if not keys:
+            return []
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select * from suppliers where status = 'active' and haraj_seller_id = any(%s)", (keys,)
+            ).fetchall()
+        return [self._supplier_row(row) for row in rows]
+
+    def reply_token_for(self, request_id: str, seller_id: str | None) -> str | None:
+        if not (request_id and seller_id):
+            return None
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select reply_token from request_recipients where request_id = %s and (seller_id = %s or seller_id = %s) limit 1",
+                (request_id, seller_key(seller_id), f"haraj:seller:{seller_key(seller_id)}"),
+            ).fetchone()
+        return None if row is None else row["reply_token"]
+
+    def add_supplier_notification(self, *, supplier_id: str, event: str, title: str, body: str | None,
+                                  url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
+        """None when a once-only event has already been sent for this request."""
+        notification_id = uuid4().hex
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "insert into supplier_notifications (id, supplier_id, request_id, seller_id, event, title, body, url)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict do nothing returning id, created_at",
+                (notification_id, supplier_id, request_id, seller_id, event, title, body, url),
+            ).fetchone()
+        return None if row is None else {"id": row["id"], "created_at": _iso(row["created_at"])}
+
+    def set_notification_delivery(self, notification_id: str, delivered: dict) -> None:
+        with self._pool.connection() as conn:
+            conn.execute("update supplier_notifications set delivered = %s where id = %s", (Jsonb(delivered), notification_id))
+
+    def supplier_notifications(self, supplier_id: str, limit: int = 50) -> dict:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select id, event, title, body, url, request_id, read_at, created_at from supplier_notifications"
+                " where supplier_id = %s order by created_at desc limit %s",
+                (supplier_id, limit),
+            ).fetchall()
+            unread = conn.execute(
+                "select count(*) as count from supplier_notifications where supplier_id = %s and read_at is null", (supplier_id,)
+            ).fetchone()["count"]
+        return {
+            "notifications": [
+                {**{key: row[key] for key in ("id", "event", "title", "body", "url", "request_id")},
+                 "read": row["read_at"] is not None, "created_at": _iso(row["created_at"])}
+                for row in rows
+            ],
+            "unread": int(unread),
+        }
+
+    def mark_supplier_notifications_read(self, supplier_id: str, notification_id: str | None = None) -> int:
+        with self._pool.connection() as conn:
+            if notification_id:
+                done = conn.execute(
+                    "update supplier_notifications set read_at = now() where supplier_id = %s and id = %s and read_at is null returning id",
+                    (supplier_id, notification_id),
+                ).fetchall()
+            else:
+                done = conn.execute(
+                    "update supplier_notifications set read_at = now() where supplier_id = %s and read_at is null returning id",
+                    (supplier_id,),
+                ).fetchall()
+        return len(done)
 
     # -- the supplier funnel --------------------------------------------------
 
