@@ -877,19 +877,19 @@ function renderReview() {
   const city = customerCity();
   const ready = chosen.length > 0 && Boolean(city) && !state.busy;
   const extra = state.reviewExtra === true;
-  return `${fqHead({ title: "اختيار البائعين", back: "back-results" })}
+  return `${fqHead({ title: "اختيار الموردين", back: "back-results" })}
   <section class="fq-body tight">
     <div><h1 class="fq-h2">اختر من تبي نطلب منهم سعر</h1>
       <p class="fq-lead">${esc([state.query, cityLabel(city)].filter(Boolean).join(" · "))}</p></div>
-    ${Number.isFinite(sellerCap()) ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</span></div>` : ""}
-    <div><span class="fq-count-pill">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
+    ${Number.isFinite(sellerCap()) ? `<div class="fq-capbanner">يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</div>` : ""}
+    <div style="display:flex;justify-content:flex-end"><span class="fq-count-pill">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
     <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
       ${chosen
         .map(([key, result]) => {
           const seller = sellerOf(result);
           const name = tidyName(seller.name) || "بائع";
           const price = money(result.ad?.price_amount);
-          return `<article class="fq-card fq-seller">
+          return `<article class="fq-card fq-seller picked">
             <div class="fq-row" style="align-items:flex-start">
               <button class="fq-tick round on" type="button" data-action="unselect" data-key="${esc(key)}" aria-pressed="true" aria-label="إزالة ${esc(name)}">${ic("check", 14)}</button>
               <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
@@ -1800,6 +1800,14 @@ function planPeriod(days) {
 const TRIAL_ITEMS = 50;
 const TRIAL_SELLERS = 6;
 
+// Arabic has a form for one, a form for two, and a form for the rest.
+function items(count) {
+  if (count === 1) return "بند واحد";
+  if (count === 2) return "بندين";
+  if (count >= 3 && count <= 10) return `${formatCount(count)} بنود`;
+  return `${formatCount(count)} بند`;
+}
+
 function trialUsed() {
   return state.usage?.items_used ?? state.requests.length;
 }
@@ -1822,15 +1830,22 @@ function planCard(plan, { popular = false } = {}) {
   </article>`;
 }
 
-function usageCard({ title, badge, badgeTone = "ok", price, per, used, limit, foot, warn = false }) {
+// The allowance card — SUB07/SUB08 and FT01/FT02/FT05/FT06 are all this one card at
+// different points in the month. The title leads on the right, the badge answers on the
+// left as an outlined capsule, and the bar fills from the left through a gradient whose
+// colour says how close the end is.
+function usageCard({ title, badge, badgeTone = "ok", price, per, used, limit, foot, warn = false, deep = false }) {
   const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const hot = badgeTone === "danger";
+  const near = badgeTone === "warn";
+  const valueColour = hot ? "var(--fq-danger)" : near ? "var(--fq-warning)" : "var(--fq-text)";
   return `<div class="fq-plan">
-    <div class="fq-row"><span class="fq-tag ${badgeTone}">${esc(badge)}</span><span class="name">${esc(title)}</span></div>
-    <div class="fq-row"><span></span><span><span class="amount">${esc(price)}</span> <span class="per">${esc(per)}</span></span></div>
+    <div class="fq-row rtl"><span class="name">${esc(title)}</span><span class="fq-pillbadge ${badgeTone}">${esc(badge)}</span></div>
+    <div class="fq-price-line"><span class="amount">${esc(price)}</span> <span class="per">${esc(per)}</span></div>
+    <hr class="fq-line">
     <div class="fq-usage">
-      <div class="fq-row"><span class="fq-small${hot ? " hot" : ""}" style="font-weight:700;${hot ? "" : "color:var(--fq-success)"}">${formatCount(used)} من ${formatCount(limit)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
-      <div class="fq-track${hot ? " danger" : warn ? " warn" : ""}"><span style="width:${pct}%"></span></div>
+      <div class="fq-row rtl"><span class="fq-meta">البنود المستخدمة</span><span class="fq-small" style="font-weight:700;color:${valueColour}">${formatCount(used)} من ${formatCount(limit)} بند</span></div>
+      <div class="fq-track ${hot ? "danger" : near ? "warn" : deep ? "deep" : "ok"}"><span style="width:${Math.min(pct, 96)}%"></span></div>
       <p class="fq-meta" style="margin:0">${esc(foot)}</p>
     </div>
   </div>`;
@@ -1883,8 +1898,8 @@ function renderSubscribe() {
   // SUB12_ResumeRequest / FT12 — nodes 62:278 and 64:1148.
   if (view === "resume") {
     return `${fqHead({ title: "تأكيد التفعيل", mark: true })}
-    <section class="fq-body center" style="padding-top:48px">
-      <div class="fq-squircle mint land">${ic("check", 56)}</div>
+    <section class="fq-body" style="padding-top:24px;align-items:center;text-align:center">
+      <div class="fq-squircle pale land">${ic("check", 64)}</div>
       <div style="display:flex;flex-direction:column;gap:18px">
         <h1 class="fq-h1">تم تفعيل اشتراكك بنجاح!</h1>
         <p class="fq-lead">الباقة الحالية: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p></div>
@@ -2051,28 +2066,33 @@ function renderSubscribe() {
   const near = left <= Math.max(2, Math.round(limit * 0.2));
   const critical = left <= 2;
   const banner = near
-    ? `<div class="fq-banner${critical ? " danger" : ""}">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${formatCount(left)} بند ${subscribed ? "هذا الشهر" : "في التجربة المجانية"}.</span>
-        <button type="button" data-action="${subscribed ? "upgrade" : "show-plans"}">${subscribed ? "ترقية الآن" : "عرض الباقات"}</button></div>`
+    ? `<div class="fq-banner${critical ? " danger" : ""}">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${esc(items(left))} ${subscribed ? "هذا الشهر" : critical ? "في التجربة المجانية" : "مجانية"}.</span>
+        <button type="button" data-action="${subscribed ? "upgrade" : critical ? "upgrade" : "show-plans"}">${subscribed ? "عرض الباقة" : critical ? "ترقية الآن" : "عرض الباقات"}</button></div>`
     : "";
   return `${fqHead({ title: "حسابي", mark: true, end: `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>` })}
   ${banner}
   <section class="fq-body tight">
     ${subscribed
-      ? usageCard({ title: `الباقة الحالية: ${planName(state.subStatus?.subscription?.plan || "")}`, badge: near ? "قارب على الانتهاء" : "نشطة", badgeTone: near ? "warn" : "ok", price: plan ? money(plan.price_amount / 100) : "", per: "/ شهريًا", used, limit, foot: near ? `المتبقي ${formatCount(left)} بند فقط لتفادي توقف الخدمة` : `المتبقي ${formatCount(left)} بند هذا الشهر`, warn: near })
-      : usageCard({ title: "التجربة المجانية", badge: near ? "شارفت على الانتهاء" : "مفعلة", badgeTone: critical ? "danger" : near ? "warn" : "ok", price: "0 ر.س", per: "/ ابدأ بدون بطاقة", used, limit, foot: `المتبقي ${formatCount(left)} بند`, warn: near })}
+      ? usageCard({ deep: !near, title: `الباقة الحالية: ${planName(state.subStatus?.subscription?.plan || "")}`, badge: near ? "قارب على الانتهاء" : "نشطة", badgeTone: near ? "warn" : "ok", price: plan ? money(plan.price_amount / 100) : "", per: "/ شهريًا", used, limit, foot: near ? `المتبقي ${items(left)} فقط لتفادي توقف الخدمة` : `المتبقي ${items(left)} هذا الشهر`, warn: near })
+      : usageCard({ title: "التجربة المجانية", badge: critical ? "شارفت على الانتهاء" : "مفعلة", badgeTone: critical ? "danger" : near ? "warn" : "ok", price: "0 ر.س", per: "/ ابدأ بدون بطاقة", used, limit, foot: `المتبقي ${items(left)}`, warn: near })}
     ${subscribed
-      ? `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
-          <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>
-          <button class="fq-btn sm" type="button" data-action="upgrade">ترقية الاشتراك</button></div>`
+      ? near
+        ? `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">ترقية سريعة لتفادي الانقطاع</h2>
+            <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الآن</button></div>`
+        : `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
+            <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>
+            <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الاشتراك</button></div>`
       : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">مزايا الفترة التجريبية:</h2>
           <div class="fq-feats">${[`حتى ${formatCount(TRIAL_ITEMS)} بند تسعير`, `حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
             .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
             .join("")}</div></div>
         <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند مجاناً.</p>
         <div class="fq-sticky">
-          ${near
+          ${critical
             ? `<button class="fq-btn r14" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
-            : `<button class="fq-btn mint" type="button" disabled>تجربتك مفعلة</button>`}
+            : near
+              ? `<button class="fq-btn amber-chip r14" type="button" disabled>تجربتك نشطة</button>`
+              : `<button class="fq-btn mint r14" type="button" disabled>تجربتك مفعلة</button>`}
           <p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
         </div>`}
   </section>

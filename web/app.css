@@ -1947,3 +1947,29 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-squircle.ringed { background: #e9f7f0; box-shadow: 0 0 0 8px rgba(0, 159, 103, 0.06); }
 .fq-squircle.ringed svg { stroke-width: 2; }
 .fq-statepill.green { border: 1.5px solid var(--fq-success); color: var(--fq-success); }
+/* the allowance card, corrected from the review */
+.fq-row.rtl { direction: rtl; }
+.fq-price-line { direction: rtl; text-align: right; }
+.fq-price-line .amount { font-size: 26px; font-weight: 800; color: var(--fq-deep-green); }
+.fq-price-line .per { font-size: 13px; font-weight: 600; color: var(--fq-text-2); }
+.fq-pillbadge { display: inline-flex; padding: 5px 12px; border-radius: 999px; background: #fff; border: 1px solid var(--fq-success); color: var(--fq-success); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.fq-pillbadge.warn { border-color: var(--fq-warning); color: var(--fq-warning); background: var(--fq-warning-bg); }
+.fq-pillbadge.danger { border-color: var(--fq-danger); color: var(--fq-danger); background: #fdf1f0; }
+.fq-pillbadge.ok { background: #f2faf6; }
+/* the bar fills from the left, through a gradient */
+.fq-track { direction: ltr; background: var(--fq-app-bg); border: 1px solid var(--fq-line); }
+.fq-track > span { background: linear-gradient(90deg, #1eac76 0%, #b8f3ca 100%); }
+.fq-track.warn > span { background: linear-gradient(90deg, #cb8c28 0%, #eec88c 100%); }
+.fq-track.danger > span { background: linear-gradient(90deg, #d95656 0%, #f2bfbf 100%); }
+.fq-track.deep > span { background: var(--fq-deep-green); }
+.fq-upsell { background: var(--fq-soft); border: 1px solid var(--fq-line); border-radius: var(--fq-r-card); padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-inline: 8px; }
+.fq-btn.amber-chip { background: var(--fq-warning-bg); color: var(--fq-warning); box-shadow: none; }
+.fq-btn.amber-chip:disabled { opacity: 1; }
+.fq-plan .badge, .fq-plan.pop .badge { background: var(--fq-success); color: #fff; border-radius: 999px; padding: 5px 12px; }
+/* M07 / FT03: the cap is stated in a mint banner, the counter is a deep pill on the left */
+.fq-capbanner { background: var(--fq-soft); border: 1px solid var(--fq-success); border-radius: var(--fq-r-input); padding: 12px 16px; font-size: 14px; font-weight: 600; color: var(--fq-deep-green); text-align: center; }
+.fq-count-pill { background: var(--fq-deep-green); border-color: var(--fq-deep-green); color: #fff; box-shadow: none; }
+.fq-seller.picked { border-color: var(--fq-success); }
+/* FT12: a pale tile with a mint ring and a thin green tick */
+.fq-squircle.pale { background: #ecfcf5; box-shadow: 0 0 0 1px #a7f3d0 inset, 0 10px 28px rgba(0, 159, 103, 0.12); color: var(--fq-success); }
+.fq-squircle.pale svg { stroke-width: 1.8; width: 64px; height: 64px; }
