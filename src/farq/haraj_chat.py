@@ -20,6 +20,7 @@ import base64
 import json
 import os
 import re
+import secrets
 import threading
 import time
 from dataclasses import dataclass
@@ -541,14 +542,150 @@ def chat_from_env(env: dict | None = None, cache: TokenCache | None = None) -> H
     return HarajChatClient(session, user_id, send_enabled=send, inbox_enabled=inbox)
 
 
-_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬", "01234567890123456789,")
-_PRICE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:ر\.?\s?س|ريال|rs|sar)", re.IGNORECASE)
+_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬٫", "01234567890123456789,.")
+
+# -- Request references ---------------------------------------------------------
+# Taseer writes from one Haraj account, so a seller has one conversation with us whatever the
+# number of buyers. Every message we send carries the request's reference; a reply that quotes
+# it is filed under that request, whichever buyers share the conversation.
+REFERENCE_LABEL = "رقم الطلب"
+_AR = "؀-ۿ"
+_REFERENCE = re.compile(rf"(?<![A-Za-z0-9{_AR}])[TtТت]\s?[-_ـ–]?\s?(\d{{6}})(?!\d)")
+_LABELLED_REFERENCE = re.compile(r"رقم\s*(?:ال)?طلب\s*[:：\-]?\s*(\d{6})(?!\d)")
+
+
+def new_reference() -> str:
+    """``T-`` and six digits: short enough to read out, hard to mistake for a price."""
+    return f"T-{secrets.randbelow(900000) + 100000}"
+
+
+def reference_line(code: str) -> str:
+    return f"{REFERENCE_LABEL}: {code}"
+
+
+def with_reference(body: str, code: str | None) -> str:
+    """The outgoing text with the request's reference as its last line."""
+    if not code or code in (body or ""):
+        return body
+    return f"{body.rstrip()}\n{reference_line(code)}" if (body or "").strip() else reference_line(code)
+
+
+def find_references(text: str) -> list[str]:
+    """Every request reference a seller's message quotes, as ``T-123456``, in order."""
+    value = (text or "").translate(_DIGITS)
+    found = [match.group(1) for pattern in (_REFERENCE, _LABELLED_REFERENCE) for match in pattern.finditer(value)]
+    return list(dict.fromkeys(f"T-{digits}" for digits in found))
+
+
+# -- Prices in seller replies -------------------------------------------------------
+# Conservative on purpose: a reply with no price is shown as text; a wrong price would rank
+# the seller as the cheapest. Anything unclear (a range, a unit price, two different
+# prices) gives no price.
+_AMOUNT = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+_THOUSAND = rf"\s*(?:ألف|الف|آلاف|الاف|k)(?![A-Za-z{_AR}])"
+_CURRENCY = rf"\s*(?:ريالات|ريال|ر\.?\s?س|﷼|rs|sar)(?![A-Za-z{_AR}])"
+_TOKEN = re.compile(rf"(?<![\d.,])(?P<num>{_AMOUNT})(?![\d])(?P<k>{_THOUSAND})?(?P<cur>{_CURRENCY})?", re.IGNORECASE)
+_PRICE_WORD = re.compile(r"(?:السعر|سعره|سعرها|بسعر|سعر|المبلغ|الإجمالي|الاجمالي|المجموع)")
+_DELIVERY_WORD = re.compile(r"(?:توصيل|شحن|delivery)", re.IGNORECASE)
+_MARKER_BEFORE = re.compile(r"(?:(?:السعر|سعره|سعرها|بسعر|سعر|المبلغ|الإجمالي|الاجمالي|المجموع|توصيل|شحن)\s*[:=]?|(?:^|\s)بـ?)\s*$")
+_INCLUSION_BEFORE = re.compile(r"(?:شامل|يشمل|مع|بدون|غير)\s*(?:ال)?$")
+_FREE_AFTER = re.compile(r"مجان|علينا|شامل")
+_DELIVERY_SUFFIX = re.compile(r"^\s*(?:لل|ل)(?:توصيل|شحن)")
+_EXCLUDED = re.compile(r"(?:بدون|غير\s*شامل(?:\s*ال)?|لا\s*يشمل(?:\s*ال)?)\s*(?:ال)?(?:توصيل|شحن)|(?:التوصيل|الشحن)\s*(?:على|عل)\s*(?:المشتري|الزبون|العميل|حساب|عليك)")
+_INCLUDED = re.compile(r"(?:شامل|يشمل|مع|بـ?)\s*(?:ال)?(?:توصيل|شحن)|(?:التوصيل|توصيل|الشحن|شحن)\s*(?:مجان|مجاني|مجانا|مجاناً|علينا)")
+_UNIT = re.compile(
+    rf"(?:(?:لل|لكل\s*|/\s*|في\s*ال|بال)(?:قطع[ةه]|حب[ةه]|متر|م2|واحد[ةه]?|ساع[ةه]|يوم|كيلو|كرتون|شهر|ليل[ةه]|نفر|شخص|طن|لتر|سن[ةه])"
+    rf"|(?<![{_AR}])ال(?:قطع[ةه]|حب[ةه]|متر|كيلو|كرتون|طن|لتر))(?![{_AR}])"
+)
+_RANGE = re.compile(rf"(?:{_AMOUNT})(?:{_THOUSAND})?(?:{_CURRENCY})?\s*(?:-|–|—|~|إلى|الى|لين|حتى|او|أو)\s*(?:{_AMOUNT})|بين\s*(?:{_AMOUNT})\s*(?:{_CURRENCY})?\s*و\s*(?:{_AMOUNT})", re.IGNORECASE)
+_PHONE = re.compile(r"(?<!\d)(?:\+?966|00966)?\s?0?5\d[\s-]?\d{3}[\s-]?\d{4}(?!\d)")
+_URL = re.compile(r"https?://\S+")
+_BARE = re.compile(rf"^\s*(?P<num>{_AMOUNT})(?P<k>{_THOUSAND})?\s*(?:فقط|نهائي|صافي)?\s*[.!؟]*\s*$", re.IGNORECASE)
+MIN_PRICE = 10
+MAX_PRICE_DIGITS = 8
+
+
+@dataclass(frozen=True)
+class Quote:
+    """A price read from a seller's reply. ``uncertain`` means no price should be shown as his offer."""
+
+    base: float | None
+    delivery_price: float | None = None
+    delivery_included: bool | None = None
+    uncertain: str | None = None
+
+    @property
+    def total(self) -> float | None:
+        if self.base is None or self.uncertain:
+            return None
+        return self.base + (self.delivery_price or 0.0)
+
+
+def _plausible(raw: str, value: float) -> bool:
+    whole = raw.replace(",", "").split(".")[0]
+    return not whole.startswith("05") and len(whole) <= MAX_PRICE_DIGITS and value >= MIN_PRICE
+
+
+def extract_quote(text: str) -> Quote | None:
+    """The seller's price and delivery, or None when the reply names no price.
+
+    A number counts as a price when a currency (ريال, ر.س), «ألف», or a price word (السعر،
+    التوصيل) sits next to it, or when the whole reply is that one number."""
+    value = _URL.sub(" ", (text or "").translate(_DIGITS))
+    value = _LABELLED_REFERENCE.sub(" ", value)
+    value = _REFERENCE.sub(" ", value)
+    value = _PHONE.sub(" ", value)
+    bare = _BARE.match(value)
+    if bare:
+        amount = float(bare.group("num").replace(",", "")) * (1000 if bare.group("k") else 1)
+        return Quote(base=amount) if _plausible(bare.group("num"), amount) else None
+    bases: list[float] = []
+    deliveries: list[float] = []
+    previous_end = 0
+    for token in _TOKEN.finditer(value):
+        before = value[previous_end : token.start()]
+        previous_end = token.end()
+        marked = bool(token.group("cur") or token.group("k") or _MARKER_BEFORE.search(before))
+        if not marked:
+            continue
+        amount = float(token.group("num").replace(",", "")) * (1000 if token.group("k") else 1)
+        delivery_at = [match for match in _DELIVERY_WORD.finditer(before)]
+        price_at = [match.start() for match in _PRICE_WORD.finditer(before)]
+        is_delivery = False
+        if delivery_at:
+            last = delivery_at[-1]
+            is_delivery = (
+                last.start() > (price_at[-1] if price_at else -1)
+                and not _INCLUSION_BEFORE.search(before[: last.start()])
+                and not _FREE_AFTER.search(before[last.end() :])
+            )
+        if _DELIVERY_SUFFIX.match(value[token.end() :]):
+            is_delivery = True
+        if is_delivery:
+            if amount > 0 and _plausible(token.group("num"), max(amount, MIN_PRICE)):
+                deliveries.append(amount)
+        elif _plausible(token.group("num"), amount):
+            bases.append(amount)
+    if not bases:
+        return None
+    if _RANGE.search(value):
+        return Quote(base=None, uncertain="range")
+    if _UNIT.search(value):
+        return Quote(base=None, uncertain="unit_price")
+    if len(set(bases)) > 1:
+        return Quote(base=None, uncertain="several_prices")
+    if len(set(deliveries)) > 1:
+        return Quote(base=None, uncertain="several_delivery_prices")
+    if deliveries:
+        return Quote(base=bases[0], delivery_price=deliveries[0], delivery_included=False)
+    if _EXCLUDED.search(value):
+        return Quote(base=bases[0], delivery_included=False)
+    if _INCLUDED.search(value):
+        return Quote(base=bases[0], delivery_price=0.0, delivery_included=True)
+    return Quote(base=bases[0])
 
 
 def extract_price(text: str) -> float | None:
-    """A price only when the seller wrote a currency next to the number, e.g. "٢٥٠ ريال"."""
-    found = _PRICE.search((text or "").translate(_DIGITS))
-    if not found:
-        return None
-    value = float(found.group(1).replace(",", ""))
-    return value if value > 0 else None
+    """The total the seller asked for (price plus any delivery he named), or None when unsure."""
+    quote = extract_quote(text)
+    return None if quote is None else quote.total

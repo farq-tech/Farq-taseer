@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from farq.api import create_app
@@ -12,6 +13,12 @@ from farq.worker import poll_once
 
 
 _account = iter(range(1, 1_000_000))
+
+
+@pytest.fixture(autouse=True)
+def _any_recipient(monkeypatch):
+    """These journeys pick sellers by id without searching first; test_limits covers the search rule."""
+    monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
 
 
 def signed_in(api: TestClient) -> dict:
@@ -334,9 +341,11 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     assert len(haraj.sent) == 1
     run()
     tokens = {item["seller_id"]: item["reply_token"] for item in created["recipients"]}
+    # Every message to a seller ends with the request's reference, which files his replies here.
+    tagged = lambda text: f"{text}\nرقم الطلب: {created['ref_code']}"
 
     def invite(item, seller):
-        return (
+        return tagged(
             "السلام عليكم عزيزي البائع\nلدينا مشتري يطلب توفير:\n"
             f"{item} في الرياض\nفي حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك\n"
             f"https://taseer.farq.sa/s/{tokens[seller]}"
@@ -376,10 +385,10 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     assert (direct["scope"], direct["seller_id"]) == ("single_seller", "11")
     # Broadcast reaches only this item's sellers; replies and picks reach one seller's Haraj conversation.
     assert haraj.sent == [
-        ("p2p1_11", "11", "أبي الشغل الخميس"),
-        ("p2p1_12", "12", "أبي الشغل الخميس"),
-        ("p2p1_12", "12", "نقطتين"),
-        ("p2p1_11", "11", "تقدر الصبح؟"),
+        ("p2p1_11", "11", tagged("أبي الشغل الخميس")),
+        ("p2p1_12", "12", tagged("أبي الشغل الخميس")),
+        ("p2p1_12", "12", tagged("نقطتين")),
+        ("p2p1_11", "11", tagged("تقدر الصبح؟")),
     ]
     assert api.post(url, headers=headers, json={"body": "x"}).status_code == 422  # several items: pick one
     assert api.post(url, headers=headers, json={"body": "x", "seller_id": "nobody"}).status_code == 422
@@ -502,7 +511,8 @@ def test_picked_suppliers_only_and_photos_reach_haraj(tmp_path: Path):
     assert api.post(url, headers=headers, json={"body": "", "seller_ids": ["11"]}).status_code == 422
     clock.sleep(60)
     run()
-    assert [(seller, body) for _c, seller, body in haraj.sent] == [("11", "مثل هذا"), ("13", "مثل هذا"), ("11", "للكل"), ("12", "للكل"), ("13", "للكل")]
+    ref = f"\nرقم الطلب: {created['ref_code']}"
+    assert [(seller, body) for _c, seller, body in haraj.sent] == [("11", "مثل هذا" + ref), ("13", "مثل هذا" + ref), ("11", "للكل" + ref), ("12", "للكل" + ref), ("13", "للكل" + ref)]
     assert haraj.attachments == [("11", "image/jpeg", b"jpeg"), ("13", "image/jpeg", b"jpeg")]
 
 

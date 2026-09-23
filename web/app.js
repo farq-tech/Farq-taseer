@@ -209,6 +209,8 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
   if (!response.ok) {
     const error = new Error("request failed");
     error.status = response.status;
+    // Limits refused by the server carry {code, message, limit} to show as is.
+    error.detail = await response.json().then((data) => data?.detail, () => null);
     throw error;
   }
   const type = response.headers.get("content-type") || "";
@@ -2123,8 +2125,8 @@ function planPeriod(days) {
 }
 
 
-// Subscription + free trial. The free trial's rules (50 items, 6 suppliers per item) are counted
-// in the client; the server does not enforce them yet.
+// Subscription + free trial. The free trial's rules (50 items, 6 suppliers per item) are shown and
+// counted here; the server enforces them too (farq/limits.py) and answers 402/403 with a message.
 const TRIAL_ITEMS = 50;
 const TRIAL_SELLERS = 6;
 
@@ -2586,6 +2588,7 @@ function draftSnapshot(withResults = true) {
     query: state.query,
     originalText: state.originalText,
     searchText: state.searchText,
+    traceId: state.traceId || "",
     city: state.city,
     cityMode: state.cityMode || "",
     needs: state.needs,
@@ -2636,6 +2639,7 @@ function restoreDraft() {
   state.query = draft.query || "";
   state.originalText = draft.originalText || "";
   state.searchText = draft.searchText || "";
+  state.traceId = draft.traceId || "";
   state.city = draft.city || "";
   state.cityMode = draft.cityMode || "";
   state.needs = Array.isArray(draft.needs) ? draft.needs : null;
@@ -2737,7 +2741,8 @@ async function submitSellerReply(form) {
   } catch (error) {
     state.sellerBusy = false;
     state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
-    state.sellerFormError = error?.status === 404 ? "هذا الطلب ما عاد متاح." : error?.status === 422 ? "تأكد من البيانات وجرّب مرة ثانية." : "ما قدرنا نرسل ردّك. تأكد من الاتصال وجرّب مرة ثانية.";
+    const reason = typeof error?.detail === "string" ? error.detail : error?.detail?.message;
+    state.sellerFormError = error?.status === 404 ? "هذا الطلب ما عاد متاح." : error?.status === 409 || /award/i.test(reason || "") ? "اختار العميل عرضاً آخر لهذا الطلب." : error?.status === 422 ? "تأكد من البيانات وجرّب مرة ثانية." : "ما قدرنا نرسل ردّك. تأكد من الاتصال وجرّب مرة ثانية.";
     render();
   }
 }
@@ -2788,7 +2793,9 @@ function renderSeller() {
           .join("")}</div>`
       : ""}
     ${state.sellerSent ? `<div class="fq-notice" role="status">${ic("check-circle", 16)} وصل ردّك للعميل. تقدر ترسل تحديث إذا تغيّر السعر.</div>` : ""}
-    <form id="seller-reply" class="fq-card pad" style="gap:14px" novalidate>
+    ${view.offers_open === false
+      ? `<div class="fq-notice" role="status">اختار العميل عرضاً آخر لهذا الطلب، فما يستقبل عروض جديدة. شكراً لك.</div>`
+      : `<form id="seller-reply" class="fq-card pad" style="gap:14px" novalidate>
       <div class="fq-field"><label for="seller-amount">سعرك (ر.س)</label>
         <div class="fq-inp"><input id="seller-amount" name="offer_amount" inputmode="decimal" autocomplete="off" placeholder="مثلاً: 350" value="${esc(draft.amount)}" dir="ltr" style="text-align:end"></div></div>
       <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>السعر شامل التوصيل أو الوصول للموقع</span></label>
@@ -2798,7 +2805,7 @@ function renderSeller() {
         <div class="fq-inp" style="min-height:90px;align-items:flex-start"><textarea id="seller-body" name="body" rows="3" maxlength="1000" placeholder="تفاصيل السعر، مدة التنفيذ، أو سؤال للعميل">${esc(draft.body)}</textarea></div></div>
       ${state.sellerFormError ? `<p class="fq-small" role="alert" style="color:#b3402a;margin:0">${esc(state.sellerFormError)}</p>` : ""}
       <button class="fq-btn" type="submit" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? "لحظة…" : "أرسل ردّك"}</button>
-    </form>
+    </form>`}
     <p class="fq-meta" style="text-align:center">فرق ما يطلب منك أي دفع أو بيانات بنكية أو كلمة مرور على هذه الصفحة.</p>
   </section>`;
 }
@@ -3054,6 +3061,7 @@ async function readNdjson(response, onEvent) {
 }
 
 function applyDone(event) {
+  if (event.trace_id) state.traceId = event.trace_id;
   state.intent = event.intent;
   state.results = event.results || [];
   rememberGroups(event.groups);
@@ -3127,6 +3135,7 @@ async function runSearch(text, city = "") {
     if (!response.ok || !response.body) throw new Error("stream");
     await readNdjson(response, (event) => {
       if (!mine()) return;
+      if (event.trace_id) state.traceId = event.trace_id;
       if (event.type === "intent") {
         state.intent = event.intent;
         state.clarification = event.clarification_question || "";
@@ -3300,6 +3309,8 @@ async function sendRequest() {
         notes: requestNotes(active),
         city,
         attributes,
+        // The server only accepts sellers a search showed; a search run before signing in is named here.
+        trace_id: state.traceId || null,
         recipients: [...state.selected.values()].map((result) => {
           const seller = sellerOf(result);
           const item = itemFor(result);
@@ -3354,7 +3365,15 @@ async function sendRequest() {
       render();
       return;
     }
-    state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
+    if (error?.status === 402) {
+      // The server counted the free trial as used up.
+      state.view = "subscribe";
+      state.subView = "limit";
+      state.resumeAfterPay = true;
+      render();
+      return;
+    }
+    state.notice = error?.detail?.message || "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.view = "review";
     state.replaceUrl = true;
     render();
@@ -3501,7 +3520,7 @@ async function sendChatMessage(body) {
     render();
   } catch (error) {
     state.sending = false;
-    state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : "ما انرسلت الرسالة، جرّب مرة ثانية";
+    state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : error.detail?.message || "ما انرسلت الرسالة، جرّب مرة ثانية";
     render();
   }
 }

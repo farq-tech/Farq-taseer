@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import re
@@ -10,8 +11,10 @@ from urllib.parse import quote
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from farq import push, subscriptions
 from farq.cities import city_choices
@@ -25,7 +28,8 @@ from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
-from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, Store
+from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request
+from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids
 from farq.subscriptions import SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -64,6 +68,8 @@ class RequestBody(ApiModel):
     city: str | None = None
     attributes: dict = {}
     recipients: list[RecipientBody]
+    # The search the recipients were picked from, for a search run before signing in.
+    trace_id: str | None = None
 
 
 class MessageBody(ApiModel):
@@ -76,15 +82,20 @@ class MessageBody(ApiModel):
     reply_to: str | None = None
 
 
+MAX_OFFER = 10_000_000
+PHONE = re.compile(r"^\+?[0-9]{9,15}$")
+
+
 class SellerReplyBody(ApiModel):
     body: str = ""
     seller_id: str | None = None
-    offer_amount: float | None = None
+    offer_amount: float | None = Field(default=None, gt=0, le=MAX_OFFER, allow_inf_nan=False)
     offer_currency: str | None = None
+    # Accepted for older clients and ignored: the name on an offer is always the one we invited.
     provider_name: str | None = None
     phone: str | None = None
     delivery_included: bool | None = None
-    delivery_price: float | None = None
+    delivery_price: float | None = Field(default=None, ge=0, le=MAX_OFFER, allow_inf_nan=False)
 
 
 class AwardBody(ApiModel):
@@ -164,11 +175,23 @@ def create_app(
     payments: PaymentsConfig | None = None,
     moyasar: MoyasarClient | None = None,
     chat: HarajChat | None = None,
+    limits: Limits | None = None,
 ) -> FastAPI:
     app = FastAPI(title="FARQ Individuals", version="1")
+    limits = limits or Limits()
     payments = payments or PaymentsConfig()
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_body(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        # A body with Infinity or NaN is refused like any other bad value, not turned into a 500
+        # by echoing the value back in the error.
+        errors = [
+            {key: value for key, value in error.items() if not (key == "input" and isinstance(value, float) and not math.isfinite(value))}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
     def current_account(authorization: str | None = Header(default=None)) -> dict:
         # Everyone signs in with a Taseer account; the old anonymous guest sessions no longer count.
@@ -241,10 +264,19 @@ def create_app(
             return store.user_for_token(authorization.removeprefix("Bearer ").strip())
         return None
 
+    def _remember_sellers(trace_id: str, user_id: str | None, results) -> None:
+        # A quote request may only go to sellers a search showed (TSR-014).
+        store.record_search_sellers(trace_id, user_id, sorted(search_seller_ids(results)))
+
+    def _response_results(response) -> list:
+        return [*response.results, *(result for group in response.groups for result in group.results)]
+
     @app.post("/v1/search")
     def search(body: SearchBody, authorization: str | None = Header(default=None)) -> dict:
         response, trace = run_search(body.query, corpus, live_client, config)
-        store.record_journey(response.trace_id, _user_from_header(authorization), body.query, response.state.value, trace)
+        user_id = _user_from_header(authorization)
+        store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
+        _remember_sellers(response.trace_id, user_id, _response_results(response))
         return response.model_dump(mode="json")
 
     @app.post("/v1/search/stream")
@@ -253,9 +285,13 @@ def create_app(
 
         def generate():
             for event in iter_search(body.query, corpus, live_client, config):
+                if event["type"] == "results":
+                    # The app lets customers pick from a batch before the search ends.
+                    _remember_sellers(event["trace_id"], user_id, event["results"])
                 if event["type"] == "done":
                     response = event["response"]
                     store.record_journey(response.trace_id, user_id, body.query, response.state.value, event["trace"])
+                    _remember_sellers(response.trace_id, user_id, _response_results(response))
                 yield json.dumps(_public_event(event), ensure_ascii=False) + "\n"
 
         return StreamingResponse(generate(), media_type="application/x-ndjson")
@@ -292,6 +328,10 @@ def create_app(
 
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        try:
+            check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
+        except LimitExceeded as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
         try:
             request_id = store.create_request(
                 user_id,
@@ -361,6 +401,10 @@ def create_app(
         """Photos added on the review screen go to every supplier on the request, like any other message."""
         content_type, data = await read_upload(file)
         try:
+            check_new_message(store, limits, user_id)
+        except LimitExceeded as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+        try:
             saved = store.save_file(user_id, request_id, content_type, file.filename or "file", data)
             store.route_customer_message(request_id, user_id, "", media_ids=[saved["file_id"]], need=_single_need(request_id, user_id))
         except LookupError as exc:
@@ -377,6 +421,10 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/messages")
     def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        try:
+            check_new_message(store, limits, user_id)
+        except LimitExceeded as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
         try:
             created = store.route_customer_message(
                 request_id,
@@ -418,6 +466,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found")
         try:
             store.award(request_id, user_id, body.seller_id, body.notify)
+        except AwardConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
@@ -438,14 +488,17 @@ def create_app(
     def seller_reply(token: str, body: SellerReplyBody, background: BackgroundTasks) -> dict:
         if not body.body.strip() and body.offer_amount is None:
             raise HTTPException(status_code=422, detail="message or price is required")
+        phone = re.sub(r"[\s-]", "", body.phone or "") or None
+        if phone is not None and not PHONE.match(phone):
+            raise HTTPException(status_code=422, detail="invalid phone number")
         offer = None
         if body.offer_amount is not None:
             offer = Offer(
                 amount=body.offer_amount,
                 currency=body.offer_currency or "SAR",
                 note=body.body.strip() or None,
-                provider_name=body.provider_name,
-                phone=body.phone,
+                provider_name=None,
+                phone=phone,
                 base_price=body.offer_amount,
                 delivery_included=True if body.delivery_included is None else body.delivery_included,
                 delivery_price=body.delivery_price or 0,

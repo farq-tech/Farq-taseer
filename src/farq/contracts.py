@@ -209,4 +209,6 @@ class RequestRecord(ContractModel):
     awarded_seller_id: str | None = None
     awarded_at: str | None = None
     last_synced_at: str | None = None
+    # «رقم الطلب» written into every message sent to a seller, so his replies are filed here.
+    ref_code: str | None = None
     created_at: str

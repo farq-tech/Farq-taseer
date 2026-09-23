@@ -79,7 +79,29 @@ def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
     import tests.test_api as api_tests
 
     monkeypatch.setattr(api_tests, "Store", pg_store)
+    monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
     getattr(api_tests, name)(tmp_path, monkeypatch) if "monkeypatch" in getattr(api_tests, name).__code__.co_varnames else getattr(api_tests, name)(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "module, name",
+    [
+        ("test_reply_attribution", "test_every_message_to_a_seller_carries_its_request_reference"),
+        ("test_reply_attribution", "test_a_reply_quoting_the_reference_reaches_that_buyer_only"),
+        ("test_reply_attribution", "test_without_a_reference_a_reply_is_never_guessed_across_buyers"),
+        ("test_reply_attribution", "test_one_open_request_in_the_conversation_keeps_the_old_rule"),
+        ("test_reply_attribution", "test_a_reply_written_before_the_second_buyer_asked_goes_to_the_first"),
+        ("test_limits", "test_recipients_must_come_from_the_customers_own_search"),
+        ("test_limits", "test_streamed_and_signed_out_searches_count_when_named"),
+        ("test_limits", "test_trial_caps_sellers_per_item_and_subscribers_have_a_ceiling"),
+        ("test_limits", "test_trial_items_run_out_on_the_server"),
+        ("test_limits", "test_daily_request_and_message_ceilings"),
+    ],
+)
+def test_attribution_and_limits_on_postgres(module, name, tmp_path, monkeypatch, pg_store):
+    import importlib
+
+    _run(importlib.import_module(f"tests.{module}"), name, tmp_path, monkeypatch, pg_store)
 
 
 @pytest.mark.parametrize("name", ["test_sends_are_spaced_and_a_refusal_stops_the_batch", "test_an_uncertain_post_is_failed_not_retried", "test_send_slots_are_shared_by_every_instance"])

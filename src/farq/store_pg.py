@@ -23,16 +23,21 @@ from psycopg_pool import ConnectionPool
 
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
-from farq.haraj_chat import InboundMessage, SentMessage, extract_price
+from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_reference
 from farq.store import (
     SINGLE_SELLER,
+    AwardConflict,
     _delivery_state,
+    choose_thread,
+    current_offer_rows,
     media_entry,
     invite_text,
     mark_cheapest,
     priced_offer,
+    reply_audience,
     request_summary,
     route_targets,
+    seller_message,
     visible_to_seller,
 )
 
@@ -148,10 +153,11 @@ class PgStore:
         request_id = uuid4().hex
         first_token = secrets.token_urlsafe(16)
         with self._pool.connection() as conn:
+            ref_code = next(code for code in iter(new_reference, None) if conn.execute("select 1 from requests where ref_code = %s", (code,)).fetchone() is None)
             conn.execute(
-                "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes, reply_token, created_at)"
-                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (request_id, owner_user_id, original_text, need, notes, city_name, Jsonb(attributes), first_token, _now()),
+                "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes, reply_token, created_at, ref_code)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (request_id, owner_user_id, original_text, need, notes, city_name, Jsonb(attributes), first_token, _now(), ref_code),
             )
             conn.cursor().executemany(
                 "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url)"
@@ -308,6 +314,7 @@ class PgStore:
             awarded_seller_id=row["awarded_seller_id"],
             awarded_at=_iso(row["awarded_at"]),
             last_synced_at=_iso(row["last_synced_at"]),
+            ref_code=row.get("ref_code"),
             created_at=_iso(row["created_at"]),
         )
 
@@ -346,7 +353,7 @@ class PgStore:
         return messages
 
     def _offers(self, conn, request_id: str) -> list[Offer]:
-        rows = conn.execute("select * from offers where request_id = %s order by total_price is null, total_price", (request_id,)).fetchall()
+        rows = current_offer_rows(conn.execute("select * from offers where request_id = %s order by created_at desc", (request_id,)).fetchall())
         return mark_cheapest(
             [
                 Offer(
@@ -410,15 +417,20 @@ class PgStore:
                 for item in conn.execute("select * from attachments where request_id = %s", (row["id"],))
             ]
             messages = self._messages(conn, row["id"])
+            sent = {
+                item["id"]: item["haraj_text"]
+                for item in conn.execute("select id, haraj_text from messages where request_id = %s and haraj_text is not null", (row["id"],))
+            }
+        seller_id = own["seller_id"] if own is not None else None
+        # The invite promises the item and the city only: the customer's own words and notes stay with him.
         return {
             "need": need,
-            "original_text": row["original_text"],
-            "notes": row["notes"],
             "city": row["city"],
+            "offers_open": row["awarded_seller_id"] in (None, seller_id),
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
-            # Legacy seller link only: each seller sees their own thread, never another seller's messages.
-            "messages": [item.model_dump(mode="json") for item in messages if visible_to_seller(item, own["seller_id"] if own is not None else None, need)],
+            # Each seller sees their own thread, never another seller's messages or who else was asked.
+            "messages": [seller_message(item, seller_id, sent.get(item.id)) for item in messages if visible_to_seller(item, seller_id, need)],
         }
 
     def add_seller_reply(self, token: str, seller_id: str | None, body: str, offer: Offer | None) -> Message:
@@ -442,8 +454,13 @@ class PgStore:
             if seller_id not in ids:
                 raise ValueError("unknown seller")
             matched = next(item for item in recipients if item["seller_id"] == seller_id)
+            awarded = row["awarded_seller_id"]
+            if offer is not None and awarded is not None and awarded != seller_id:
+                raise ValueError("offers are closed: the customer has already chosen a supplier")
             if offer is not None:
                 offer = priced_offer(offer, body, matched["seller_name"], matched["need"] or row["need"])
+                # One current offer per supplier per item: a revised price replaces the earlier one.
+                conn.execute("delete from offers where request_id = %s and seller_id = %s and coalesce(need, '') = %s", (row["id"], seller_id, offer.need or ""))
                 conn.execute(
                     "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
                     " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -543,10 +560,9 @@ class PgStore:
                 quoted = conn.execute("select * from messages where id = %s and request_id = %s", (reply_to, request_id)).fetchone()
                 if quoted is None:
                     raise ValueError("unknown reply_to")
-                if quoted["seller_id"]:
-                    seller_id = quoted["seller_id"]
+                delivered = [item["seller_id"] for item in conn.execute("select seller_id from message_deliveries where message_id = %s order by created_at", (reply_to,))]
+                seller_id, seller_ids = reply_audience(quoted["seller_id"], delivered, seller_id, seller_ids)
                 need = need or quoted["need"]
-                seller_ids = None
             message = self._enqueue(conn, request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
             return next(item for item in self._messages(conn, request_id) if item.id == message.id)
 
@@ -586,7 +602,8 @@ class PgStore:
                     """
                     select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id,
                       (select r.reply_token from request_recipients r where r.request_id = %s and r.seller_id = %s
-                       order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token
+                       order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token,
+                      (select q.ref_code from requests q where q.id = t.request_id) as ref_code
                     from messages m join haraj_threads t on t.request_id = %s and t.seller_id = %s and t.need = %s
                     where m.id = %s
                     """,
@@ -664,19 +681,79 @@ class PgStore:
                 (slot, slot + spacing),
             )
 
-    def thread_for_inbound(self, conversation_id: str, sent_at: str) -> dict | None:
+    def _inbound_candidates(self, conn, conversation_id: str) -> list[dict]:
+        rows = conn.execute(
+            "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at,"
+            " coalesce((select array_agg(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
+            " and d.need = t.need and d.delivery_status = 'sent' and d.sent_at is not null), '{}') as sends"
+            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s",
+            (conversation_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def thread_for_inbound(self, conversation_id: str, sent_at: str, body: str = "") -> dict | None:
+        """The request a seller's reply belongs to (see store.choose_thread); None when it cannot be told apart."""
+        with self._pool.connection() as conn:
+            candidates = self._inbound_candidates(conn, conversation_id)
+        return choose_thread(candidates, body, sent_at)
+
+    def record_unmatched_inbound(self, conversation_id: str, seller_id: str, inbound: InboundMessage) -> list[str]:
+        """Keep a reply no request can safely claim, out of every customer's view. Returns the requests it could belong to."""
+        with self._pool.connection() as conn:
+            candidates = sorted({row["request_id"] for row in self._inbound_candidates(conn, conversation_id)})
+            conn.execute(
+                "insert into haraj_unmatched (haraj_message_id, haraj_conversation_id, seller_id, body, media, sent_at, candidate_request_ids)"
+                " values (%s, %s, %s, %s, %s, %s::timestamptz, %s) on conflict (haraj_message_id) do nothing",
+                (inbound.haraj_message_id, conversation_id, seller_id, inbound.body, Jsonb(list(inbound.media)), inbound.sent_at, Jsonb(candidates)),
+            )
+        return candidates
+
+    def unmatched_inbound(self, conversation_id: str | None = None) -> list[dict]:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select * from haraj_unmatched where %s::text is null or haraj_conversation_id = %s order by sent_at", (conversation_id, conversation_id)
+            ).fetchall()
+        return [{**dict(row), "candidate_request_ids": list(row["candidate_request_ids"] or [])} for row in rows]
+
+    # -- limits: who may be asked, and how often ----------------------------------
+
+    def record_search_sellers(self, trace_id: str, user_id: str | None, seller_ids) -> None:
+        rows = [(trace_id, user_id, seller_id) for seller_id in seller_ids]
+        if not rows:
+            return
+        with self._pool.connection() as conn:
+            conn.cursor().executemany(
+                "insert into search_sellers (trace_id, user_id, seller_id) values (%s, %s, %s)"
+                " on conflict (trace_id, seller_id) do update set user_id = coalesce(search_sellers.user_id, excluded.user_id)",
+                rows,
+            )
+
+    def searched_sellers(self, user_id: str, trace_id: str | None, since: str) -> set[str]:
+        """Sellers this user's searches showed since then, and those of an anonymous search he names."""
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select seller_id from search_sellers where (user_id = %s and created_at >= %s::timestamptz)"
+                " or (trace_id = %s and (user_id is null or user_id = %s))",
+                (user_id, since, trace_id, user_id),
+            ).fetchall()
+        return {row["seller_id"] for row in rows}
+
+    def count_requests(self, user_id: str, since: str | None = None) -> int:
         with self._pool.connection() as conn:
             row = conn.execute(
-                "select t.* from haraj_threads t join message_deliveries d on d.request_id = t.request_id and d.seller_id = t.seller_id and d.need = t.need"
-                " where t.haraj_conversation_id = %s and d.delivery_status = 'sent' and d.sent_at <= %s::timestamptz order by d.sent_at desc limit 1",
-                (conversation_id, sent_at),
+                "select count(*) as count from requests where owner_user_id = %s and (%s::timestamptz is null or created_at >= %s::timestamptz)",
+                (user_id, since, since),
             ).fetchone()
-            if row is None:
-                row = conn.execute(
-                    "select t.* from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s order by r.created_at desc limit 1",
-                    (conversation_id,),
-                ).fetchone()
-        return None if row is None else dict(row)
+        return int(row["count"])
+
+    def count_customer_messages(self, user_id: str, since: str) -> int:
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select count(*) as count from messages m join requests r on r.id = m.request_id"
+                " where r.owner_user_id = %s and m.sender_role = 'user' and m.created_at >= %s::timestamptz",
+                (user_id, since),
+            ).fetchone()
+        return int(row["count"])
 
     def conversation_checked(self, conversation_id: str, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int | None = None) -> None:
         with self._pool.connection() as conn:
@@ -688,7 +765,13 @@ class PgStore:
 
     def has_haraj_message(self, haraj_message_id: str) -> bool:
         with self._pool.connection() as conn:
-            return conn.execute("select 1 from messages where haraj_message_id = %s", (haraj_message_id,)).fetchone() is not None
+            return (
+                conn.execute(
+                    "select 1 from messages where haraj_message_id = %s union all select 1 from haraj_unmatched where haraj_message_id = %s",
+                    (haraj_message_id, haraj_message_id),
+                ).fetchone()
+                is not None
+            )
 
     def save_file_for_request(self, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
         with self._pool.connection() as conn:
@@ -724,14 +807,31 @@ class PgStore:
                 (request_id, seller_id, need or ""),
             ).fetchone()
             offer = None
-            price = extract_price(inbound.body)
+            quote = extract_quote(inbound.body)
+            price = None if quote is None else quote.total
+            awarded = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
+            # After the award, a price from anyone but the winner is kept as a message, not an offer.
+            if price is not None and awarded not in (None, seller_id):
+                quote, price = None, None
             if price is not None:
-                offer = Offer(amount=price, currency="SAR", note=inbound.body, provider_name=recipient["seller_name"] if recipient else None, seller_id=seller_id, total_price=price, need=need)
+                offer = Offer(
+                    amount=price,
+                    currency="SAR",
+                    note=inbound.body,
+                    provider_name=recipient["seller_name"] if recipient else None,
+                    seller_id=seller_id,
+                    base_price=quote.base,
+                    delivery_included=quote.delivery_included,
+                    delivery_price=quote.delivery_price,
+                    total_price=price,
+                    need=need,
+                )
                 # Latest price from a seller on an item replaces the earlier one.
                 conn.execute("delete from offers where request_id = %s and seller_id = %s and coalesce(need, '') = %s", (request_id, seller_id, need or ""))
                 conn.execute(
-                    "insert into offers (id, request_id, seller_id, need, provider_name, total_price, currency, message, created_at) values (%s, %s, %s, %s, %s, %s, 'SAR', %s, now())",
-                    (uuid4().hex, request_id, seller_id, need, offer.provider_name, price, inbound.body),
+                    "insert into offers (id, request_id, seller_id, need, provider_name, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SAR', %s, now())",
+                    (uuid4().hex, request_id, seller_id, need, offer.provider_name, quote.base, quote.delivery_included, quote.delivery_price, price, inbound.body),
                 )
             message = self._insert_message(
                 conn,
@@ -766,10 +866,16 @@ class PgStore:
             ).fetchone()
             if known is None:
                 raise ValueError("unknown seller")
-            conn.execute(
-                "update requests set awarded_seller_id = %s, awarded_at = now() where id = %s and owner_user_id = %s",
+            current = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
+            if current == seller_id:
+                return None
+            # Only the first award counts; a second one for another supplier is refused, not swapped in.
+            changed = conn.execute(
+                "update requests set awarded_seller_id = %s, awarded_at = now() where id = %s and owner_user_id = %s and awarded_seller_id is null",
                 (seller_id, request_id, owner_user_id),
-            )
+            ).rowcount
+            if not changed:
+                raise AwardConflict("request already awarded to another supplier")
         if not notify:
             return None
         return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
