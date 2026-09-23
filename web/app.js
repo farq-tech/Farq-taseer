@@ -1675,7 +1675,40 @@ function renderAccount() {
 }
 
 function planName(code) {
-  return state.subPlans.find((item) => item.code === code)?.name_ar || code;
+  const plan = state.subPlans.find((item) => item.code === code);
+  return plan ? planLabel(plan) : code;
+}
+
+// A placeholder-priced plan carries internal wording ("سعر تجريبي مؤقت", "Sandbox"); the
+// customer only ever sees a neutral name for it, never its description or features.
+function planLabel(plan) {
+  if (!plan?.is_placeholder_price) return plan?.name_ar || "";
+  if (plan.duration_days === 30 || plan.duration_days === 31) return "الاشتراك الشهري";
+  if (plan.duration_days === 365) return "الاشتراك السنوي";
+  return "باقة الاشتراك";
+}
+
+function planDetails(plan) {
+  return plan?.is_placeholder_price ? { description: "", features: [] } : { description: plan?.description_ar || "", features: plan?.features || [] };
+}
+
+// The server says whether a subscription can be bought right now (Moyasar keys set, and a
+// plan that may take money with them). Unknown until the plans have loaded.
+function paymentsOff() {
+  return state.paymentsAvailable === false;
+}
+
+// Cards (mada, Visa, Mastercard) always; Apple Pay only where the device offers it.
+function payMethodLabel() {
+  const applePay = Boolean(window.ApplePaySession && ApplePaySession.canMakePayments && ApplePaySession.canMakePayments());
+  return applePay ? "Apple Pay أو البطاقة" : "بطاقة مدى أو ائتمانية";
+}
+
+function paymentsOffNote() {
+  return `<div class="fq-card pad grey" role="status">
+    <h2 class="fq-h2" style="font-size:17px">الاشتراك غير متاح حالياً</h2>
+    <p class="fq-lead">نجهّز الاشتراكات المدفوعة. تقدر تكمل استخدام التطبيق كالمعتاد وترجع لها لاحقاً.</p>
+  </div>`;
 }
 
 function trialLabel() {
@@ -1820,15 +1853,17 @@ function isSubscribed() {
 
 function planCard(plan, { popular = false } = {}) {
   const price = plan.price_amount != null ? money(plan.price_amount / 100) : "XX ر.س";
+  const { description, features } = planDetails(plan);
+  const buyable = !paymentsOff() && plan.purchasable !== false;
   return `<article class="fq-plan${popular ? " pop" : ""}">
     <div class="fq-row">
       <span>${popular ? `<span class="badge">الأكثر طلبًا</span>` : ""}</span>
-      <span class="name">${esc(plan.name_ar)}</span>
+      <span class="name">${esc(planLabel(plan))}</span>
     </div>
     <div class="fq-row"><span></span><span><span class="amount">${esc(String(price).replace(" ر.س", ""))} ر.س</span> <span class="per">/ ${esc(planPeriod(plan.duration_days))}يًا</span></span></div>
-    ${plan.description_ar ? `<p class="desc">${esc(plan.description_ar)}</p>` : ""}
-    ${(plan.features || []).length ? `<div class="fq-feats">${plan.features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
-    <button class="fq-btn sm${popular ? "" : " ghost"}" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اختيار ${esc(plan.name_ar)}</button>
+    ${description ? `<p class="desc">${esc(description)}</p>` : ""}
+    ${features.length ? `<div class="fq-feats">${features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
+    ${buyable ? `<button class="fq-btn sm${popular ? "" : " ghost"}" type="button" data-action="choose-plan" data-plan="${esc(plan.code)}">اختيار ${esc(planLabel(plan))}</button>` : ""}
   </article>`;
 }
 
@@ -1926,8 +1961,9 @@ function renderSubscribe() {
           .map((line) => `<span class="fq-feat"><span class="fq-tick-round">${ic("check", 14)}</span>${esc(line)}</span>`)
           .join("")}
       </div>
+      ${paymentsOff() ? paymentsOffNote() : ""}
       <div class="fq-actions" style="margin-top:auto;gap:12px">
-        <button class="fq-btn r14" type="button" data-action="show-plans">عرض الباقات</button>
+        ${paymentsOff() ? "" : `<button class="fq-btn r14" type="button" data-action="show-plans">عرض الباقات</button>`}
         <button class="fq-btn ghost r14" type="button" data-action="back-gate">ليس الآن</button>
       </div>
     </section>`;
@@ -1943,8 +1979,9 @@ function renderSubscribe() {
         <h1 class="fq-h1">استخدمت التجربة المجانية</h1>
         <p class="fq-lead">${formatCount(TRIAL_ITEMS)} من ${formatCount(TRIAL_ITEMS)} بند</p>
         <span class="fq-tag deep" style="font-size:13px;padding:8px 14px;border-radius:999px">طلبك الأخير محفوظ ولن يضيع</span></div>
+      ${paymentsOff() ? `<div style="width:100%">${paymentsOffNote()}</div>` : ""}
       <div class="fq-actions" style="width:100%;margin-top:auto;gap:12px">
-        <button class="fq-btn r14" type="button" data-action="show-plans">عرض الباقات</button>
+        ${paymentsOff() ? "" : `<button class="fq-btn r14" type="button" data-action="show-plans">عرض الباقات</button>`}
         <button class="fq-btn soft r14" type="button" data-action="back-gate">رجوع</button>
       </div>
     </section>`;
@@ -1965,8 +2002,9 @@ function renderSubscribe() {
           <p class="fq-meta" style="margin:0">استخدمت ${formatCount(cap)} من ${formatCount(cap)} بند. رقّ باقتك للاستمرار.</p>
         </div>
       </div>
+      ${paymentsOff() ? paymentsOffNote() : ""}
       <div class="fq-actions" style="margin-top:auto;gap:12px">
-        <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الباقة الآن</button>
+        ${paymentsOff() ? "" : `<button class="fq-btn r14" type="button" data-action="upgrade">ترقية الباقة الآن</button>`}
         <button class="fq-btn ghost r14" type="button" data-action="back-gate">رجوع للطلب</button>
       </div>
     </section>`;
@@ -1984,17 +2022,18 @@ function renderSubscribe() {
         <strong style="font-size:15px">الباقة الحالية: ${esc(current ? planName(current.code) : "التجربة المجانية")}</strong>
       </div>
       <div class="fq-arrow-down">${ic("arrow-down", 18)}</div>
-      ${target
+      ${paymentsOff()
+        ? paymentsOffNote()
+        : target
         ? `<article class="fq-plan target">
-            <div class="fq-row"><span class="badge">الترقية الموصى بها</span><span class="name">${esc(target.name_ar)}</span></div>
+            <div class="fq-row"><span class="badge">الترقية الموصى بها</span><span class="name">${esc(planLabel(target))}</span></div>
             <div class="fq-row"><span></span><span><span class="amount">${esc(money(target.price_amount / 100))}</span> <span class="per">/ ${esc(planPeriod(target.duration_days))}</span></span></div>
-            ${target.description_ar ? `<p class="desc">${esc(target.description_ar)}</p>` : ""}
-            <hr class="fq-line">
-            <div class="fq-feats">${(target.features || []).map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>
+            ${planDetails(target).description ? `<p class="desc">${esc(planDetails(target).description)}</p>` : ""}
+            ${planDetails(target).features.length ? `<hr class="fq-line"><div class="fq-feats">${planDetails(target).features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
           </article>`
         : `<p class="fq-lead">لا توجد باقة أعلى متاحة حالياً.</p>`}
       <div class="fq-actions" style="margin-top:auto;gap:12px">
-        <button class="fq-btn r14" type="button" data-action="choose-plan" data-plan="${esc(target?.code || "")}" ${target ? "" : "disabled"}>متابعة للترقية</button>
+        ${paymentsOff() ? "" : `<button class="fq-btn r14" type="button" data-action="choose-plan" data-plan="${esc(target?.code || "")}" ${target ? "" : "disabled"}>متابعة للترقية</button>`}
         <button class="fq-btn ghost r14" type="button" data-action="my-plan">إلغاء</button>
       </div>
     </section>`;
@@ -2015,7 +2054,7 @@ function renderSubscribe() {
             <p class="desc">✓ ${formatCount(TRIAL_ITEMS)} بند تسعير • ✓ حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند</p>
           </article>
           <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
-      ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
+      ${paymentsOff() ? paymentsOffNote() : state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
       ${plans.length ? plans.map((plan, index) => planCard(plan, { popular: index === popularIndex })).join("") : `<p class="fq-lead">لا توجد باقات متاحة حالياً.</p>`}
     </section>`;
   }
@@ -2033,15 +2072,20 @@ function renderSubscribe() {
     <section class="fq-body">
       <div><h1 class="fq-h2">${esc(lead.h)}</h1>${lead.p ? `<p class="fq-lead">${esc(lead.p)}</p>` : ""}</div>
       <div class="fq-card pad fq-summary">
-        <div class="fq-row"><strong class="value"><bdi>${esc(plan.name_ar)}</bdi></strong><span class="label">الخطة المختارة</span></div>
+        <div class="fq-row"><strong class="value"><bdi>${esc(planLabel(plan))}</bdi></strong><span class="label">الخطة المختارة</span></div>
         <div class="fq-row"><span class="label">قيمة الاشتراك</span><strong class="value money">${esc(money(plan.price_amount / 100))} / ${esc(planPeriod(plan.duration_days))}يًا</strong></div>
-        ${(plan.features || []).length ? `<hr class="fq-line"><div class="fq-feats">${plan.features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
-        ${plan.is_placeholder_price ? `<p class="fq-meta">سعر تجريبي مؤقت لاختبار الدفع — ليس السعر النهائي.</p>` : ""}
+        ${planDetails(plan).features.length ? `<hr class="fq-line"><div class="fq-feats">${planDetails(plan).features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
       </div>
-      <div><p class="fq-sec-title"><span>طريقة الدفع</span></p>
+      ${paymentsOff() || plan.purchasable === false
+        ? `${paymentsOffNote()}
+      <div class="fq-actions" style="margin-top:auto;gap:12px">
+        <button class="fq-btn ghost r14" type="button" data-action="my-plan">رجوع</button>
+      </div>
+    </section>`
+        : `<div><p class="fq-sec-title"><span>طريقة الدفع</span></p>
         <button class="fq-payrow on" type="button" data-action="pay" aria-pressed="true">
           <span class="mark">${ic("credit-card", 18)}</span>
-          <strong>Apple Pay</strong>
+          <strong>${esc(payMethodLabel())}</strong>
           <span class="fq-radio on" aria-hidden="true"></span>
         </button>
         ${state.subBusy || state.subMountedPlan === plan.code
@@ -2053,10 +2097,10 @@ function renderSubscribe() {
           : ""}
       </div>
       <div class="fq-actions" style="margin-top:auto;gap:12px">
-        <button class="fq-btn r14" type="button" data-action="pay">الدفع بـ Apple Pay</button>
+        ${state.subBusy || state.subMountedPlan === plan.code ? "" : `<button class="fq-btn r14" type="button" data-action="pay">متابعة الدفع</button>`}
         <button class="fq-btn ghost outline-deep r14" type="button" data-action="show-plans">تغيير الباقة</button>
       </div>
-    </section>`;
+    </section>`}`;
   }
 
   // SUB07_CurrentPlan / SUB08_NearLimit / FT01–FT06 — nodes 62:16, 62:73, 64:325…64:835.
@@ -2069,7 +2113,17 @@ function renderSubscribe() {
   const critical = left <= 2;
   const banner = near
     ? `<div class="fq-banner${critical ? " danger" : ""}">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${esc(items(left))} ${subscribed ? "هذا الشهر" : critical ? "في التجربة المجانية" : "مجانية"}.</span>
-        <button type="button" data-action="${subscribed ? "upgrade" : critical ? "upgrade" : "show-plans"}">${subscribed ? "عرض الباقة" : critical ? "ترقية الآن" : "عرض الباقات"}</button></div>`
+        ${paymentsOff() ? "" : `<button type="button" data-action="${subscribed ? "upgrade" : critical ? "upgrade" : "show-plans"}">${subscribed ? "عرض الباقة" : critical ? "ترقية الآن" : "عرض الباقات"}</button>`}</div>`
+    : "";
+  const upsell = subscribed
+    ? paymentsOff()
+      ? ""
+      : near
+        ? `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">ترقية سريعة لتفادي الانقطاع</h2>
+            <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الآن</button></div>`
+        : `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
+            <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>
+            <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الاشتراك</button></div>`
     : "";
   return `${fqHead({ title: "حسابي", mark: true, end: `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>` })}
   ${banner}
@@ -2078,24 +2132,21 @@ function renderSubscribe() {
       ? usageCard({ deep: !near, title: `الباقة الحالية: ${planName(state.subStatus?.subscription?.plan || "")}`, badge: near ? "قارب على الانتهاء" : "نشطة", badgeTone: near ? "warn" : "ok", price: plan ? money(plan.price_amount / 100) : "", per: "/ شهريًا", used, limit, foot: near ? `المتبقي ${items(left)} فقط لتفادي توقف الخدمة` : `المتبقي ${items(left)} هذا الشهر`, warn: near })
       : usageCard({ title: "التجربة المجانية", badge: critical ? "شارفت على الانتهاء" : "مفعلة", badgeTone: critical ? "danger" : near ? "warn" : "ok", price: "0 ر.س", per: "/ ابدأ بدون بطاقة", used, limit, foot: `المتبقي ${items(left)}`, warn: near })}
     ${subscribed
-      ? near
-        ? `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">ترقية سريعة لتفادي الانقطاع</h2>
-            <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الآن</button></div>`
-        : `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
-            <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>
-            <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الاشتراك</button></div>`
+      ? upsell
       : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">مزايا الفترة التجريبية:</h2>
           <div class="fq-feats">${[`حتى ${formatCount(TRIAL_ITEMS)} بند تسعير`, `حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
             .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
             .join("")}</div></div>
         <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند مجاناً.</p>
         <div class="fq-sticky">
-          ${critical
+          ${critical && !paymentsOff()
             ? `<button class="fq-btn r14" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
             : near
               ? `<button class="fq-btn amber-chip r14" type="button" disabled>تجربتك نشطة</button>`
               : `<button class="fq-btn mint r14" type="button" disabled>تجربتك مفعلة</button>`}
-          <p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
+          ${paymentsOff()
+            ? `<p class="fq-small" style="text-align:center;margin-top:12px">الاشتراك غير متاح حالياً</p>`
+            : `<p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>`}
         </div>`}
   </section>
   ${fqNav("account")}`;
@@ -2664,11 +2715,15 @@ async function loadSubscribe({ keepView = false } = {}) {
   try {
     const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
     state.subPlans = plans.plans || [];
+    state.paymentsAvailable = plans.payments_available;
     state.subStatus = me;
   } catch (_error) {
     state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
   }
   render();
+  // A payment that left for 3-D Secure and never came back to /subscribe/callback (tab
+  // closed, redirect lost) is checked again here; the server settles it once Moyasar says paid.
+  resumePendingPayment().catch(() => {});
 }
 
 // «حسابي» needs the plan name and the usage count without leaving the account screen.
@@ -2677,6 +2732,7 @@ async function loadSubStatus() {
   try {
     const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true, quiet: true }), api("/v1/subscriptions/me", { quiet: true })]);
     state.subPlans = plans.plans || [];
+    state.paymentsAvailable = plans.payments_available;
     state.subStatus = me;
     if (state.view === "account" || state.view === "subscribe") render();
   } catch (_error) {}
@@ -2707,10 +2763,79 @@ async function loadNotifications() {
   if (state.view === "notifications") render();
 }
 
+// The checkout in flight, kept until the server says the subscription is active: a 3-D Secure
+// card leaves the page for the bank and comes back at /subscribe/callback, and a payment the
+// webhook settles later can still be confirmed from here. Never cleared before "activated".
+function pendingPayment() {
+  try {
+    return JSON.parse(localStorage.getItem("farq.pendingPayment") || "null");
+  } catch (_error) {
+    return null;
+  }
+}
+
+function keepPendingPayment(entry) {
+  try {
+    localStorage.setItem("farq.pendingPayment", JSON.stringify(entry));
+  } catch (_error) {}
+}
+
+function dropPendingPayment() {
+  try {
+    localStorage.removeItem("farq.pendingPayment");
+  } catch (_error) {}
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Asks the server to verify with Moyasar. While the bank is still confirming ("pending") it
+// asks again a few times; the webhook settles it in any case.
+async function verifyPayment(paymentId, moyasarPaymentId, { tries = 1, quiet = false } = {}) {
+  let result = null;
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (attempt) await wait(2500);
+    result = await api("/v1/subscriptions/verify", { method: "POST", json: { payment_id: paymentId, moyasar_payment_id: moyasarPaymentId }, quiet });
+    if (!result.pending) break;
+  }
+  const active = result.activated || (result.already_processed && result.subscription?.status === "active" && result.status === "paid");
+  if (active) {
+    dropPendingPayment();
+    state.subStatus = { status: "active", subscription: result.subscription };
+  }
+  return { ...result, active };
+}
+
+// Shows what a verification means for the customer.
+function showVerifyResult(result) {
+  if (result.active) {
+    state.subError = "";
+    state.subView = "paid";
+  } else if (result.pending) {
+    state.subError = "";
+    state.subView = "my-plan";
+    toast("البنك ما زال يؤكد الدفع. بنفعّل اشتراكك تلقائياً أول ما يكتمل.");
+  } else {
+    state.subError = "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك. تقدر تحاول مرة ثانية.";
+    state.subView = "failed";
+  }
+}
+
+async function resumePendingPayment() {
+  const pending = pendingPayment();
+  if (!pending?.payment_id || !pending.moyasar_payment_id || isSubscribed()) return;
+  try {
+    const result = await verifyPayment(pending.payment_id, pending.moyasar_payment_id, { quiet: true });
+    if (result.active && state.view === "subscribe") {
+      state.subView = "paid";
+      render();
+    }
+  } catch (_error) {}
+}
+
 async function handleSubscribeCallback() {
   // mada/3DS cards leave the app entirely and Moyasar redirects the whole
-  // page back to callback_url (?id=<moyasar_payment_id>...) instead of
-  // firing Moyasar.js's on_completed - without this, that flow silently
+  // page back to callback_url (?id=<moyasar_payment_id>&status=...) instead of
+  // settling in on_completed - without this, that flow silently
   // never verifies and the user lands looking subscribed to nothing.
   //
   // This deliberately does NOT reuse loadSubscribe(): that sets
@@ -2718,13 +2843,8 @@ async function handleSubscribeCallback() {
   // would then start a *fresh* checkout concurrently with the verify call
   // below, racing over the same localStorage pending-payment entry.
   const params = new URLSearchParams(location.search);
-  const moyasarPaymentId = params.get("id") || params.get("payment_id");
-  let pending = null;
-  try {
-    pending = JSON.parse(localStorage.getItem("farq.pendingPayment") || "null");
-  } catch (_error) {
-    pending = null;
-  }
+  const pending = pendingPayment();
+  const moyasarPaymentId = params.get("id") || params.get("payment_id") || pending?.moyasar_payment_id;
   history.replaceState({}, "", "/subscribe");
 
   await ensureAuth();
@@ -2733,40 +2853,32 @@ async function handleSubscribeCallback() {
   state.subActivePlan = "";
   state.subMountedPlan = "";
   state.subMountFailed = false;
+  const verifying = Boolean(moyasarPaymentId && pending?.payment_id);
+  state.subView = verifying ? "paying" : "my-plan";
   render();
 
   try {
     const [plans, me] = await Promise.all([api("/v1/subscriptions/plans", { skipAuth: true }), api("/v1/subscriptions/me")]);
     state.subPlans = plans.plans || [];
+    state.paymentsAvailable = plans.payments_available;
     state.subStatus = me;
   } catch (_error) {
     state.subError = "ما قدرنا نجيب بيانات الاشتراك. جرّب مرة ثانية.";
   }
 
-  if (moyasarPaymentId && pending?.payment_id) {
+  if (verifying) {
+    keepPendingPayment({ ...pending, moyasar_payment_id: moyasarPaymentId });
     try {
-      const result = await api("/v1/subscriptions/verify", {
-        method: "POST",
-        json: { payment_id: pending.payment_id, moyasar_payment_id: moyasarPaymentId },
-      });
-      localStorage.removeItem("farq.pendingPayment");
-      state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
-      state.subError = result.activated ? "" : "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك.";
-    } catch (_error) {
-      state.subError = "ما قدرنا نتحقق من الدفع. جرّب مرة ثانية من صفحة الاشتراك.";
+      showVerifyResult(await verifyPayment(pending.payment_id, moyasarPaymentId, { tries: 4 }));
+    } catch (error) {
+      // Not verified yet (Moyasar unreachable, or payments paused): the entry stays, so opening
+      // the subscription screen again checks it; the webhook settles it meanwhile.
+      state.subView = "my-plan";
+      state.subError = "";
+      toast(error.status === 503 ? "الاشتراك غير متاح حالياً" : "ما قدرنا نتأكد من الدفع الآن. بنكمل التحقق تلقائياً.");
     }
   }
-
-  // Only auto-select/auto-mount the single plan when this load never
-  // attempted a verification (someone just landed on /subscribe/callback
-  // directly). When a verify was attempted, auto-mounting here would
-  // immediately overwrite the success/failure message above with a fresh
-  // checkout attempt - leave the plan list showing an explicit "try again"
-  // button instead.
-  const verifyAttempted = Boolean(moyasarPaymentId && pending?.payment_id);
-  if (!verifyAttempted && state.subStatus?.status !== "active" && state.subPlans.length === 1) {
-    state.subActivePlan = state.subPlans[0].code;
-  }
+  // Nothing auto-mounts a new checkout here: the plan list offers an explicit choice instead.
   render();
 }
 
@@ -2774,15 +2886,20 @@ async function mountPayment(planCode) {
   const plan = state.subPlans.find((item) => item.code === planCode);
   if (!plan || state.subMountedPlan === planCode) return;
   state.subMountedPlan = planCode;
+  if (paymentsOff() || plan.purchasable === false) {
+    state.subMountFailed = true;
+    render();
+    return;
+  }
   state.subBusy = true;
   state.subError = "";
   render();
   try {
     const checkout = await api("/v1/subscriptions/checkout", { method: "POST", json: { plan: plan.code } });
     // mada/3DS cards redirect the whole page away and back to callback_url
-    // instead of firing on_completed - stash our payment_id so the page
+    // instead of settling here - stash our payment_id so the page
     // that reloads at /subscribe/callback can still verify it.
-    localStorage.setItem("farq.pendingPayment", JSON.stringify({ payment_id: checkout.payment_id, plan: plan.code }));
+    keepPendingPayment({ payment_id: checkout.payment_id, plan: plan.code });
     await loadMoyasarSdk();
     state.subBusy = false;
     render();
@@ -2795,7 +2912,7 @@ async function mountPayment(planCode) {
       element: `#${formId}`,
       amount: checkout.amount,
       currency: checkout.currency,
-      description: `${plan.name_ar} - فرق تسعير`,
+      description: `${planLabel(plan)} - فرق تسعير`,
       publishable_api_key: checkout.publishable_key,
       callback_url: checkout.callback_url,
       metadata: checkout.metadata,
@@ -2803,24 +2920,33 @@ async function mountPayment(planCode) {
       apple_pay: { label: "فرق تسعير", country: "SA" },
       language: "ar",
       on_completed: async (payment) => {
+        // Moyasar reports the payment as soon as it is created. A card that needs 3-D Secure is
+        // still "initiated" here and Moyasar now sends the page to the bank, then back to
+        // /subscribe/callback, which verifies. Remember its id for that page, and verify now
+        // only when there is a result to verify.
+        keepPendingPayment({ payment_id: checkout.payment_id, plan: plan.code, moyasar_payment_id: payment.id });
+        if (payment.status === "initiated") return;
+        state.subView = "paying";
+        render();
         try {
-          const result = await api("/v1/subscriptions/verify", {
-            method: "POST",
-            json: { payment_id: checkout.payment_id, moyasar_payment_id: payment.id },
-          });
-          localStorage.removeItem("farq.pendingPayment");
-          state.subStatus = { status: result.subscription?.status === "active" ? "active" : "none", subscription: result.subscription };
-          state.subError = "";
+          showVerifyResult(await verifyPayment(checkout.payment_id, payment.id, { tries: 3 }));
         } catch (_error) {
-          state.subError = "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك. جرّب مرة ثانية.";
+          state.subView = "review";
+          state.subError = "ما قدرنا نتأكد من الدفع الآن. إذا خُصم المبلغ بنفعّل اشتراكك تلقائياً.";
         }
         render();
       },
     });
-  } catch (_error) {
+  } catch (error) {
     state.subMountFailed = true;
     state.subBusy = false;
-    state.subError = "الدفع غير متاح حالياً. حاول لاحقاً.";
+    if (error.status === 503) {
+      // The server stopped taking payments (keys missing, or a placeholder price on live keys).
+      state.paymentsAvailable = false;
+      state.subError = "";
+    } else {
+      state.subError = "ما قدرنا نجهّز الدفع الآن. حاول مرة ثانية.";
+    }
     render();
   }
 }

@@ -33,20 +33,31 @@ class MoyasarPayment:
     metadata: dict
     source_type: str | None
     raw: dict
+    # Halalas refunded so far. None means "refunded" carried no amount: treat it as the whole payment.
+    refunded_amount: int | None = None
 
     @classmethod
     def from_json(cls, data: dict) -> "MoyasarPayment":
         source = data.get("source") or {}
+        # Moyasar reports `refunded` as the amount refunded (0 when none).
+        refunded_raw = data.get("refunded")
+        if isinstance(refunded_raw, int) and not isinstance(refunded_raw, bool):
+            refunded_amount = refunded_raw
+        else:
+            refunded_amount = data["amount"] if refunded_raw else 0
+        if data["status"] == "refunded" and not refunded_amount:
+            refunded_amount = data["amount"]
         return cls(
             id=data["id"],
             status=data["status"],
             amount=data["amount"],
             currency=data["currency"],
             fee=data.get("fee"),
-            refunded=bool(data.get("refunded")),
+            refunded=refunded_amount > 0,
             metadata=data.get("metadata") or {},
             source_type=source.get("type"),
             raw=data,
+            refunded_amount=refunded_amount,
         )
 
 

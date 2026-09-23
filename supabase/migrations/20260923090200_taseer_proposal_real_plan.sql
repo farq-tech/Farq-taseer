@@ -1,0 +1,21 @@
+-- PROPOSAL ONLY - every statement below is commented out on purpose. Applying this file does
+-- nothing. The owner sets the real price and features, then uncomments (or copies) it.
+--
+-- TSR-016: the only active plan is the 1 SAR sandbox placeholder ('monthly_placeholder',
+-- is_placeholder_price = true). With live Moyasar keys the code already refuses to sell a
+-- placeholder-priced plan and the app hides upgrading, so nothing can be bought until a real
+-- plan exists. Prices are in halalas (SAR x 100), matching Moyasar.
+--
+-- insert into taseer.subscription_plans
+--   (code, name_ar, name_en, description_ar, price_amount, currency, duration_days, features, is_active, is_placeholder_price, moyasar_metadata)
+-- values
+--   ('monthly', 'الاشتراك الشهري', 'Monthly plan',
+--    '<وصف الباقة للعميل>',
+--    0 /* <السعر بالهللة، مثلاً 4900 = 49 ر.س> */, 'SAR', 30,
+--    '["<ميزة 1>", "<ميزة 2>"]'::jsonb, true, false, '{}'::jsonb)
+-- on conflict (code) do nothing;
+--
+-- -- Retire the sandbox placeholder once the real plan is live (existing subscriptions keep
+-- -- their plan code; is_active only controls what can be bought):
+-- update taseer.subscription_plans set is_active = false, updated_at = now() where code = 'monthly_placeholder';
+select 1;

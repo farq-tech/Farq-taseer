@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import math
 import os
 import time
@@ -21,7 +23,8 @@ from farq.cities import city_choices
 from farq.config import PaymentsConfig, SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
-from farq.intent import analyze, analyze_needs
+from farq.idempotency import IdempotencyMiddleware
+from farq.intent import analyze, analyze_needs, split_need_texts
 from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
@@ -29,10 +32,21 @@ from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
 from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request
+from farq.ratelimit import SlidingWindow, client_ip
+from farq.security_headers import SecurityHeadersMiddleware
 from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids
-from farq.subscriptions import SubscriptionError
+from farq.subscriptions import PaymentsUnavailable, SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+log = logging.getLogger("farq.api")
+
+# Search input limits: one request fans out to Haraj once per item, so both are capped.
+MAX_QUERY_CHARS = 500
+MAX_NEEDS = 5
+# Sign-in throttling, counted in the database so it holds across serverless instances.
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_MAX_PER_ACCOUNT = 10  # wrong passwords for one email from one address
+LOGIN_MAX_PER_IP = 50  # wrong passwords from one address, any email
 
 
 class ApiModel(BaseModel):
@@ -167,6 +181,23 @@ def _public_event(event: dict) -> dict:
     return {"type": kind}
 
 
+def _docs_enabled() -> bool:
+    """API docs are for local work. On Vercel they are off unless FARQ_ENABLE_DOCS=1."""
+    explicit = os.environ.get("FARQ_ENABLE_DOCS")
+    if explicit is not None and explicit != "":
+        return explicit.strip().lower() in {"1", "true", "yes", "on"}
+    return not os.environ.get("VERCEL")
+
+
+def _env_rate(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    return int(raw) if raw else default
+
+
+def _hashed(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()[:32]
+
+
 def create_app(
     store: Store,
     corpus: MemoryCorpus,
@@ -176,12 +207,49 @@ def create_app(
     moyasar: MoyasarClient | None = None,
     chat: HarajChat | None = None,
     limits: Limits | None = None,
+    expose_docs: bool | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="FARQ Individuals", version="1")
+    docs = _docs_enabled() if expose_docs is None else expose_docs
+    app = FastAPI(
+        title="FARQ Individuals",
+        version="1",
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
+    app.add_middleware(IdempotencyMiddleware, store=store)
+    app.add_middleware(SecurityHeadersMiddleware)
     limits = limits or Limits()
     payments = payments or PaymentsConfig()
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
+    live_keys = subscriptions.is_live_key(payments.moyasar_secret_key, payments.moyasar_publishable_key)
+    # Per-instance throttles (see farq.ratelimit): searches fan out to Haraj, registrations
+    # are the one place an unknown caller can probe which emails exist.
+    search_limiter = SlidingWindow(_env_rate("FARQ_SEARCH_PER_MINUTE", 30), 60)
+    intent_limiter = SlidingWindow(_env_rate("FARQ_INTENT_PER_MINUTE", 60), 60)
+    register_limiter = SlidingWindow(_env_rate("FARQ_REGISTER_PER_HOUR", 20), 3600)
+
+    def guard_search(request: Request, query: str, limiter: SlidingWindow) -> None:
+        if not limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many searches, try again in a minute", headers={"Retry-After": "60"})
+        if len(query) > MAX_QUERY_CHARS:
+            raise HTTPException(status_code=422, detail=f"query is too long (max {MAX_QUERY_CHARS} characters)")
+        if len(split_need_texts(query)) > MAX_NEEDS:
+            raise HTTPException(status_code=422, detail=f"too many items in one request (max {MAX_NEEDS})")
+
+    def throttled_login(request: Request, email: str, password: str) -> str | None:
+        """store.login behind the per-address and per-address+email failure counts."""
+        ip = client_ip(request)
+        ip_key, account_key = f"ip:{_hashed(ip)}", f"acct:{_hashed(ip + '|' + email)}"
+        if store.login_failures(account_key, LOGIN_WINDOW_SECONDS) >= LOGIN_MAX_PER_ACCOUNT or store.login_failures(ip_key, LOGIN_WINDOW_SECONDS) >= LOGIN_MAX_PER_IP:
+            raise HTTPException(status_code=429, detail="too many sign-in attempts, try again later", headers={"Retry-After": str(LOGIN_WINDOW_SECONDS)})
+        token = store.login(email, password)
+        if token is None:
+            store.record_login_failure([ip_key, account_key])
+        else:
+            store.clear_login_failures(account_key)
+        return token
 
     @app.exception_handler(RequestValidationError)
     async def invalid_body(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -214,7 +282,9 @@ def create_app(
         return {"cities": city_choices()}
 
     @app.post("/v1/auth/register")
-    def register(body: RegisterBody) -> dict:
+    def register(body: RegisterBody, request: Request) -> dict:
+        if not register_limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
         email = body.email.strip().lower()
         name = (body.name or "").strip()
         if not EMAIL.match(email) or email.endswith(GUEST_DOMAIN):
@@ -226,13 +296,19 @@ def create_app(
         try:
             user_id = store.register(email, body.password, name)
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail="email already registered") from exc
+            # The email has an account. Its owner (right password) is simply signed in; anyone
+            # else gets the same generic refusal, counted like a wrong sign-in.
+            token = throttled_login(request, email, body.password)
+            account = store.account_for_token(token) if token else None
+            if account is None or str(account["email"]).endswith(GUEST_DOMAIN):
+                raise HTTPException(status_code=409, detail="could not create an account with these details") from exc
+            return {"user_id": account["id"], "token": token, "name": account.get("name"), "email": email}
         token = store.login(email, body.password)
         return {"user_id": user_id, "token": token, "name": name, "email": email}
 
     @app.post("/v1/auth/login")
-    def login(body: RegisterBody) -> dict:
-        token = store.login(body.email, body.password)
+    def login(body: RegisterBody, request: Request) -> dict:
+        token = throttled_login(request, body.email.strip().lower(), body.password)
         account = store.account_for_token(token) if token else None
         if account is None or str(account["email"]).endswith(GUEST_DOMAIN):
             raise HTTPException(status_code=401, detail="invalid credentials")
@@ -249,7 +325,8 @@ def create_app(
         return {"signed_out": True}
 
     @app.post("/v1/intent")
-    def intent_only(body: SearchBody) -> dict:
+    def intent_only(body: SearchBody, request: Request) -> dict:
+        guard_search(request, body.query, intent_limiter)
         intents = analyze_needs(body.query)
         intent = intents[0] if intents else analyze(body.query)
         return {
@@ -272,7 +349,8 @@ def create_app(
         return [*response.results, *(result for group in response.groups for result in group.results)]
 
     @app.post("/v1/search")
-    def search(body: SearchBody, authorization: str | None = Header(default=None)) -> dict:
+    def search(body: SearchBody, request: Request, authorization: str | None = Header(default=None)) -> dict:
+        guard_search(request, body.query, search_limiter)
         response, trace = run_search(body.query, corpus, live_client, config)
         user_id = _user_from_header(authorization)
         store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
@@ -280,7 +358,8 @@ def create_app(
         return response.model_dump(mode="json")
 
     @app.post("/v1/search/stream")
-    def search_stream(body: SearchBody, authorization: str | None = Header(default=None)):
+    def search_stream(body: SearchBody, request: Request, authorization: str | None = Header(default=None)):
+        guard_search(request, body.query, search_limiter)
         user_id = _user_from_header(authorization)
 
         def generate():
@@ -298,8 +377,8 @@ def create_app(
 
     @app.get("/v1/search/{trace_id}/trace")
     def search_trace(trace_id: str, user_id: str = Depends(current_user)) -> dict:
-        del user_id
-        trace = store.journey(trace_id)
+        # Only the account that ran the search can read its trace.
+        trace = store.journey(trace_id, user_id)
         if trace is None:
             raise HTTPException(status_code=404, detail="trace not found")
         return trace
@@ -479,9 +558,12 @@ def create_app(
 
     @app.post("/v1/push/subscribe")
     def push_subscribe(body: PushSubscriptionBody, user_id: str = Depends(current_user)) -> dict:
-        if not body.endpoint.startswith("https://"):
+        if not push.allowed_endpoint(body.endpoint):
             raise HTTPException(status_code=422, detail="invalid endpoint")
-        store.add_push_subscription(user_id, body.endpoint, body.keys.p256dh, body.keys.auth)
+        if len(body.keys.p256dh) > 256 or len(body.keys.auth) > 256:
+            raise HTTPException(status_code=422, detail="invalid keys")
+        if not store.add_push_subscription(user_id, body.endpoint, body.keys.p256dh, body.keys.auth):
+            raise HTTPException(status_code=409, detail="this device is registered to another account")
         return {"subscribed": True}
 
     @app.post("/v1/seller/{token}/messages")
@@ -526,7 +608,11 @@ def create_app(
 
     @app.get("/v1/subscriptions/plans")
     def subscription_plans() -> dict:
-        return {"plans": subscriptions.list_plans(store)}
+        # payments_available tells the app whether to offer upgrading at all: keys configured
+        # and at least one plan that may take money with them.
+        plans = subscriptions.list_plans(store, live=live_keys)
+        available = payments.payments_configured and any(plan["purchasable"] for plan in plans)
+        return {"plans": plans, "payments_available": available}
 
     @app.get("/v1/subscriptions/me")
     def subscription_me(user_id: str = Depends(current_user)) -> dict:
@@ -539,9 +625,14 @@ def create_app(
                 store,
                 user_id=user_id,
                 plan_code=body.plan,
-                publishable_key=payments.moyasar_publishable_key,
+                # Without the secret key a payment could be taken but never verified.
+                publishable_key=payments.moyasar_publishable_key if payments.payments_configured else None,
                 public_base_url=payments.public_base_url,
+                live=live_keys,
             )
+        except PaymentsUnavailable as exc:
+            log.warning("checkout refused: %s", exc)
+            raise HTTPException(status_code=503, detail="payments_unavailable") from exc
         except SubscriptionError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
@@ -564,8 +655,13 @@ def create_app(
                 payment_id=body.payment_id,
                 moyasar_payment_id=body.moyasar_payment_id,
             )
+        except PaymentsUnavailable as exc:
+            log.warning("verify refused: %s", exc)
+            raise HTTPException(status_code=503, detail="payments_unavailable") from exc
         except SubscriptionError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if result.get("detail"):
+            log.warning("verify %s: %s", result.get("reason"), result.pop("detail"))
         if not result.get("ok"):
             raise HTTPException(status_code=409, detail=result.get("reason", "could not verify payment"))
         return result
@@ -586,14 +682,21 @@ def create_app(
         event_type = payload.get("type", "unknown")
         event_id = payload.get("id") or f"{moyasar_payment_id}:{event_type}:{data.get('updated_at', '')}"
         metadata = data.get("metadata") or {}
-        result = subscriptions.handle_webhook(
-            store,
-            moyasar,
-            event_id=str(event_id),
-            event_type=str(event_type),
-            moyasar_payment_id=str(moyasar_payment_id),
-            farq_payment_id=metadata.get("farq_payment_id"),
-        )
+        try:
+            result = subscriptions.handle_webhook(
+                store,
+                moyasar,
+                event_id=str(event_id),
+                event_type=str(event_type),
+                moyasar_payment_id=str(moyasar_payment_id),
+                farq_payment_id=metadata.get("farq_payment_id"),
+            )
+        except PaymentsUnavailable as exc:
+            # Moyasar retries a failed delivery; answer 503 so it does.
+            log.error("webhook could not settle: %s", exc)
+            raise HTTPException(status_code=503, detail="payments_unavailable") from exc
+        if result.get("detail"):
+            log.warning("webhook %s: %s", result.get("reason"), result.pop("detail"))
         return {"received": True, **result}
 
     # Registered before the web catch-all below, which answers every other GET.
@@ -610,6 +713,12 @@ def create_app(
         sent = dispatch_pending(store, chat, budget_seconds=42)
         received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
         return {"sent": sent, "received": received}
+
+    # Registered after every API route: an unknown /v1 path is a JSON 404, never the web app.
+    @app.api_route("/v1/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+    def api_not_found(rest: str) -> JSONResponse:
+        del rest
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
 
     if WEB_DIR.is_dir():
 

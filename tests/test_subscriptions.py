@@ -28,8 +28,12 @@ class FakeMoyasar:
     def register(self, moyasar_id: str, *, status: str, amount: int, currency: str, metadata: dict, refunded: bool = False):
         self.payments[moyasar_id] = {"status": status, "amount": amount, "currency": currency, "metadata": metadata, "refunded": refunded}
 
-    def mark_refunded(self, moyasar_id: str) -> None:
+    def mark_refunded(self, moyasar_id: str, amount: int | None = None) -> None:
         self.payments[moyasar_id]["refunded"] = True
+        self.payments[moyasar_id]["refunded_amount"] = amount
+
+    def set_status(self, moyasar_id: str, status: str) -> None:
+        self.payments[moyasar_id]["status"] = status
 
     def fail_next(self, times: int = 1) -> None:
         """Simulate the next N fetch_payment calls hitting a transient outage."""
@@ -53,14 +57,15 @@ class FakeMoyasar:
             metadata=data["metadata"],
             source_type="creditcard",
             raw={},
+            refunded_amount=data.get("refunded_amount"),
         )
 
 
-def client(tmp_path: Path, moyasar: FakeMoyasar, publishable_key: str = "pk_test_dummy"):
+def client(tmp_path: Path, moyasar: FakeMoyasar, publishable_key: str = "pk_test_dummy", secret_key: str = "sk_test_dummy"):
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
     corpus = MemoryCorpus.from_json(default_sample_path())
     payments = PaymentsConfig(
-        moyasar_secret_key="sk_test_dummy",
+        moyasar_secret_key=secret_key,
         moyasar_publishable_key=publishable_key,
         moyasar_webhook_secret="whsec_test",
         public_base_url="https://taseer.farq.sa",
@@ -355,5 +360,182 @@ def test_checkout_without_configured_publishable_key_fails_clearly(tmp_path):
     api, _ = client(tmp_path, FakeMoyasar(), publishable_key=None)
     headers = register(api)
     resp = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN})
-    assert resp.status_code == 422
-    assert "not configured" in resp.json()["detail"]
+    # The customer gets a generic answer; the real reason goes to the server log.
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "payments_unavailable"
+    assert "MOYASAR" not in resp.text
+    assert api.get("/v1/subscriptions/plans").json()["payments_available"] is False
+
+
+def webhook(api: TestClient, event_id: str, moyasar_id: str, metadata: dict, kind: str = "payment_paid"):
+    body = {"id": event_id, "type": kind, "secret_token": "whsec_test", "data": {"id": moyasar_id, "metadata": metadata}}
+    resp = api.post("/v1/payments/moyasar/webhook", json=body)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def verify(api: TestClient, headers: dict, checkout_data: dict, moyasar_id: str):
+    return api.post("/v1/subscriptions/verify", headers=headers, json={"payment_id": checkout_data["payment_id"], "moyasar_payment_id": moyasar_id})
+
+
+def test_3ds_payment_verified_while_initiated_is_activated_by_the_paid_webhook(tmp_path):
+    """TSR-003: Moyasar.js reports completion before 3-D Secure, so the first verify sees
+    "initiated". That must not close the payment: the paid webhook afterwards activates."""
+    moyasar = FakeMoyasar()
+    api, store = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar.register("pay_3DS", status="initiated", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+
+    early = verify(api, headers, checkout_data, "pay_3DS")
+    assert early.status_code == 200
+    assert early.json()["activated"] is False
+    assert early.json()["pending"] is True
+    assert early.json()["provider_status"] == "initiated"
+    row = store.get_payment(checkout_data["payment_id"])
+    assert row["status"] == "payment_pending" and row["provider_status"] == "initiated"
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "none"
+
+    # A second early verify is still a no-op, not "already processed".
+    assert verify(api, headers, checkout_data, "pay_3DS").json()["pending"] is True
+
+    moyasar.set_status("pay_3DS", "paid")
+    paid = webhook(api, "evt_3ds_paid", "pay_3DS", checkout_data["metadata"])
+    assert paid["activated"] is True
+    assert paid["already_processed"] is False
+    assert store.get_payment(checkout_data["payment_id"])["provider_status"] == "paid"
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "active"
+
+    # The callback page verifying afterwards sees it done, and nothing is applied twice.
+    late = verify(api, headers, checkout_data, "pay_3DS")
+    assert late.json()["already_processed"] is True
+    assert late.json()["subscription"]["expires_at"] == paid["subscription"]["expires_at"]
+
+
+def test_3ds_payment_is_activated_by_the_callback_verify(tmp_path):
+    moyasar = FakeMoyasar()
+    api, _ = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar.register("pay_3DS_CB", status="initiated", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+    assert verify(api, headers, checkout_data, "pay_3DS_CB").json()["pending"] is True
+    # An "initiated" webhook is not recorded, so Moyasar's redelivery still counts.
+    assert webhook(api, "evt_early", "pay_3DS_CB", checkout_data["metadata"])["duplicate_event"] is False
+    moyasar.set_status("pay_3DS_CB", "paid")
+    assert verify(api, headers, checkout_data, "pay_3DS_CB").json()["activated"] is True
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "active"
+
+
+def test_a_failed_attempt_then_a_paid_retry_of_the_same_checkout_activates(tmp_path):
+    """Moyasar's form lets the customer retry after a declined card; the retry carries the
+    same farq_payment_id and must still settle."""
+    moyasar = FakeMoyasar()
+    api, _ = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar.register("pay_DECLINED", status="failed", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+    assert verify(api, headers, checkout_data, "pay_DECLINED").json()["status"] == "failed"
+    assert verify(api, headers, checkout_data, "pay_DECLINED").json()["already_processed"] is True
+    moyasar.register("pay_RETRY", status="paid", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+    assert verify(api, headers, checkout_data, "pay_RETRY").json()["activated"] is True
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "active"
+
+
+def test_a_payment_stuck_by_the_old_initiated_bug_heals_on_the_paid_webhook(tmp_path):
+    moyasar = FakeMoyasar()
+    api, store = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar.register("pay_STUCK", status="paid", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+    # What the old code left behind: status copied from Moyasar's "initiated".
+    store._connection.execute("update payments set status = 'initiated', provider_payment_id = 'pay_STUCK' where id = ?", (checkout_data["payment_id"],))
+    store._connection.commit()
+    assert webhook(api, "evt_stuck", "pay_STUCK", checkout_data["metadata"])["activated"] is True
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "active"
+
+
+def test_plans_say_whether_payments_are_available(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    api, _ = client(tmp_path / "a", FakeMoyasar())
+    body = api.get("/v1/subscriptions/plans").json()
+    assert body["payments_available"] is True
+    assert body["plans"][0]["purchasable"] is True
+
+    api, _ = client(tmp_path / "b", FakeMoyasar(), secret_key=None)
+    assert api.get("/v1/subscriptions/plans").json()["payments_available"] is False
+    headers = register(api)
+    assert api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN}).status_code == 503
+
+
+def test_live_keys_never_sell_the_placeholder_price(tmp_path):
+    """TSR-016: the 1 SAR sandbox plan must not take real money."""
+    moyasar = FakeMoyasar()
+    api, store = client(tmp_path, moyasar, publishable_key="pk_live_x", secret_key="sk_live_x")
+    body = api.get("/v1/subscriptions/plans").json()
+    assert body["plans"][0]["is_placeholder_price"] is True
+    assert body["plans"][0]["purchasable"] is False
+    assert body["payments_available"] is False
+    headers = register(api)
+    resp = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN})
+    assert resp.status_code == 503 and resp.json()["detail"] == "payments_unavailable"
+    user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
+    assert store._connection.execute("select count(*) from payments where user_id = ?", (user_id,)).fetchone()[0] == 0
+
+
+def test_refunding_a_renewal_takes_back_only_that_term(tmp_path):
+    """TSR-068: the earlier paid term survives a refund of the renewal."""
+    moyasar = FakeMoyasar()
+    api, _ = client(tmp_path, moyasar)
+    headers = register(api)
+    first_checkout = checkout(api, headers)
+    moyasar.register("pay_TERM1", status="paid", amount=first_checkout["amount"], currency=first_checkout["currency"], metadata=first_checkout["metadata"])
+    first_expiry = verify(api, headers, first_checkout, "pay_TERM1").json()["subscription"]["expires_at"]
+    second_checkout = checkout(api, headers)
+    moyasar.register("pay_TERM2", status="paid", amount=second_checkout["amount"], currency=second_checkout["currency"], metadata=second_checkout["metadata"])
+    assert verify(api, headers, second_checkout, "pay_TERM2").json()["subscription"]["expires_at"] > first_expiry
+
+    moyasar.mark_refunded("pay_TERM2")
+    refunded = webhook(api, "evt_refund_term2", "pay_TERM2", second_checkout["metadata"], "payment_refunded")
+    assert refunded["status"] == "refunded"
+    me = api.get("/v1/subscriptions/me", headers=headers).json()
+    assert me["status"] == "active"
+    assert me["subscription"]["expires_at"][:16] == first_expiry[:16]
+    # Replaying the refund changes nothing.
+    assert webhook(api, "evt_refund_term2_again", "pay_TERM2", second_checkout["metadata"], "payment_refunded")["already_processed"] is True
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["subscription"]["expires_at"] == me["subscription"]["expires_at"]
+
+
+def test_a_partial_refund_keeps_the_subscription(tmp_path):
+    moyasar = FakeMoyasar()
+    api, store = client(tmp_path, moyasar)
+    headers = register(api)
+    checkout_data = checkout(api, headers)
+    moyasar.register("pay_PARTIAL", status="paid", amount=checkout_data["amount"], currency=checkout_data["currency"], metadata=checkout_data["metadata"])
+    before = verify(api, headers, checkout_data, "pay_PARTIAL").json()["subscription"]
+    moyasar.mark_refunded("pay_PARTIAL", amount=checkout_data["amount"] // 2)
+    result = webhook(api, "evt_partial", "pay_PARTIAL", checkout_data["metadata"], "payment_refunded")
+    assert result["status"] == "partially_refunded"
+    me = api.get("/v1/subscriptions/me", headers=headers).json()
+    assert me["status"] == "active" and me["subscription"]["expires_at"] == before["expires_at"]
+    assert store.get_payment(checkout_data["payment_id"])["refunded_amount"] == checkout_data["amount"] // 2
+    # The rest refunded later makes it a full refund: the term goes.
+    moyasar.mark_refunded("pay_PARTIAL", amount=checkout_data["amount"])
+    assert webhook(api, "evt_rest", "pay_PARTIAL", checkout_data["metadata"], "payment_refunded")["status"] == "refunded"
+    assert api.get("/v1/subscriptions/me", headers=headers).json()["status"] == "cancelled"
+
+
+def test_checkout_with_an_idempotency_key_creates_one_pending_payment(tmp_path):
+    """TSR-067: a retried checkout returns the first answer instead of a second payment."""
+    api, store = client(tmp_path, FakeMoyasar())
+    headers = register(api)
+    keyed = {**headers, "Idempotency-Key": "checkout-1"}
+    first = api.post("/v1/subscriptions/checkout", headers=keyed, json={"plan": PLAN})
+    second = api.post("/v1/subscriptions/checkout", headers=keyed, json={"plan": PLAN})
+    assert first.status_code == second.status_code == 200
+    assert second.json()["payment_id"] == first.json()["payment_id"]
+    assert second.headers.get("idempotent-replayed") == "true"
+    user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
+    assert store._connection.execute("select count(*) from payments where user_id = ?", (user_id,)).fetchone()[0] == 1
+    # The same key for a different body is refused.
+    assert api.post("/v1/subscriptions/checkout", headers=keyed, json={"plan": "other"}).status_code == 422
