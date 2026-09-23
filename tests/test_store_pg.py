@@ -87,3 +87,86 @@ def test_worker_on_postgres(name, tmp_path, monkeypatch, pg_store):
     import tests.test_haraj_chat as chat_tests
 
     _run(chat_tests, name, tmp_path, monkeypatch, pg_store)
+
+
+def _run_any(module, name, tmp_path, monkeypatch, make):
+    monkeypatch.setattr(module, "Store", make)
+    test = getattr(module, name)
+    test(tmp_path, monkeypatch) if "monkeypatch" in test.__code__.co_varnames[: test.__code__.co_argcount] else test(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_full_happy_path_activates_subscription",
+        "test_failed_payment_never_activates",
+        "test_wrong_amount_is_rejected_and_marks_payment_failed",
+        "test_duplicate_verify_call_does_not_double_activate_or_extend",
+        "test_duplicate_webhook_delivery_is_a_no_op",
+        "test_webhook_retries_after_transient_moyasar_outage_instead_of_being_dropped",
+        "test_refund_before_verification_never_activates",
+        "test_refund_after_activation_cancels_the_subscription",
+        "test_renewal_while_active_extends_from_current_expiry_not_duplicated",
+        "test_checkout_without_configured_publishable_key_fails_clearly",
+        "test_3ds_payment_verified_while_initiated_is_activated_by_the_paid_webhook",
+        "test_3ds_payment_is_activated_by_the_callback_verify",
+        "test_a_failed_attempt_then_a_paid_retry_of_the_same_checkout_activates",
+        "test_plans_say_whether_payments_are_available",
+        "test_refunding_a_renewal_takes_back_only_that_term",
+        "test_a_partial_refund_keeps_the_subscription",
+    ],
+)
+def test_payments_on_postgres(name, tmp_path, monkeypatch, pg_store):
+    import tests.test_subscriptions as subscription_tests
+
+    _run_any(subscription_tests, name, tmp_path, monkeypatch, pg_store)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_repeated_wrong_passwords_are_throttled",
+        "test_an_unknown_email_and_a_wrong_password_look_the_same",
+        "test_other_users_cannot_read_a_search_trace",
+        "test_push_endpoints_are_known_services_and_stay_with_their_account",
+    ],
+)
+def test_security_on_postgres(name, tmp_path, monkeypatch, pg_store):
+    import tests.test_security as security_tests
+
+    _run_any(security_tests, name, tmp_path, monkeypatch, pg_store)
+
+
+def test_sessions_and_idempotency_on_postgres(tmp_path, pg_store):
+    """Digest-only sessions, legacy raw tokens, expiry and Idempotency-Key replay on PgStore."""
+    import psycopg
+    from fastapi.testclient import TestClient
+
+    from farq.api import create_app
+    from farq.config import SearchConfig
+    from farq.corpus import MemoryCorpus, default_sample_path
+    from farq.store import token_digest
+
+    store = pg_store(upload_dir=tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
+    token = api.post("/v1/auth/register", json={"email": "pg@example.com", "password": "secret-pass", "name": "عميل"}).json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    legacy = "legacy-raw-token-issued-before-hashing-0000"
+    with psycopg.connect(URL, autocommit=True) as conn:
+        assert [row[0] for row in conn.execute("select token from taseer.sessions")] == [token_digest(token)]
+        user_id = conn.execute("select id from taseer.users").fetchone()[0]
+        conn.execute("insert into taseer.sessions (token, user_id) values (%s, %s)", (legacy, user_id))
+    assert api.get("/v1/auth/me", headers={"Authorization": f"Bearer {legacy}"}).status_code == 200
+    assert api.get("/v1/auth/me", headers={"Authorization": f"Bearer {token_digest(token)}"}).status_code == 401
+    with psycopg.connect(URL, autocommit=True) as conn:
+        assert conn.execute("select count(*) from taseer.sessions where token = %s", (legacy,)).fetchone()[0] == 0
+
+    body = {"original_text": "سباك", "need": "سباك", "city": "الرياض", "recipients": [{"seller_id": "11", "seller_name": "محمد"}]}
+    first = api.post("/v1/requests", headers={**headers, "Idempotency-Key": "k1"}, json=body).json()
+    again = api.post("/v1/requests", headers={**headers, "Idempotency-Key": "k1"}, json=body).json()
+    assert first["id"] == again["id"]
+    assert len(api.get("/v1/requests", headers=headers).json()["requests"]) == 1
+
+    with psycopg.connect(URL, autocommit=True) as conn:
+        conn.execute("update taseer.sessions set created_at = now() - interval '31 days'")
+    assert api.get("/v1/auth/me", headers=headers).status_code == 401

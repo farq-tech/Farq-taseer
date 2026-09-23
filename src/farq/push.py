@@ -8,6 +8,24 @@ from __future__ import annotations
 
 import json
 import os
+from urllib.parse import urlsplit
+
+# The browsers' own push services. Anything else is refused, so the server never posts to
+# an address a client chose (blind SSRF).
+PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
+PUSH_HOST_SUFFIXES = (".push.apple.com", ".notify.windows.com", ".push.services.mozilla.com")
+
+
+def allowed_endpoint(endpoint: str) -> bool:
+    try:
+        parts = urlsplit(endpoint)
+        port = parts.port
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or port not in (None, 443) or parts.username or parts.password or len(endpoint) > 1024:
+        return False
+    return host in PUSH_HOSTS or host.endswith(PUSH_HOST_SUFFIXES)
 
 
 def public_key() -> str | None:
@@ -30,6 +48,8 @@ def notify_reply(store, request_id: str, seller_id: str | None, body: str) -> in
     )
     delivered = 0
     for sub in store.push_subscriptions_for_request(request_id):
+        if not allowed_endpoint(sub["endpoint"]):
+            continue
         try:
             webpush(
                 subscription_info={"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}},

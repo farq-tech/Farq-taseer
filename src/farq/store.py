@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import secrets
 import sqlite3
@@ -29,6 +30,65 @@ def _now() -> str:
 def _hash_password(password: str, salt: str) -> str:
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 120_000)
     return digest.hex()
+
+
+# A sign-in lasts this long; after that the customer signs in again.
+SESSION_DAYS = 30
+# Hashed when an email has no account, so a miss costs the same time as a wrong password.
+_DUMMY_SALT = "0" * 32
+# Moyasar states a payment still moves on from (3-D Secure, authorisation). A payment row
+# stays settleable while its provider status is one of these; paid activates and the
+# closed states end the attempt.
+PROVIDER_CLOSED = {"failed", "voided", "expired", "canceled", "cancelled"}
+
+
+def token_digest(token: str) -> str:
+    """Sessions store sha256(token), never the bearer token itself."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def session_keys(token: str) -> tuple[str, ...]:
+    """The stored keys a presented token may match: its digest and, for sessions issued
+    before tokens were hashed, the raw token. A 64-hex value is never tried raw, so a
+    leaked digest cannot be replayed as a token."""
+    digest = token_digest(token)
+    if len(token) == 64 and all(char in "0123456789abcdef" for char in token):
+        return (digest,)
+    return (digest, token)
+
+
+def session_cutoff() -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=SESSION_DAYS)
+
+
+def password_matches(password: str, row) -> bool:
+    """Always runs the hash, then compares in constant time."""
+    if row is None:
+        _hash_password(password, _DUMMY_SALT)
+        return False
+    return hmac.compare_digest(_hash_password(password, row["salt"]), row["password_hash"])
+
+
+def settle_decision(payment: dict, provider_payment_id: str, provider_status: str, paid_amount: int, paid_currency: str) -> str:
+    """What a verified Moyasar state does to our payment row:
+    "done"     - the row is final (paid or refunded); nothing changes.
+    "same"     - the same attempt was already closed as failed; nothing changes.
+    "mismatch" - Moyasar charged a different amount; close the attempt as failed.
+    "closed"   - the attempt failed/was voided; close it (a later paid retry still settles).
+    "pending"  - 3-D Secure / authorisation still running; keep the row settleable.
+    "paid"     - activate.
+    """
+    if payment["status"] in ("paid", "refunded", "partially_refunded"):
+        return "done"
+    if payment["status"] != "payment_pending" and payment["provider_payment_id"] == provider_payment_id and provider_status != "paid":
+        return "same"
+    if provider_status == "paid":
+        if payment["amount"] != paid_amount or payment["currency"] != paid_currency:
+            return "mismatch"
+        return "paid"
+    if provider_status in PROVIDER_CLOSED:
+        return "closed"
+    return "pending"
 
 
 QUOTE_LINK = "{quote_link}"
@@ -343,9 +403,26 @@ class Store:
               provider_payment_id text,
               processed_at text not null
             );
+            create table if not exists login_attempts (
+              key text not null,
+              attempted_at text not null
+            );
+            create index if not exists login_attempts_key_idx on login_attempts(key, attempted_at);
+            create table if not exists idempotency_keys (
+              user_id text not null,
+              scope text not null,
+              key text not null,
+              fingerprint text not null,
+              response_json text,
+              created_at text not null,
+              primary key (user_id, scope, key)
+            );
             """
         )
         self._connection.commit()
+        self._ensure_column("payments", "provider_status", "text")
+        self._ensure_column("payments", "refunded_amount", "integer")
+        self._hash_legacy_sessions()
         self._ensure_column("requests", "reply_token", "text")
         self._ensure_column("requests", "last_synced_at", "text")
         self._ensure_column("messages", "seller_id", "text")
@@ -462,6 +539,14 @@ class Store:
         )
         self._connection.commit()
 
+    def _hash_legacy_sessions(self) -> None:
+        """Sessions issued before tokens were hashed keep working: store their digest instead."""
+        rows = self._connection.execute("select token from sessions where length(token) <> 64").fetchall()
+        for row in rows:
+            self._connection.execute("update sessions set token = ? where token = ?", (token_digest(row["token"]), row["token"]))
+        if rows:
+            self._connection.commit()
+
     def _ensure_column(self, table: str, column: str, declaration: str) -> None:
         names = {row[1] for row in self._connection.execute(f"pragma table_info({table})")}
         if column not in names:
@@ -483,13 +568,14 @@ class Store:
 
     def login(self, email: str, password: str) -> str | None:
         row = self._connection.execute("select * from users where email = ?", (email.lower().strip(),)).fetchone()
-        if row is None or _hash_password(password, row["salt"]) != row["password_hash"]:
+        if not password_matches(password, row):
             return None
         token = secrets.token_urlsafe(32)
         self._connection.execute(
             "insert into sessions (token, user_id, created_at) values (?, ?, ?)",
-            (token, row["id"], _now()),
+            (token_digest(token), row["id"], _now()),
         )
+        self._connection.execute("delete from sessions where user_id = ? and created_at < ?", (row["id"], session_cutoff().isoformat()))
         self._connection.commit()
         return token
 
@@ -500,18 +586,87 @@ class Store:
         token = self.login(email, password)
         return {"user_id": user_id, "token": token}
 
+    def _session_user(self, token: str) -> str | None:
+        if not token:
+            return None
+        keys = session_keys(token)
+        marks = ", ".join("?" for _ in keys)
+        row = self._connection.execute(f"select token, user_id, created_at from sessions where token in ({marks})", keys).fetchone()
+        if row is None:
+            return None
+        if row["created_at"] < session_cutoff().isoformat():
+            self._connection.execute("delete from sessions where token = ?", (row["token"],))
+            self._connection.commit()
+            return None
+        if row["token"] != keys[0]:
+            # A session from before tokens were hashed: keep only the digest from now on.
+            self._connection.execute("update sessions set token = ? where token = ?", (keys[0], row["token"]))
+            self._connection.commit()
+        return row["user_id"]
+
     def user_for_token(self, token: str) -> str | None:
-        row = self._connection.execute("select user_id from sessions where token = ?", (token,)).fetchone()
-        return None if row is None else row["user_id"]
+        return self._session_user(token)
 
     def account_for_token(self, token: str) -> dict | None:
-        row = self._connection.execute(
-            "select u.id, u.email, u.name from sessions s join users u on u.id = s.user_id where s.token = ?", (token,)
-        ).fetchone()
+        user_id = self._session_user(token)
+        if user_id is None:
+            return None
+        row = self._connection.execute("select id, email, name from users where id = ?", (user_id,)).fetchone()
         return None if row is None else dict(row)
 
     def logout(self, token: str) -> None:
-        self._connection.execute("delete from sessions where token = ?", (token,))
+        keys = session_keys(token)
+        marks = ", ".join("?" for _ in keys)
+        self._connection.execute(f"delete from sessions where token in ({marks})", keys)
+        self._connection.commit()
+
+    def login_failures(self, key: str, window_seconds: int) -> int:
+        since = (datetime.now(timezone.utc) - timedelta(seconds=window_seconds)).isoformat()
+        row = self._connection.execute("select count(*) as count from login_attempts where key = ? and attempted_at >= ?", (key, since)).fetchone()
+        return row["count"]
+
+    def record_login_failure(self, keys: list[str]) -> None:
+        now = _now()
+        self._connection.executemany("insert into login_attempts (key, attempted_at) values (?, ?)", [(key, now) for key in keys])
+        self._connection.execute("delete from login_attempts where attempted_at < ?", ((datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),))
+        self._connection.commit()
+
+    def clear_login_failures(self, key: str) -> None:
+        self._connection.execute("delete from login_attempts where key = ?", (key,))
+        self._connection.commit()
+
+    # -- idempotency ----------------------------------------------------------------
+
+    def reserve_idempotency(self, user_id: str, scope: str, key: str, fingerprint: str) -> dict | None:
+        """Claims (user, scope, key). Returns None when this call now owns the key, otherwise
+        the earlier claim {"fingerprint", "response"}; response is None while it is still running."""
+        try:
+            self._connection.execute(
+                "insert into idempotency_keys (user_id, scope, key, fingerprint, response_json, created_at) values (?, ?, ?, ?, null, ?)",
+                (user_id, scope, key, fingerprint, _now()),
+            )
+            self._connection.commit()
+            return None
+        except sqlite3.IntegrityError:
+            row = self._connection.execute(
+                "select fingerprint, response_json from idempotency_keys where user_id = ? and scope = ? and key = ?", (user_id, scope, key)
+            ).fetchone()
+            if row is None:
+                return self.reserve_idempotency(user_id, scope, key, fingerprint)
+            return {"fingerprint": row["fingerprint"], "response": None if row["response_json"] is None else json.loads(row["response_json"])}
+
+    def complete_idempotency(self, user_id: str, scope: str, key: str, response: dict) -> None:
+        self._connection.execute(
+            "update idempotency_keys set response_json = ? where user_id = ? and scope = ? and key = ?",
+            (json.dumps(response, ensure_ascii=False), user_id, scope, key),
+        )
+        self._connection.commit()
+
+    def release_idempotency(self, user_id: str, scope: str, key: str) -> None:
+        """A failed attempt gives its key back so the client can retry with it."""
+        self._connection.execute(
+            "delete from idempotency_keys where user_id = ? and scope = ? and key = ? and response_json is null", (user_id, scope, key)
+        )
         self._connection.commit()
 
     def record_journey(self, trace_id: str, user_id: str | None, query: str, state: str, trace: dict) -> None:
@@ -521,8 +676,14 @@ class Store:
         )
         self._connection.commit()
 
-    def journey(self, trace_id: str) -> dict | None:
-        row = self._connection.execute("select trace_json from search_journeys where trace_id = ?", (trace_id,)).fetchone()
+    def journey(self, trace_id: str, owner_user_id: str | None = None) -> dict | None:
+        """With an owner, only that account's own searches are found."""
+        if owner_user_id is None:
+            row = self._connection.execute("select trace_json from search_journeys where trace_id = ?", (trace_id,)).fetchone()
+        else:
+            row = self._connection.execute(
+                "select trace_json from search_journeys where trace_id = ? and user_id = ?", (trace_id, owner_user_id)
+            ).fetchone()
         return None if row is None else json.loads(row["trace_json"])
 
     def create_request(
@@ -1155,13 +1316,17 @@ class Store:
         row = self._connection.execute("select seller_name from request_recipients where request_id = ? and seller_id = ?", (request_id, seller_id)).fetchone()
         return None if row is None else row["seller_name"]
 
-    def add_push_subscription(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> None:
-        self._connection.execute(
+    def add_push_subscription(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> bool:
+        """A device endpoint stays with the account that registered it. Returns False, and
+        changes nothing, when another account already holds it."""
+        cur = self._connection.execute(
             "insert into push_subscriptions (endpoint, user_id, p256dh, auth, created_at) values (?, ?, ?, ?, ?)"
-            " on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth",
+            " on conflict (endpoint) do update set p256dh = excluded.p256dh, auth = excluded.auth"
+            " where push_subscriptions.user_id = excluded.user_id",
             (endpoint, user_id, p256dh, auth, _now()),
         )
         self._connection.commit()
+        return cur.rowcount > 0
 
     def remove_push_subscription(self, endpoint: str) -> None:
         self._connection.execute("delete from push_subscriptions where endpoint = ?", (endpoint,))
@@ -1299,6 +1464,8 @@ class Store:
             "status": row["status"],
             "subscription_id": row["subscription_id"],
             "plan": row["plan"],
+            "provider_status": row["provider_status"],
+            "refunded_amount": row["refunded_amount"],
             "created_at": row["created_at"],
         }
 
@@ -1325,8 +1492,14 @@ class Store:
             return False
 
     def settle_payment(self, payment_id: str, provider_payment_id: str, provider_status: str, paid_amount: int, paid_currency: str) -> dict:
-        """Idempotently reconcile a Moyasar-verified payment. Only ever moves a
-        payment out of 'payment_pending'; replaying the same event is a no-op.
+        """Idempotently reconcile a Moyasar-verified payment.
+
+        Only a final Moyasar state moves the row: "paid" activates, failed/voided close the
+        attempt. While 3-D Secure is still running ("initiated") the row stays
+        'payment_pending' with the provider status kept alongside, so the webhook or the
+        callback page can settle it once Moyasar says paid. A paid row is never applied
+        twice, and a failed attempt can still be settled by a later paid retry of the same
+        checkout (Moyasar's form retries with the same metadata).
 
         Holds a process-wide lock for the duration of the read-check-write so
         a concurrent verify call and webhook delivery for the same payment
@@ -1339,32 +1512,40 @@ class Store:
             payment = self.get_payment(payment_id)
             if payment is None:
                 return {"ok": False, "reason": "payment_not_found"}
-            if payment["status"] != "payment_pending":
+            decision = settle_decision(payment, provider_payment_id, provider_status, paid_amount, paid_currency)
+            if decision in ("done", "same"):
                 # Already settled by an earlier callback/webhook - idempotent no-op.
-                return {"ok": True, "already_processed": True, "status": payment["status"], "subscription": self.get_latest_subscription(payment["user_id"])}
-            if payment["amount"] != paid_amount or payment["currency"] != paid_currency:
+                return {"ok": True, "already_processed": True, "status": payment["status"], "activated": False, "subscription": self.get_latest_subscription(payment["user_id"])}
+            if decision == "mismatch":
                 self._connection.execute(
-                    "update payments set status = 'failed', provider_payment_id = ? where id = ?",
-                    (provider_payment_id, payment_id),
+                    "update payments set status = 'failed', provider_payment_id = ?, provider_status = ? where id = ?",
+                    (provider_payment_id, provider_status, payment_id),
                 )
                 self._connection.commit()
-                return {"ok": True, "already_processed": False, "status": "failed", "reason": "amount_mismatch"}
-            if provider_status != "paid":
+                return {"ok": True, "already_processed": False, "status": "failed", "activated": False, "reason": "amount_mismatch"}
+            if decision == "closed":
                 self._connection.execute(
-                    "update payments set status = ?, provider_payment_id = ? where id = ?",
-                    (provider_status, provider_payment_id, payment_id),
+                    "update payments set status = ?, provider_payment_id = ?, provider_status = ? where id = ?",
+                    (provider_status, provider_payment_id, provider_status, payment_id),
                 )
                 self._connection.commit()
                 return {"ok": True, "already_processed": False, "status": provider_status, "activated": False}
+            if decision == "pending":
+                self._connection.execute(
+                    "update payments set status = 'payment_pending', provider_payment_id = ?, provider_status = ? where id = ?",
+                    (provider_payment_id, provider_status, payment_id),
+                )
+                self._connection.commit()
+                return {"ok": True, "already_processed": False, "status": "payment_pending", "provider_status": provider_status, "pending": True, "activated": False}
 
             plan = self.get_plan(payment["plan"])
             if plan is None:
                 self._connection.execute(
-                    "update payments set status = 'failed', provider_payment_id = ? where id = ?",
-                    (provider_payment_id, payment_id),
+                    "update payments set status = 'failed', provider_payment_id = ?, provider_status = ? where id = ?",
+                    (provider_payment_id, provider_status, payment_id),
                 )
                 self._connection.commit()
-                return {"ok": True, "already_processed": False, "status": "failed", "reason": "unknown_plan"}
+                return {"ok": True, "already_processed": False, "status": "failed", "activated": False, "reason": "unknown_plan"}
 
             now_iso = _now()
             latest = self.get_latest_subscription(payment["user_id"])
@@ -1388,8 +1569,8 @@ class Store:
                     (subscription_id, payment["user_id"], plan["code"], now_iso, expires_at, now_iso, now_iso),
                 )
             self._connection.execute(
-                "update payments set status = 'paid', provider_payment_id = ?, subscription_id = ? where id = ?",
-                (provider_payment_id, subscription_id, payment_id),
+                "update payments set status = 'paid', provider_payment_id = ?, provider_status = ?, subscription_id = ? where id = ?",
+                (provider_payment_id, provider_status, subscription_id, payment_id),
             )
             self._connection.commit()
             return {
@@ -1400,26 +1581,54 @@ class Store:
                 "subscription": self.get_latest_subscription(payment["user_id"]),
             }
 
-    def refund_payment(self, payment_id: str, provider_payment_id: str) -> dict:
-        """A refund can arrive before a pending payment ever settled, or
-        after it already activated a subscription - handle both so a
-        refunded charge never grants or keeps entitlement. Idempotent:
-        replaying a refund event for an already-refunded payment is a no-op.
+    def refund_payment(self, payment_id: str, provider_payment_id: str, refunded_amount: int | None = None) -> dict:
+        """A refund can arrive before a pending payment ever settled, or after it
+        already activated a subscription.
+
+        A full refund takes back exactly the term that payment bought: the
+        subscription's expiry moves back by the plan's duration, and it is cancelled
+        only when nothing paid is left (a refunded renewal keeps the earlier term). A
+        partial refund is recorded on the payment and leaves the entitlement alone.
+        Before settlement any refund means the payment never grants anything.
+        Idempotent: replaying a refund for an already-refunded payment is a no-op.
         """
         with self._settlement_lock:
             payment = self.get_payment(payment_id)
             if payment is None:
                 return {"ok": False, "reason": "payment_not_found"}
             if payment["status"] == "refunded":
-                return {"ok": True, "already_processed": True, "status": "refunded", "subscription": self.get_latest_subscription(payment["user_id"])}
-            if payment["subscription_id"]:
+                return {"ok": True, "already_processed": True, "status": "refunded", "activated": False, "subscription": self.get_latest_subscription(payment["user_id"])}
+            amount = payment["amount"] if refunded_amount is None else refunded_amount
+            settled = payment["status"] in ("paid", "partially_refunded") and payment["subscription_id"]
+            if settled and amount < payment["amount"]:
+                if payment["status"] == "partially_refunded" and (payment["refunded_amount"] or 0) >= amount:
+                    return {"ok": True, "already_processed": True, "status": "partially_refunded", "activated": False, "subscription": self.get_latest_subscription(payment["user_id"])}
                 self._connection.execute(
-                    "update subscriptions set status = 'cancelled', updated_at = ? where id = ? and status = 'active'",
-                    (_now(), payment["subscription_id"]),
+                    "update payments set status = 'partially_refunded', refunded_amount = ?, provider_payment_id = ? where id = ?",
+                    (amount, provider_payment_id, payment_id),
                 )
+                self._connection.commit()
+                return {"ok": True, "already_processed": False, "status": "partially_refunded", "activated": False, "subscription": self.get_latest_subscription(payment["user_id"])}
+            if settled:
+                sub = self._connection.execute("select * from subscriptions where id = ?", (payment["subscription_id"],)).fetchone()
+                plan = self.get_plan(payment["plan"])
+                if sub is not None and sub["status"] == "active":
+                    now = datetime.now(timezone.utc)
+                    expires = datetime.fromisoformat(sub["expires_at"]) if sub["expires_at"] else now
+                    remaining = expires - timedelta(days=plan["duration_days"] if plan else 0)
+                    if plan is None or remaining <= now:
+                        self._connection.execute(
+                            "update subscriptions set status = 'cancelled', updated_at = ? where id = ?",
+                            (_now(), payment["subscription_id"]),
+                        )
+                    else:
+                        self._connection.execute(
+                            "update subscriptions set expires_at = ?, updated_at = ? where id = ?",
+                            (remaining.isoformat(), _now(), payment["subscription_id"]),
+                        )
             self._connection.execute(
-                "update payments set status = 'refunded', provider_payment_id = ? where id = ?",
-                (provider_payment_id, payment_id),
+                "update payments set status = 'refunded', refunded_amount = ?, provider_payment_id = ? where id = ?",
+                (amount, provider_payment_id, payment_id),
             )
             self._connection.commit()
             return {

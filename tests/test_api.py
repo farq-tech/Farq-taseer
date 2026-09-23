@@ -90,13 +90,15 @@ def test_empty_recipient_is_rejected(tmp_path: Path):
 def test_search_trace_is_stored(tmp_path: Path):
     api = client(tmp_path)
     token = api.post("/v1/auth/register", json={"email": "b@example.com", "password": "secret-pass", "name": "عميل"}).json()["token"]
-    search = api.post("/v1/search", json={"query": "أبي نجار"})
+    search = api.post("/v1/search", json={"query": "أبي نجار"}, headers={"Authorization": f"Bearer {token}"})
     assert search.status_code == 200
     assert search.json()["state"] == "CLARIFICATION_REQUIRED"
     trace_id = search.json()["trace_id"]
     trace = api.get(f"/v1/search/{trace_id}/trace", headers={"Authorization": f"Bearer {token}"})
     assert trace.status_code == 200
     assert trace.json()["state"] == "CLARIFICATION_REQUIRED"
+    # Only the account that searched can read the trace.
+    assert api.get(f"/v1/search/{trace_id}/trace", headers=signed_in(api)).status_code == 404
 
 
 def test_guest_request_seller_price_and_activity(tmp_path: Path):
@@ -432,7 +434,7 @@ def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):
         json={"original_text": "سباك", "need": "سباك", "city": "الرياض", "recipients": [{"seller_id": "11", "seller_name": "محمد"}]},
     ).json()
     assert api.get("/v1/push/key").json() == {"public_key": "pub"}
-    subscription = {"endpoint": "https://push.example/abc", "keys": {"p256dh": "k", "auth": "a"}}
+    subscription = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "k", "auth": "a"}}
     assert api.post("/v1/push/subscribe", headers=headers, json=subscription).json() == {"subscribed": True}
     assert api.post("/v1/push/subscribe", headers=headers, json={**subscription, "endpoint": "http://x"}).status_code == 422
 
@@ -442,7 +444,7 @@ def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):
     assert listed["unread_count"] == 1
     # The supplier's reply reached the customer's phone, titled with his name.
     assert len(sent) == 1
-    assert sent[0]["subscription_info"]["endpoint"] == "https://push.example/abc"
+    assert sent[0]["subscription_info"]["endpoint"] == "https://fcm.googleapis.com/fcm/send/abc"
     assert '"title": "محمد"' in sent[0]["data"] and f"/?r={created['id']}" in sent[0]["data"]
 
     api.get(f"/v1/requests/{created['id']}", headers=headers)  # opening the chat reads it
@@ -457,7 +459,11 @@ def test_every_customer_signs_in_and_sees_only_their_requests(tmp_path: Path):
     assert api.post("/v1/auth/register", json={"email": "s@example.com", "password": "secret-pass"}).status_code == 422
     first = api.post("/v1/auth/register", json={"email": "S@Example.com", "password": "secret-pass", "name": "سعد"})
     assert first.status_code == 200 and first.json()["name"] == "سعد"
-    assert api.post("/v1/auth/register", json={"email": "s@example.com", "password": "secret-pass", "name": "سعد"}).status_code == 409
+    # An existing email is not confirmed to strangers; its owner (right password) is just signed in.
+    taken = api.post("/v1/auth/register", json={"email": "s@example.com", "password": "other-pass", "name": "سعد"})
+    assert taken.status_code == 409 and "already" not in taken.json()["detail"]
+    again = api.post("/v1/auth/register", json={"email": "s@example.com", "password": "secret-pass", "name": "سعد"})
+    assert again.status_code == 200 and again.json()["token"]
     assert api.post("/v1/auth/login", json={"email": "s@example.com", "password": "wrong-pass"}).status_code == 401
     login = api.post("/v1/auth/login", json={"email": "s@example.com", "password": "secret-pass"}).json()
     saad = {"Authorization": f"Bearer {login['token']}"}
