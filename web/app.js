@@ -932,7 +932,7 @@ function capSheet() {
         <p class="fq-lead">التجربة المجانية تسمح لك بإرسال طلب التسعير إلى ${formatCount(TRIAL_SELLERS)} موردين كحد أقصى لكل بند لمقارنة أفضل الأسعار.</p></div>
       <div class="fq-actions">
         <button class="fq-btn" type="button" data-action="close-cap">متابعة بـ ${formatCount(TRIAL_SELLERS)} موردين</button>
-        <button class="fq-btn ghost" type="button" data-action="show-plans">عرض الباقات المدفوعة</button>
+        <button class="fq-btn ghost" type="button" data-action="show-plans">عرض الباقات</button>
       </div>
     </div>
   </div>`;
@@ -1758,14 +1758,14 @@ function renderNotifySettings() {
 
 // N02_PushPermission — node 85:101. A modal over whatever screen asked for it.
 function pushPrompt() {
-  return `<div class="fq-scrim" style="align-items:center" data-action="dismiss-notify">
-    <div class="fq-sheet" style="border-radius:var(--fq-r-sheet);max-width:326px;margin:0 24px;text-align:center;align-items:center;padding:24px">
-      <span class="fq-blob" style="width:64px;height:64px">${ic("bell", 28)}</span>
+  return `<div class="fq-scrim deep" data-action="dismiss-notify">
+    <div class="fq-prompt">
+      <span class="fq-bell">${ic("bell", 28)}</span>
       <h2>تبغى نبلغك أول ما توصلك عروض؟</h2>
       <p class="fq-lead">نرسل لك تنبيه فوري عند وصول رسائل جديدة أو عروض أسعار منافسة على طلباتك.</p>
-      <div class="fq-actions" style="width:100%">
-        <button class="fq-btn" type="button" data-action="enable-notify">تفعيل التنبيهات</button>
-        <button class="fq-btn quiet" type="button" data-action="dismiss-notify">لاحقًا</button>
+      <div class="fq-actions" style="width:100%;gap:12px">
+        <button class="fq-btn success r14" type="button" data-action="enable-notify">تفعيل التنبيهات</button>
+        <button class="fq-btn soft r14" type="button" data-action="dismiss-notify">لاحقًا</button>
       </div>
     </div>
   </div>`;
@@ -1820,12 +1820,13 @@ function planCard(plan, { popular = false } = {}) {
 
 function usageCard({ title, badge, badgeTone = "ok", price, per, used, limit, foot, warn = false }) {
   const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const hot = badgeTone === "danger";
   return `<div class="fq-plan">
     <div class="fq-row"><span class="fq-tag ${badgeTone}">${esc(badge)}</span><span class="name">${esc(title)}</span></div>
     <div class="fq-row"><span></span><span><span class="amount">${esc(price)}</span> <span class="per">${esc(per)}</span></span></div>
     <div class="fq-usage">
-      <div class="fq-row"><span class="fq-small" style="font-weight:700;color:var(--fq-success)">${formatCount(used)} من ${formatCount(limit)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
-      <div class="fq-track${warn ? " warn" : ""}"><span style="width:${pct}%"></span></div>
+      <div class="fq-row"><span class="fq-small${hot ? " hot" : ""}" style="font-weight:700;${hot ? "" : "color:var(--fq-success)"}">${formatCount(used)} من ${formatCount(limit)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
+      <div class="fq-track${hot ? " danger" : warn ? " warn" : ""}"><span style="width:${pct}%"></span></div>
       <p class="fq-meta" style="margin:0">${esc(foot)}</p>
     </div>
   </div>`;
@@ -1839,22 +1840,22 @@ function renderSubscribe() {
   // SUB04_PaymentProcessing — node 60:161.
   if (view === "paying") {
     return `<section class="fq-body center">
-      <div class="fq-ring spin" style="--p:35%"><span>${ic("credit-card", 24)}</span></div>
-      <div><h1 class="fq-h1">جاري تفعيل اشتراكك...</h1><p class="fq-lead">لا تغلق الصفحة، نجهز لك تجربة البحث الآن.</p></div>
+      <div class="fq-spinner" aria-hidden="true"></div>
+      <div><h1 class="fq-h2">جاري تفعيل اشتراكك...</h1><p class="fq-lead">لا تغلق الصفحة، نجهز لك تجربة البحث الآن.</p></div>
     </section>`;
   }
 
   // SUB05_PaymentSuccess / FT11_SubscriptionActivated — nodes 60:179 and 64:1114.
   if (view === "paid") {
     return `${fqHead({ title: "تم التفعيل", mark: true })}
-    <section class="fq-body center">
-      <div class="fq-blob land">${ic("check", 56)}</div>
+    <section class="fq-body center on-mint" style="padding-top:60px">
+      <div class="fq-squircle land">${ic("check", 56)}</div>
       <div><h1 class="fq-h1">تم تفعيل اشتراكك</h1>
         <p class="fq-lead">باقة: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p>
-        <span class="fq-tag ok" style="font-size:13px">نشط الآن</span></div>
+        <span class="fq-statepill">نشط الآن</span></div>
       <div class="fq-actions" style="width:100%;margin-top:auto">
-        ${state.resumeAfterPay ? `<button class="fq-btn" type="button" data-action="resume-request">إكمال إرسال الطلب</button>` : ""}
-        <button class="fq-btn${state.resumeAfterPay ? " ghost" : ""}" type="button" data-action="my-plan">تم</button>
+        <button class="fq-btn r14" type="button" data-action="resume-request">إكمال إرسال الطلب</button>
+        <button class="fq-btn mint r14" type="button" data-action="my-plan">تم</button>
       </div>
     </section>`;
   }
@@ -1862,13 +1863,14 @@ function renderSubscribe() {
   // SUB06_PaymentFailed — node 60:214.
   if (view === "failed") {
     return `${fqHead({ title: "تعذر الدفع", mark: true })}
-    <section class="fq-body center">
-      <div class="fq-blob warn">${ic("alert-triangle", 48)}</div>
-      <div><h1 class="fq-h1">تعذر إكمال الدفع</h1>
+    <section class="fq-body center" style="padding-top:48px">
+      <div class="fq-squircle danger">${ic("alert-triangle", 56)}</div>
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 class="fq-h1">تعذر إكمال الدفع</h1>
         <p class="fq-lead">${esc(state.subError || "لم يتم خصم قيمة الاشتراك. يرجى مراجعة تفاصيل حسابك أو المحاولة مرة أخرى.")}</p></div>
-      <div class="fq-actions" style="width:100%;margin-top:auto">
-        <button class="fq-btn" type="button" data-action="retry-payment">إعادة المحاولة</button>
-        <button class="fq-btn ghost" type="button" data-action="my-plan">رجوع</button>
+      <div class="fq-actions" style="width:100%;margin-top:auto;gap:12px">
+        <button class="fq-btn r14" type="button" data-action="retry-payment">إعادة المحاولة</button>
+        <button class="fq-btn danger-soft r14" type="button" data-action="my-plan">رجوع</button>
       </div>
     </section>`;
   }
@@ -1876,13 +1878,14 @@ function renderSubscribe() {
   // SUB12_ResumeRequest / FT12 — nodes 62:278 and 64:1148.
   if (view === "resume") {
     return `${fqHead({ title: "تأكيد التفعيل", mark: true })}
-    <section class="fq-body center">
-      <div class="fq-blob">${ic("check", 56)}</div>
-      <div><h1 class="fq-h1">تم تفعيل اشتراكك بنجاح!</h1>
+    <section class="fq-body center" style="padding-top:48px">
+      <div class="fq-squircle mint land">${ic("check", 56)}</div>
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <h1 class="fq-h1">تم تفعيل اشتراكك بنجاح!</h1>
         <p class="fq-lead">الباقة الحالية: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p></div>
-      <div class="fq-card pad" style="width:100%;align-items:center;text-align:center">
-        <div class="fq-ring spin" style="width:48px;height:48px;--p:40%"><span style="width:36px;height:36px"></span></div>
-        <p class="fq-small" style="font-weight:600">جاري إكمال إرسال طلبك تلقائياً...</p>
+      <div class="fq-card pad" style="width:100%;align-items:center;text-align:center;gap:10px">
+        <span class="fq-arc" aria-hidden="true"></span>
+        <p class="fq-small" style="font-weight:700;color:var(--fq-text)">جاري إكمال إرسال طلبك تلقائياً...</p>
         <p class="fq-meta">يتم الآن إرسال طلب التسعير إلى الموردين المحددين مسبقاً.</p>
       </div>
     </section>`;
@@ -1893,40 +1896,91 @@ function renderSubscribe() {
     const exhausted = trialUsed() >= TRIAL_ITEMS;
     return `${fqHead({ title: exhausted ? "اشترك للمتابعة" : "اشترك معنا", back: "back-gate", mark: true })}
     <section class="fq-body">
-      <div class="fq-hero"><span class="halo" aria-hidden="true"></span>
-        <h1 style="font-size:22px">${exhausted ? "أكملت التجربة المجانية!" : "باقي خطوة وحدة بس!"}</h1>
-        <p>${exhausted ? "اختر الباقة المناسبة لمواصلة استخدام فرق وإرسال طلباتك مباشرة." : "اختر الباقة المناسبة، وبعد التفعيل نكمل إرسال طلبك مباشرة للموردين المحددين."}</p></div>
-      <div class="fq-feats">
+      <div class="fq-card pad grey">
+        <h1 class="fq-h2" style="font-size:22px">${exhausted ? "أكملت التجربة المجانية!" : "باقي خطوة وحدة بس!"}</h1>
+        <p class="fq-lead">${exhausted ? "اختر الباقة المناسبة لمواصلة استخدام فرق وإرسال طلباتك مباشرة." : "اختر الباقة المناسبة، وبعد التفعيل نكمل إرسال طلبك مباشرة للموردين المحددين."}</p></div>
+      <div class="fq-feats" style="gap:16px">
         ${["طلبك ومواصفاته محفوظة بالكامل", "الموردون الذين اخترتهم محفوظون", "لن تحتاج تبدأ كتابة طلبك من جديد"]
-          .map((line) => `<span class="fq-feat"><span class="fq-tag ok" style="border-radius:50%;width:24px;height:24px;justify-content:center">✓</span>${esc(line)}</span>`)
+          .map((line) => `<span class="fq-feat"><span class="fq-tick-round">${ic("check", 14)}</span>${esc(line)}</span>`)
           .join("")}
       </div>
-      <div class="fq-actions" style="margin-top:auto">
-        <button class="fq-btn" type="button" data-action="show-plans">عرض الباقات</button>
-        <button class="fq-btn ghost" type="button" data-action="back-gate">ليس الآن</button>
+      <div class="fq-actions" style="margin-top:auto;gap:12px">
+        <button class="fq-btn r14" type="button" data-action="show-plans">عرض الباقات</button>
+        <button class="fq-btn ghost r14" type="button" data-action="back-gate">ليس الآن</button>
       </div>
     </section>`;
   }
 
   // SUB09_LimitReached / FT07_TrialExhausted — nodes 62:134 and 64:919.
-  if (view === "limit") {
-    const trial = !isSubscribed();
-    return `${fqHead({ title: trial ? "انتهت التجربة" : "تجاوزت الحد المسموح", back: "back-gate", mark: true })}
-    <section class="fq-body center">
-      <div class="fq-blob warn">${ic("alert-triangle", 48)}</div>
-      <div><h1 class="fq-h1">${trial ? "استخدمت التجربة المجانية" : "عذرًا، استهلكت كامل رصيد البنود"}</h1>
+  // FT07_TrialExhausted — node 64:919
+  if (view === "limit" && !isSubscribed()) {
+    return `${fqHead({ title: "انتهت التجربة", mark: true })}
+    <section class="fq-body center" style="padding-top:48px">
+      <div class="fq-squircle warn">${ic("alert-triangle", 56)}</div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <h1 class="fq-h1">استخدمت التجربة المجانية</h1>
         <p class="fq-lead">${formatCount(TRIAL_ITEMS)} من ${formatCount(TRIAL_ITEMS)} بند</p>
-        <span class="fq-tag deep" style="font-size:13px">طلبك الأخير محفوظ ولن يضيع</span></div>
-      <div class="fq-actions" style="width:100%;margin-top:auto">
-        <button class="fq-btn" type="button" data-action="show-plans">عرض الباقات</button>
-        <button class="fq-btn ghost" type="button" data-action="back-gate">رجوع</button>
+        <span class="fq-tag deep" style="font-size:13px;padding:8px 14px;border-radius:999px">طلبك الأخير محفوظ ولن يضيع</span></div>
+      <div class="fq-actions" style="width:100%;margin-top:auto;gap:12px">
+        <button class="fq-btn r14" type="button" data-action="show-plans">عرض الباقات</button>
+        <button class="fq-btn soft r14" type="button" data-action="back-gate">رجوع</button>
+      </div>
+    </section>`;
+  }
+  // SUB09_LimitReached — node 62:134
+  if (view === "limit") {
+    const planCode = state.subStatus?.subscription?.plan || "";
+    const paid = plans.find((item) => item.code === planCode);
+    const cap = Number(paid?.features_limit || 250);
+    return `${fqHead({ title: "تجاوزت الحد المسموح", back: "back-gate", mark: true })}
+    <section class="fq-body tight">
+      <div class="fq-alert">عذرًا، لقد استهلكت كامل رصيد البنود المتاحة لباقة «${esc(planName(planCode))}».</div>
+      <div class="fq-plan">
+        <div class="fq-row"><span class="fq-tag danger">مكتمل / منتهي</span><span class="name">باقة: ${esc(planName(planCode))}</span></div>
+        <div class="fq-usage">
+          <div class="fq-row"><span class="fq-small hot">${formatCount(cap)} من ${formatCount(cap)} بند</span><span class="fq-meta">البنود المستخدمة</span></div>
+          <div class="fq-track danger"><span style="width:100%"></span></div>
+          <p class="fq-meta" style="margin:0">استخدمت ${formatCount(cap)} من ${formatCount(cap)} بند. رقّ باقتك للاستمرار.</p>
+        </div>
+      </div>
+      <div class="fq-actions" style="margin-top:auto;gap:12px">
+        <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الباقة الآن</button>
+        <button class="fq-btn ghost r14" type="button" data-action="back-gate">رجوع للطلب</button>
+      </div>
+    </section>`;
+  }
+
+  // SUB10_UpgradePlan — node 62:179: the plan you are on, an arrow, the plan you would move to.
+  if (view === "upgrade") {
+    const current = plans.find((item) => item.code === state.subStatus?.subscription?.plan);
+    const target = plans.find((item) => item.code !== current?.code) || plans[0];
+    return `${fqHead({ title: "ترقية الباقة", back: "my-plan", mark: true })}
+    <section class="fq-body tight">
+      <h1 class="fq-h2">اختر الترقية المناسبة</h1>
+      <div class="fq-current-strip">
+        <span class="fq-meta">${current ? `${formatCount(Number(current.features_limit || 250))} بند شهريًا` : "التجربة المجانية"}</span>
+        <strong style="font-size:15px">الباقة الحالية: ${esc(current ? planName(current.code) : "التجربة المجانية")}</strong>
+      </div>
+      <div class="fq-arrow-down">${ic("arrow-down", 18)}</div>
+      ${target
+        ? `<article class="fq-plan target">
+            <div class="fq-row"><span class="badge">الترقية الموصى بها</span><span class="name">${esc(target.name_ar)}</span></div>
+            <div class="fq-row"><span></span><span><span class="amount">${esc(money(target.price_amount / 100))}</span> <span class="per">/ ${esc(planPeriod(target.duration_days))}</span></span></div>
+            ${target.description_ar ? `<p class="desc">${esc(target.description_ar)}</p>` : ""}
+            <hr class="fq-line">
+            <div class="fq-feats">${(target.features || []).map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>
+          </article>`
+        : `<p class="fq-lead">لا توجد باقة أعلى متاحة حالياً.</p>`}
+      <div class="fq-actions" style="margin-top:auto;gap:12px">
+        <button class="fq-btn r14" type="button" data-action="choose-plan" data-plan="${esc(target?.code || "")}" ${target ? "" : "disabled"}>متابعة للترقية</button>
+        <button class="fq-btn ghost r14" type="button" data-action="my-plan">إلغاء</button>
       </div>
     </section>`;
   }
 
   // SUB02_Plans / FT09_PlansWithTrial — nodes 60:54 and 64:1001.
-  if (view === "plans" || view === "upgrade") {
-    const upgrade = view === "upgrade";
+  if (view === "plans") {
+    const upgrade = false;
     return `${fqHead({ title: upgrade ? "ترقية الباقة" : "حسابي", back: "my-plan", mark: true })}
     <section class="fq-body tight">
       <div><h1 class="fq-h1">${upgrade ? "اختر الترقية المناسبة" : "اختر اللي يناسب استخدامك"}</h1>
@@ -1973,8 +2027,9 @@ function renderSubscribe() {
   const limit = subscribed ? Number(plan?.features_limit || 250) : TRIAL_ITEMS;
   const left = Math.max(0, limit - used);
   const near = left <= Math.max(2, Math.round(limit * 0.2));
+  const critical = left <= 2;
   const banner = near
-    ? `<div class="fq-banner">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${formatCount(left)} بند ${subscribed ? "هذا الشهر" : "في التجربة المجانية"}.</span>
+    ? `<div class="fq-banner${critical ? " danger" : ""}">${ic("alert-triangle", 16)}<span style="flex:1">باقي لك ${formatCount(left)} بند ${subscribed ? "هذا الشهر" : "في التجربة المجانية"}.</span>
         <button type="button" data-action="${subscribed ? "upgrade" : "show-plans"}">${subscribed ? "ترقية الآن" : "عرض الباقات"}</button></div>`
     : "";
   return `${fqHead({ title: "حسابي", mark: true, end: `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>` })}
@@ -1982,7 +2037,7 @@ function renderSubscribe() {
   <section class="fq-body tight">
     ${subscribed
       ? usageCard({ title: `الباقة الحالية: ${planName(state.subStatus?.subscription?.plan || "")}`, badge: near ? "قارب على الانتهاء" : "نشطة", badgeTone: near ? "warn" : "ok", price: plan ? money(plan.price_amount / 100) : "", per: "/ شهريًا", used, limit, foot: near ? `المتبقي ${formatCount(left)} بند فقط لتفادي توقف الخدمة` : `المتبقي ${formatCount(left)} بند هذا الشهر`, warn: near })
-      : usageCard({ title: "التجربة المجانية", badge: near ? "شارفت على الانتهاء" : "مفعلة", badgeTone: near ? "warn" : "ok", price: "0 ر.س", per: "/ ابدأ بدون بطاقة", used, limit, foot: `المتبقي ${formatCount(left)} بند`, warn: near })}
+      : usageCard({ title: "التجربة المجانية", badge: near ? "شارفت على الانتهاء" : "مفعلة", badgeTone: critical ? "danger" : near ? "warn" : "ok", price: "0 ر.س", per: "/ ابدأ بدون بطاقة", used, limit, foot: `المتبقي ${formatCount(left)} بند`, warn: near })}
     ${subscribed
       ? `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
           <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>

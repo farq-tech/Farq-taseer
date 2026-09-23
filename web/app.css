@@ -1882,3 +1882,42 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-setting .meta strong { font-size: 15px; font-weight: 600; }
 .fq-setting .meta .fq-meta { font-size: 12px; line-height: 1.5; }
 .fq-setting .fq-switch { flex: none; }
+
+/* ---------- from the parallel design review: red states, squircles, spinners ---------- */
+:root { --fq-danger: #d85050; --fq-danger-bg: #fef0ee; --fq-danger-soft: #feeeed; --fq-amber: #f59e0b; --fq-cream: #fff7ed; }
+.fq-squircle { width: 120px; height: 120px; border-radius: 34px; background: #fbfdfc; box-shadow: 0 10px 24px rgba(4, 52, 52, 0.1); display: grid; place-items: center; color: var(--fq-success); margin-inline: auto; }
+.fq-squircle.warn { background: var(--fq-cream); color: var(--fq-amber); }
+.fq-squircle.danger { background: var(--fq-danger-bg); color: var(--fq-danger); }
+.fq-squircle.mint { background: var(--fq-mint); color: var(--fq-deep-green); }
+.fq-squircle svg { width: 56px; height: 56px; stroke-width: 2.5; }
+.fq-spinner { width: 78px; height: 78px; border-radius: 50%; background: #fff; box-shadow: 0 8px 20px rgba(4, 52, 52, 0.08); position: relative; margin-inline: auto; }
+.fq-spinner::after { content: ""; position: absolute; inset: 22px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--fq-success); border-right-color: var(--fq-success); animation: fq-spin 900ms linear infinite; }
+.fq-arc { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--fq-deep-green); border-right-color: var(--fq-deep-green); animation: fq-spin 900ms linear infinite; }
+.fq-statepill { display: inline-flex; padding: 6px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--fq-line); font-size: 13px; font-weight: 700; color: var(--fq-deep-green); }
+.fq-btn.r14 { border-radius: var(--fq-r-input); }
+.fq-btn.soft { background: #f6f8f7; color: var(--fq-deep-green); box-shadow: none; border: 0; }
+.fq-btn.danger-soft { background: var(--fq-danger-soft); color: #a33a30; box-shadow: none; border: 0; }
+.fq-body.on-mint { background: #e3f4ed; }
+/* a warning that is a failure, not a caution */
+.fq-alert { border-radius: var(--fq-r-input); border: 1px solid var(--fq-danger); background: #fdf1f0; color: #a33a30; padding: 14px 16px; font-size: 14px; line-height: 1.6; text-align: center; }
+.fq-banner.danger { background: var(--fq-app-bg); border-top: 1px solid var(--fq-danger); border-bottom: 1px solid var(--fq-danger); color: var(--fq-danger); }
+.fq-banner.danger button { color: var(--fq-danger); }
+.fq-tag.danger { background: #fff; border: 1px solid var(--fq-danger); color: var(--fq-danger); }
+.fq-track.danger > span { background: var(--fq-danger); }
+.fq-usage .hot { color: var(--fq-danger); font-weight: 700; }
+/* the plan being stepped up to */
+.fq-plan.target { border: 2px solid var(--fq-deep-green); }
+.fq-plan.target .badge { background: var(--fq-deep-green); color: #fff; }
+.fq-current-strip { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fbfcfc; border: 1px solid var(--fq-line); border-radius: var(--fq-r-input); padding: 14px 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); direction: ltr; }
+.fq-current-strip > * { direction: rtl; }
+.fq-arrow-down { display: grid; place-items: center; color: var(--fq-muted); }
+/* N02: the prompt sits over a deep wash of the brand, not a grey veil */
+.fq-scrim.deep { background: rgba(4, 52, 48, 0.9); align-items: center; }
+.fq-prompt { width: min(340px, calc(100% - 48px)); background: var(--fq-surface); border-radius: var(--fq-r-sheet); padding: 24px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; text-align: start; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.25); animation: fq-rise 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fq-prompt h2 { margin: 0; font-size: 19px; font-weight: 800; color: var(--fq-text); }
+.fq-bell { width: 64px; height: 64px; border-radius: 50%; background: var(--fq-soft); color: var(--fq-success); display: grid; place-items: center; }
+/* the tick sits at the right edge of the line it belongs to */
+.fq-feat { direction: rtl; }
+.fq-card.grey { background: #f0f2f1; border-color: #e4e8e6; box-shadow: none; }
+.fq-tick-round { width: 24px; height: 24px; border-radius: 50%; background: var(--fq-soft); color: var(--fq-success); display: grid; place-items: center; flex: none; }
+.fq-tick-round svg { stroke-width: 3; }
