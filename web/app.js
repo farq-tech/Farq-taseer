@@ -3161,8 +3161,19 @@ document.addEventListener("click", (event) => {
 // pass in well under a tenth of a second against a local server, so they cannot otherwise
 // be photographed and put beside their frames. Nothing a customer can reach touches this.
 window.addEventListener("farq:sub", (event) => {
+  // detail is either the state's name, or { view, used, subscribed } so a review can also
+  // stand at a particular point in the month's allowance.
+  const detail = event.detail;
+  const options = typeof detail === "string" ? { view: detail } : detail || {};
   state.view = "subscribe";
-  state.subView = String(event.detail || "my-plan");
+  state.subView = String(options.view || "my-plan");
+  if (options.used != null) state.usage = { items_used: Number(options.used) };
+  if (options.subscribed) {
+    const plan = state.subPlans[0];
+    state.subStatus = { status: "active", subscription: { plan: plan?.code || "", expires_at: null } };
+  } else if (options.subscribed === false) {
+    state.subStatus = { status: "none" };
+  }
   if (!state.subActivePlan && state.subPlans.length) state.subActivePlan = state.subPlans[0].code;
   render();
 });
