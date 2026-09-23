@@ -1369,7 +1369,7 @@ button.fq-card { cursor: pointer; }
 .fq-track.warn > span { background: var(--fq-warning); }
 .fq-steps { display: flex; flex-direction: column; gap: 12px; }
 .fq-step { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--fq-text-2); }
-.fq-step .mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--fq-line); display: grid; place-items: center; flex: none; }
+.fq-step .mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--fq-line); background: none; color: var(--fq-muted); display: grid; place-items: center; flex: none; font-size: 0; }
 .fq-step.done { color: var(--fq-text); font-weight: 600; }
 .fq-step.done .mark { background: var(--fq-success); border-color: var(--fq-success); color: #fff; }
 .fq-step.now .mark { border-color: var(--fq-success); }
@@ -1492,10 +1492,10 @@ button.fq-card { cursor: pointer; }
 .fq-note .when { font-size: 11px; color: var(--fq-muted); flex: none; display: flex; align-items: center; gap: 6px; }
 .fq-note .unread { width: 8px; height: 8px; border-radius: 50%; background: var(--fq-success); }
 .fq-sec-title { font-size: 15px; font-weight: 800; color: var(--fq-text); margin: 0; }
-.fq-switch { width: 44px; height: 24px; border-radius: 999px; background: var(--fq-line); border: 0; padding: 2px; display: flex; flex: none; }
+.fq-switch { width: 44px; height: 24px; border-radius: 999px; background: var(--fq-line); border: 0; padding: 2px; display: flex; flex: none; direction: ltr; }
 .fq-switch span { width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: transform 180ms ease; }
 .fq-switch.on { background: var(--fq-success); }
-.fq-switch.on span { transform: translateX(-20px); }
+.fq-switch.on span { transform: translateX(20px); }
 
 /* ---------- selection controls, quotes, attachments ---------- */
 .fq-tick { width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--fq-line); background: var(--fq-surface); color: #fff; display: grid; place-items: center; flex: none; padding: 0; }
@@ -1882,3 +1882,94 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-setting .meta strong { font-size: 15px; font-weight: 600; }
 .fq-setting .meta .fq-meta { font-size: 12px; line-height: 1.5; }
 .fq-setting .fq-switch { flex: none; }
+
+/* ---------- from the parallel design review: red states, squircles, spinners ---------- */
+:root { --fq-danger: #d85050; --fq-danger-bg: #fef0ee; --fq-danger-soft: #feeeed; --fq-amber: #f59e0b; --fq-cream: #fff7ed; }
+.fq-squircle { width: 120px; height: 120px; border-radius: 34px; background: #fbfdfc; box-shadow: 0 10px 24px rgba(4, 52, 52, 0.1); display: grid; place-items: center; color: var(--fq-success); margin-inline: auto; }
+.fq-squircle.warn { background: var(--fq-cream); color: var(--fq-amber); }
+.fq-squircle.danger { background: var(--fq-danger-bg); color: var(--fq-danger); }
+.fq-squircle.mint { background: var(--fq-mint); color: var(--fq-deep-green); }
+.fq-squircle svg { width: 56px; height: 56px; stroke-width: 2.5; }
+.fq-spinner { width: 78px; height: 78px; border-radius: 50%; background: #fff; box-shadow: 0 8px 20px rgba(4, 52, 52, 0.08); position: relative; margin-inline: auto; }
+.fq-spinner::after { content: ""; position: absolute; inset: 22px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--fq-success); border-right-color: var(--fq-success); animation: fq-spin 900ms linear infinite; }
+.fq-arc { width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--fq-deep-green); border-right-color: var(--fq-deep-green); animation: fq-spin 900ms linear infinite; }
+.fq-statepill { display: inline-flex; padding: 6px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--fq-line); font-size: 13px; font-weight: 700; color: var(--fq-deep-green); }
+.fq-btn.r14 { border-radius: var(--fq-r-input); }
+.fq-btn.soft { background: #f6f8f7; color: var(--fq-deep-green); box-shadow: none; border: 0; }
+.fq-btn.danger-soft { background: var(--fq-danger-soft); color: #a33a30; box-shadow: none; border: 0; }
+.fq-body.on-mint { background: #e3f4ed; }
+/* a warning that is a failure, not a caution */
+.fq-alert { border-radius: var(--fq-r-input); border: 1px solid var(--fq-danger); background: #fdf1f0; color: #a33a30; padding: 14px 16px; font-size: 14px; line-height: 1.6; text-align: center; }
+.fq-banner.danger { background: var(--fq-app-bg); border-top: 1px solid var(--fq-danger); border-bottom: 1px solid var(--fq-danger); color: var(--fq-danger); }
+.fq-banner.danger button { color: var(--fq-danger); }
+.fq-tag.danger { background: #fff; border: 1px solid var(--fq-danger); color: var(--fq-danger); }
+.fq-track.danger > span { background: var(--fq-danger); }
+.fq-usage .hot { color: var(--fq-danger); font-weight: 700; }
+/* the plan being stepped up to */
+.fq-plan.target { border: 2px solid var(--fq-deep-green); }
+.fq-plan.target .badge { background: var(--fq-deep-green); color: #fff; }
+.fq-current-strip { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fbfcfc; border: 1px solid var(--fq-line); border-radius: var(--fq-r-input); padding: 14px 16px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); direction: ltr; }
+.fq-current-strip > * { direction: rtl; }
+.fq-arrow-down { display: grid; place-items: center; color: var(--fq-muted); }
+/* N02: the prompt sits over a deep wash of the brand, not a grey veil */
+.fq-scrim.deep { background: rgba(4, 52, 48, 0.9); align-items: center; }
+.fq-prompt { width: min(340px, calc(100% - 48px)); background: var(--fq-surface); border-radius: var(--fq-r-sheet); padding: 24px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; text-align: start; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.25); animation: fq-rise 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.fq-prompt h2 { margin: 0; font-size: 19px; font-weight: 800; color: var(--fq-text); }
+.fq-bell { width: 64px; height: 64px; border-radius: 50%; background: var(--fq-soft); color: var(--fq-success); display: grid; place-items: center; }
+/* the tick sits at the right edge of the line it belongs to */
+.fq-feat { direction: rtl; }
+.fq-card.grey { background: #f0f2f1; border-color: #e4e8e6; box-shadow: none; }
+.fq-tick-round { width: 24px; height: 24px; border-radius: 50%; background: var(--fq-soft); color: var(--fq-success); display: grid; place-items: center; flex: none; }
+.fq-tick-round svg { stroke-width: 3; }
+/* M09: a soft mint page, a thin ring around a deep-green disc, the current step in dark */
+.fq-body.on-soft-mint { background: linear-gradient(180deg, #eaf7f1 0%, #f4fbf7 60%, #f7f9f7 100%); }
+.fq-sendring { width: 120px; height: 120px; border-radius: 50%; background: conic-gradient(var(--fq-success) 0 70%, #d7ece2 0); display: grid; place-items: center; margin-inline: auto; }
+.fq-sendring > span { width: 84px; height: 84px; border-radius: 50%; background: var(--fq-deep-green); color: #fff; display: grid; place-items: center; font-size: 20px; font-weight: 800; }
+.fq-sendstep { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--fq-success); direction: rtl; }
+.fq-sendstep .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fq-success); flex: none; }
+.fq-sendstep.now { color: var(--fq-text); font-weight: 700; }
+.fq-sendstep.now .dot { background: var(--fq-deep-green); }
+
+/* M04: a step not reached yet is an empty ring beside muted text */
+.fq-step { color: var(--fq-muted); }
+.fq-step.done { color: var(--fq-text); }
+.fq-step.now { color: var(--fq-text); font-weight: 700; }
+/* the payment method, as a row you choose */
+.fq-payrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-card); font: inherit; color: var(--fq-text); direction: ltr; box-shadow: var(--fq-shadow-card); }
+.fq-payrow .mark { width: 34px; height: 34px; border-radius: 10px; background: #111; color: #fff; display: grid; place-items: center; order: 2; }
+.fq-payrow strong { flex: 1; text-align: right; font-size: 16px; font-weight: 700; order: 1; }
+.fq-payrow .fq-radio { order: 0; }
+.fq-payrow.on { border-color: var(--fq-deep-green); }
+.fq-summary .label { font-size: 15px; font-weight: 700; color: var(--fq-deep-green); }
+.fq-summary .value { font-size: 17px; font-weight: 700; color: var(--fq-text); }
+.fq-summary .value.money { color: var(--fq-success); }
+.fq-btn.ghost.outline-deep { border: 1.5px solid var(--fq-deep-green); color: var(--fq-deep-green); }
+.fq-squircle.ringed { background: #e9f7f0; box-shadow: 0 0 0 8px rgba(0, 159, 103, 0.06); }
+.fq-squircle.ringed svg { stroke-width: 2; }
+.fq-statepill.green { border: 1.5px solid var(--fq-success); color: var(--fq-success); }
+/* the allowance card, corrected from the review */
+.fq-row.rtl { direction: rtl; }
+.fq-price-line { direction: rtl; text-align: right; }
+.fq-price-line .amount { font-size: 26px; font-weight: 800; color: var(--fq-deep-green); }
+.fq-price-line .per { font-size: 13px; font-weight: 600; color: var(--fq-text-2); }
+.fq-pillbadge { display: inline-flex; padding: 5px 12px; border-radius: 999px; background: #fff; border: 1px solid var(--fq-success); color: var(--fq-success); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.fq-pillbadge.warn { border-color: var(--fq-warning); color: var(--fq-warning); background: var(--fq-warning-bg); }
+.fq-pillbadge.danger { border-color: var(--fq-danger); color: var(--fq-danger); background: #fdf1f0; }
+.fq-pillbadge.ok { background: #f2faf6; }
+/* the bar fills from the left, through a gradient */
+.fq-track { direction: ltr; background: var(--fq-app-bg); border: 1px solid var(--fq-line); }
+.fq-track > span { background: linear-gradient(90deg, #1eac76 0%, #b8f3ca 100%); }
+.fq-track.warn > span { background: linear-gradient(90deg, #cb8c28 0%, #eec88c 100%); }
+.fq-track.danger > span { background: linear-gradient(90deg, #d95656 0%, #f2bfbf 100%); }
+.fq-track.deep > span { background: var(--fq-deep-green); }
+.fq-upsell { background: var(--fq-soft); border: 1px solid var(--fq-line); border-radius: var(--fq-r-card); padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-inline: 8px; }
+.fq-btn.amber-chip { background: var(--fq-warning-bg); color: var(--fq-warning); box-shadow: none; }
+.fq-btn.amber-chip:disabled { opacity: 1; }
+.fq-plan .badge, .fq-plan.pop .badge { background: var(--fq-success); color: #fff; border-radius: 999px; padding: 5px 12px; }
+/* M07 / FT03: the cap is stated in a mint banner, the counter is a deep pill on the left */
+.fq-capbanner { background: var(--fq-soft); border: 1px solid var(--fq-success); border-radius: var(--fq-r-input); padding: 12px 16px; font-size: 14px; font-weight: 600; color: var(--fq-deep-green); text-align: center; }
+.fq-count-pill { background: var(--fq-deep-green); border-color: var(--fq-deep-green); color: #fff; box-shadow: none; }
+.fq-seller.picked { border-color: var(--fq-success); }
+/* FT12: a pale tile with a mint ring and a thin green tick */
+.fq-squircle.pale { background: #ecfcf5; box-shadow: 0 0 0 1px #a7f3d0 inset, 0 10px 28px rgba(0, 159, 103, 0.12); color: var(--fq-success); }
+.fq-squircle.pale svg { stroke-width: 1.8; width: 64px; height: 64px; }
