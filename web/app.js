@@ -3098,6 +3098,14 @@ document.addEventListener("click", (event) => {
   else if (action === "emoji") document.querySelector("#user-reply textarea")?.focus();
 });
 
+// Lets a review session step through the subscription states without a card.
+window.addEventListener("farq:sub", (event) => {
+  state.view = "subscribe";
+  state.subView = String(event.detail || "my-plan");
+  if (!state.subActivePlan && state.subPlans.length) state.subActivePlan = state.subPlans[0].code;
+  render();
+});
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && state.view === "thread" && state.thread?.id) {
     loadThread(state.thread.id, true).catch(() => {});
