@@ -21,6 +21,12 @@ from tests.test_store_pg import pg_store, schema  # noqa: F401  (fixtures for th
 AWARD_TEXT = "تم اختيار عرضك. سنتواصل معك لإكمال التفاصيل."
 
 
+@pytest.fixture(autouse=True)
+def _any_recipient(monkeypatch):
+    """These journeys pick sellers by id without searching first; test_limits covers the search rule."""
+    monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
+
+
 def app_with_store(tmp_path: Path):
     store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
     api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))

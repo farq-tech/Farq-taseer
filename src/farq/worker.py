@@ -11,6 +11,7 @@ serverless invocation) sees them.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -30,9 +31,11 @@ from farq.haraj_chat import (
     HarajRefused,
     HarajSendUncertain,
     NotConnectedChat,
+    with_reference,
 )
 
 MAX_ATTEMPTS = 5
+log = logging.getLogger("farq.worker")
 
 
 def media_label(media) -> str:
@@ -90,6 +93,8 @@ def dispatch_pending(
                     store.finish_delivery(item["id"], error="NO_QUOTE_LINK", retry=False)
                     continue
                 body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
+            # The seller's one conversation with us is shared by every buyer: the reference tells his replies apart.
+            body = with_reference(body, item.get("ref_code"))
             attachments = []
             for entry in item.get("media") or []:
                 stored = store.get_file(entry["file_id"]) if entry.get("file_id") else None
@@ -210,7 +215,12 @@ def sync_replies(
             highest = max(highest, item.seq)
             if store.has_haraj_message(item.haraj_message_id):
                 continue
-            thread = store.thread_for_inbound(conversation, item.sent_at) or threads[0]
+            thread = store.thread_for_inbound(conversation, item.sent_at, item.body)
+            if thread is None:
+                # No reference and open requests from several buyers: a guess could show one buyer another's reply.
+                candidates = store.record_unmatched_inbound(conversation, seller_id, item)
+                log.warning("haraj reply %s in %s matches no single request (candidates: %s); kept unmatched", item.haraj_message_id, conversation, ", ".join(candidates))
+                continue
             if item.media:
                 item = replace(item, media=keep_media(store, thread["request_id"], item.media))
             if store.record_inbound(thread, item) is not None:

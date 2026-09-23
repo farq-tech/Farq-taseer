@@ -123,6 +123,8 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
   if (!response.ok) {
     const error = new Error("request failed");
     error.status = response.status;
+    // Limits refused by the server carry {code, message, limit} to show as is.
+    error.detail = await response.json().then((data) => data?.detail, () => null);
     throw error;
   }
   const type = response.headers.get("content-type") || "";
@@ -1795,8 +1797,8 @@ function planPeriod(days) {
 }
 
 
-// Subscription + free trial. The free trial's rules (50 items, 6 suppliers per item) are counted
-// in the client; the server does not enforce them yet.
+// Subscription + free trial. The free trial's rules (50 items, 6 suppliers per item) are shown and
+// counted here; the server enforces them too (farq/limits.py) and answers 402/403 with a message.
 const TRIAL_ITEMS = 50;
 const TRIAL_SELLERS = 6;
 
@@ -2241,6 +2243,7 @@ async function readNdjson(response, onEvent) {
 }
 
 function applyDone(event) {
+  if (event.trace_id) state.traceId = event.trace_id;
   state.intent = event.intent;
   state.results = event.results || [];
   state.searchState = event.state;
@@ -2284,6 +2287,7 @@ async function runSearch(text, city = "") {
     const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked }) });
     if (!response.ok || !response.body) throw new Error("stream");
     await readNdjson(response, (event) => {
+      if (event.trace_id) state.traceId = event.trace_id;
       if (event.type === "intent") {
         state.intent = event.intent;
         state.clarification = event.clarification_question || "";
@@ -2398,6 +2402,8 @@ async function sendRequest() {
         notes: state.note || null,
         city,
         attributes,
+        // The server only accepts sellers a search showed; a search run before signing in is named here.
+        trace_id: state.traceId || null,
         recipients: [...state.selected.values()].map((result) => {
           const seller = sellerOf(result);
           return { seller_id: seller.id, seller_name: seller.name || "بائع", ad_id: result.ad?.id || null };
@@ -2436,9 +2442,17 @@ async function sendRequest() {
         setUnread(state.requests);
       })
       .catch(() => {});
-  } catch (_error) {
-    state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
+  } catch (error) {
     state.busy = false;
+    if (error?.status === 402) {
+      // The server counted the free trial as used up.
+      state.view = "subscribe";
+      state.subView = "limit";
+      state.resumeAfterPay = true;
+      render();
+      return;
+    }
+    state.notice = error?.detail?.message || "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.view = "review";
     render();
   }
@@ -2529,7 +2543,7 @@ async function sendChatMessage(body) {
     render();
   } catch (error) {
     state.sending = false;
-    state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : "ما انرسلت الرسالة، جرّب مرة ثانية";
+    state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : error.detail?.message || "ما انرسلت الرسالة، جرّب مرة ثانية";
     render();
   }
 }
