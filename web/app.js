@@ -1852,14 +1852,15 @@ function renderSubscribe() {
   // SUB05_PaymentSuccess / FT11_SubscriptionActivated — nodes 60:179 and 64:1114.
   if (view === "paid") {
     return `${fqHead({ title: "تم التفعيل", mark: true })}
-    <section class="fq-body center on-mint" style="padding-top:60px">
-      <div class="fq-squircle land">${ic("check", 56)}</div>
-      <div><h1 class="fq-h1">تم تفعيل اشتراكك</h1>
+    <section class="fq-body center" style="padding-top:60px;padding-bottom:60px">
+      <div class="fq-squircle ringed land">${ic("check", 56)}</div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <h1 class="fq-h1">تم تفعيل اشتراكك</h1>
         <p class="fq-lead">باقة: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p>
-        <span class="fq-statepill">نشط الآن</span></div>
+        <span class="fq-statepill green">نشط الآن</span></div>
       <div class="fq-actions" style="width:100%;margin-top:auto">
         <button class="fq-btn r14" type="button" data-action="resume-request">إكمال إرسال الطلب</button>
-        <button class="fq-btn mint r14" type="button" data-action="my-plan">تم</button>
+        <button class="fq-btn ghost r14" type="button" data-action="my-plan">تم</button>
       </div>
     </section>`;
   }
@@ -2002,25 +2003,42 @@ function renderSubscribe() {
     </section>`;
   }
 
-  // SUB03_PlanReview / SUB11_ApplePayConfirm / FT10 — nodes 60:109, 62:229, 64:1063.
+  // SUB03_PlanReview / SUB11_ApplePayConfirm / FT10_PaymentAfterTrial — 60:109, 62:229, 64:1063.
   if (view === "review") {
     const plan = plans.find((item) => item.code === state.subActivePlan);
     if (!plan) return renderSubscribe.call(null);
-    return `${fqHead({ title: "مراجعة الاشتراك", back: "show-plans", mark: true })}
+    const upgrading = isSubscribed();
+    const title = upgrading ? "تأكيد الدفع" : "مراجعة الاشتراك";
+    const lead = upgrading
+      ? { h: "ملخص الطلب", p: "" }
+      : { h: "تفاصيل الدفع للترقية", p: "مراجعة سريعة قبل إرسال طلبك المحفوظ." };
+    return `${fqHead({ title, back: "show-plans", mark: true })}
     <section class="fq-body">
-      <div><h1 class="fq-h1">راجع اشتراكك</h1><p class="fq-lead">المعلومات المحددة وتفاصيل خطة الدفع.</p></div>
-      <div class="fq-card pad">
-        <div class="fq-row"><strong style="font-size:18px">${esc(plan.name_ar)}</strong><span class="fq-meta">الباقة المختارة</span></div>
-        <div class="fq-row"><strong>${esc(money(plan.price_amount / 100))} / ${esc(planPeriod(plan.duration_days))}يًا</strong><span class="fq-meta">قيمة الاشتراك</span></div>
+      <div><h1 class="fq-h2">${esc(lead.h)}</h1>${lead.p ? `<p class="fq-lead">${esc(lead.p)}</p>` : ""}</div>
+      <div class="fq-card pad fq-summary">
+        <div class="fq-row"><strong class="value"><bdi>${esc(plan.name_ar)}</bdi></strong><span class="label">الخطة المختارة</span></div>
+        <div class="fq-row"><span class="label">قيمة الاشتراك</span><strong class="value money">${esc(money(plan.price_amount / 100))} / ${esc(planPeriod(plan.duration_days))}يًا</strong></div>
         ${(plan.features || []).length ? `<hr class="fq-line"><div class="fq-feats">${plan.features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
         ${plan.is_placeholder_price ? `<p class="fq-meta">سعر تجريبي مؤقت لاختبار الدفع — ليس السعر النهائي.</p>` : ""}
       </div>
-      <div><p class="fq-sec-title">طريقة الدفع</p>
-        <div class="fq-card pad" style="margin-top:8px">
-          ${state.subBusy ? `<p class="fq-lead">نجهّز الدفع…</p>` : `<div id="moyasar-form-${esc(plan.code)}"></div>`}
-          ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p><button class="fq-btn ghost sm" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}
-        </div></div>
-      <button class="fq-btn ghost" type="button" data-action="show-plans" style="margin-top:auto">تغيير الباقة</button>
+      <div><p class="fq-sec-title"><span>طريقة الدفع</span></p>
+        <button class="fq-payrow on" type="button" data-action="pay" aria-pressed="true">
+          <span class="mark">${ic("credit-card", 18)}</span>
+          <strong>Apple Pay</strong>
+          <span class="fq-radio on" aria-hidden="true"></span>
+        </button>
+        ${state.subBusy || state.subMountedPlan === plan.code
+          ? `<div class="fq-card pad" style="margin-top:10px">
+              ${state.subBusy ? `<p class="fq-lead">نجهّز الدفع…</p>` : ""}
+              <div id="moyasar-form-${esc(plan.code)}"></div>
+              ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p><button class="fq-btn ghost sm" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}
+            </div>`
+          : ""}
+      </div>
+      <div class="fq-actions" style="margin-top:auto;gap:12px">
+        <button class="fq-btn r14" type="button" data-action="pay">الدفع بـ Apple Pay</button>
+        <button class="fq-btn ghost outline-deep r14" type="button" data-action="show-plans">تغيير الباقة</button>
+      </div>
     </section>`;
   }
 
@@ -2053,7 +2071,7 @@ function renderSubscribe() {
         <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(TRIAL_SELLERS)} موردين لكل بند مجاناً.</p>
         <div class="fq-sticky">
           ${near
-            ? `<button class="fq-btn warn" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
+            ? `<button class="fq-btn r14" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
             : `<button class="fq-btn mint" type="button" disabled>تجربتك مفعلة</button>`}
           <p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
         </div>`}
@@ -3143,6 +3161,12 @@ document.addEventListener("click", (event) => {
     state.subError = "";
     state.subView = "review";
     render();
+  } else if (action === "pay") {
+    state.subMountedPlan = "";
+    state.subMountFailed = false;
+    state.subError = "";
+    render();
+    mountPayment(state.subActivePlan);
   } else if (action === "retry-payment") {
     state.subMountedPlan = "";
     state.subMountFailed = false;

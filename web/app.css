@@ -1934,3 +1934,16 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-step { color: var(--fq-muted); }
 .fq-step.done { color: var(--fq-text); }
 .fq-step.now { color: var(--fq-text); font-weight: 700; }
+/* the payment method, as a row you choose */
+.fq-payrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-card); font: inherit; color: var(--fq-text); direction: ltr; box-shadow: var(--fq-shadow-card); }
+.fq-payrow .mark { width: 34px; height: 34px; border-radius: 10px; background: #111; color: #fff; display: grid; place-items: center; order: 2; }
+.fq-payrow strong { flex: 1; text-align: right; font-size: 16px; font-weight: 700; order: 1; }
+.fq-payrow .fq-radio { order: 0; }
+.fq-payrow.on { border-color: var(--fq-deep-green); }
+.fq-summary .label { font-size: 15px; font-weight: 700; color: var(--fq-deep-green); }
+.fq-summary .value { font-size: 17px; font-weight: 700; color: var(--fq-text); }
+.fq-summary .value.money { color: var(--fq-success); }
+.fq-btn.ghost.outline-deep { border: 1.5px solid var(--fq-deep-green); color: var(--fq-deep-green); }
+.fq-squircle.ringed { background: #e9f7f0; box-shadow: 0 0 0 8px rgba(0, 159, 103, 0.06); }
+.fq-squircle.ringed svg { stroke-width: 2; }
+.fq-statepill.green { border: 1.5px solid var(--fq-success); color: var(--fq-success); }
