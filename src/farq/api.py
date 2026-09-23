@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import re
@@ -10,8 +11,10 @@ from urllib.parse import quote
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from farq import push, subscriptions
 from farq.cities import city_choices
@@ -25,7 +28,7 @@ from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
-from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, Store
+from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store
 from farq.subscriptions import SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -76,15 +79,20 @@ class MessageBody(ApiModel):
     reply_to: str | None = None
 
 
+MAX_OFFER = 10_000_000
+PHONE = re.compile(r"^\+?[0-9]{9,15}$")
+
+
 class SellerReplyBody(ApiModel):
     body: str = ""
     seller_id: str | None = None
-    offer_amount: float | None = None
+    offer_amount: float | None = Field(default=None, gt=0, le=MAX_OFFER, allow_inf_nan=False)
     offer_currency: str | None = None
+    # Accepted for older clients and ignored: the name on an offer is always the one we invited.
     provider_name: str | None = None
     phone: str | None = None
     delivery_included: bool | None = None
-    delivery_price: float | None = None
+    delivery_price: float | None = Field(default=None, ge=0, le=MAX_OFFER, allow_inf_nan=False)
 
 
 class AwardBody(ApiModel):
@@ -169,6 +177,16 @@ def create_app(
     payments = payments or PaymentsConfig()
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_body(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        # A body with Infinity or NaN is refused like any other bad value, not turned into a 500
+        # by echoing the value back in the error.
+        errors = [
+            {key: value for key, value in error.items() if not (key == "input" and isinstance(value, float) and not math.isfinite(value))}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
     def current_account(authorization: str | None = Header(default=None)) -> dict:
         # Everyone signs in with a Taseer account; the old anonymous guest sessions no longer count.
@@ -418,6 +436,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found")
         try:
             store.award(request_id, user_id, body.seller_id, body.notify)
+        except AwardConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
@@ -438,14 +458,17 @@ def create_app(
     def seller_reply(token: str, body: SellerReplyBody, background: BackgroundTasks) -> dict:
         if not body.body.strip() and body.offer_amount is None:
             raise HTTPException(status_code=422, detail="message or price is required")
+        phone = re.sub(r"[\s-]", "", body.phone or "") or None
+        if phone is not None and not PHONE.match(phone):
+            raise HTTPException(status_code=422, detail="invalid phone number")
         offer = None
         if body.offer_amount is not None:
             offer = Offer(
                 amount=body.offer_amount,
                 currency=body.offer_currency or "SAR",
                 note=body.body.strip() or None,
-                provider_name=body.provider_name,
-                phone=body.phone,
+                provider_name=None,
+                phone=phone,
                 base_price=body.offer_amount,
                 delivery_included=True if body.delivery_included is None else body.delivery_included,
                 delivery_price=body.delivery_price or 0,

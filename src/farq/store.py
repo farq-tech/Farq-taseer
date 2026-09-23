@@ -58,12 +58,36 @@ def _delivery_state(deliveries: list[dict]) -> str:
     return "partial" if "sent" in statuses else "failed"
 
 
+class AwardConflict(Exception):
+    """The request is already awarded to another supplier."""
+
+
 def visible_to_seller(message: Message, seller_id: str | None, need: str | None) -> bool:
+    """A supplier sees his own messages and the customer messages routed to him, nothing else."""
     if message.sender_role == "seller":
         return seller_id is not None and message.seller_id == seller_id
+    if message.deliveries:
+        # The delivery rows are who the message went to; a message to some suppliers stays with them.
+        return seller_id is not None and any(item["seller_id"] == seller_id for item in message.deliveries)
     if message.seller_id is not None:
         return message.seller_id == seller_id
+    if message.scope == SOME_SELLERS:
+        return False
     return message.need is None or need is None or message.need == need
+
+
+def seller_message(message: Message, seller_id: str | None, sent_text: str | None = None) -> dict:
+    """What a supplier may see of a message: no routing, no other suppliers, only his own offer.
+    sent_text is what actually went to him on Haraj (the invite, not the customer's notes)."""
+    own = message.sender_role == "seller" and seller_id is not None and message.seller_id == seller_id
+    return {
+        "id": message.id,
+        "sender_role": message.sender_role,
+        "body": message.body if sent_text is None else sent_text.replace(QUOTE_LINK, "").strip(),
+        "created_at": message.created_at,
+        "media": message.media,
+        "offer": message.offer.model_dump(mode="json") if own and message.offer is not None else None,
+    }
 
 
 def _stamp(value) -> str | None:
@@ -104,6 +128,20 @@ def route_targets(recipients, default_need: str | None, need: str | None, seller
     return targets, need, ALL_SELLERS
 
 
+def reply_audience(quoted_seller_id: str | None, delivered: list[str], seller_id: str | None, seller_ids=None):
+    """A reply goes to whoever got the quoted message, narrowed by any suppliers picked; never wider.
+    Returns (seller_id, seller_ids) for route_targets."""
+    audience = [quoted_seller_id] if quoted_seller_id else list(dict.fromkeys(delivered))
+    if not audience:
+        return seller_id, seller_ids
+    picked = [str(item) for item in seller_ids] if seller_ids else ([seller_id] if seller_id is not None else None)
+    if picked is not None:
+        audience = [item for item in audience if item in picked]
+        if not audience:
+            raise ValueError("pick suppliers who got the quoted message")
+    return None, audience
+
+
 def media_entry(file_row) -> dict:
     """What the conversation shows for a customer's file; the bytes stay in the files table."""
     return {
@@ -115,6 +153,19 @@ def media_entry(file_row) -> dict:
         "width": file_row["width"],
         "height": file_row["height"],
     }
+
+
+def current_offer_rows(rows) -> list:
+    """One current offer per supplier per item: the latest row wins, older ones are history.
+    Rows come newest first; the result is cheapest first."""
+    seen: set[tuple[str, str]] = set()
+    current = []
+    for row in rows:
+        key = (row["seller_id"], row["need"] or "")
+        if key not in seen:
+            seen.add(key)
+            current.append(row)
+    return sorted(current, key=lambda row: (row["total_price"] is None, float(row["total_price"] or 0)))
 
 
 def mark_cheapest(offers: list[Offer]) -> list[Offer]:
@@ -784,10 +835,9 @@ class Store:
             quoted = self._connection.execute("select * from messages where id = ? and request_id = ?", (reply_to, request_id)).fetchone()
             if quoted is None:
                 raise ValueError("unknown reply_to")
-            if quoted["seller_id"]:
-                seller_id = quoted["seller_id"]
+            delivered = [item["seller_id"] for item in self._connection.execute("select seller_id from message_deliveries where message_id = ? order by created_at", (reply_to,))]
+            seller_id, seller_ids = reply_audience(quoted["seller_id"], delivered, seller_id, seller_ids)
             need = need or quoted["need"]
-            seller_ids = None
         return self._enqueue(request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
 
     def save_file(self, owner_user_id: str, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
@@ -948,6 +998,10 @@ class Store:
         ).fetchone()
         offer = None
         price = extract_price(inbound.body)
+        awarded = self._connection.execute("select awarded_seller_id from requests where id = ?", (request_id,)).fetchone()["awarded_seller_id"]
+        # After the award, a price from anyone but the winner is kept as a message, not an offer.
+        if price is not None and awarded not in (None, seller_id):
+            price = None
         if price is not None:
             offer = Offer(
                 amount=price,
@@ -1031,9 +1085,9 @@ class Store:
         )
 
     def _offers_for_request(self, request_id: str) -> list[Offer]:
-        rows = self._connection.execute("select * from offers where request_id = ? order by total_price is null, total_price", (request_id,)).fetchall()
+        rows = self._connection.execute("select * from offers where request_id = ? order by created_at desc", (request_id,)).fetchall()
         offers: list[Offer] = []
-        for item in rows:
+        for item in current_offer_rows(rows):
             offer = Offer(
                 amount=item["total_price"],
                 currency=item["currency"] or "SAR",
@@ -1065,18 +1119,23 @@ class Store:
             {"id": item["id"], "filename": item["filename"], "content_type": item["content_type"], "size_bytes": item["size_bytes"]}
             for item in self._connection.execute("select * from attachments where request_id = ?", (row["id"],))
         ]
+        own = recipient_row["seller_id"] if recipient_row is not None else None
+        sent = {
+            item["id"]: item["haraj_text"]
+            for item in self._connection.execute("select id, haraj_text from messages where request_id = ? and haraj_text is not null", (row["id"],))
+        }
+        # The invite promises the item and the city only: the customer's own words and notes stay with him.
         return {
             "need": need,
-            "original_text": row["original_text"],
-            "notes": row["notes"],
             "city": row["city"],
+            "offers_open": self._col(row, "awarded_seller_id") in (None, own),
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
-            # Legacy seller link only: each seller sees their own thread, never another seller's messages.
+            # Each seller sees their own thread, never another seller's messages or who else was asked.
             "messages": [
-                item.model_dump(mode="json")
+                seller_message(item, own, sent.get(item.id))
                 for item in self._messages_for_request(row["id"])
-                if visible_to_seller(item, recipient_row["seller_id"] if recipient_row is not None else None, need)
+                if visible_to_seller(item, own, need)
             ],
         }
 
@@ -1099,8 +1158,15 @@ class Store:
         if seller_id not in ids:
             raise ValueError("unknown seller")
         matched = next(item for item in recipients if item["seller_id"] == seller_id)
+        awarded = self._col(row, "awarded_seller_id")
+        if offer is not None and awarded is not None and awarded != seller_id:
+            raise ValueError("offers are closed: the customer has already chosen a supplier")
         if offer is not None:
             offer = priced_offer(offer, body, matched["seller_name"], self._col(matched, "need") or row["need"])
+            # One current offer per supplier per item: a revised price replaces the earlier one.
+            self._connection.execute(
+                "delete from offers where request_id = ? and seller_id = ? and coalesce(need, '') = ?", (row["id"], seller_id, offer.need or "")
+            )
             self._connection.execute(
                 "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
@@ -1138,11 +1204,17 @@ class Store:
             (request_id, seller_id, owner_user_id),
         ).fetchone() is None:
             raise ValueError("unknown seller")
-        self._connection.execute(
-            "update requests set awarded_seller_id = ?, awarded_at = ? where id = ? and owner_user_id = ?",
+        current = self._connection.execute("select awarded_seller_id from requests where id = ?", (request_id,)).fetchone()["awarded_seller_id"]
+        if current == seller_id:
+            return None
+        # Only the first award counts; a second one for another supplier is refused, not swapped in.
+        changed = self._connection.execute(
+            "update requests set awarded_seller_id = ?, awarded_at = ? where id = ? and owner_user_id = ? and awarded_seller_id is null",
             (seller_id, _now(), request_id, owner_user_id),
-        )
+        ).rowcount
         self._connection.commit()
+        if not changed:
+            raise AwardConflict("request already awarded to another supplier")
         if not notify:
             return None
         return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
