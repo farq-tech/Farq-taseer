@@ -652,6 +652,9 @@ class PgStore:
             "activity_type": row["activity_type"],
             "description": row["description"],
             "categories": row["categories"] or [],
+            "capabilities": row["capabilities"] or [],
+            "services": row["services"] or [],
+            "products": row["products"] or [],
             "haraj_seller_id": row["haraj_seller_id"],
             "status": row["status"],
             "created_at": _iso(row["created_at"]),
@@ -668,7 +671,8 @@ class PgStore:
 
     def register_supplier(self, *, name: str, email: str, phone: str, password: str,
                           activity_type: str = "both", description: str | None = None,
-                          categories=None, haraj_seller_id: str | None = None) -> dict:
+                          categories=None, capabilities=None, services=None, products=None,
+                          haraj_seller_id: str | None = None) -> dict:
         supplier_id = uuid4().hex
         salt = secrets.token_hex(16)
         bound = seller_key(haraj_seller_id) if haraj_seller_id else None
@@ -678,11 +682,13 @@ class PgStore:
             try:
                 conn.execute(
                     "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
-                    " categories, haraj_seller_id, status, created_at, updated_at)"
-                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    " categories, capabilities, services, products, haraj_seller_id, status, created_at, updated_at)"
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (supplier_id, name.strip(), email.lower().strip(), phone.strip(),
                      _hash_password(password, salt), salt, activity_type, (description or "").strip() or None,
-                     Jsonb(list(categories or [])), bound, "active" if bound else "pending", _now(), _now()),
+                     Jsonb(list(categories or [])), Jsonb(list(capabilities or [])),
+                     Jsonb(list(services or [])), Jsonb(list(products or [])),
+                     bound, "active" if bound else "pending", _now(), _now()),
                 )
             except psycopg.errors.UniqueViolation as exc:
                 raise ValueError("email already registered") from exc

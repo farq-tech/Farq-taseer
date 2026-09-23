@@ -55,6 +55,9 @@ const state = {
   supplierCatalog: [],
   supplierPicked: [],
   supplierSuggested: [],
+  supplierCapabilities: [],
+  supplierDesc: "",
+  supplierCaret: null,
   supplierError: "",
   supplierMode: "join",
   supplierActivity: "both",
@@ -2926,7 +2929,7 @@ async function submitSupplierJoin(form) {
         phone: String(data.get("phone") || "").trim(),
         password: String(data.get("password") || ""),
         activity_type: state.supplierActivity || "both",
-        description: String(data.get("description") || "").trim(),
+        description: (state.supplierDesc || String(data.get("description") || "")).trim(),
         categories: state.supplierPicked,
         // Registering from an invite link binds the account to the Haraj seller that link
         // proves, so the requests list works from the first second.
@@ -2936,6 +2939,8 @@ async function submitSupplierJoin(form) {
     keepSupplierSession(created.token, created.supplier);
     state.supplierPicked = [];
     state.supplierSuggested = [];
+    state.supplierCapabilities = [];
+    state.supplierDesc = "";
     openSupplier();
   } catch (error) {
     state.supplierError = supplierMessage(error, "ما قدرنا نكمل التسجيل. راجع بياناتك وحاول مرة ثانية.");
@@ -3096,20 +3101,24 @@ async function loadSupplierRequests() {
   render();
 }
 
-// SUP02: read the supplier's own words with the request matcher and offer what it
-// recognised. Silence means it recognised nothing, which is the honest answer.
-let suggestTimer = 0;
-function suggestCategories(text) {
-  clearTimeout(suggestTimer);
-  suggestTimer = setTimeout(async () => {
+// SUP02. The description is the source: the server reads it and returns both halves of
+// the taxonomy — the categories it recognised, and every other meaningful term the
+// supplier used. The second half is why the list is not closed: a trade we have no
+// category for is still kept, in his own words.
+let describeTimer = 0;
+function describeBusiness(text) {
+  clearTimeout(describeTimer);
+  describeTimer = setTimeout(async () => {
     if (!text.trim()) {
       state.supplierSuggested = [];
+      state.supplierCapabilities = [];
       render();
       return;
     }
     try {
-      const data = await api("/v1/supplier/categories/suggest", { method: "POST", json: { text }, skipAuth: true, quiet: true });
+      const data = await api("/v1/supplier/describe", { method: "POST", json: { text }, skipAuth: true, quiet: true });
       state.supplierSuggested = data.categories || [];
+      state.supplierCapabilities = data.capabilities || [];
       render();
     } catch (_error) {}
   }, 400);
@@ -3129,7 +3138,7 @@ function renderSupplierAuth() {
   const activity = state.supplierActivity || "both";
   const wanted = activity === "services" ? ["service"] : activity === "products" ? ["product"] : ["service", "product"];
   const catalog = state.supplierCatalog.filter(
-    (item) => wanted.includes(item.type) && !picked.includes(item.key) && !suggested.some((s) => s.key === item.key),
+    (item) => wanted.includes(item.kind) && !picked.includes(item.key) && !suggested.some((s) => s.key === item.key),
   );
   const pickedItems = picked
     .map((key) => state.supplierCatalog.find((item) => item.key === key) || state.supplierSuggested.find((item) => item.key === key))
@@ -3179,8 +3188,8 @@ function renderSupplierAuth() {
         </div></div>
 
       <div class="fq-field"><label for="join-desc">وش تشتغل بالضبط؟</label>
-        <div class="fq-inp" style="min-height:88px;align-items:flex-start"><textarea id="join-desc" name="description" rows="3" maxlength="400" placeholder="مثال: أشتغل سباكة وأصلح تسريبات المياه وأركب سخانات"></textarea></div>
-        <span class="fq-meta">اكتب بالعامية. نقرأ كلامك ونقترح عليك التصنيفات.</span></div>
+        <div class="fq-inp" style="min-height:88px;align-items:flex-start"><textarea id="join-desc" name="description" rows="3" maxlength="400" placeholder="مثال: أشتغل سباكة وأصلح تسريبات المياه وأركب سخانات">${esc(state.supplierDesc)}</textarea></div>
+        <span class="fq-meta">اكتب بالعامية وبتفصيل. كل كلمة لها معنى نحفظها، حتى لو ما لها تصنيف جاهز.</span></div>
 
       ${pickedItems.length
         ? `<div class="fq-field"><label>تصنيفاتك</label>
@@ -3190,9 +3199,18 @@ function renderSupplierAuth() {
         ? `<div class="fq-field"><label>تم التعرف على:</label>
             <div class="fq-pills">${suggested.map((item) => supplierChip(item, false)).join("")}</div></div>`
         : ""}
+      ${state.supplierCapabilities.length
+        ? `<div class="fq-field"><label>وفهمنا كمان إنك تشتغل في:</label>
+            <div class="fq-pills">${state.supplierCapabilities.map((word) => `<span class="fq-pill" style="opacity:.85">${esc(word)}</span>`).join("")}</div>
+            <span class="fq-meta">نحفظها بكلامك حتى لو ما لها تصنيف عندنا، عشان توصلك طلباتها.</span></div>`
+        : ""}
       ${catalog.length
-        ? `<details class="fq-card flat" style="padding:12px"><summary class="fq-meta">كل التصنيفات (${formatCount(catalog.length)})</summary>
-            <div class="fq-pills" style="margin-top:10px">${catalog.map((item) => supplierChip(item, false)).join("")}</div></details>`
+        ? `<details class="fq-card flat" style="padding:12px"><summary class="fq-meta">تصفّح كل التصنيفات (${formatCount(catalog.length)})</summary>
+            ${[...new Set(catalog.map((item) => item.group))]
+              .map((group) => `<div style="margin-top:12px"><span class="fq-meta">${esc(group)}</span>
+                <div class="fq-pills" style="margin-top:6px">${catalog.filter((item) => item.group === group).map((item) => supplierChip(item, false)).join("")}</div></div>`)
+              .join("")}
+          </details>`
         : ""}
 
       <button class="fq-btn r14" type="submit">سجّل وشاهد الطلبات</button>
@@ -3510,6 +3528,14 @@ function render() {
   bindGrow(app);
   if (state.view === "flow" && state.seenCards) for (const result of state.results) state.seenCards.add(resultKey(result));
   if (focused) document.getElementById(focused)?.focus();
+  // The business description re-renders while it is being typed in, so the caret goes back
+  // where the writer left it instead of jumping to the start of what he has written.
+  if (focused === "join-desc" && state.supplierCaret != null) {
+    const box = document.getElementById("join-desc");
+    try {
+      box?.setSelectionRange(state.supplierCaret, state.supplierCaret);
+    } catch (_error) {}
+  }
   if (keepScroll) window.scrollTo(0, keepScroll);
   if (stick) {
     state.stickChat = false;
@@ -4512,6 +4538,15 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.id === "join-desc") {
+    // Reading happens as he writes, so the categories and his own terms appear under the
+    // box instead of after a submit that might drop them. The text lives in state because
+    // the reply re-renders the screen, which would otherwise empty the box under him.
+    state.supplierDesc = event.target.value;
+    state.supplierCaret = event.target.selectionStart;
+    describeBusiness(state.supplierDesc);
+    return;
+  }
   if (event.target.id === "note") {
     state.note = event.target.value;
     scheduleDraftSave();

@@ -182,21 +182,47 @@ def test_the_request_list_tracks_quoted_awarded_and_lost(tmp_path: Path):
     assert api.get("/v1/supplier/requests", headers=headers).json()["requests"][0]["state"] == "lost"
 
 
-def test_categories_come_from_what_the_matcher_routes_on(tmp_path: Path):
+def test_the_seed_taxonomy_covers_the_trades_people_actually_work_in(tmp_path: Path):
     _store, api = make(tmp_path)
-    catalog = api.get("/v1/supplier/categories").json()["categories"]
-    keys = {item["key"] for item in catalog}
-    assert "plumber" in keys and "electrician" in keys
+    body = api.get("/v1/supplier/categories").json()
+    keys = {item["key"] for item in body["categories"]}
+    # The trades the old head list was missing entirely.
+    assert {"blacksmith", "painting", "tiling", "sanitary_ware", "water_heaters", "carpentry",
+            "aluminium", "hvac", "electrical", "plumbing", "insulation", "moving",
+            "furniture", "appliances", "building_materials"} <= keys
+    # And the things it wrongly offered a supplier are gone.
+    assert not {"horse", "land", "villa", "camry"} & keys
+    assert len(body["groups"]) >= 3
 
-    suggested = api.post("/v1/supplier/categories/suggest", json={"text": "أشتغل سباكة وكهرباء"}).json()["categories"]
-    assert {item["key"] for item in suggested} == {"plumber", "electrician"}
 
-    # Words the matcher does not route on suggest nothing rather than a guess.
-    assert api.post("/v1/supplier/categories/suggest", json={"text": "كلام بلا معنى"}).json()["categories"] == []
+def test_the_description_is_the_source_and_nothing_meaningful_is_thrown_away(tmp_path: Path):
+    _store, api = make(tmp_path)
+    read = api.post("/v1/supplier/describe", json={
+        "text": "ورشة حدادة ودهان وبلاط، وأركب واجهات كلادينج وأنظمة إنذار حريق",
+    }).json()
+    assert {item["key"] for item in read["categories"]} >= {"blacksmith", "painting", "tiling", "aluminium"}
+    assert all(item["kind"] == "service" for item in read["services"])
+    # The open half: terms with no category of their own survive as capabilities, so a
+    # supplier stays findable by the words he chose.
+    assert "انذار" in read["capabilities"] and "حريق" in read["capabilities"]
+    # Verbs are not capabilities.
+    assert "اركب" not in read["capabilities"]
 
-    # A category outside the catalogue is dropped, never stored.
-    created = register(api, categories=["plumber", "not-a-real-category"])
-    assert created.json()["supplier"]["categories"] == ["plumber"]
+    empty = api.post("/v1/supplier/describe", json={"text": ""}).json()
+    assert empty["categories"] == [] and empty["capabilities"] == []
+
+
+def test_registration_reads_the_description_even_when_nothing_was_ticked(tmp_path: Path):
+    _store, api = make(tmp_path)
+    created = register(api, categories=[], description="أشتغل سباكة وكهرباء وأركب سخانات")
+    supplier = created.json()["supplier"]
+    assert {"plumbing", "electrical", "water_heaters"} <= set(supplier["categories"])
+    assert set(supplier["services"]) >= {"plumbing", "electrical"}
+    assert supplier["products"] == ["water_heaters"]
+
+    # A category outside the taxonomy is dropped, never stored.
+    other = register(api, categories=["plumbing", "not-a-real-category"], description="")
+    assert other.json()["supplier"]["categories"] == ["plumbing"]
 
 
 def test_bad_supplier_details_are_refused(tmp_path: Path):

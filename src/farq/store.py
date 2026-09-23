@@ -670,6 +670,9 @@ class Store:
             );
             """
         )
+        self._ensure_column("suppliers", "capabilities_json", "text")
+        self._ensure_column("suppliers", "services_json", "text")
+        self._ensure_column("suppliers", "products_json", "text")
         self._ensure_column("requests", "contact_phone", "text")
         self._ensure_column("requests", "contact_lat", "real")
         self._ensure_column("requests", "contact_lng", "real")
@@ -1147,6 +1150,9 @@ class Store:
             "activity_type": row["activity_type"],
             "description": row["description"],
             "categories": json.loads(row["categories_json"] or "[]"),
+            "capabilities": json.loads(self._col(row, "capabilities_json") or "[]"),
+            "services": json.loads(self._col(row, "services_json") or "[]"),
+            "products": json.loads(self._col(row, "products_json") or "[]"),
             "haraj_seller_id": row["haraj_seller_id"],
             "status": row["status"],
             "created_at": row["created_at"],
@@ -1160,7 +1166,8 @@ class Store:
 
     def register_supplier(self, *, name: str, email: str, phone: str, password: str,
                           activity_type: str = "both", description: str | None = None,
-                          categories=None, haraj_seller_id: str | None = None) -> dict:
+                          categories=None, capabilities=None, services=None, products=None,
+                          haraj_seller_id: str | None = None) -> dict:
         supplier_id = uuid4().hex
         salt = secrets.token_hex(16)
         bound = seller_key(haraj_seller_id) if haraj_seller_id else None
@@ -1169,12 +1176,15 @@ class Store:
         try:
             self._connection.execute(
                 "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
-                " categories_json, haraj_seller_id, status, created_at, updated_at)"
-                " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " categories_json, capabilities_json, services_json, products_json, haraj_seller_id, status, created_at, updated_at)"
+                " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (supplier_id, name.strip(), email.lower().strip(), phone.strip(),
                  _hash_password(password, salt), salt, activity_type, (description or "").strip() or None,
-                 json.dumps(list(categories or []), ensure_ascii=False), bound,
-                 "active" if bound else "pending", _now(), _now()),
+                 json.dumps(list(categories or []), ensure_ascii=False),
+                 json.dumps(list(capabilities or []), ensure_ascii=False),
+                 json.dumps(list(services or []), ensure_ascii=False),
+                 json.dumps(list(products or []), ensure_ascii=False),
+                 bound, "active" if bound else "pending", _now(), _now()),
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError("email already registered") from exc

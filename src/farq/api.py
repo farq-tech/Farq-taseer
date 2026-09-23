@@ -24,7 +24,8 @@ from farq.config import PaymentsConfig, SearchConfig
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
-from farq.intent import analyze, analyze_needs, category_catalog, split_need_texts, suggest_categories
+from farq.intent import analyze, analyze_needs, split_need_texts
+from farq.taxonomy import GROUPS, catalog as category_catalog, known_keys, read_business
 from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
@@ -87,6 +88,7 @@ class SupplierClaimBody(ApiModel):
 
 class DescribeBody(ApiModel):
     text: str
+    activity: str | None = None
 
 
 class ShareContactBody(ApiModel):
@@ -390,13 +392,21 @@ def create_app(
 
     @app.get("/v1/supplier/categories")
     def supplier_categories(activity: str | None = None) -> dict:
-        # Only what the matcher routes on: a category outside HEADS is one no request is
-        # ever filed under, so offering it would promise work that cannot arrive.
-        return {"categories": category_catalog(activity)}
+        # The seed half of the taxonomy, grouped for the join screen. It is a starting
+        # point, not the limit: whatever a supplier writes that falls outside it is kept
+        # as a capability by /v1/supplier/describe and stays searchable.
+        return {"categories": category_catalog(activity), "groups": list(GROUPS)}
+
+    @app.post("/v1/supplier/describe")
+    def supplier_describe(body: DescribeBody) -> dict:
+        """Read the supplier's own business description: the categories it names, split
+        into services and products, plus every other meaningful term he used."""
+        return read_business(body.text or "", body.activity)
 
     @app.post("/v1/supplier/categories/suggest")
     def supplier_category_suggest(body: DescribeBody) -> dict:
-        return {"categories": suggest_categories(body.text or "")}
+        # Kept for the older client; the same reading, categories only.
+        return {"categories": read_business(body.text or "", body.activity)["categories"]}
 
     @app.post("/v1/supplier/register")
     def supplier_register(body: SupplierRegisterBody, request: Request) -> dict:
@@ -404,12 +414,23 @@ def create_app(
             raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
         name, email, phone = _clean_supplier(body)
         bound = store.seller_id_for_reply_token((body.token or "").strip()) if body.token else None
-        known = {item["key"] for item in category_catalog()}
+        # The description is the source of truth: it fills in whatever the supplier did not
+        # tick, and it is the only thing that can produce capabilities. It is read without
+        # the activity filter on purpose - a "services" supplier who writes "أركب سخانات"
+        # has told us he works with water heaters, and his own words outrank a chip.
+        read = read_business(body.description or "")
+        known = known_keys()
+        chosen = list(dict.fromkeys([key for key in body.categories if key in known]
+                                    + [item["key"] for item in read["categories"]]))
+        kinds = {item["key"]: item["kind"] for item in category_catalog()}
         try:
             supplier = store.register_supplier(
                 name=name, email=email, phone=phone, password=body.password,
                 activity_type=body.activity_type, description=body.description,
-                categories=[key for key in body.categories if key in known],
+                categories=chosen,
+                capabilities=read["capabilities"],
+                services=[key for key in chosen if kinds.get(key) == "service"],
+                products=[key for key in chosen if kinds.get(key) == "product"],
                 haraj_seller_id=bound,
             )
         except ValueError as exc:
