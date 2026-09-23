@@ -45,6 +45,23 @@ const state = {
   })(),
   seller: null,
   sellerToken: "",
+  // The supplier app is a second surface on the same bundle. Its session is its own: one
+  // device can be a customer and a supplier at once, and signing out of one is not the other.
+  supplierToken: localStorage.getItem("farq.supplierToken") || "",
+  supplier: null,
+  supplierRequests: [],
+  supplierCounts: null,
+  supplierFilter: "all",
+  supplierCatalog: [],
+  supplierPicked: [],
+  supplierSuggested: [],
+  supplierError: "",
+  supplierMode: "join",
+  supplierActivity: "both",
+  sellerFrom: "",
+  shareOpen: false,
+  sharePlace: false,
+  shareError: "",
   token: localStorage.getItem("farq.token") || "",
   busy: false,
   subPlans: [],
@@ -188,15 +205,29 @@ async function apiSend(path, options = {}) {
   }
 }
 
-async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false, signal } = {}) {
+async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false, signal, asSupplier = false } = {}) {
   const headers = {};
-  if (state.token && !skipAuth) headers.Authorization = `Bearer ${state.token}`;
+  if (asSupplier) {
+    if (state.supplierToken) headers.Authorization = `Bearer ${state.supplierToken}`;
+  } else if (state.token && !skipAuth) headers.Authorization = `Bearer ${state.token}`;
   let body;
   if (json !== undefined) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(json);
   } else if (form) body = form;
   const response = await fetch(path, { method, headers, body, signal });
+  if (response.status === 401 && asSupplier) {
+    // The supplier's session ended: drop it and ask him to sign in again. The customer's
+    // session on the same device is untouched.
+    supplierSignOutLocally();
+    state.supplierMode = "signin";
+    state.supplierError = "انتهت جلستك، سجّل دخولك من جديد.";
+    state.view = "supplier-auth";
+    render();
+    const error = new Error("supplier sign-in required");
+    error.auth = true;
+    throw error;
+  }
   if (response.status === 401 && !skipAuth) {
     // A session that ends mid-journey says so, and the journey waits for the sign-in.
     const hadSession = Boolean(state.token);
@@ -547,6 +578,8 @@ const ICONS = {
   home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   "file-text": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>',
   user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  "rotate-cw": '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>',
   back: '<polyline points="9 18 15 12 9 6"/>',
   forward: '<polyline points="15 18 9 12 15 6"/>',
   globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
@@ -1754,12 +1787,46 @@ function renderAwarded() {
       <strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong>
       ${offer?.total_price != null ? `<span class="fq-price won">${esc(money(offer.total_price))}</span>` : ""}
     </div>
+    ${shareContactCard(thread, who)}
     <div class="fq-actions" style="width:100%;margin-top:auto">
       <button class="fq-btn success" type="button" data-action="winner-chat">متابعة المحادثة</button>
       <button class="fq-btn ghost outline" type="button" data-action="open-compare">عرض تفاصيل العرض</button>
     </div>
   </section>
   ${fqNav("requests")}`;
+}
+
+// The supplier never gets the customer's phone or place unless the customer hands them over
+// here, after choosing him, for this one request — and he can take them back at any time.
+// Everything else in the product keeps the two sides talking inside the conversation.
+function shareContactCard(thread, who) {
+  if (!thread?.awarded_seller_id) return "";
+  if (thread.contact_shared) {
+    return `<div class="fq-card pad" style="width:100%">
+      <div class="fq-row"><span class="fq-tag ok">مُشارَك</span><strong style="font-size:15px">رقمك مع <bdi>${esc(who)}</bdi></strong></div>
+      <p class="fq-meta">يقدر يتصل عليك مباشرة لهذا الطلب. تقدر توقف المشاركة في أي وقت.</p>
+      <button class="fq-btn ghost r14" type="button" data-action="revoke-contact">إيقاف المشاركة</button>
+    </div>`;
+  }
+  if (!state.shareOpen) {
+    return `<div class="fq-card pad" style="width:100%">
+      <strong style="font-size:15px">تبي المورد يتصل عليك؟</strong>
+      <p class="fq-meta">اختياري. بدونه تكمّلون التنسيق من داخل المحادثة، وما يوصله رقمك.</p>
+      <button class="fq-btn ghost outline-deep r14" type="button" data-action="share-contact">شارك رقمي وموقعي</button>
+    </div>`;
+  }
+  return `<form id="share-contact" class="fq-card pad" style="width:100%;gap:12px" novalidate>
+    <strong style="font-size:15px">مشاركة بياناتك مع <bdi>${esc(who)}</bdi></strong>
+    <div class="fq-field"><label for="share-phone">رقم جوالك</label>
+      <div class="fq-inp">${ic("phone", 16)}<input id="share-phone" name="phone" inputmode="tel" placeholder="05xxxxxxxx" dir="ltr" required></div></div>
+    <label class="fq-check"><input type="checkbox" name="place" ${state.sharePlace ? "checked" : ""} data-action="share-place"><span>أرسل موقعي الحالي كمان</span></label>
+    ${state.shareError ? `<p class="fq-small" style="color:#b3402a">${esc(state.shareError)}</p>` : ""}
+    <p class="fq-meta">يُشارَك مع هذا المورد فقط ولهذا الطلب فقط.</p>
+    <div class="fq-actions" style="gap:10px">
+      <button class="fq-btn r14" type="submit">شارك</button>
+      <button class="fq-btn ghost r14" type="button" data-action="share-cancel">إلغاء</button>
+    </div>
+  </form>`;
 }
 
 // The offers summary above the conversation — node 33:159 (C02 underlay, offers-section).
@@ -2545,6 +2612,8 @@ const ROUTE_OF = {
   notifications: () => "/notifications",
   "notify-settings": () => "/account/notifications",
   subscribe: () => (state.subView === "plans" ? "/plans" : "/subscribe"),
+  "supplier-auth": () => (state.supplierMode === "join" ? "/supplier/join" : "/supplier"),
+  "supplier-requests": () => "/supplier",
   legal: () => `/${state.legalDoc || "terms"}`,
   seller: () => `/s/${encodeURIComponent(state.sellerToken)}`,
   // «sending» and «auth» have no address of their own: they stand over the screen that led to them.
@@ -2601,6 +2670,7 @@ function applyRoute(path, { pop = false } = {}) {
     loadSubscribe({ keepView: true }).catch(() => {});
     return;
   }
+  if (head === "supplier") return openSupplier(id);
   if (head === "s" && id) return openSellerPage(id);
   if (!state.token) {
     state.returnRoute = path;
@@ -2804,6 +2874,103 @@ async function openSellerPage(token) {
   if (state.view === "seller") render();
 }
 
+async function submitShareContact(form) {
+  const phone = String(new FormData(form).get("phone") || "").trim();
+  state.shareError = "";
+  let place = null;
+  if (state.sharePlace && navigator.geolocation) {
+    place = await new Promise((resolve) =>
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { timeout: 8000 },
+      ),
+    );
+  }
+  try {
+    await api(`/v1/requests/${encodeURIComponent(state.thread.id)}/contact`, {
+      method: "POST",
+      json: { phone, lat: place?.lat ?? null, lng: place?.lng ?? null },
+    });
+    state.shareOpen = false;
+    state.thread = { ...state.thread, contact_shared: true };
+    toast(place ? "تمت مشاركة رقمك وموقعك" : "تمت مشاركة رقمك");
+    render();
+  } catch (error) {
+    state.shareError = error?.detail === "invalid phone" ? "رقم الجوال غير صحيح. اكتبه بصيغة 05xxxxxxxx." : "ما قدرنا نشارك بياناتك. حاول مرة ثانية.";
+    render();
+  }
+}
+
+async function revokeContact() {
+  try {
+    await api(`/v1/requests/${encodeURIComponent(state.thread.id)}/contact`, { method: "DELETE" });
+    state.thread = { ...state.thread, contact_shared: false };
+    toast("أوقفنا مشاركة بياناتك");
+    render();
+  } catch (_error) {
+    toast("ما قدرنا نوقف المشاركة. حاول مرة ثانية.");
+  }
+}
+
+async function submitSupplierJoin(form) {
+  const data = new FormData(form);
+  state.supplierError = "";
+  try {
+    const created = await api("/v1/supplier/register", {
+      method: "POST",
+      skipAuth: true,
+      json: {
+        name: String(data.get("name") || "").trim(),
+        email: String(data.get("email") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        password: String(data.get("password") || ""),
+        activity_type: state.supplierActivity || "both",
+        description: String(data.get("description") || "").trim(),
+        categories: state.supplierPicked,
+        // Registering from an invite link binds the account to the Haraj seller that link
+        // proves, so the requests list works from the first second.
+        token: state.sellerToken || undefined,
+      },
+    });
+    keepSupplierSession(created.token, created.supplier);
+    state.supplierPicked = [];
+    state.supplierSuggested = [];
+    openSupplier();
+  } catch (error) {
+    state.supplierError = supplierMessage(error, "ما قدرنا نكمل التسجيل. راجع بياناتك وحاول مرة ثانية.");
+    render();
+  }
+}
+
+async function submitSupplierSignIn(form) {
+  const data = new FormData(form);
+  state.supplierError = "";
+  try {
+    const signed = await api("/v1/supplier/login", {
+      method: "POST",
+      skipAuth: true,
+      json: { email: String(data.get("email") || "").trim(), password: String(data.get("password") || "") },
+    });
+    keepSupplierSession(signed.token, signed.supplier);
+    openSupplier();
+  } catch (error) {
+    state.supplierError = supplierMessage(error, "البريد أو كلمة المرور غير صحيحة.");
+    render();
+  }
+}
+
+function supplierMessage(error, fallback) {
+  const detail = error?.detail;
+  if (error?.status === 409) return "هذا البريد أو الحساب مسجّل من قبل.";
+  if (error?.status === 429) return "محاولات كثيرة. انتظر شوي وحاول مرة ثانية.";
+  if (detail === "invalid phone") return "رقم الجوال غير صحيح. اكتبه بصيغة 05xxxxxxxx.";
+  if (detail === "invalid email") return "البريد الإلكتروني غير صحيح.";
+  if (detail === "password too short") return "كلمة المرور لازم ٨ أحرف على الأقل.";
+  if (detail === "name required") return "اكتب اسم المنشأة أو اسمك.";
+  return fallback;
+}
+
 async function submitSellerReply(form) {
   if (state.sellerBusy) return;
   const data = new FormData(form);
@@ -2845,8 +3012,241 @@ async function submitSellerReply(form) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The supplier app. A second surface on the same bundle: SUP01 join, SUP02 categories,
+// SC09 the requests list. It never passes through the customer's sign-in gate, and it
+// keeps its own session, because a supplier is not a Taseer customer.
+//
+// Why an account at all: an invite link carries one request. A supplier who signs in sees
+// every request he was written to — and, once registered, those requests reach him in this
+// app instead of through Haraj, which is the only channel with a hard capacity ceiling.
+// ---------------------------------------------------------------------------
+
+const SUPPLIER_STATES = {
+  new: { label: "جديد", tone: "warn" },
+  quoted: { label: "مرسل عرض", tone: "deep" },
+  awarded: { label: "تم الترسية", tone: "ok" },
+  lost: { label: "لم يتم اختيارك", tone: "" },
+};
+
+const SUPPLIER_FILTERS = [
+  { key: "all", label: "الكل" },
+  { key: "new", label: "جديدة" },
+  { key: "quoted", label: "مرسل" },
+  { key: "awarded", label: "مُرسى" },
+];
+
+function supplierSignOutLocally() {
+  state.supplierToken = "";
+  state.supplier = null;
+  state.supplierRequests = [];
+  state.supplierCounts = null;
+  try {
+    localStorage.removeItem("farq.supplierToken");
+  } catch (_error) {}
+}
+
+function keepSupplierSession(token, supplier) {
+  state.supplierToken = token || "";
+  state.supplier = supplier || null;
+  try {
+    if (token) localStorage.setItem("farq.supplierToken", token);
+  } catch (_error) {}
+}
+
+async function openSupplier(section = "") {
+  state.supplierError = "";
+  if (section === "join") {
+    state.view = "supplier-auth";
+    state.supplierMode = "join";
+    render();
+    loadSupplierCatalog().catch(() => {});
+    return;
+  }
+  if (!state.supplierToken) {
+    state.view = "supplier-auth";
+    state.supplierMode = state.supplierMode === "join" ? "join" : "signin";
+    render();
+    loadSupplierCatalog().catch(() => {});
+    return;
+  }
+  state.view = "supplier-requests";
+  render();
+  loadSupplierRequests().catch(() => {});
+}
+
+async function loadSupplierCatalog() {
+  if (state.supplierCatalog.length) return;
+  try {
+    const data = await api("/v1/supplier/categories", { skipAuth: true, quiet: true });
+    state.supplierCatalog = data.categories || [];
+    render();
+  } catch (_error) {}
+}
+
+async function loadSupplierRequests() {
+  try {
+    const data = await api("/v1/supplier/requests", { asSupplier: true, quiet: true });
+    state.supplierRequests = data.requests || [];
+    state.supplierCounts = data.counts || null;
+    state.supplier = data.supplier || state.supplier;
+  } catch (error) {
+    if (!error.auth) state.supplierError = "ما قدرنا نجيب طلباتك. جرّب مرة ثانية.";
+  }
+  render();
+}
+
+// SUP02: read the supplier's own words with the request matcher and offer what it
+// recognised. Silence means it recognised nothing, which is the honest answer.
+let suggestTimer = 0;
+function suggestCategories(text) {
+  clearTimeout(suggestTimer);
+  suggestTimer = setTimeout(async () => {
+    if (!text.trim()) {
+      state.supplierSuggested = [];
+      render();
+      return;
+    }
+    try {
+      const data = await api("/v1/supplier/categories/suggest", { method: "POST", json: { text }, skipAuth: true, quiet: true });
+      state.supplierSuggested = data.categories || [];
+      render();
+    } catch (_error) {}
+  }, 400);
+}
+
+function supplierChip(item, picked) {
+  return `<button class="fq-pill${picked ? " on" : ""}" type="button" data-action="supplier-category" data-key="${esc(item.key)}">
+    ${picked ? `<span class="y">✓</span>` : ""}${esc(item.label)}</button>`;
+}
+
+// SUP01 + SUP02 in one screen: the form, and the categories the description reveals.
+function renderSupplierAuth() {
+  const joining = state.supplierMode === "join";
+  const picked = state.supplierPicked;
+  const suggested = state.supplierSuggested.filter((item) => !picked.includes(item.key));
+  const catalog = state.supplierCatalog.filter((item) => !picked.includes(item.key) && !suggested.some((s) => s.key === item.key));
+  const pickedItems = picked
+    .map((key) => state.supplierCatalog.find((item) => item.key === key) || state.supplierSuggested.find((item) => item.key === key))
+    .filter(Boolean);
+
+  if (!joining) {
+    return `${fqHead({ title: "دخول الموردين", back: "supplier-home", backStart: true, mark: true })}
+    <section class="fq-body tight">
+      <div><h1 class="fq-h1">أهلاً بك مرة ثانية</h1>
+        <p class="fq-lead">ادخل لتشوف طلبات التسعير اللي وصلتك، وترد عليها من مكان واحد.</p></div>
+      ${state.supplierError ? `<p class="fq-small" style="color:#b3402a">${esc(state.supplierError)}</p>` : ""}
+      <form id="supplier-signin" class="fq-card pad" style="gap:14px" novalidate>
+        <div class="fq-field"><label for="sup-email">البريد الإلكتروني</label>
+          <div class="fq-inp"><input id="sup-email" name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required></div></div>
+        <div class="fq-field"><label for="sup-password">كلمة المرور</label>
+          <div class="fq-inp"><input id="sup-password" name="password" type="password" autocomplete="current-password" required></div></div>
+        <button class="fq-btn r14" type="submit">دخول</button>
+      </form>
+      <p class="fq-small" style="text-align:center">ما عندك حساب؟
+        <button class="fq-link" type="button" data-action="supplier-join">سجّل الآن</button></p>
+      ${operatorNote()}
+    </section>`;
+  }
+
+  return `${fqHead({ title: "طلب انضمام مورد", back: "supplier-home", backStart: true, mark: true })}
+  <section class="fq-body tight">
+    <div><h1 class="fq-h1">انضم كمورد في فرق</h1>
+      <p class="fq-lead">سجّل مرة وحدة، وتوصلك طلبات التسعير في مجالك مباشرة هنا — بدون ما تنتظر رسالة.</p></div>
+    ${state.supplierError ? `<p class="fq-small" style="color:#b3402a">${esc(state.supplierError)}</p>` : ""}
+    <form id="supplier-join" class="fq-card pad" style="gap:14px" novalidate>
+      <div class="fq-field"><label for="join-name">اسم المنشأة أو اسمك</label>
+        <div class="fq-inp">${ic("user", 16)}<input id="join-name" name="name" autocomplete="organization" required></div></div>
+      <div class="fq-field"><label for="join-email">البريد الإلكتروني</label>
+        <div class="fq-inp">${ic("mail", 16)}<input id="join-email" name="email" type="email" inputmode="email" autocomplete="email" dir="ltr" required></div></div>
+      <div class="fq-field"><label for="join-phone">رقم الجوال</label>
+        <div class="fq-inp">${ic("phone", 16)}<input id="join-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="05xxxxxxxx" dir="ltr" required></div></div>
+      <div class="fq-field"><label for="join-password">كلمة المرور</label>
+        <div class="fq-inp"><input id="join-password" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+        <span class="fq-meta">٨ أحرف على الأقل</span></div>
+
+      <hr class="fq-line">
+      <div class="fq-field"><label>نوع النشاط</label>
+        <div class="fq-pills">
+          ${[["both", "منتجات وخدمات"], ["services", "خدمات"], ["products", "منتجات"]]
+            .map(([key, label]) => `<button class="fq-pill${(state.supplierActivity || "both") === key ? " on" : ""}" type="button" data-action="supplier-activity" data-key="${key}">${esc(label)}</button>`)
+            .join("")}
+        </div></div>
+
+      <div class="fq-field"><label for="join-desc">وش تشتغل بالضبط؟</label>
+        <div class="fq-inp" style="min-height:88px;align-items:flex-start"><textarea id="join-desc" name="description" rows="3" maxlength="400" placeholder="مثال: أشتغل سباكة وأصلح تسريبات المياه وأركب سخانات"></textarea></div>
+        <span class="fq-meta">اكتب بالعامية. نقرأ كلامك ونقترح عليك التصنيفات.</span></div>
+
+      ${pickedItems.length
+        ? `<div class="fq-field"><label>تصنيفاتك</label>
+            <div class="fq-pills">${pickedItems.map((item) => supplierChip(item, true)).join("")}</div></div>`
+        : ""}
+      ${suggested.length
+        ? `<div class="fq-field"><label>تم التعرف على:</label>
+            <div class="fq-pills">${suggested.map((item) => supplierChip(item, false)).join("")}</div></div>`
+        : ""}
+      ${catalog.length
+        ? `<details class="fq-card flat" style="padding:12px"><summary class="fq-meta">كل التصنيفات (${formatCount(catalog.length)})</summary>
+            <div class="fq-pills" style="margin-top:10px">${catalog.map((item) => supplierChip(item, false)).join("")}</div></details>`
+        : ""}
+
+      <button class="fq-btn r14" type="submit">سجّل وشاهد الطلبات</button>
+      <p class="fq-small" style="text-align:center;margin:0">بالتسجيل توافق على
+        <a class="fq-link" href="/terms" data-action="legal" data-doc="terms">الشروط</a> و<a class="fq-link" href="/privacy" data-action="legal" data-doc="privacy">الخصوصية</a>.</p>
+    </form>
+    <p class="fq-small" style="text-align:center">عندك حساب؟
+      <button class="fq-link" type="button" data-action="supplier-signin">دخول</button></p>
+    ${operatorNote()}
+  </section>`;
+}
+
+// SC09: every request this supplier was written to, in one list.
+function renderSupplierRequests() {
+  const supplier = state.supplier;
+  const counts = state.supplierCounts || {};
+  const rows = state.supplierRequests.filter((row) => state.supplierFilter === "all" || row.state === state.supplierFilter);
+  const pending = supplier && supplier.status !== "active";
+
+  const card = (row) => {
+    const tone = SUPPLIER_STATES[row.state] || SUPPLIER_STATES.new;
+    const meta = row.state === "awarded"
+      ? `قيمة العقد: ${esc(money(row.offer || 0))}`
+      : row.offer != null
+        ? `عرضك: ${esc(money(row.offer))}`
+        : `${ic("map-pin", 12)} ${esc(cityLabel(row.city) || "")}`;
+    return `<button class="fq-card pad fq-suprow${row.state === "awarded" ? " won" : ""}" type="button" data-action="supplier-open" data-token="${esc(row.token || "")}" style="width:100%;text-align:inherit;font:inherit;gap:10px">
+      <div class="fq-row"><span class="fq-tag${tone.tone ? ` ${tone.tone}` : ""}">${esc(tone.label)}</span>
+        <strong style="font-size:16px"><bdi>${esc(row.need || "طلب تسعير")}</bdi></strong></div>
+      <div class="fq-row"><span class="fq-meta">${meta}</span>
+        <span class="fq-meta">${ic("map-pin", 12)} ${esc(cityLabel(row.city) || "")}</span></div>
+    </button>`;
+  };
+
+  return `${fqHead({ title: "طلبات التسعير", mark: true, end: `<button class="fq-ibtn plain" type="button" data-action="supplier-refresh" aria-label="تحديث">${ic("rotate-cw", 18)}</button>` })}
+  <section class="fq-body tight">
+    ${pending
+      ? `<div class="fq-card pad grey"><h2 class="fq-h2" style="font-size:17px">حسابك تحت المراجعة</h2>
+          <p class="fq-lead">سجّلنا طلب انضمامك. لين نربط حسابك بإعلاناتك، ما تقدر تشوف طلبات هنا — وإذا وصلك رابط طلب من فرق، افتحه وهو يربط حسابك تلقائياً.</p></div>`
+      : `<div class="fq-pills" style="overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px">${SUPPLIER_FILTERS.map((item) => {
+          const n = counts[item.key];
+          return `<button class="fq-pill${state.supplierFilter === item.key ? " on" : ""}" type="button" data-action="supplier-filter" data-key="${item.key}" style="white-space:nowrap">${esc(item.label)}${n != null ? ` (${formatCount(n)})` : ""}</button>`;
+        }).join("")}</div>`}
+    ${state.supplierError ? `<p class="fq-small" style="color:#b3402a">${esc(state.supplierError)}</p>` : ""}
+    ${rows.length
+      ? rows.map(card).join("")
+      : pending
+        ? ""
+        : `<div class="fq-card pad center"><p class="fq-lead">ما وصلك طلب بعد. أول ما يختارك عميل، يوصلك هنا مع إشعار.</p></div>`}
+  </section>
+  <nav class="fq-nav" aria-label="التنقل"><div class="fq-nav-row">
+    <button class="fq-tab on" type="button" data-action="supplier-home" aria-current="page"><span class="fq-tab-wrap">${ic("file-text", 24)}</span><span>طلبات التسعير</span></button>
+    <button class="fq-tab" type="button" data-action="supplier-signout"><span class="fq-tab-wrap">${ic("user", 24)}</span><span>خروج</span></button>
+  </div></nav>`;
+}
+
 function renderSeller() {
-  const head = fqHead({ title: "عرض سعر", mark: true });
+  const fromList = state.sellerFrom === "supplier-requests" && state.supplierToken;
+  const head = fqHead({ title: "عرض سعر", mark: true, back: fromList ? "supplier-home" : "", backStart: fromList });
   const view = state.seller;
   if (state.sellerError) {
     const missing = state.sellerError === "missing";
@@ -2891,8 +3291,15 @@ function renderSeller() {
           .join("")}</div>`
       : ""}
     ${state.sellerSent ? `<div class="fq-notice" role="status">${ic("check-circle", 16)} وصل ردّك للعميل. تقدر ترسل تحديث إذا تغيّر السعر.</div>` : ""}
+    ${view.awarded_to_me ? sellerAwarded(view) : ""}
     ${view.offers_open === false
-      ? `<div class="fq-notice" role="status">اختار العميل عرضاً آخر لهذا الطلب، فما يستقبل عروض جديدة. شكراً لك.</div>`
+      ? `<div class="fq-card pad grey" role="status">
+          <h2 class="fq-h2" style="font-size:17px">لم يتم اختيار عرضك لهذا الطلب</h2>
+          <p class="fq-lead">اختار العميل مورداً آخر. لا تقلق — بنرسل لك فرص تسعير جديدة ومناسبة لمجالك.</p>
+          ${state.supplierToken
+            ? `<button class="fq-btn ghost r14" type="button" data-action="supplier-home">شاهد الفرص المتاحة ←</button>`
+            : `<button class="fq-btn ghost r14" type="button" data-action="supplier-join">سجّل كمورد لتوصلك الطلبات مباشرة</button>`}
+        </div>`
       : `<form id="seller-reply" class="fq-card pad" style="gap:14px" novalidate>
       <div class="fq-field"><label for="seller-amount">سعرك (ر.س)</label>
         <div class="fq-inp"><input id="seller-amount" name="offer_amount" inputmode="decimal" autocomplete="off" placeholder="مثلاً: 350" value="${esc(draft.amount)}" dir="ltr" style="text-align:end"></div></div>
@@ -2981,6 +3388,28 @@ function operatorNote() {
   </p>`;
 }
 
+// SC04 + SC08. The phone and the place are here only because the customer chose to give
+// them after picking this supplier; nothing about winning reveals them on its own.
+function sellerAwarded(view) {
+  const contact = view.contact;
+  const maps = contact && contact.lat != null && contact.lng != null
+    ? `https://www.google.com/maps/search/?api=1&query=${contact.lat},${contact.lng}`
+    : "";
+  return `<div class="fq-card pad" style="border-color:var(--fq-success)">
+    <div class="fq-row"><span class="fq-tag ok">✓ تمت الترسية عليك</span>
+      <strong style="font-size:17px">🎉 تم اختيار عرضك!</strong></div>
+    <p class="fq-lead">اختارك العميل لتنفيذ الطلب. نسّق معه من نفس المحادثة تحت.</p>
+    ${contact
+      ? `<hr class="fq-line">
+        <p class="fq-meta">شارك العميل بياناته معك لهذا الطلب:</p>
+        <div class="fq-actions" style="gap:10px">
+          <a class="fq-btn r14" href="tel:${esc(contact.phone)}">${ic("phone", 16)} اتصال مباشر</a>
+          ${maps ? `<a class="fq-btn ghost outline-deep r14" href="${esc(maps)}" target="_blank" rel="noopener">${ic("map-pin", 16)} الموقع الجغرافي</a>` : ""}
+        </div>`
+      : `<hr class="fq-line"><p class="fq-meta">إذا احتجت رقمه أو موقعه، اطلبه منه في المحادثة — هو اللي يقرر يشاركه.</p>`}
+  </div>`;
+}
+
 function renderLegal() {
   const title = LEGAL_TITLES[state.legalDoc] || LEGAL_TITLES.terms;
   const others = Object.keys(LEGAL_TITLES).filter((doc) => doc !== state.legalDoc);
@@ -3039,6 +3468,8 @@ const VIEWS = {
   compare: renderCompare,
   awarded: renderAwarded,
   account: renderAccount,
+  "supplier-auth": renderSupplierAuth,
+  "supplier-requests": renderSupplierRequests,
   notifications: renderNotifications,
   "notify-settings": renderNotifySettings,
   subscribe: renderSubscribe,
@@ -4030,6 +4461,15 @@ document.addEventListener("submit", (event) => {
   } else if (form.id === "seller-reply") {
     event.preventDefault();
     submitSellerReply(form);
+  } else if (form.id === "share-contact") {
+    event.preventDefault();
+    submitShareContact(form);
+  } else if (form.id === "supplier-join") {
+    event.preventDefault();
+    submitSupplierJoin(form);
+  } else if (form.id === "supplier-signin") {
+    event.preventDefault();
+    submitSupplierSignIn(form);
   } else if (form.id === "edit-need") {
     event.preventDefault();
     const data = new FormData(form);
@@ -4525,7 +4965,58 @@ document.addEventListener("click", (event) => {
   } else if (action === "profile") toast("صفحة بياناتي قيد الإعداد");
   else if (action === "support") toast("الدعم: support@farq.sa");
   else if (action === "privacy" || action === "terms") openLegal(action);
-  else if (action === "lang") toast("الواجهة الإنجليزية قيد الإعداد");
+  else if (action === "share-contact") {
+    state.shareOpen = true;
+    state.shareError = "";
+    render();
+  } else if (action === "share-cancel") {
+    state.shareOpen = false;
+    state.shareError = "";
+    render();
+  } else if (action === "share-place") {
+    state.sharePlace = target.checked;
+  } else if (action === "revoke-contact") {
+    revokeContact().catch(() => {});
+  } else if (action === "supplier-home") openSupplier();
+  else if (action === "supplier-join") {
+    state.supplierMode = "join";
+    state.supplierError = "";
+    state.view = "supplier-auth";
+    render();
+    loadSupplierCatalog().catch(() => {});
+  } else if (action === "supplier-signin") {
+    state.supplierMode = "signin";
+    state.supplierError = "";
+    state.view = "supplier-auth";
+    render();
+  } else if (action === "supplier-signout") {
+    api("/v1/supplier/logout", { method: "POST", asSupplier: true, quiet: true }).catch(() => {});
+    supplierSignOutLocally();
+    state.supplierMode = "signin";
+    state.view = "supplier-auth";
+    render();
+  } else if (action === "supplier-activity") {
+    state.supplierActivity = target.dataset.key;
+    render();
+  } else if (action === "supplier-category") {
+    const key = target.dataset.key;
+    state.supplierPicked = state.supplierPicked.includes(key)
+      ? state.supplierPicked.filter((item) => item !== key)
+      : [...state.supplierPicked, key];
+    render();
+  } else if (action === "supplier-filter") {
+    state.supplierFilter = target.dataset.key;
+    render();
+  } else if (action === "supplier-refresh") loadSupplierRequests().catch(() => {});
+  else if (action === "supplier-open") {
+    const token = target.dataset.token;
+    // The request screen is the same one an invite link opens; coming from the list it
+    // remembers where to go back to.
+    if (token) {
+      state.sellerFrom = "supplier-requests";
+      openSellerPage(token);
+    }
+  } else if (action === "lang") toast("الواجهة الإنجليزية قيد الإعداد");
   else if (action === "forgot") toast("تواصل مع الدعم لإعادة تعيين كلمة المرور");
   else if (action === "emoji") document.querySelector("#user-reply textarea")?.focus();
 });

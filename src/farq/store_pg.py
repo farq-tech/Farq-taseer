@@ -395,6 +395,7 @@ class PgStore:
             reply_token=row["reply_token"],
             awarded_seller_id=row["awarded_seller_id"],
             awarded_at=_iso(row["awarded_at"]),
+            contact_shared=bool(row.get("contact_shared_at")),
             last_synced_at=_iso(row["last_synced_at"]),
             ref_code=row.get("ref_code"),
             created_at=_iso(row["created_at"]),

@@ -1040,6 +1040,7 @@ class Store:
             reply_token=row["reply_token"],
             awarded_seller_id=self._col(row, "awarded_seller_id"),
             awarded_at=self._col(row, "awarded_at"),
+            contact_shared=bool(self._col(row, "contact_shared_at")),
             last_synced_at=row["last_synced_at"] if "last_synced_at" in row.keys() else None,
             ref_code=self._col(row, "ref_code"),
             created_at=row["created_at"],

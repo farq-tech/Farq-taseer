@@ -207,3 +207,30 @@ def test_bad_supplier_details_are_refused(tmp_path: Path):
     assert register(api, activity_type="whatever").status_code == 422
     assert api.get("/v1/supplier/requests").status_code == 401
     assert api.get("/v1/supplier/me", headers={"Authorization": "Bearer nope"}).status_code == 401
+
+
+def test_the_customer_sees_whether_he_is_sharing(tmp_path: Path):
+    """The awarded screen offers to share, or offers to stop; it reads one flag."""
+    store, api = make(tmp_path)
+    customer = signed_in(api)
+    request_id = ask(api, customer, ["4008"]).json()["id"]
+    assert api.get(f"/v1/requests/{request_id}", headers=customer).json()["contact_shared"] is False
+
+    store._connection.execute("update requests set awarded_seller_id = '4008' where id = ?", (request_id,))
+    store._connection.commit()
+    api.post(f"/v1/requests/{request_id}/contact", headers=customer, json={"phone": "0501112233"})
+    assert api.get(f"/v1/requests/{request_id}", headers=customer).json()["contact_shared"] is True
+
+    api.delete(f"/v1/requests/{request_id}/contact", headers=customer)
+    assert api.get(f"/v1/requests/{request_id}", headers=customer).json()["contact_shared"] is False
+
+
+def test_one_customer_cannot_share_on_another_customers_request(tmp_path: Path):
+    store, api = make(tmp_path)
+    owner = signed_in(api)
+    request_id = ask(api, owner, ["4009"]).json()["id"]
+    store._connection.execute("update requests set awarded_seller_id = '4009' where id = ?", (request_id,))
+    store._connection.commit()
+    stranger = signed_in(api)
+    assert api.post(f"/v1/requests/{request_id}/contact", headers=stranger, json={"phone": "0501112233"}).status_code == 404
+    assert api.delete(f"/v1/requests/{request_id}/contact", headers=stranger).status_code == 404

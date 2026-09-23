@@ -2010,3 +2010,9 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-legaldoc h4 { font-size: 15px; font-weight: 700; margin: 8px 0 0; }
 .fq-legaldoc p { margin: 0; color: var(--fq-text-2); }
 .fq-legaldoc ul { margin: 0; padding-inline-start: 20px; color: var(--fq-text-2); }
+
+/* Supplier app: the requests list (SC09). A card that is a button still has to look and
+   line up like every other card, and the awarded one is outlined so it reads at a glance. */
+.fq-suprow { border: 1px solid var(--fq-line); cursor: pointer; }
+.fq-suprow .fq-row { width: 100%; }
+.fq-suprow.won { border-color: var(--fq-success); }

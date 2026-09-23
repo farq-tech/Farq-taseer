@@ -220,6 +220,8 @@ class RequestRecord(ContractModel):
     reply_token: str | None = None
     awarded_seller_id: str | None = None
     awarded_at: str | None = None
+    # True only while the customer has chosen to give the winning supplier his phone.
+    contact_shared: bool = False
     last_synced_at: str | None = None
     # «رقم الطلب» written into every message sent to a seller, so his replies are filed here.
     ref_code: str | None = None
