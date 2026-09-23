@@ -599,12 +599,15 @@
       "id": "q046",
       "query": "من الرياض الى جدة نقل عفش",
       "tags": [
-        "ambiguous",
-        "location_ambiguous",
-        "services"
+        "services",
+        "city",
+        "location_required"
       ],
       "expect": {
-        "state_hint": "location_ambiguous"
+        "type": "service",
+        "subcategory": "moving",
+        "city": "الرياض",
+        "clarification": false
       }
     },
     {
@@ -2641,6 +2644,213 @@
         "appliances"
       ],
       "expect": {}
+    },
+    {
+      "id": "q261",
+      "query": "تنظيف مكيف بالرياض",
+      "tags": [
+        "services",
+        "city",
+        "location_required"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "ac_cleaning",
+        "result_unit": "service_provider",
+        "city": "الرياض",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q262",
+      "query": "أبي تنظيف مكيفين سبليت بجدة",
+      "tags": [
+        "services",
+        "dialect",
+        "city"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "ac_cleaning",
+        "city": "جده"
+      }
+    },
+    {
+      "id": "q263",
+      "query": "غسيل مكيفات",
+      "tags": [
+        "services",
+        "location_required",
+        "without_city"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "ac_cleaning",
+        "clarification": true,
+        "city": null
+      }
+    },
+    {
+      "id": "q264",
+      "query": "صيانة مكيفات الرياض",
+      "tags": [
+        "services",
+        "city"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "ac_repair",
+        "city": "الرياض"
+      }
+    },
+    {
+      "id": "q265",
+      "query": "كهربائي بالرياض",
+      "tags": [
+        "trades",
+        "city"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "electrician",
+        "city": "الرياض"
+      }
+    },
+    {
+      "id": "q266",
+      "query": "need electrician in Riyadh",
+      "tags": [
+        "trades",
+        "brand_mix",
+        "city"
+      ],
+      "expect": {
+        "understood": true,
+        "subcategory": "electrician",
+        "city": "الرياض"
+      }
+    },
+    {
+      "id": "q267",
+      "query": "plumber jeddah",
+      "tags": [
+        "trades",
+        "brand_mix",
+        "city"
+      ],
+      "expect": {
+        "subcategory": "plumber",
+        "city": "جده"
+      }
+    },
+    {
+      "id": "q268",
+      "query": "كامري ٢٠٢٤",
+      "tags": [
+        "vehicles",
+        "model",
+        "spelling"
+      ],
+      "expect": {
+        "model": "Camry",
+        "year": 2024
+      }
+    },
+    {
+      "id": "q269",
+      "query": "أبي أحد يضبط البيت",
+      "tags": [
+        "ambiguous",
+        "dialect"
+      ],
+      "expect": {
+        "understood": false
+      }
+    },
+    {
+      "id": "q270",
+      "query": "نقل عفش من الرياض للدمام",
+      "tags": [
+        "services",
+        "city"
+      ],
+      "expect": {
+        "subcategory": "moving",
+        "city": "الرياض",
+        "clarification": false
+      }
+    },
+    {
+      "id": "q271",
+      "query": "كشف تسريب مياه بالرياض",
+      "tags": [
+        "services",
+        "long_tail",
+        "city"
+      ],
+      "expect": {
+        "type": "service",
+        "subcategory": "leak_detection",
+        "city": "الرياض"
+      }
+    },
+    {
+      "id": "q272",
+      "query": "كاميرات مراقبة بالرياض",
+      "tags": [
+        "services",
+        "city"
+      ],
+      "expect": {
+        "subcategory": "cctv",
+        "city": "الرياض"
+      }
+    },
+    {
+      "id": "q273",
+      "query": "زجاج سيكوريت بالرياض",
+      "tags": [
+        "trades",
+        "materials",
+        "city"
+      ],
+      "expect": {
+        "subcategory": "glazing",
+        "city": "الرياض"
+      }
+    },
+    {
+      "id": "q274",
+      "query": "سكيت كهربائي",
+      "tags": [
+        "electronics",
+        "long_tail"
+      ],
+      "expect": {
+        "type": "other"
+      }
+    },
+    {
+      "id": "q275",
+      "query": "مولد كهرباء",
+      "tags": [
+        "equipment"
+      ],
+      "expect": {
+        "category": "equipment"
+      }
+    },
+    {
+      "id": "q276",
+      "query": "تركيب أفياش كهرباء بالرياض",
+      "tags": [
+        "trades",
+        "city"
+      ],
+      "expect": {
+        "subcategory": "electrician",
+        "city": "الرياض"
+      }
     }
   ]
 }

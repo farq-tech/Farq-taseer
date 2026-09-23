@@ -89,21 +89,33 @@ def image_urls_for(image_ref: str | None) -> list[str]:
     return [f"{base}-400x400.webp", f"{base}-140x140.webp"]
 
 
+_PRICE_NUMBER = re.compile(r"\d[\d,٬]*(?:\.\d+)?")
+# Haraj sellers type 1, 2, 9, 20 ... to mean "call me". Below this many riyals
+# the number is a placeholder, not a price, and it must not feed "you save 99%".
+PRICE_FLOOR = 50
+
+
 def _price(raw: dict | None) -> float | None:
     if not raw:
         return None
     text = raw.get("inputPrice") or raw.get("formattedPrice")
     if text is None:
         return None
-    digits = "".join(character for character in str(text) if character.isdigit() or character == ".")
-    if not digits:
+    value = str(text).translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+    # The first number only: "من 100 الى 200" is not 100200.
+    match = _PRICE_NUMBER.search(value)
+    if not match:
+        return None
+    digits = match.group(0).replace(",", "").replace("٬", "")
+    whole = digits.split(".")[0]
+    # A phone number ("0555...") or nine or more digits is not a price.
+    if whole.startswith("05") or len(whole) >= 9:
         return None
     try:
         amount = float(digits)
     except ValueError:
         return None
-    # Haraj uses 1 as a contact placeholder. That is not a real price.
-    if amount <= 1:
+    if amount < PRICE_FLOOR:
         return None
     return amount
 
@@ -114,6 +126,7 @@ def ad_from_item(item: dict) -> Ad:
         posted = datetime.fromtimestamp(int(item["postDate"]), tz=timezone.utc).isoformat()
     url_path = item.get("URL") or ""
     url = url_path if str(url_path).startswith("http") else (f"https://haraj.com.sa/{url_path}" if url_path else None)
+    price = _price(item.get("price"))
     status = item.get("status")
     listing_state = "active" if status is True else "deleted" if status is False else "unknown"
     seller = Seller(
@@ -131,8 +144,8 @@ def ad_from_item(item: dict) -> Ad:
         url=url,
         city=canonical_city(item.get("city")),
         district=item.get("geoNeighborhood"),
-        price_amount=_price(item.get("price")),
-        price_currency="SAR" if _price(item.get("price")) is not None else None,
+        price_amount=price,
+        price_currency="SAR" if price is not None else None,
         posted_at=posted,
         image_ref=item.get("thumbURL") or None,
         image_urls=image_urls_for(item.get("thumbURL")),

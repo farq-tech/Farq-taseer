@@ -71,24 +71,79 @@ def city_choices() -> list[dict[str, str]]:
     return [{"value": name, "label": _LABELS.get(name, name)} for name in _ALIASES]
 
 
-def find_cities(text: str | None) -> list[str]:
+def city_label(value: str | None) -> str | None:
+    """Display spelling for a canonical city: "جده" is shown and searched as "جدة"."""
+
+    if not value:
+        return value
+    return _LABELS.get(value, value)
+
+
+# "المدينة" alone is also the ordinary word "the city" ("داخل المدينة وخارجها").
+_BARE_WORD_CITIES = {"المدينة": ("المدينة المنورة", "madinah", "medina")}
+
+
+def _city_pattern(folded: str) -> str:
+    alternatives = [re.escape(folded)]
+    if folded.startswith("ال"):
+        # ل + "الدمام" is written "للدمام".
+        alternatives.append("ل" + re.escape(folded[1:]))
+    body = "|".join(alternatives)
+    return rf"(?:^|\s)(?:و|ف)?(?:ب|ل)?(?:{body})(?:\s|$)"
+
+
+def _city_matches(normalized: str, strict: bool) -> list[tuple[int, int, str]]:
+    found: list[tuple[int, int, str]] = []
+    for canonical, aliases in _ALIASES.items():
+        names = (canonical, *aliases)
+        if strict and canonical in _BARE_WORD_CITIES:
+            names = _BARE_WORD_CITIES[canonical]
+        for alias in sorted(names, key=len, reverse=True):
+            folded = normalize(alias)
+            match = re.search(_city_pattern(folded), normalized)
+            if match:
+                found.append((match.start(), match.end(), canonical))
+                break
+    found.sort()
+    return found
+
+
+def find_cities(text: str | None, strict: bool = False) -> list[str]:
+    """Cities named in the text, in order. strict=True ignores the bare word "المدينة"."""
+
     normalized = normalize(text)
     if not normalized:
         return []
-    found: list[tuple[int, str]] = []
-    for canonical, aliases in _ALIASES.items():
-        for alias in (canonical, *aliases):
-            folded = normalize(alias)
-            match = re.search(rf"(?:^|\s)و?ب?{re.escape(folded)}(?:\s|$)", normalized)
-            if match:
-                found.append((match.start(), canonical))
-                break
-    found.sort()
     cities: list[str] = []
-    for _, city in found:
+    for _start, _end, city in _city_matches(normalized, strict):
         if city not in cities:
             cities.append(city)
     return cities
+
+
+_TO = {"الي", "لين", "حتي", "حتى"}
+
+
+def find_route(text: str | None) -> tuple[str, str] | None:
+    """"من الرياض الى جدة" / "من الرياض للدمام": (origin, destination), else None."""
+
+    normalized = normalize(text)
+    matches = _city_matches(normalized, strict=False)
+    if len(matches) != 2:
+        return None
+    (start_a, end_a, first), (start_b, _end_b, second) = matches
+    if first == second:
+        return None
+    before = normalized[:start_a].split()
+    between = normalized[end_a:start_b].split()
+    city_token = normalized[start_b:].split()[0] if normalized[start_b:].split() else ""
+    from_first = bool(before) and before[-1] == "من"
+    to_second = bool(set(between) & _TO) or city_token.startswith("ل") or city_token.startswith("ول")
+    if from_first and (to_second or not between):
+        return first, second
+    if to_second and not between[:-1]:
+        return first, second
+    return None
 
 
 def find_direction(text: str | None) -> str | None:

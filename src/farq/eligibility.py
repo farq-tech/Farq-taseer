@@ -6,7 +6,7 @@ import re
 
 from farq.cities import find_cities
 from farq.contracts import Ad, IntentResponse, Seller
-from farq.text import normalize, tokens
+from farq.text import normalize, prefix_variants, tokens
 
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _CAR_PARTS = (
@@ -28,6 +28,98 @@ _CAR_PARTS = (
 )
 _TRADE_DUMP = ("نجار", "حداد", "سباك", "كهرب", "دهان", "نقل عفش", "مكيف", "مقاول")
 _WANTED = {"مطلوب", "احتاج", "ابحث"}
+# Whole words that make a title a thing for sale, not a tradesman. Matched as
+# whole words only, so "سيرلانكي" and "سيراميك" are not "سير".
+_PRODUCT_NOT_TRADE = (
+    "فرن",
+    "سكوتر",
+    "سرير",
+    "دريل",
+    "مشط",
+    "موقد",
+    "دباب",
+    "قدر",
+    "قدر ضغط",
+    "كرسي",
+    "سيكل",
+    "دراجه",
+    "منشار",
+    "صاج",
+    "خلاط",
+    "مدلك",
+    "ونش",
+    "سلم",
+    "صاعق",
+    "بوتكاز",
+    "غلايه",
+    "مكنسه",
+    "سياره",
+    "مولد",
+    "دفايه",
+    "شاحن",
+    "مروحه",
+    "ثلاجه",
+    "غساله",
+    "جوال",
+    "لعبه",
+    "العاب",
+    "بطاريه",
+    "دركسون",
+    "ميكانيكي",
+    "سيارات",
+    "اغراض",
+    "عفش",
+    "كنب",
+    "شوايه",
+    "مكواه",
+    "سخان",
+    "ماكينه",
+    "مكينه",
+)
+# "كهربائي" is the trade when the title leads with it or names the work.
+_ELECTRIC = ("كهربايي", "كهرباء", "كهربا", "كهربه")
+_ELECTRIC_WORK = (
+    "فني",
+    "معلم",
+    "مقاول",
+    "مقاولات",
+    "شركه",
+    "مؤسسه",
+    "صيانه",
+    "تمديد",
+    "تمديدات",
+    "تاسيس",
+    "تشطيب",
+    "ترميم",
+    "تركيب",
+    "اصلاح",
+    "تصليح",
+    "اعمال",
+    "خدمات",
+    "منازل",
+    "منزلي",
+    "فلل",
+    "عمائر",
+    "افياش",
+    "اناره",
+    "ليد",
+    "سباك",
+    "سباكه",
+    "تكييف",
+    "دهان",
+    "ملاحق",
+    "طوارئ",
+    "خبره",
+    "ضمان",
+    "مهندس",
+    "باور",
+)
+# A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
+_NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
+_MAP_LISTING = ("جوجل", "قوقل", "google")
+_MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
+_SALE_WORDS = ("للبيع", "بيع", "البيع")
+_GLAZING_NOT = ("تنظيف", "غسيل", "غرفه نوم", "طاوله", "مرايه", "سياره", "عطر", "جوال", "شاشه", "نظاره")
 _LEAD_IN = {"للبيع", "بيع", "تويوتا", "toyota", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد"}
 _MODEL_TOKENS = {
     "Camry": ("كامري", "camry"),
@@ -35,22 +127,64 @@ _MODEL_TOKENS = {
 }
 
 
+# "شكري النجار" is a family name. "ال" + one of these is not the trade.
+_SURNAME_TRADES = {"نجار", "حداد", "سباك", "دهان", "خياط", "حلاق", "صباغ", "عطار"}
+
+
+def _token_hits(token: str, needle: str) -> bool:
+    for form in prefix_variants(token):
+        if needle in _SURNAME_TRADES and token.startswith("ال") and form == token[2:]:
+            continue
+        if form == needle:
+            return True
+        if len(needle) >= 5 and form.endswith(needle) and len(form) - len(needle) <= 3:
+            return True
+        if form.startswith(needle) and len(form) > len(needle) and len(form) - len(needle) <= 6:
+            return True
+    return False
+
+
+def _sequence_hit(words: list[str], parts: list[str], same) -> bool:
+    for start in range(0, len(words) - len(parts) + 1):
+        if all(same(words[start + offset], part) for offset, part in enumerate(parts)):
+            return True
+    return False
+
+
 def contains_term(text: str | None, term: str) -> bool:
+    """Does the text carry the term, allowing attached و/ب/ل/ال and plural endings.
+
+    "لنقل العفش" carries "نقل عفش"; "كاميرا المراقبه" carries "كاميرا مراقبه".
+    """
+
     needle = normalize(term)
     if not needle:
         return False
-    if f" {needle} " in f" {normalize(text)} ":
+    haystack = normalize(text)
+    if f" {needle} " in f" {haystack} ":
         return True
-    if " " in needle:
-        return False
-    for token in tokens(text):
-        if token == needle:
-            return True
-        if len(needle) >= 5 and token.endswith(needle) and len(token) - len(needle) <= 3:
-            return True
-        if token.startswith(needle) and len(token) > len(needle) and len(token) - len(needle) <= 6:
-            return True
-    return False
+    words = haystack.split()
+    parts = needle.split()
+    if len(parts) > 1:
+        return _sequence_hit(words, parts, _token_hits)
+    return any(_token_hits(token, needle) for token in words)
+
+
+def _word_is(token: str, word: str) -> bool:
+    return word in prefix_variants(token)
+
+
+def has_word(text: str | None, words) -> str | None:
+    """Whole-word lookup for blocklists: "سير" is not in "سيرلانكي" or "سيراميك"."""
+
+    haystack = normalize(text).split()
+    if not haystack:
+        return None
+    for word in words:
+        parts = normalize(word).split()
+        if parts and _sequence_hit(haystack, parts, _word_is):
+            return word
+    return None
 
 
 def evidence_text(ad: Ad | None, seller: Seller | None) -> str:
@@ -97,7 +231,8 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
         if result_city != intent.location_city.value:
             return False, ["location_mismatch"]
         if ad is not None and ad.title:
-            named = find_cities(ad.title)
+            # strict: "داخل المدينة وخارجها" is not a claim about Madinah.
+            named = find_cities(ad.title, strict=True)
             if named and intent.location_city.value not in named:
                 return False, ["location_mismatch"]
     text = evidence_text(ad, seller)
@@ -127,9 +262,37 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
         console = any(contains_term(title, word) for word in ("جهاز", "سوني", "بلايستيشن"))
         if game and not console:
             return False, ["game_not_console"]
+    if ad is not None and ad.price_amount is not None:
+        if intent.price_max.known and ad.price_amount > float(intent.price_max.value):
+            return False, ["over_price_max"]
+        if intent.price_min.known and ad.price_amount < float(intent.price_min.value):
+            return False, ["under_price_min"]
+    provider = intent.result_unit.value != "ad" or intent.type.value == "service"
+    if provider and title:
+        if has_word(title, _NOT_A_PROVIDER) or (has_word(title, _MAP_LISTING) and has_word(title, _MAP_THING)):
+            return False, ["not_a_provider"]
+    if intent.result_unit.value == "service_provider" and title:
+        first = tokens(title)[:1]
+        if has_word(title, ("للبيع",)) or (first and first[0] in {"بيع", "للبيع"}):
+            return False, ["for_sale_not_service"]
+    if intent.result_unit.value == "hybrid" and title and intent.eligibility_groups and has_word(title, _SALE_WORDS):
+        # "باب حديد مع درابزين للبيع", "زجاج ... للدرابزين البيع بالحبة": the
+        # thing for sale is something else; the railing is a side mention.
+        lead = [word for word in tokens(title) if not set(prefix_variants(word)) & set(_SALE_WORDS)][:1]
+        if not lead or not _group_hit(lead[0], intent.eligibility_groups[0]) or lead[0].startswith("لل"):
+            return False, ["side_mention_for_sale"]
     if intent.subcategory.value in {"electrician", "plumber"} and title:
-        if any(contains_term(title, word) for word in ("فرن", "سكوتر", "سرير", "دريل", "سير", "مشط", "موقد", "دباب", "قدر ضغط")):
+        if has_word(title, _PRODUCT_NOT_TRADE):
             return False, ["product_not_trade"]
+    if intent.subcategory.value == "electrician" and ad is not None and title:
+        if not _electric_trade(title, seller, text):
+            return False, ["no_trade_signal"]
+    if intent.subcategory.value == "glazing" and title and has_word(title, _GLAZING_NOT):
+        return False, ["not_glazing_work"]
+    if ad is not None and title and intent.title_groups:
+        for group in intent.title_groups:
+            if not _title_has_group(title, seller, group):
+                return False, [f"title_missing:{'|'.join(group)}"]
     if intent.condition.known and text:
         stated_condition = _explicit_condition(text)
         if stated_condition and stated_condition != intent.condition.value:
@@ -141,9 +304,32 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             if kinds >= 3:
                 return False, ["unfocused_listing"]
     matched: list[str] = []
+    missing: list[list[str]] = []
     for group in intent.eligibility_groups:
         hit = _group_hit(text, group)
         if hit is None:
-            return False, [f"missing:{'|'.join(group)}"]
+            missing.append(group)
+            continue
         matched.append(hit)
+    needed = intent.eligibility_min or len(intent.eligibility_groups)
+    if missing and len(matched) < needed:
+        return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched
+
+
+def _electric_trade(title: str, seller: Seller | None, text: str) -> bool:
+    """A home electrician, not an electric product ("كرسي كهربائي", "قدر كهربائي")."""
+
+    words = tokens(title)
+    if words and any(form in _ELECTRIC for form in prefix_variants(words[0])):
+        return True
+    if any(word.startswith("لل") and word[2:] in {"كهرباء", "كهربا"} for word in words):
+        return True  # "ابو محمد للكهرباء"
+    if has_word(title, _ELECTRIC_WORK):
+        return True
+    if seller is not None and has_word(seller.name, _ELECTRIC_WORK + _ELECTRIC):
+        return True
+    if not any(has_word(title, (word,)) for word in _ELECTRIC):
+        # The title does not say "كهرباء" at all; the body must name the trade.
+        return bool(has_word(text, ("فني كهرباء", "كهربايي منازل", "تمديد كهرباء", "تمديدات كهربايه", "صيانه كهرباء", "تاسيس كهرباء")))
+    return False

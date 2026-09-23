@@ -45,6 +45,8 @@ def score(
         value += 0.1
     elif age <= config.recent_days:
         value += 0.05
+    else:
+        value -= 0.15
     if ad is not None and ad.price_amount is not None:
         value += 0.03
     if ad is not None and ad.description:

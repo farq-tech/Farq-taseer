@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from farq.contracts import SearchResult
+from farq.contracts import ResultUnit, SearchResult
 from farq.text import normalize
 
 
@@ -18,6 +18,10 @@ def _keys(result: SearchResult) -> list[str]:
         keys.append(f"offer:{seller.id}|{normalize(ad.title)}|{ad.price_amount}")
     if ad is None and seller is not None:
         keys.append(f"seller:{seller.id}")
+    elif result.result_unit != ResultUnit.AD and seller is not None and seller.id:
+        # A provider or hybrid card is a supplier to ask; one card per supplier,
+        # or the customer picks the same seller twice and sends two requests.
+        keys.append(f"seller:{seller.id}")
     return keys
 
 
@@ -25,7 +29,8 @@ def deduplicate(results: list[SearchResult]) -> tuple[list[SearchResult], int]:
     kept: list[SearchResult] = []
     seen: set[str] = set()
     removed = 0
-    for result in results:
+    # Best-scored first, so the card kept for a seller is their strongest match.
+    for result in sorted(results, key=lambda item: item.score, reverse=True):
         keys = _keys(result)
         if any(key in seen for key in keys):
             removed += 1
