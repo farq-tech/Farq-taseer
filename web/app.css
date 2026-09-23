@@ -1492,10 +1492,10 @@ button.fq-card { cursor: pointer; }
 .fq-note .when { font-size: 11px; color: var(--fq-muted); flex: none; display: flex; align-items: center; gap: 6px; }
 .fq-note .unread { width: 8px; height: 8px; border-radius: 50%; background: var(--fq-success); }
 .fq-sec-title { font-size: 15px; font-weight: 800; color: var(--fq-text); margin: 0; }
-.fq-switch { width: 44px; height: 24px; border-radius: 999px; background: var(--fq-line); border: 0; padding: 2px; display: flex; flex: none; }
+.fq-switch { width: 44px; height: 24px; border-radius: 999px; background: var(--fq-line); border: 0; padding: 2px; display: flex; flex: none; direction: ltr; }
 .fq-switch span { width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: transform 180ms ease; }
 .fq-switch.on { background: var(--fq-success); }
-.fq-switch.on span { transform: translateX(-20px); }
+.fq-switch.on span { transform: translateX(20px); }
 
 /* ---------- selection controls, quotes, attachments ---------- */
 .fq-tick { width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--fq-line); background: var(--fq-surface); color: #fff; display: grid; place-items: center; flex: none; padding: 0; }
