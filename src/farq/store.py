@@ -705,6 +705,17 @@ class Store:
               where event in ('request_new', 'awarded', 'request_cancelled', 'closing_soon');
             """
         )
+        self._ensure_column("users", "email_verified_at", "text")
+        self._connection.executescript(
+            """
+            create table if not exists email_verifications (
+              token text primary key,
+              user_id text not null references users(id) on delete cascade,
+              expires_at text not null,
+              created_at text not null
+            );
+            """
+        )
         self._ensure_column("suppliers", "capabilities_json", "text")
         self._ensure_column("suppliers", "services_json", "text")
         self._ensure_column("suppliers", "products_json", "text")
@@ -812,6 +823,41 @@ class Store:
         self._connection.execute("delete from sessions where user_id = ? and created_at < ?", (row["id"], session_cutoff().isoformat()))
         self._connection.commit()
         return token
+
+    # -- email verification ----------------------------------------------------
+
+    def start_email_verification(self, user_id: str, ttl_hours: int = 48) -> str:
+        """See PgStore.start_email_verification."""
+        token = secrets.token_urlsafe(24)
+        expires = (datetime.now(timezone.utc) + timedelta(hours=ttl_hours)).isoformat()
+        self._connection.execute("delete from email_verifications where user_id = ?", (user_id,))
+        self._connection.execute(
+            "insert into email_verifications (token, user_id, expires_at, created_at) values (?, ?, ?, ?)",
+            (token_digest(token), user_id, expires, _now()),
+        )
+        self._connection.commit()
+        return token
+
+    def verify_email(self, token: str) -> str | None:
+        if not token:
+            return None
+        digest = token_digest(token)
+        row = self._connection.execute(
+            "select user_id, expires_at from email_verifications where token = ?", (digest,)
+        ).fetchone()
+        if row is None:
+            return None
+        self._connection.execute("delete from email_verifications where token = ?", (digest,))
+        if row["expires_at"] < _now():
+            self._connection.commit()
+            return None
+        self._connection.execute("update users set email_verified_at = ? where id = ?", (_now(), row["user_id"]))
+        self._connection.commit()
+        return row["user_id"]
+
+    def email_verified(self, user_id: str) -> bool:
+        row = self._connection.execute("select email_verified_at from users where id = ?", (user_id,)).fetchone()
+        return bool(row and self._col(row, "email_verified_at"))
 
     def start_guest(self) -> dict:
         email = f"guest-{uuid4().hex}@users.farq.local"

@@ -21,9 +21,11 @@ measured from starts_at would never reset.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from farq import mailer
 from farq.config import _env_bool, _env_int
 from farq.store import seller_key
 
@@ -40,6 +42,17 @@ class Limits:
     daily_messages: int = field(default_factory=lambda: _env_int("FARQ_DAILY_MESSAGE_LIMIT", 200))
     recipients_from_search: bool = field(default_factory=lambda: _env_bool("FARQ_RECIPIENTS_FROM_SEARCH", True))
     search_memory_days: int = field(default_factory=lambda: _env_int("FARQ_SEARCH_MEMORY_DAYS", 7))
+    # "auto" means: require it exactly when a verification email can be sent. Demanding a
+    # confirmation nobody can receive would lock out every customer, so the gate follows
+    # the mail provider rather than standing open or shut on its own. "on"/"off" override.
+    require_email_verification: str = field(default_factory=lambda: (_env_str("FARQ_REQUIRE_EMAIL_VERIFICATION", "auto")).strip().lower())
+
+    def verification_required(self) -> bool:
+        if self.require_email_verification == "on":
+            return True
+        if self.require_email_verification == "off":
+            return False
+        return mailer.configured()
 
 
 class LimitExceeded(Exception):
@@ -49,6 +62,11 @@ class LimitExceeded(Exception):
         super().__init__(code)
         self.status = status
         self.detail = {"code": code, "message": message, "limit": limit}
+
+
+def _env_str(name: str, default: str) -> str:
+    raw = os.environ.get(name)
+    return default if raw is None or raw == "" else raw
 
 
 def _since(**delta) -> str:
@@ -167,6 +185,14 @@ def _items_in(recipients, default_need: str | None) -> dict[str, set[str]]:
 
 def check_new_request(store, limits: Limits, user_id: str, recipients, default_need: str | None, trace_id: str | None = None) -> None:
     """recipients: objects with seller_id and need. Raises LimitExceeded."""
+    # Before anything else: an unverified address must not be able to make Taseer's Haraj
+    # account write to a real supplier, because a free trial per throwaway address is the
+    # cheapest way to spend the shared send capacity.
+    if limits.verification_required() and not store.email_verified(user_id):
+        raise LimitExceeded(
+            403, "EMAIL_NOT_VERIFIED",
+            "أكّد بريدك الإلكتروني قبل إرسال أول طلب. أرسلنا لك رابط التأكيد.",
+        )
     per_item = _items_in(recipients, default_need)
     allowance = entitlement(store, limits, user_id)
 

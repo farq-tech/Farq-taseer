@@ -91,6 +91,10 @@ class NotificationReadBody(ApiModel):
     id: str | None = None
 
 
+class EmailVerifyBody(ApiModel):
+    token: str
+
+
 class PushBody(ApiModel):
     endpoint: str
     p256dh: str
@@ -352,7 +356,50 @@ def create_app(
                 raise HTTPException(status_code=409, detail="could not create an account with these details") from exc
             return {"user_id": account["id"], "token": token, "name": account.get("name"), "email": email}
         token = store.login(email, body.password)
-        return {"user_id": user_id, "token": token, "name": name, "email": email}
+        _send_verification(user_id, email, name)
+        return {"user_id": user_id, "token": token, "name": name, "email": email,
+                "verification_required": limits.verification_required()}
+
+    # -- email verification -----------------------------------------------------
+    # The gate is on the first send, not on sign-up: someone must be able to look at the
+    # product before proving an address. See check_new_request in farq/limits.py.
+
+    def _send_verification(user_id: str, email: str, name: str | None = None) -> str:
+        if not limits.verification_required():
+            return "not_required"
+        token = store.start_email_verification(user_id)
+        link = f"{payments.public_base_url.rstrip('/')}/verify?token={token}"
+        greeting = f"أهلاً {name}،\n\n" if name else ""
+        return mailer.send(
+            email,
+            "أكّد بريدك في فرق تسعير",
+            f"{greeting}اضغط الرابط لتأكيد بريدك وتبدأ إرسال طلباتك. الرابط صالح ٤٨ ساعة."
+            "\n\nإذا ما أنشأت هذا الحساب، تجاهل الرسالة.",
+            url=link,
+        )
+
+    @app.post("/v1/auth/verify/send")
+    def resend_verification(account: dict = Depends(current_account), request: Request = None) -> dict:
+        if not register_limiter.allow(client_ip(request) if request else "unknown"):
+            raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
+        if store.email_verified(account["id"]):
+            return {"verified": True, "sent": "already_verified"}
+        return {"verified": False, "sent": _send_verification(account["id"], account["email"], account.get("name"))}
+
+    @app.post("/v1/auth/verify")
+    def confirm_verification(body: EmailVerifyBody) -> dict:
+        user_id = store.verify_email(body.token.strip())
+        if user_id is None:
+            raise HTTPException(status_code=404, detail="invalid or expired link")
+        return {"verified": True}
+
+    @app.get("/v1/auth/verify/status")
+    def verification_status(account: dict = Depends(current_account)) -> dict:
+        return {
+            "verified": store.email_verified(account["id"]),
+            "required": limits.verification_required(),
+            "email": account["email"],
+        }
 
     @app.post("/v1/auth/login")
     def login(body: RegisterBody, request: Request) -> dict:

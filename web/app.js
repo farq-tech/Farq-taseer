@@ -56,12 +56,17 @@ const state = {
   supplierPicked: [],
   supplierSuggested: [],
   supplierCapabilities: [],
+  supplierInbox: [],
+  supplierUnread: 0,
+  supplierTab: "requests",
   supplierDesc: "",
   supplierCaret: null,
   supplierError: "",
   supplierMode: "join",
   supplierActivity: "both",
   sellerFrom: "",
+  verify: null,
+  verifyState: "",
   shareOpen: false,
   sharePlace: false,
   shareError: "",
@@ -849,6 +854,7 @@ async function submitAuth(form) {
     state.returnRoute = "";
     applyRoute(route, { pop: true });
     loadSubStatus().catch(() => {});
+    loadVerification().catch(() => {});
     refreshUnread();
   } catch (error) {
     state.busy = false;
@@ -2615,6 +2621,7 @@ const ROUTE_OF = {
   notifications: () => "/notifications",
   "notify-settings": () => "/account/notifications",
   subscribe: () => (state.subView === "plans" ? "/plans" : "/subscribe"),
+  verify: () => "/verify",
   "supplier-auth": () => (state.supplierMode === "join" ? "/supplier/join" : "/supplier"),
   "supplier-requests": () => "/supplier",
   legal: () => `/${state.legalDoc || "terms"}`,
@@ -2664,6 +2671,10 @@ function applyRoute(path, { pop = false } = {}) {
     render();
   };
   if (LEGAL_TITLES[head]) return openLegal(head);
+  if (head === "verify") {
+    confirmEmail(new URLSearchParams(location.search).get("token") || "");
+    return;
+  }
   if (head === "plans") {
     // Public on purpose: a payment provider reviewing the service, and anyone deciding
     // whether to sign up, must be able to read the prices without creating an account.
@@ -3017,6 +3028,71 @@ async function submitSellerReply(form) {
   }
 }
 
+// The address is proved on the way to the first send, not on the way in: someone must be
+// able to look at the product before proving anything.
+async function confirmEmail(token) {
+  state.view = "verify";
+  state.verifyState = token ? "working" : "bad";
+  render();
+  if (!token) return;
+  try {
+    await api("/v1/auth/verify", { method: "POST", json: { token }, skipAuth: true });
+    state.verifyState = "done";
+    if (state.verify) state.verify.verified = true;
+  } catch (_error) {
+    state.verifyState = "bad";
+  }
+  render();
+}
+
+async function loadVerification() {
+  if (!state.token) return;
+  try {
+    state.verify = await api("/v1/auth/verify/status", { quiet: true });
+    render();
+  } catch (_error) {}
+}
+
+async function resendVerification() {
+  try {
+    const sent = await api("/v1/auth/verify/send", { method: "POST", json: {} });
+    toast(sent.verified ? "بريدك مؤكد أصلاً" : "أرسلنا لك رابط التأكيد");
+    if (sent.verified && state.verify) state.verify.verified = true;
+    render();
+  } catch (error) {
+    toast(error?.status === 429 ? "محاولات كثيرة. انتظر شوي." : "ما قدرنا نرسل الرابط. حاول مرة ثانية.");
+  }
+}
+
+// Shown above the app while an address is unproved and proving it is required.
+function verifyBanner() {
+  const check = state.verify;
+  if (!check || !check.required || check.verified) return "";
+  return `<div class="fq-banner">${ic("alert-triangle", 16)}<span style="flex:1">أكّد بريدك <bdi>${esc(check.email || "")}</bdi> قبل إرسال أول طلب.</span>
+    <button type="button" data-action="resend-verify">أعد الإرسال</button></div>`;
+}
+
+function renderVerify() {
+  const working = state.verifyState === "working";
+  const done = state.verifyState === "done";
+  return `${fqHead({ title: "تأكيد البريد", mark: true })}
+  <section class="fq-body center" style="padding-top:56px">
+    ${working
+      ? `<div class="fq-spinner" aria-hidden="true"></div><p class="fq-lead">نتأكد من الرابط…</p>`
+      : done
+        ? `<div class="fq-squircle ringed land">${ic("check", 56)}</div>
+           <div><h1 class="fq-h1">تم تأكيد بريدك</h1><p class="fq-lead">تقدر الآن ترسل طلباتك.</p></div>
+           <div class="fq-actions" style="width:100%;margin-top:auto">
+             <button class="fq-btn r14" type="button" data-action="home">ابدأ التسعير</button></div>`
+        : `<div class="fq-squircle danger">${ic("alert-triangle", 56)}</div>
+           <div><h1 class="fq-h1">الرابط غير صالح</h1>
+             <p class="fq-lead">يمكن انتهت صلاحيته أو استُخدم من قبل. اطلب رابطاً جديداً من داخل التطبيق.</p></div>
+           <div class="fq-actions" style="width:100%;margin-top:auto">
+             <button class="fq-btn r14" type="button" data-action="resend-verify">أرسل رابطاً جديداً</button>
+             <button class="fq-btn ghost r14" type="button" data-action="home">رجوع</button></div>`}
+  </section>`;
+}
+
 // ---------------------------------------------------------------------------
 // The supplier app. A second surface on the same bundle: SUP01 join, SUP02 categories,
 // SC09 the requests list. It never passes through the customer's sign-in gate, and it
@@ -3078,6 +3154,7 @@ async function openSupplier(section = "") {
   state.view = "supplier-requests";
   render();
   loadSupplierRequests().catch(() => {});
+  loadSupplierInbox().catch(() => {});
 }
 
 async function loadSupplierCatalog() {
@@ -3087,6 +3164,25 @@ async function loadSupplierCatalog() {
     state.supplierCatalog = data.categories || [];
     render();
   } catch (_error) {}
+}
+
+// Rung one of the ladder, as close to realtime as serverless allows: it reloads whenever
+// the supplier opens or refreshes his list.
+async function loadSupplierInbox() {
+  if (!state.supplierToken) return;
+  try {
+    const data = await api("/v1/supplier/notifications", { asSupplier: true, quiet: true });
+    state.supplierInbox = data.notifications || [];
+    state.supplierUnread = data.unread || 0;
+    if (state.view === "supplier-requests") render();
+  } catch (_error) {}
+}
+
+async function readSupplierInbox(id) {
+  try {
+    await api("/v1/supplier/notifications/read", { method: "POST", json: { id: id || null }, asSupplier: true, quiet: true });
+  } catch (_error) {}
+  loadSupplierInbox().catch(() => {});
 }
 
 async function loadSupplierRequests() {
@@ -3245,7 +3341,27 @@ function renderSupplierRequests() {
     </button>`;
   };
 
-  return `${fqHead({ title: "طلبات التسعير", mark: true, end: `<button class="fq-ibtn plain" type="button" data-action="supplier-refresh" aria-label="تحديث">${ic("rotate-cw", 18)}</button>` })}
+  const bell = `<button class="fq-ibtn plain" type="button" data-action="supplier-inbox" aria-label="التنبيهات">
+    <span class="fq-tab-wrap">${ic("bell", 18)}${state.supplierUnread ? `<span class="fq-tab-badge">${formatCount(state.supplierUnread)}</span>` : ""}</span></button>`;
+  if (state.supplierTab === "inbox") {
+    return `${fqHead({ title: "التنبيهات", back: "supplier-home", backStart: true, mark: true,
+      end: state.supplierUnread ? `<button class="fq-link" type="button" data-action="supplier-read-all">تعليم الكل</button>` : "" })}
+    <section class="fq-body tight">
+      ${state.supplierInbox.length
+        ? state.supplierInbox.map((item) => `<button class="fq-card pad fq-suprow${item.read ? "" : " won"}" type="button"
+            data-action="supplier-open-note" data-id="${esc(item.id)}" data-url="${esc(item.url || "")}" style="width:100%;text-align:inherit;font:inherit;gap:6px">
+            <div class="fq-row"><span class="fq-meta">${esc(chatTime(item.created_at))}</span>
+              <strong style="font-size:15px">${esc(item.title)}</strong></div>
+            ${item.body ? `<p class="fq-meta" style="margin:0"><bdi>${esc(item.body)}</bdi></p>` : ""}
+          </button>`).join("")
+        : `<div class="fq-card pad center"><p class="fq-lead">ما عندك تنبيهات بعد.</p></div>`}
+    </section>
+    <nav class="fq-nav" aria-label="التنقل"><div class="fq-nav-row">
+      <button class="fq-tab" type="button" data-action="supplier-home"><span class="fq-tab-wrap">${ic("file-text", 24)}</span><span>طلبات التسعير</span></button>
+      <button class="fq-tab" type="button" data-action="supplier-signout"><span class="fq-tab-wrap">${ic("user", 24)}</span><span>خروج</span></button>
+    </div></nav>`;
+  }
+  return `${fqHead({ title: "طلبات التسعير", mark: true, end: bell })}
   <section class="fq-body tight">
     ${pending
       ? `<div class="fq-card pad grey"><h2 class="fq-h2" style="font-size:17px">حسابك تحت المراجعة</h2>
@@ -3477,6 +3593,9 @@ function closeTopSheet() {
   return true;
 }
 
+// The supplier surface has its own session and never shows the customer's banners.
+const SUPPLIER_VIEWS = new Set(["supplier-auth", "supplier-requests", "seller"]);
+
 const VIEWS = {
   home: renderHome,
   "city-ask": renderCityAsk,
@@ -3491,6 +3610,7 @@ const VIEWS = {
   compare: renderCompare,
   awarded: renderAwarded,
   account: renderAccount,
+  verify: renderVerify,
   "supplier-auth": renderSupplierAuth,
   "supplier-requests": renderSupplierRequests,
   notifications: renderNotifications,
@@ -3511,7 +3631,8 @@ function render() {
   const stick = state.view === "thread" && (state.stickChat || !wall || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 140);
   // A streaming search re-renders the list many times; that is not an arrival.
   const arriving = state.view !== lastView && !(state.view === "flow" && state.results.length);
-  app.innerHTML = shell(`${view()}${state.pushAsk ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
+  const banner = state.token && !SUPPLIER_VIEWS.has(state.view) && state.view !== "verify" ? verifyBanner() : "";
+  app.innerHTML = shell(`${banner}${view()}${state.pushAsk ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
   document.body.classList.toggle("fq-web", window.innerWidth >= 900);
   document.body.classList.toggle("fq-auth", state.view === "auth");
   // the choreographed entrance belongs to the screen, not to every render of it
@@ -3950,6 +4071,10 @@ async function sendRequest() {
       state.resumeAfterPay = true;
       render();
       return;
+    }
+    if (error?.detail?.code === "EMAIL_NOT_VERIFIED") {
+      loadVerification().catch(() => {});
+      resendVerification().catch(() => {});
     }
     state.notice = error?.detail?.message || "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.view = "review";
@@ -5005,6 +5130,7 @@ document.addEventListener("click", (event) => {
   } else if (action === "profile") toast("صفحة بياناتي قيد الإعداد");
   else if (action === "support") toast("الدعم: support@farq.sa");
   else if (action === "privacy" || action === "terms") openLegal(action);
+  else if (action === "resend-verify") resendVerification().catch(() => {});
   else if (action === "share-contact") {
     state.shareOpen = true;
     state.shareError = "";
@@ -5017,7 +5143,10 @@ document.addEventListener("click", (event) => {
     state.sharePlace = target.checked;
   } else if (action === "revoke-contact") {
     revokeContact().catch(() => {});
-  } else if (action === "supplier-home") openSupplier();
+  } else if (action === "supplier-home") {
+    state.supplierTab = "requests";
+    openSupplier();
+  }
   else if (action === "supplier-join") {
     state.supplierMode = "join";
     state.supplierError = "";
@@ -5047,7 +5176,24 @@ document.addEventListener("click", (event) => {
   } else if (action === "supplier-filter") {
     state.supplierFilter = target.dataset.key;
     render();
-  } else if (action === "supplier-refresh") loadSupplierRequests().catch(() => {});
+  } else if (action === "supplier-refresh") {
+    loadSupplierRequests().catch(() => {});
+    loadSupplierInbox().catch(() => {});
+  } else if (action === "supplier-inbox") {
+    state.supplierTab = "inbox";
+    render();
+    loadSupplierInbox().catch(() => {});
+  } else if (action === "supplier-read-all") readSupplierInbox(null);
+  else if (action === "supplier-open-note") {
+    const url = target.dataset.url || "";
+    readSupplierInbox(target.dataset.id);
+    const token = url.split("/s/")[1];
+    if (token) {
+      state.supplierTab = "requests";
+      state.sellerFrom = "supplier-requests";
+      openSellerPage(decodeURIComponent(token));
+    }
+  }
   else if (action === "supplier-open") {
     const token = target.dataset.token;
     // The request screen is the same one an invite link opens; coming from the list it
@@ -5109,7 +5255,13 @@ restoreDraft();
 state.city = state.city || storedGet("farq.city") || "";
 const openRequest = new URLSearchParams(location.search).get("r");
 const bootPath = location.pathname;
-const publicPage = /^\/(terms|privacy)\/?$/.test(bootPath) || /^\/s\/[^/]+\/?$/.test(bootPath);
+// Screens that stand on their own without a customer session: the policies, the public
+// prices, the supplier app with its own session, an invite link, and the address
+// confirmation a link in an email lands on.
+const publicPage =
+  /^\/(terms|privacy|refunds|plans|verify)\/?$/.test(bootPath) ||
+  /^\/supplier(\/[^/]*)?\/?$/.test(bootPath) ||
+  /^\/s\/[^/]+\/?$/.test(bootPath);
 if (publicPage) {
   applyRoute(bootPath, { pop: true });
 } else if (!state.token) {
@@ -5124,6 +5276,7 @@ if (publicPage) {
     })
     .catch(() => {});
   loadSubStatus().catch(() => {});
+  loadVerification().catch(() => {});
   try {
     state.notifyPrefs = JSON.parse(localStorage.getItem("farq.notifyPrefs") || "{}");
   } catch (_error) {

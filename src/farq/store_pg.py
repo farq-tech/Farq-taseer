@@ -107,6 +107,42 @@ class PgStore:
             conn.execute("delete from sessions where user_id = %s and created_at < %s", (row["id"], session_cutoff()))
         return token
 
+    # -- email verification ----------------------------------------------------
+
+    def start_email_verification(self, user_id: str, ttl_hours: int = 48) -> str:
+        """A fresh token invalidates the ones before it, so an old link in an old inbox
+        stops working. Only the digest is stored, like a session."""
+        token = secrets.token_urlsafe(24)
+        expires = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+        with self._pool.connection() as conn:
+            conn.execute("delete from email_verifications where user_id = %s", (user_id,))
+            conn.execute(
+                "insert into email_verifications (token, user_id, expires_at) values (%s, %s, %s)",
+                (token_digest(token), user_id, expires),
+            )
+        return token
+
+    def verify_email(self, token: str) -> str | None:
+        """The user id on success, None for an unknown or expired token."""
+        if not token:
+            return None
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select user_id, expires_at from email_verifications where token = %s", (token_digest(token),)
+            ).fetchone()
+            if row is None:
+                return None
+            conn.execute("delete from email_verifications where token = %s", (token_digest(token),))
+            if row["expires_at"] < datetime.now(timezone.utc):
+                return None
+            conn.execute("update users set email_verified_at = now() where id = %s", (row["user_id"],))
+        return row["user_id"]
+
+    def email_verified(self, user_id: str) -> bool:
+        with self._pool.connection() as conn:
+            row = conn.execute("select email_verified_at from users where id = %s", (user_id,)).fetchone()
+        return bool(row and row["email_verified_at"])
+
     def start_guest(self) -> dict:
         email = f"guest-{uuid4().hex}@users.farq.local"
         password = secrets.token_urlsafe(18)
