@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
-from farq.haraj_chat import InboundMessage, SentMessage, extract_price
+from farq.haraj_chat import InboundMessage, SentMessage, author_id, extract_quote, find_references, new_reference
 
 ALL_SELLERS = "all_sellers"
 SINGLE_SELLER = "single_seller"
@@ -160,6 +160,66 @@ def _moment(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _utc(value):
+    moment = _moment(value)
+    if moment is not None and moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | None:
+    """The thread a seller's Haraj reply belongs to, or None when that cannot be known.
+
+    Taseer writes from one Haraj account, so a seller has one conversation with us shared by
+    every buyer who asked him. A reply quoting a request's reference goes to that request.
+    Otherwise it goes to the latest request we had sent him something for before he wrote
+    (Farq's rule), but only while the open requests in that conversation belong to one buyer:
+    across buyers a guess would show one buyer the reply, phone number and price meant for another.
+    Each candidate is a haraj_threads row plus owner_user_id, ref_code, awarded_seller_id,
+    request_created_at, and sends (when our messages on that thread were sent)."""
+    if not candidates:
+        return None
+    moment = _utc(sent_at)
+    oldest = datetime.min.replace(tzinfo=timezone.utc)
+
+    def last_send(row):
+        sends = [item for item in (_utc(value) for value in row["sends"]) if item is not None and (moment is None or item <= moment)]
+        return max(sends) if sends else None
+
+    def latest(rows):
+        sent = [(last_send(row), row) for row in rows]
+        sent = [item for item in sent if item[0] is not None]
+        if sent:
+            return max(sent, key=lambda item: item[0])[1]
+        return max(rows, key=lambda row: _utc(row["request_created_at"]) or oldest)
+
+    codes = set(find_references(body))
+    quoted = [row for row in candidates if row.get("ref_code") and row["ref_code"] in codes]
+    if quoted:
+        return latest(quoted) if len({row["request_id"] for row in quoted}) == 1 else None
+    # Only requests he had heard about from us when he wrote, and not those already awarded to someone else.
+    heard = [row for row in candidates if last_send(row) is not None] or candidates
+    open_rows = [row for row in heard if row.get("awarded_seller_id") in (None, "", row["seller_id"])] or heard
+    if len({row["owner_user_id"] for row in open_rows}) > 1:
+        return None
+    return latest(open_rows)
+
+
+def search_seller_ids(results) -> set[str]:
+    """The Haraj seller ids a search showed, the only ones a customer may then send a request to."""
+    found = set()
+    for result in results or ():
+        seller = result.seller or (result.ad.seller if result.ad else None)
+        if seller is not None and seller.id:
+            found.add(seller_key(seller.id))
+    return found
+
+
+def seller_key(seller_id: str) -> str:
+    """``haraj:seller:19676360`` and ``19676360`` are the same seller."""
+    return author_id(seller_id) or str(seller_id).strip()
 
 
 def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer], messages) -> dict:
@@ -429,6 +489,30 @@ class Store:
             )
             """
         )
+        self._ensure_column("requests", "ref_code", "text")
+        self._connection.executescript(
+            """
+            create unique index if not exists requests_ref_code on requests (ref_code) where ref_code is not null;
+            create table if not exists haraj_unmatched (
+              haraj_message_id text primary key,
+              haraj_conversation_id text not null,
+              seller_id text not null,
+              body text not null,
+              media_json text,
+              sent_at text,
+              candidate_request_ids_json text not null,
+              created_at text not null
+            );
+            create table if not exists search_sellers (
+              trace_id text not null,
+              user_id text,
+              seller_id text not null,
+              created_at text not null,
+              primary key (trace_id, seller_id)
+            );
+            create index if not exists search_sellers_user on search_sellers (user_id, created_at);
+            """
+        )
         self._connection.commit()
         self._seed_plans()
 
@@ -543,9 +627,10 @@ class Store:
         request_id = uuid4().hex
         first_token = secrets.token_urlsafe(16)
         created = _now()
+        ref_code = next(code for code in iter(new_reference, None) if self._connection.execute("select 1 from requests where ref_code = ?", (code,)).fetchone() is None)
         self._connection.execute(
-            "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, reply_token, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (request_id, owner_user_id, original_text, need, notes, city_name, json.dumps(attributes, ensure_ascii=False), first_token, created),
+            "insert into requests (id, owner_user_id, original_text, need, notes, city, attributes_json, reply_token, created_at, ref_code) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (request_id, owner_user_id, original_text, need, notes, city_name, json.dumps(attributes, ensure_ascii=False), first_token, created, ref_code),
         )
         for index, item in enumerate(recipients):
             token = item.reply_token or (first_token if index == 0 else secrets.token_urlsafe(16))
@@ -683,6 +768,7 @@ class Store:
             awarded_seller_id=self._col(row, "awarded_seller_id"),
             awarded_at=self._col(row, "awarded_at"),
             last_synced_at=row["last_synced_at"] if "last_synced_at" in row.keys() else None,
+            ref_code=self._col(row, "ref_code"),
             created_at=row["created_at"],
         )
 
@@ -808,22 +894,28 @@ class Store:
     def claim_deliveries(self, limit: int = 50) -> list[dict]:
         rows = self._connection.execute(
             """
-            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id,
-              (select r.reply_token from request_recipients r where r.request_id = d.request_id and r.seller_id = d.seller_id
-               order by coalesce(r.need, '') = d.need desc limit 1) as reply_token
+            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id, q.ref_code
             from message_deliveries d
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
+            join requests q on q.id = d.request_id
             where d.delivery_status = 'queued'
             order by d.created_at
             limit ?
             """,
             (limit,),
         ).fetchall()
+        claimed = []
         for row in rows:
             self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1, last_attempt_at = ? where id = ?", (_now(), row["id"]))
+            # Looked up per row: SQLite 3.45 cannot resolve d.need inside a correlated subquery's order by.
+            token = self._connection.execute(
+                "select reply_token from request_recipients where request_id = ? and seller_id = ? order by coalesce(need, '') = ? desc limit 1",
+                (row["request_id"], row["seller_id"], row["need"]),
+            ).fetchone()
+            claimed.append({**dict(row), "reply_token": token["reply_token"] if token else None, "media": json.loads(row["media"]) if row["media"] else []})
         self._connection.commit()
-        return [{**dict(row), "media": json.loads(row["media"]) if row["media"] else []} for row in rows]
+        return claimed
 
     def finish_delivery(self, delivery_id: str, sent: SentMessage | None = None, error: str | None = None, retry: bool = False) -> None:
         row = self._connection.execute("select * from message_deliveries where id = ?", (delivery_id,)).fetchone()
@@ -873,20 +965,86 @@ class Store:
         )
         self._connection.commit()
 
-    def thread_for_inbound(self, conversation_id: str, sent_at: str) -> dict | None:
-        """Haraj keeps one conversation per supplier. A reply belongs to the latest request we sent him
-        something for before the reply was written (Farq's rule), else to the newest request."""
+    def _inbound_candidates(self, conversation_id: str) -> list[dict]:
+        rows = self._connection.execute(
+            "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at"
+            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ?",
+            (conversation_id,),
+        ).fetchall()
+        candidates = []
+        for row in rows:
+            sends = self._connection.execute(
+                "select sent_at from message_deliveries where request_id = ? and seller_id = ? and need = ? and delivery_status = 'sent' and sent_at is not null",
+                (row["request_id"], row["seller_id"], row["need"]),
+            ).fetchall()
+            candidates.append({**dict(row), "sends": [item["sent_at"] for item in sends]})
+        return candidates
+
+    def thread_for_inbound(self, conversation_id: str, sent_at: str, body: str = "") -> dict | None:
+        """The request a seller's reply belongs to (see choose_thread); None when it cannot be told apart."""
+        return choose_thread(self._inbound_candidates(conversation_id), body, sent_at)
+
+    def record_unmatched_inbound(self, conversation_id: str, seller_id: str, inbound: InboundMessage) -> list[str]:
+        """Keep a reply no request can safely claim, out of every customer's view. Returns the requests it could belong to."""
+        candidates = sorted({row["request_id"] for row in self._inbound_candidates(conversation_id)})
+        self._connection.execute(
+            "insert or ignore into haraj_unmatched (haraj_message_id, haraj_conversation_id, seller_id, body, media_json, sent_at, candidate_request_ids_json, created_at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                inbound.haraj_message_id,
+                conversation_id,
+                seller_id,
+                inbound.body,
+                json.dumps(list(inbound.media), ensure_ascii=False) if inbound.media else None,
+                inbound.sent_at,
+                json.dumps(candidates),
+                _now(),
+            ),
+        )
+        self._connection.commit()
+        return candidates
+
+    def unmatched_inbound(self, conversation_id: str | None = None) -> list[dict]:
+        rows = self._connection.execute(
+            "select * from haraj_unmatched where ? is null or haraj_conversation_id = ? order by sent_at", (conversation_id, conversation_id)
+        ).fetchall()
+        return [{**dict(row), "candidate_request_ids": json.loads(row["candidate_request_ids_json"])} for row in rows]
+
+    # --- Limits: who may be asked, and how often -------------------------------------------------
+
+    def record_search_sellers(self, trace_id: str, user_id: str | None, seller_ids) -> None:
+        created = _now()
+        for seller_id in seller_ids:
+            self._connection.execute(
+                "insert into search_sellers (trace_id, user_id, seller_id, created_at) values (?, ?, ?, ?)"
+                " on conflict (trace_id, seller_id) do update set user_id = coalesce(search_sellers.user_id, excluded.user_id)",
+                (trace_id, user_id, seller_id, created),
+            )
+        self._connection.commit()
+
+    def searched_sellers(self, user_id: str, trace_id: str | None, since: str) -> set[str]:
+        """Sellers this user's searches showed since then, and those of an anonymous search he names."""
+        rows = self._connection.execute(
+            "select seller_id from search_sellers where (user_id = ? and julianday(created_at) >= julianday(?))"
+            " or (trace_id = ? and (user_id is null or user_id = ?))",
+            (user_id, since, trace_id, user_id),
+        ).fetchall()
+        return {row["seller_id"] for row in rows}
+
+    def count_requests(self, user_id: str, since: str | None = None) -> int:
         row = self._connection.execute(
-            "select t.* from haraj_threads t join message_deliveries d on d.request_id = t.request_id and d.seller_id = t.seller_id and d.need = t.need"
-            " where t.haraj_conversation_id = ? and d.delivery_status = 'sent' and julianday(d.sent_at) <= julianday(?) order by julianday(d.sent_at) desc limit 1",
-            (conversation_id, sent_at),
+            "select count(*) as count from requests where owner_user_id = ? and (? is null or julianday(created_at) >= julianday(?))",
+            (user_id, since, since),
         ).fetchone()
-        if row is None:
-            row = self._connection.execute(
-                "select t.* from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ? order by r.created_at desc limit 1",
-                (conversation_id,),
-            ).fetchone()
-        return None if row is None else dict(row)
+        return row["count"]
+
+    def count_customer_messages(self, user_id: str, since: str) -> int:
+        row = self._connection.execute(
+            "select count(*) as count from messages m join requests r on r.id = m.request_id"
+            " where r.owner_user_id = ? and m.sender_role = 'user' and julianday(m.created_at) >= julianday(?)",
+            (user_id, since),
+        ).fetchone()
+        return row["count"]
 
     def conversation_checked(self, conversation_id: str, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int | None = None) -> None:
         moment = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
@@ -897,7 +1055,13 @@ class Store:
         self._connection.commit()
 
     def has_haraj_message(self, haraj_message_id: str) -> bool:
-        return self._connection.execute("select 1 from messages where haraj_message_id = ?", (haraj_message_id,)).fetchone() is not None
+        return (
+            self._connection.execute(
+                "select 1 from messages where haraj_message_id = ? union all select 1 from haraj_unmatched where haraj_message_id = ?",
+                (haraj_message_id, haraj_message_id),
+            ).fetchone()
+            is not None
+        )
 
     def save_file_for_request(self, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
         owner = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
@@ -947,7 +1111,8 @@ class Store:
             (request_id, seller_id, need or ""),
         ).fetchone()
         offer = None
-        price = extract_price(inbound.body)
+        quote = extract_quote(inbound.body)
+        price = None if quote is None else quote.total
         if price is not None:
             offer = Offer(
                 amount=price,
@@ -955,14 +1120,31 @@ class Store:
                 note=inbound.body,
                 provider_name=recipient["seller_name"] if recipient else None,
                 seller_id=seller_id,
+                base_price=quote.base,
+                delivery_included=quote.delivery_included,
+                delivery_price=quote.delivery_price,
                 total_price=price,
                 need=need,
             )
             # Latest price from a seller on an item replaces the earlier one.
             self._connection.execute("delete from offers where request_id = ? and seller_id = ? and coalesce(need, '') = ?", (request_id, seller_id, need or ""))
             self._connection.execute(
-                "insert into offers (id, request_id, seller_id, need, provider_name, total_price, currency, message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (uuid4().hex, request_id, seller_id, need, offer.provider_name, price, "SAR", inbound.body, _now()),
+                "insert into offers (id, request_id, seller_id, need, provider_name, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
+                " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    uuid4().hex,
+                    request_id,
+                    seller_id,
+                    need,
+                    offer.provider_name,
+                    quote.base,
+                    None if quote.delivery_included is None else int(quote.delivery_included),
+                    quote.delivery_price,
+                    price,
+                    "SAR",
+                    inbound.body,
+                    _now(),
+                ),
             )
         message = self.add_message(
             request_id,
