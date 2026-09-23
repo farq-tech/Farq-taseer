@@ -1,6 +1,13 @@
 const state = {
   view: "home",
+  // What the customer typed in the composer. Nothing downstream writes over it: the request
+  // sent to the suppliers carries these words, not the shortened search phrase.
   query: "",
+  originalText: "",
+  // The phrase the last search actually ran (built from the M02 items), kept apart from the above.
+  searchText: "",
+  needFilter: "",
+  resultNeeds: new Map(),
   files: [],
   intent: null,
   searchState: "",
@@ -66,6 +73,23 @@ function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
 
+// Storage can be missing or refuse (private windows, blocked site data); the app works without it.
+function storedGet(key, area = "local") {
+  try {
+    return (area === "session" ? sessionStorage : localStorage).getItem(key);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function storedSet(key, value, area = "local") {
+  try {
+    const store = area === "session" ? sessionStorage : localStorage;
+    if (value == null) store.removeItem(key);
+    else store.setItem(key, value);
+  } catch (_error) {}
+}
+
 // Every number in the frames — prices, times, counts — is printed in Western digits.
 function formatCount(value) {
   return new Intl.NumberFormat("ar-SA-u-nu-latn").format(value);
@@ -89,6 +113,34 @@ function money(amount) {
   return `${new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 }).format(amount)} ر.س`;
 }
 
+// Arabic counts: one, two, three to ten, and eleven on. `forms` = [one, two, few, many];
+// the few/many forms follow the number.
+function plural(count, [one, two, few, many]) {
+  const n = Number(count) || 0;
+  if (n === 1) return one;
+  if (n === 2) return two;
+  if (n >= 3 && n <= 10) return `${formatCount(n)} ${few}`;
+  return `${formatCount(n)} ${many}`;
+}
+
+const suppliers = (n) => plural(n, ["مورد واحد", "موردين", "موردين", "مورد"]);
+const offersCount = (n) => plural(n, ["عرض واحد", "عرضين", "عروض", "عرض"]);
+
+// An ad's age, from the date Haraj gives it. Old ads still show, but say so.
+const OLD_AD_DAYS = 90;
+function adAge(ad) {
+  const then = Date.parse(ad?.posted_at || "");
+  if (Number.isNaN(then)) return null;
+  const days = Math.max(0, Math.floor((Date.now() - then) / 86400000));
+  let label;
+  if (days < 1) label = "اليوم";
+  else if (days === 1) label = "أمس";
+  else if (days < 30) label = `قبل ${plural(days, ["يوم", "يومين", "أيام", "يوم"])}`;
+  else if (days < 365) label = `قبل ${plural(Math.round(days / 30), ["شهر", "شهرين", "أشهر", "شهر"])}`;
+  else label = `قبل ${plural(Math.floor(days / 365), ["سنة", "سنتين", "سنوات", "سنة"])}`;
+  return { days, label, old: days > OLD_AD_DAYS };
+}
+
 // A thin bar at the top while the app is waiting on the server (background polling stays quiet).
 let busyRequests = 0;
 function setBusy(delta) {
@@ -96,7 +148,37 @@ function setBusy(delta) {
   document.documentElement.classList.toggle("is-busy", busyRequests > 0);
 }
 
+// Reads that several screens ask for at once (the plans, the subscription, the account) share
+// one trip to the server: a GET already on its way is joined, and the plan list — which does
+// not change within a visit — is kept for a few minutes. Any write to a path clears its reads.
+const inflight = new Map();
+const readCache = new Map();
+const CACHE_FOR = { "/v1/subscriptions/plans": 5 * 60 * 1000 };
+
+function apiRead(path, options) {
+  const key = `${options.skipAuth ? "" : state.token}|${path}`;
+  const kept = readCache.get(key);
+  if (kept && kept.until > Date.now()) return Promise.resolve(kept.value);
+  if (inflight.has(key)) return inflight.get(key);
+  const pending = apiSend(path, options)
+    .then((value) => {
+      if (CACHE_FOR[path]) readCache.set(key, { value, until: Date.now() + CACHE_FOR[path] });
+      return value;
+    })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, pending);
+  return pending;
+}
+
 async function api(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  if (method === "GET" && !options.form && options.json === undefined) return apiRead(path, options);
+  const area = path.split("/").slice(0, 3).join("/");
+  for (const key of [...readCache.keys()]) if (key.split("|")[1].startsWith(area)) readCache.delete(key);
+  return apiSend(path, options);
+}
+
+async function apiSend(path, options = {}) {
   if (options.quiet) return request(path, options);
   setBusy(1);
   try {
@@ -106,7 +188,7 @@ async function api(path, options = {}) {
   }
 }
 
-async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false } = {}) {
+async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false, signal } = {}) {
   const headers = {};
   if (state.token && !skipAuth) headers.Authorization = `Bearer ${state.token}`;
   let body;
@@ -114,11 +196,15 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(json);
   } else if (form) body = form;
-  const response = await fetch(path, { method, headers, body });
+  const response = await fetch(path, { method, headers, body, signal });
   if (response.status === 401 && !skipAuth) {
+    // A session that ends mid-journey says so, and the journey waits for the sign-in.
+    const hadSession = Boolean(state.token);
     signOutLocally();
-    requireSignIn();
-    throw new Error("sign-in required");
+    requireSignIn(hadSession ? "انتهت جلستك، سجّل دخولك من جديد وبنكمل من نفس المكان." : "");
+    const error = new Error("sign-in required");
+    error.auth = true;
+    throw error;
   }
   if (!response.ok) {
     const error = new Error("request failed");
@@ -130,17 +216,22 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
 }
 
 // Everyone signs in with a Taseer account before using the app; requests belong to that account.
-function requireSignIn() {
-  if (state.view !== "auth") state.returnView = state.view;
+// The sending screen is a moment, not a place: a sign-in asked for while sending returns to the
+// review, where the chosen suppliers are still ticked.
+const RETURN_TO = { sending: "review", detail: "flow" };
+function requireSignIn(message = "") {
+  if (state.view !== "auth") state.returnView = RETURN_TO[state.view] || state.view;
   state.view = "auth";
-  state.authError = "";
+  state.authError = message;
   render();
 }
 
 async function ensureAuth() {
   if (state.token) return;
   requireSignIn();
-  throw new Error("sign-in required");
+  const error = new Error("sign-in required");
+  error.auth = true;
+  throw error;
 }
 
 function signOutLocally() {
@@ -226,15 +317,25 @@ function cityInText(text) {
   return found ? found.value : "";
 }
 
+// The city screen serves three callers: a request with no city in it (then it carries on to M02),
+// the header's city control (then it goes back home), and «جرّب مدينة ثانية» on an empty result
+// (then it searches again in the new city).
 function renderCityAsk() {
-  return `${fqHead({ title: "المدينة", back: "home" })}
+  const mode = state.cityMode || (state.query.trim() ? "request" : "pick");
+  const action = mode === "pick" ? "set-city" : mode === "research" ? "research-city" : "search-city";
+  const lead = mode === "research" ? "نعيد البحث عن نفس الطلب في المدينة اللي تختارها." : "نختصر البحث على الموردين القريبين منك.";
+  const request = mode === "pick" ? "" : state.originalText || state.query;
+  return `${fqHead({ title: "المدينة", back: mode === "research" ? "back-results" : "home" })}
   <section class="fq-body">
     <div class="fq-hero"><span class="halo" aria-hidden="true"></span>
       <h1>في أي مدينة؟</h1>
-      <p>نختصر البحث على الجهات القريبة منك.</p></div>
-    <div class="fq-card pad"><p class="fq-small fq-muted">طلبك</p><p style="margin:0;font-size:15px;font-weight:600"><bdi>${esc(state.query)}</bdi></p></div>
+      <p>${esc(lead)}</p></div>
+    ${request ? `<div class="fq-card pad"><p class="fq-small fq-muted">طلبك</p><p style="margin:0;font-size:15px;font-weight:600"><bdi>${esc(request)}</bdi></p></div>` : ""}
     <div class="fq-pills" style="gap:10px">${state.cities
-      .map((city) => `<button class="fq-chip" type="button" data-action="search-city" data-value="${esc(city.label)}" data-city="${esc(city.value)}">${esc(city.label)}</button>`)
+      .map((city) => {
+        const on = state.city && (state.city === city.value || state.city === city.label);
+        return `<button class="fq-chip${on ? " on" : ""}" type="button" data-action="${action}" data-value="${esc(city.label)}" data-city="${esc(city.value)}" aria-pressed="${Boolean(on)}">${esc(city.label)}</button>`;
+      })
       .join("")}</div>
   </section>`;
 }
@@ -250,7 +351,51 @@ function needLabel(need) {
   return need.name || "بند";
 }
 
+// Where a need is, in one line: the district and the city, never the city twice.
+function needPlace(need) {
+  const city = cityLabel(need.city);
+  const district = need.district && need.district !== city && need.district !== need.city ? need.district : "";
+  return [district, city].filter(Boolean).join("، ");
+}
+
+// When the parser could not read the request, M02 says so instead of dressing the raw text up
+// as an item: a failed call offers a retry; a request it did not understand asks for another
+// wording; a request it half-understood asks the one question it needs.
+function understandProblem() {
+  const head = fqHead({ title: "فهم الطلب", back: "home" });
+  const typed = state.originalText || state.query;
+  const quote = typed ? `<div class="fq-card pad"><p class="fq-small fq-muted">طلبك</p><p style="margin:0;font-size:15px;font-weight:600"><bdi>${esc(typed)}</bdi></p></div>` : "";
+  if (state.intentError) {
+    return `${head}<section class="fq-body center" role="alert">
+      <div class="fq-blob warn">${ic("alert-triangle", 48)}</div>
+      <div><h1 class="fq-h2">ما قدرنا نقرأ طلبك الحين</h1><p class="fq-lead">صار خلل في الاتصال بفرق. طلبك محفوظ، جرّب مرة ثانية بعد لحظات.</p></div>
+      ${quote}
+      <div class="fq-actions" style="width:100%">
+        <button class="fq-btn" type="button" data-action="retry-intent">حاول مرة ثانية</button>
+        <button class="fq-btn ghost" type="button" data-action="edit-request">عدّل الطلب</button>
+      </div>
+    </section>`;
+  }
+  if (state.intentProblem === "not-understood") {
+    return `${head}<section class="fq-body center" role="alert">
+      <div class="fq-blob warn">${ic("help-circle", 48)}</div>
+      <div><h1 class="fq-h2">ما فهمنا وش تحتاج بالضبط</h1><p class="fq-lead">اكتب اسم الخدمة أو المنتج بالعربي، وإذا تقدر أضف التفاصيل المهمة.</p></div>
+      ${quote}
+      <div class="fq-card pad" style="gap:8px;text-align:start"><p class="fq-small" style="font-weight:700;margin:0">أمثلة:</p>
+        ${["أبي سباك يصلح تسريب في المطبخ", "كهربائي يركب 3 أفياش", "درابزين ستانلس للدرج"].map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+      <button class="fq-btn" type="button" data-action="edit-request">عدّل الطلب</button>
+    </section>`;
+  }
+  return `${head}<section class="fq-body">
+    <div><h1 class="fq-h1">نحتاج توضيح بسيط</h1><p class="fq-lead">${esc(state.intentQuestion || "وضّح طلبك أكثر.")}</p></div>
+    ${quote}
+    <form id="intent-answer" class="fq-card pad"><div class="fq-inp"><input name="value" placeholder="جوابك" autocomplete="off" maxlength="200" aria-label="جوابك"></div><button class="fq-btn sm" type="submit">كمّل</button></form>
+    <button class="fq-link" type="button" data-action="edit-request">أكتب الطلب من جديد</button>
+  </section>`;
+}
+
 function renderUnderstand() {
+  if (state.intentError || state.intentProblem) return understandProblem();
   if (!state.needs) {
     const card = `<div class="fq-card"><span class="fq-skel" style="height:24px;width:40%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:85%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:55%;border-radius:8px"></span></div>`;
     return `${fqHead({ title: "فهم الطلب", back: "home" })}<section class="fq-body" aria-busy="true">${card.repeat(2)}</section>`;
@@ -260,7 +405,7 @@ function renderUnderstand() {
   <section class="fq-body">
     <div><h1 class="fq-h1">هذا اللي فهمناه</h1><p class="fq-lead">راجع طلبك وعدّل اللي تبي قبل نبدأ البحث.</p></div>
     ${state.needs
-      .map((need, index) => `<article class="fq-card fq-needcard">
+      .map((need, index) => `<article class="fq-card fq-needcard${need.on ? "" : " is-off"}">
         <div class="fq-row">
           <button class="fq-editbtn" type="button" data-action="edit-need" data-index="${index}">تعديل</button>
           <span style="display:flex;align-items:center;gap:8px">
@@ -271,27 +416,34 @@ function renderUnderstand() {
         <p class="desc"><bdi>${esc(need.desc)}</bdi></p>
         <hr class="fq-line">
         <div style="display:flex;flex-direction:column;gap:8px">
-          <span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("map-pin", 16)}<bdi>${esc([need.district, cityLabel(need.city)].filter(Boolean).join("، "))}</bdi></span>
+          <span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("map-pin", 16)}<bdi>${esc(needPlace(need))}</bdi></span>
+          ${need.qty > 1 ? `<span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("clipboard", 16)}<span>الكمية: ${formatCount(need.qty)}${need.unit ? ` <bdi>${esc(need.unit)}</bdi>` : ""}</span></span>` : ""}
           ${need.when ? `<span class="fq-meta" style="display:flex;align-items:center;gap:6px">${ic("calendar", 16)}<bdi>${esc(need.when)}</bdi></span>` : ""}
         </div>
       </article>`)
       .join("")}
+    <button class="fq-addbtn" type="button" data-action="add-need" style="align-self:flex-start">${ic("plus", 14)}إضافة بند</button>
     <div class="fq-sticky"><button class="fq-btn" type="button" data-action="run-search" ${active.length ? "" : "disabled"}>ابحث عن الخيارات</button></div>
   </section>
-  ${state.editing != null ? editSheet(state.needs[state.editing], state.editing) : ""}`;
+  ${state.editing != null ? editSheet(state.editing === state.needs.length ? blankNeed() : state.needs[state.editing], state.editing) : ""}`;
 }
 
-// M03_EditItemSheet — node 85:217.
+function blankNeed() {
+  return { key: `n${Date.now()}`, name: "", desc: "", city: state.city, district: "", when: "", qty: 1, on: true, intent: null, fresh: true };
+}
+
+// M03_EditItemSheet — node 85:217. A real dialog: focus moves in, Escape closes it.
 function editSheet(need, index) {
   if (!need) return "";
+  const fresh = Boolean(need.fresh);
   return `<div class="fq-scrim" data-action="close-sheet">
-    <form class="fq-sheet" id="edit-need" data-index="${index}">
+    <form class="fq-sheet" id="edit-need" data-index="${index}" role="dialog" aria-modal="true" aria-labelledby="edit-need-title">
       <span class="fq-grab" aria-hidden="true"></span>
-      <h2>تعديل البند</h2>
-      <div class="fq-field"><label for="need-name">اسم البند</label><div class="fq-inp"><input id="need-name" name="name" value="${esc(need.name)}"></div></div>
-      <div class="fq-field"><label for="need-desc">الوصف</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="need-desc" name="desc" rows="2">${esc(need.desc)}</textarea></div></div>
+      <h2 id="edit-need-title">${fresh ? "إضافة بند" : "تعديل البند"}</h2>
+      <div class="fq-field"><label for="need-name">اسم البند</label><div class="fq-inp"><input id="need-name" name="name" value="${esc(need.name)}" maxlength="60" ${fresh ? 'required placeholder="مثلاً: كهربائي"' : ""}></div></div>
+      <div class="fq-field"><label for="need-desc">الوصف</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="need-desc" name="desc" rows="2" maxlength="300" ${fresh ? 'placeholder="مثلاً: يركب 3 أفياش في الصالة"' : ""}>${esc(need.desc)}</textarea></div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div class="fq-field"><label for="need-place">الموقع</label><div class="fq-inp"><input id="need-place" name="district" value="${esc([need.district, cityLabel(need.city)].filter(Boolean).join("، "))}"></div></div>
+        <div class="fq-field"><label for="need-place">الموقع</label><div class="fq-inp"><input id="need-place" name="district" value="${esc(needPlace(need))}"></div></div>
         <div class="fq-field"><label for="need-qty">الكمية</label>
           <div class="fq-inp" style="justify-content:space-between">
             <button class="fq-eye" type="button" data-action="qty" data-step="-1" aria-label="أنقص">${ic("minus", 18)}</button>
@@ -301,8 +453,9 @@ function editSheet(need, index) {
       </div>
       <div class="fq-field"><label for="need-when">وقت التنفيذ المتوقع</label><div class="fq-inp">${ic("calendar", 18)}<input id="need-when" name="when" value="${esc(need.when || "")}" placeholder="مثلاً: السبت، 28 سبتمبر"></div></div>
       <div class="fq-actions">
-        <button class="fq-btn sm" type="submit">حفظ التعديل</button>
+        <button class="fq-btn sm" type="submit">${fresh ? "إضافة البند" : "حفظ التعديل"}</button>
         <button class="fq-btn ghost sm" type="button" data-action="close-sheet">إلغاء</button>
+        ${fresh ? "" : `<button class="fq-btn quiet danger-text" type="button" data-action="delete-need" data-index="${index}">حذف البند</button>`}
       </div>
     </form>
   </div>`;
@@ -333,11 +486,11 @@ function finalNotice(status, count) {
   if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
   if (status === "LIVE_UNAVAILABLE") return "المصدر ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
   if (status === "TIMEOUT") return count ? "البحث طال، وهذي الخيارات اللي وصلت." : "انقطع البحث قبل ما يكتمل. جرّب مرة ثانية.";
-  if (status === "NO_QUALIFIED_RESULTS") return "شفت إعلانات، بس ما فيه شيء يطابق طلبك.";
+  if (status === "NO_QUALIFIED_RESULTS") return "لقينا إعلانات، بس ما فيه شيء يطابق طلبك.";
   if (status === "LIVE_EMPTY" || status === "LOCAL_EMPTY") return "ما رجع المصدر إعلان يطابق هذا الطلب.";
-  if (status === "NOT_UNDERSTOOD") return "ما فهمت الطلب. اكتبه بطريقة أوضح.";
+  if (status === "NOT_UNDERSTOOD") return "ما فهمنا الطلب. اكتبه بطريقة أوضح.";
   if (status === "DELETED_AD") return "الإعلان ما عاد متاح.";
-  if (status === "SELLER_UNAVAILABLE") return "البائع ما عاد متاح.";
+  if (status === "SELLER_UNAVAILABLE") return "المورد ما عاد متاح.";
   if (status === "STALE_AD") return "هذي الإعلانات قديمة. تأكد قبل ما ترسل.";
   if (status === "INTERNAL_ERROR") return "صار خطأ عندنا. جرّب مرة ثانية.";
   return "";
@@ -506,6 +659,9 @@ const sound = {
 // A short buzz to go with the cue, where the phone allows it.
 function buzz(pattern) {
   if (!sound.on) return;
+  // Browsers refuse (and log) a vibration before the person has tapped the page.
+  const activation = navigator.userActivation;
+  if (activation ? !activation.hasBeenActive : !sound.ready) return;
   try {
     navigator.vibrate?.(pattern);
   } catch (_error) {}
@@ -604,7 +760,7 @@ function renderAuth() {
       <span class="halo" aria-hidden="true"></span>
       <h1 class="fq-h1" style="font-size:28px;font-weight:700">${esc(title)}</h1>
       <p class="fq-lead">${esc(sub)}</p>
-      <p class="fq-small fq-muted" style="line-height:1.5">قارن الأسعار وتواصل مع البائعين فوراً.</p>
+      <p class="fq-small fq-muted" style="line-height:1.5">قارن الأسعار وتواصل مع الموردين فوراً.</p>
     </div>
     <form id="auth-form" class="fq-card" style="gap:16px;padding:24px;border-radius:var(--fq-r-input);box-shadow:var(--fq-shadow-form)" novalidate>
       ${register
@@ -616,7 +772,7 @@ function renderAuth() {
       <div class="fq-field"><label for="auth-password">كلمة المرور</label>
         <div class="fq-inp">${ic("lock", 18)}<input id="auth-password" name="password" type="${state.showPassword ? "text" : "password"}" autocomplete="${register ? "new-password" : "current-password"}" dir="ltr" required minlength="8" placeholder="••••••••">
           <button class="fq-eye" type="button" data-action="toggle-password" aria-label="${state.showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}" aria-pressed="${state.showPassword}">${ic(state.showPassword ? "eye-off" : "eye", 20)}</button></div>
-        ${register ? "" : `<div style="display:flex;justify-content:flex-end;padding-top:4px"><button class="fq-link" type="button" data-action="forgot">ناسي الرقم السري؟</button></div>`}
+        ${register ? "" : `<div style="display:flex;justify-content:flex-end;padding-top:4px"><button class="fq-link" type="button" data-action="forgot">نسيت كلمة المرور؟</button></div>`}
       </div>
       ${state.authError ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.authError)}</p>` : ""}
     </form>
@@ -625,7 +781,7 @@ function renderAuth() {
       <p class="fq-small" style="text-align:center">${register ? "عندك حساب؟" : "ليس لديك حساب؟"}
         <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
     </div>
-    <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms">الشروط والأحكام</a> و<a href="/privacy">سياسة الخصوصية</a></p>
+    <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a></p>
   </section>`;
 }
 
@@ -636,7 +792,7 @@ async function submitAuth(form) {
   if (register) json.name = String(data.get("name") || "").trim();
   if (register && json.name.length < 2) return showAuthError("اكتب اسمك");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(json.email)) return showAuthError("اكتب بريد إلكتروني صحيح");
-  if (json.password.length < 8) return showAuthError("كلمة السر لازم تكون ٨ أحرف أو أكثر");
+  if (json.password.length < 8) return showAuthError("كلمة المرور لازم تكون 8 أحرف أو أكثر");
   state.busy = true;
   render();
   try {
@@ -647,13 +803,17 @@ async function submitAuth(form) {
       localStorage.setItem("farq.token", state.token);
     } catch (_error) {}
     state.busy = false;
-    state.view = state.returnView && state.returnView !== "auth" ? state.returnView : "home";
-    if (state.view === "requests") loadRequests().catch(() => {});
-    else render();
+    state.authError = "";
+    // Back to the screen the sign-in interrupted: the address never left it (a sign-in has
+    // none of its own), and the journey's draft is still here — a review keeps its ticks.
+    const route = state.returnRoute || location.pathname;
+    state.returnRoute = "";
+    applyRoute(route, { pop: true });
+    loadSubStatus().catch(() => {});
     refreshUnread();
   } catch (error) {
     state.busy = false;
-    const messages = { 401: "البريد أو كلمة السر غير صحيحة", 409: "هذا البريد مسجّل من قبل، سجّل دخول", 422: "تأكد من البيانات" };
+    const messages = { 401: "البريد أو كلمة المرور غير صحيحة", 409: "هذا البريد مسجّل من قبل، سجّل دخول", 422: "تأكد من البيانات" };
     showAuthError(messages[error.status] || "ما قدرنا نكمل، جرّب مرة ثانية");
   }
 }
@@ -665,6 +825,15 @@ function showAuthError(message) {
 }
 
 // M01_Home — node 27:10.
+const QUERY_MAX = 500;
+function composerCount(text) {
+  const length = String(text || "").length;
+  const hint = coarsePointer() ? "" : " · Shift+Enter لسطر جديد";
+  return `${formatCount(length)}/${formatCount(QUERY_MAX)}${hint}`;
+}
+function coarsePointer() {
+  return Boolean(window.matchMedia?.("(pointer: coarse)").matches);
+}
 const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر ٢٠٢٥ لون ابيض", "تركيب مكيف", "تلفزيون سامسونج ٦٥ بوصة"];
 function renderHome() {
   const place = `<button class="fq-place" type="button" data-action="change-city">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
@@ -673,13 +842,14 @@ function renderHome() {
     <div class="fq-hero">
       <span class="halo" aria-hidden="true"></span>
       <h1>وش تبي نسعّر لك؟</h1>
-      <p>قل لنا وش تحتاج و ماعليك فرق بيجيب الفرق من عدت مصادر و في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
+      <p>قل لنا وش تحتاج وماعليك، فرق بيجيب الفرق من عدة مصادر وفي محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
     </div>
     <form class="fq-card pad" id="composer" style="gap:10px">
       <label class="sr" for="composer-query">وش تبي نسعّر لك؟</label>
-      <textarea id="composer-query" name="query" rows="2" placeholder="مثلاً: أبي سباك يوم السبت وكهربائي يركب 3 أفياش"
+      <textarea id="composer-query" name="query" rows="2" maxlength="${QUERY_MAX}" aria-describedby="composer-count" placeholder="مثلاً: أبي سباك يوم السبت وكهربائي يركب 3 أفياش"
         style="border:0;outline:none;resize:none;font:inherit;font-size:15px;line-height:1.7;color:var(--fq-text);background:none;width:100%">${esc(state.query)}</textarea>
-      <span style="color:var(--fq-muted)">${ic("edit", 20)}</span>
+      <span class="fq-row" style="color:var(--fq-muted)">${ic("edit", 20)}<span class="fq-meta" id="composer-count" aria-live="polite">${composerCount(state.query)}</span></span>
+      ${state.composerHint ? `<p class="fq-small" role="alert" style="margin:0;color:#b3402a">${esc(state.composerHint)}</p>` : ""}
     </form>
     <div class="fq-pills" style="gap:10px">${HOME_CHIPS.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
     <div style="margin-top:auto;display:flex;flex-direction:column;gap:16px">
@@ -691,8 +861,13 @@ function renderHome() {
 }
 // M04_SearchProgress — node 27:124. The banner, the running count and the four steps all
 // live in one card; the skeletons wait below it.
-const SEARCH_STEPS = ["نفهم طلبك", "ندور على الخيارات المناسبة", "نرتب النتائج", "جهزنا لك الخيارات"];
+// A step turns done only on the event that proves it: the intent arriving, then results. The
+// last step speaks in the present until results are actually on the screen.
+function searchSteps() {
+  return ["نفهم طلبك", "ندور على الخيارات المناسبة", "نرتب النتائج", state.results.length ? "جهزنا لك الخيارات" : "نجهز لك الخيارات"];
+}
 function renderSearching() {
+  const SEARCH_STEPS = searchSteps();
   const at = state.results.length ? 2 : state.intent ? 1 : 0;
   const seen = state.scanned || 0;
   const card = `<div class="fq-card" style="gap:12px"><div style="display:flex;align-items:center;gap:12px">
@@ -704,12 +879,12 @@ function renderSearching() {
   <section class="fq-body" aria-live="polite">
     <div class="fq-card pad" style="gap:14px">
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
-        <span style="flex:1">${state.results.length ? `${formatCount(state.results.length)} مورد وصلوا حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
+        <span style="flex:1">${state.results.length ? `وصل ${suppliers(state.results.length)} حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
       <div class="fq-live-count">
         <span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>تحديث في الوقت الفعلي</span>
         <span style="flex:1"></span>
-        ${seen ? `<b style="color:var(--fq-success)">تم فحص ${formatCount(seen)} عرض حتى الآن</b>` : ""}
+        ${seen ? `<b style="color:var(--fq-success)">فحصنا ${plural(seen, ["إعلان واحد", "إعلانين", "إعلانات", "إعلان"])} حتى الآن</b>` : ""}
       </div>
       <div class="fq-steps">${SEARCH_STEPS.map((label, index) => {
         const cls = index < at ? "done" : index === at ? "now" : "";
@@ -746,6 +921,70 @@ function snip(result) {
 
 // M05_SearchResults result card — node 27:180. The tick sits on the left, the supplier's
 // mark on the right, and a bar down the left edge carries the saving's colour.
+// Which of the customer's items a result answers. The search reports its results per item
+// («groups»); the map is filled from those as they stream in.
+function needOf(result) {
+  return state.resultNeeds.get(resultKey(result)) || "";
+}
+
+function multiNeed() {
+  return new Set(state.results.map(needOf).filter(Boolean)).size > 1;
+}
+
+function visibleResults() {
+  if (!state.needFilter) return state.results;
+  return state.results.filter((item) => needOf(item) === state.needFilter);
+}
+
+// Group index i answers the i-th item the customer kept on M02 when the parser split the same
+// way; otherwise the group's own label names it.
+function rememberGroups(groups) {
+  if (!Array.isArray(groups) || !groups.length) return;
+  const active = (state.needs || []).filter((item) => item.on);
+  groups.forEach((group, index) => {
+    const label = active.length === groups.length ? needLabel(active[index]) : stripCity(group.need || "");
+    for (const result of group.results || []) if (label && !state.resultNeeds.has(resultKey(result))) state.resultNeeds.set(resultKey(result), label);
+  });
+}
+
+// Haraj ads carry token prices (1, 8, 10 ر.س) that mean «call me». A saving is claimed only
+// against real prices for the same item, and only when there are at least two of them.
+const MIN_REAL_PRICE = 50;
+function priceStanding(result) {
+  const mine = result.ad?.price_amount;
+  if (mine == null || mine < MIN_REAL_PRICE) return { saving: null, cheapest: false };
+  const need = needOf(result);
+  const amounts = state.results
+    .filter((item) => needOf(item) === need)
+    .map((item) => item.ad?.price_amount)
+    .filter((value) => value != null && value >= MIN_REAL_PRICE);
+  if (amounts.length < 2) return { saving: null, cheapest: false };
+  const top = Math.max(...amounts);
+  const low = Math.min(...amounts);
+  const saving = top > mine ? Math.round(((top - mine) / top) * 100) : null;
+  return { saving: saving || null, cheapest: mine === low && top > low };
+}
+
+// Haraj usernames are handles («electrician220», «عضو 9103211»). A handle that reads like a
+// name is shown as the name; one that does not becomes «مقدم خدمة · الحي», with the handle
+// kept underneath so the customer can still tell suppliers apart.
+function readableName(name) {
+  const text = String(name || "").trim();
+  if (!text || text === "مورد") return false;
+  if (/\d/.test(text)) return false;
+  if (/^عضو\b/.test(text)) return false;
+  if (/^[A-Za-z]+$/.test(text) && text.length > 3 && !/[aeiou]/i.test(text.slice(1))) return false;
+  return true;
+}
+
+function displayName(seller, result) {
+  const raw = String(seller?.name || "").trim();
+  const tidy = tidyName(raw);
+  if (readableName(tidy)) return { name: tidy, handle: "" };
+  const area = result?.ad?.district || seller?.district || cityLabel(result?.ad?.city || seller?.city || "");
+  return { name: area ? `مقدم خدمة · ${area}` : "مقدم خدمة", handle: raw ? `@${raw.replace(/\s+/g, "")}` : "" };
+}
+
 let newCardsInBatch = 0;
 function renderCard(result) {
   const key = resultKey(result);
@@ -754,16 +993,14 @@ function renderCard(result) {
   if (fresh) newCardsInBatch += 1;
   const selected = state.selected.has(key);
   const seller = sellerOf(result);
-  const name = tidyName(seller.name) || result.ad?.title || "جهة";
+  const who = displayName(seller, result);
+  const name = who.name;
   const price = money(result.ad?.price_amount);
   const where = cityLabel(result.ad?.city || seller.city || "");
   const blurb = snip(result);
-  const amounts = state.results.map((item) => item.ad?.price_amount).filter((value) => value != null);
-  const top = amounts.length > 1 ? Math.max(...amounts) : null;
-  const low = amounts.length ? Math.min(...amounts) : null;
-  const mine = result.ad?.price_amount;
-  const saving = top && mine != null && top > 0 ? Math.round(((top - mine) / top) * 100) : null;
-  const cheapest = low != null && mine === low && amounts.length > 1;
+  const { saving, cheapest } = priceStanding(result);
+  const age = adAge(result.ad);
+  const needName = multiNeed() ? needOf(result) : "";
   const bar = saving == null ? "var(--fq-line)" : saving >= 55 ? "var(--fq-success)" : saving >= 30 ? "#4bb58f" : "var(--fq-warning)";
   const photo = result.ad && imageSources(result.ad).length;
   const avatar = photo
@@ -771,15 +1008,17 @@ function renderCard(result) {
     : `<span class="fq-av" style="width:40px;height:40px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:16px">${initial(name)}</span>`;
   return `<article class="fq-card fq-result${animated ? " fq-in" : ""}"${animated ? ` style="--bar:${bar};animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ` style="--bar:${bar}"`}>
     <div class="fq-row" style="align-items:flex-start">
-      <button class="fq-tick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? "إزالة الجهة" : "اختيار الجهة"}">${selected ? ic("check", 14) : ""}</button>
+      <button class="fq-tick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? `إزالة ${esc(name)}` : `اختيار ${esc(name)}`}">${selected ? ic("check", 14) : ""}</button>
       <button type="button" data-action="open" data-key="${esc(key)}" style="flex:1;min-width:0;display:flex;gap:12px;align-items:center;background:none;border:0;padding:0;font:inherit;text-align:start">
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
           <strong style="font-size:17px;font-weight:700;color:var(--fq-text);display:flex;align-items:center;gap:6px"><bdi>${esc(name)}</bdi>${ic("award", 14)}</strong>
+          ${who.handle ? `<span class="fq-meta fq-handle" dir="auto">${esc(who.handle)}</span>` : ""}
           ${where ? `<span class="fq-meta">${esc(where)}</span>` : ""}
         </span>
         ${avatar}
       </button>
     </div>
+    ${needName || age ? `<div class="fq-cardtags">${needName ? `<span class="fq-tag deep"><bdi>${esc(needName)}</bdi></span>` : ""}${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}</div>` : ""}
     ${blurb ? `<p class="fq-small" style="margin:0"><bdi>${esc(blurb)}</bdi></p>` : ""}
     <div class="fq-row">${price
       ? `<span class="fq-price" style="font-size:24px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>`
@@ -796,30 +1035,63 @@ function renderFlow() {
   const showEmpty = !asking && !state.partial && state.results.length === 0;
   if (live && !state.results.length && !asking) return renderSearching();
   const count = state.selected.size;
-  const tabs = (state.needs || []).filter((item) => item.on).map((item) => item.name);
+  const tabs = [...new Set(state.results.map(needOf).filter(Boolean))];
+  if (state.needFilter && !tabs.includes(state.needFilter)) state.needFilter = "";
+  const shown = visibleResults();
   return `${fqHead({ title: "نتائج البحث", back: "back-understand" })}
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
     ${asking || !state.results.length ? "" : `<div class="fq-filters-row">
       <div class="fq-live"><span class="fq-pulse" aria-hidden="true"></span>
-        <span>${formatCount(state.results.length)} مورد تم العثور عليهم${state.partial ? " • البحث مستمر" : ""}</span></div>
-      ${tabs.length > 1 ? `<button class="fq-fpill all on" type="button">الكل</button>${tabs.map((name) => `<button class="fq-fpill" type="button" data-action="filter-need" data-name="${esc(name)}">${esc(name)}</button>`).join("")}` : ""}
+        <span data-count="${shown.length}">${esc(foundLine(state.shownCount || shown.length))}</span><span>${state.partial ? " • البحث مستمر" : ""}</span></div>
+      ${tabs.length > 1 ? `<button class="fq-fpill all${state.needFilter ? "" : " on"}" type="button" data-action="filter-need" data-name="" aria-pressed="${!state.needFilter}">الكل</button>${tabs.map((name) => `<button class="fq-fpill${state.needFilter === name ? " on" : ""}" type="button" data-action="filter-need" data-name="${esc(name)}" aria-pressed="${state.needFilter === name}"><bdi>${esc(name)}</bdi></button>`).join("")}` : ""}
     </div>`}
-    ${asking ? "" : `<p class="fq-small" data-count="${state.results.length}" style="font-weight:600">تم العثور على ${formatCount(state.shownCount || state.results.length)} نتيجة</p>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
-    ${showEmpty ? `<div class="fq-body center" style="padding:24px 0"><div class="fq-blob warn">${ic("search", 48)}</div><h2 class="fq-h2">${esc(state.notice || "ما فيه شيء نعرضه")}</h2><button class="fq-link" type="button" data-action="retry">جرّب مرة ثانية</button></div>` : ""}
-    ${state.results.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), state.results.map(renderCard).join(""))}</div>` : ""}
-    ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة بـ ${formatCount(count)} ${count === 1 ? "خيار" : "خيارات"}</button></div>` : ""}
+    ${showEmpty ? emptyState() : ""}
+    ${shown.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), shown.map(renderCard).join(""))}</div>` : ""}
+    ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة مع ${esc(suppliers(count))}</button></div>` : ""}
   </section>
   ${state.view === "detail" ? detailSheet() : ""}
   ${state.capSheet ? capSheet() : ""}`;
 }
 
-function dock() {
-  const count = state.selected.size;
-  if (!count || state.view === "review") return "";
-  const label = count === 1 ? "اطلب السعر من جهة واحدة" : `اطلب السعر من ${formatCount(count)} جهات`;
-  return `<div class="dock"><p class="hint">سنرسل طلبك لكل الجهات المختارة</p><button class="primary compact" type="button" data-action="review">${esc(label)}</button></div>`;
+function foundLine(count) {
+  return count ? `لقينا ${suppliers(count)}` : "ما فيه نتائج";
+}
+
+// An empty result says why, and offers what can change the outcome: a failure can be tried
+// again as it is; an empty search needs a different wording, item or city, not the same search.
+function emptyState() {
+  const status = state.searchState;
+  const failed = ["INTERNAL_ERROR", "TIMEOUT", "LIVE_UNAVAILABLE", "PARTIAL_RESULTS"].includes(status);
+  const city = cityLabel(customerCity());
+  const blob = (glyph) => `<div class="fq-blob warn">${ic(glyph, 48)}</div>`;
+  if (failed) {
+    return `<div class="fq-body center" style="padding:24px 0" role="alert">${blob("alert-triangle")}
+      <div><h2 class="fq-h2">${esc(state.notice || finalNotice("INTERNAL_ERROR", 0))}</h2><p class="fq-lead">طلبك وبنودك محفوظة، ما يحتاج تكتبها من جديد.</p></div>
+      <div class="fq-actions" style="width:100%">
+        <button class="fq-btn" type="button" data-action="retry-search">حاول مرة ثانية</button>
+        <button class="fq-btn ghost" type="button" data-action="back-understand">عدّل البنود</button>
+      </div></div>`;
+  }
+  if (status === "NOT_UNDERSTOOD") {
+    return `<div class="fq-body center" style="padding:24px 0" role="alert">${blob("help-circle")}
+      <div><h2 class="fq-h2">ما فهمنا الطلب</h2><p class="fq-lead">اكتب اسم الخدمة أو المنتج بوضوح، مثل: «سباك يصلح تسريب» أو «درابزين ستانلس».</p></div>
+      <div class="fq-actions" style="width:100%">
+        <button class="fq-btn" type="button" data-action="back-understand">عدّل وصف البند</button>
+        <button class="fq-btn ghost" type="button" data-action="edit-request">اكتب الطلب من جديد</button>
+      </div></div>`;
+  }
+  const lead = status === "NO_QUALIFIED_RESULTS"
+    ? "لقينا إعلانات، بس ما فيها شيء يطابق طلبك بالضبط."
+    : `ما لقينا إعلانات تطابق هذا الطلب${city ? ` في ${city}` : ""} الحين.`;
+  return `<div class="fq-body center" style="padding:24px 0">${blob("search")}
+    <div><h2 class="fq-h2">ما لقينا خيارات مناسبة</h2><p class="fq-lead">${esc(lead)} جرّب وصف أبسط أو مدينة ثانية.</p></div>
+    <div class="fq-actions" style="width:100%">
+      <button class="fq-btn" type="button" data-action="back-understand">عدّل وصف البند</button>
+      <button class="fq-btn ghost" type="button" data-action="other-city">جرّب مدينة ثانية</button>
+      <button class="fq-link" type="button" data-action="edit-request" style="align-self:center">اكتب طلب جديد</button>
+    </div></div>`;
 }
 
 // Haraj ads carry boilerplate lines that mean nothing inside Taseer.
@@ -837,27 +1109,32 @@ function detailSheet() {
   const result = state.active;
   if (!result) return "";
   const seller = sellerOf(result);
-  const name = tidyName(seller.name) || result.ad?.title || "المورد";
+  const who = displayName(seller, result);
+  const name = who.name;
+  const age = adAge(result.ad);
   const gallery = state.gallery.length ? state.gallery : imageSources(result.ad);
   const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
   const story = adStory(result.ad?.description);
   return `<div class="fq-scrim" data-action="close-sheet">
-    <div class="fq-sheet" role="dialog" aria-label="${esc(name)}">
+    <div class="fq-sheet" role="dialog" aria-modal="true" aria-label="${esc(name)}">
       <span class="fq-grab" aria-hidden="true"></span>
       <div class="fq-row" style="align-items:flex-start">
         <span class="fq-av" style="width:56px;height:56px;border-radius:28px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:20px">${initial(name)}</span>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;text-align:start">
           <strong style="font-size:22px;font-weight:800"><bdi>${esc(name)}</bdi></strong>
+          ${who.handle ? `<span class="fq-meta fq-handle" dir="auto">${esc(who.handle)}</span>` : ""}
           <span class="fq-meta">${esc(place(result) || cityLabel(result.ad?.city || seller.city || ""))}</span>
+          ${age ? `<span class="fq-meta"${age.old ? ' style="color:var(--fq-warning);font-weight:700"' : ""}>${age.old ? "إعلان قديم · " : "نُشر الإعلان "}${esc(age.label)}</span>` : ""}
         </span>
       </div>
       <hr class="fq-line">
       <h2 style="font-size:15px">عن المورد والخدمة</h2>
       ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">ما فيه وصف إضافي من المورد.</p>`}
-      ${price ? `<div class="fq-pricecard"><span class="fq-meta">قيمة العرض الإجمالية</span>
-        <span class="fq-price" style="font-size:32px;color:var(--fq-success)">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span></div>` : ""}
+      ${price ? `<div class="fq-pricecard"><span class="fq-meta">السعر المعلن في الإعلان</span>
+        <span class="fq-price" style="font-size:32px;color:var(--fq-success)">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>
+        <span class="fq-meta note">هذا السعر من إعلان المورد وليس عرض سعر لطلبك. قد يكون للمتر أو للحبة، والعرض الفعلي يوصلك بعد ما ترسل الطلب.</span></div>` : ""}
       ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)
@@ -872,44 +1149,36 @@ function detailSheet() {
 }
 
 // M07_SupplierSelection — node 27:279.
+// The subtitle names the items without the city glued into them, then the city once.
+function reviewTitle(city) {
+  const label = cityLabel(city);
+  const names = (state.needs || []).filter((item) => item.on).map(needLabel);
+  const strip = (text) => {
+    let value = String(text || "");
+    for (const word of [label, city].filter(Boolean)) value = value.split(word).join(" ");
+    return value.replace(/\s+(?:في|بال|ب)?\s*$/, "").replace(/\s+/g, " ").trim();
+  };
+  const items = (names.length ? names : [state.originalText || state.query]).map(strip).filter(Boolean);
+  return [...new Set(items)].join(" + ") + (label ? ` · ${label}` : "");
+}
+
 function renderReview() {
   const chosen = [...state.selected.entries()];
   const city = customerCity();
   const ready = chosen.length > 0 && Boolean(city) && !state.busy;
   const extra = state.reviewExtra === true;
+  const cap = sellerCap();
   return `${fqHead({ title: "اختيار الموردين", back: "back-results" })}
   <section class="fq-body tight">
     <div><h1 class="fq-h2">اختر من تبي نطلب منهم سعر</h1>
-      <p class="fq-lead">${esc([state.query, cityLabel(city)].filter(Boolean).join(" · "))}</p></div>
-    ${Number.isFinite(sellerCap()) ? `<div class="fq-capbanner">يمكنك اختيار حتى ${formatCount(sellerCap())} موردين لهذا البند</div>` : ""}
-    <div style="display:flex;justify-content:flex-end"><span class="fq-count-pill">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(sellerCap()) ? ` من ${formatCount(sellerCap())}` : ""}</span></div>
-    <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
-      ${chosen
-        .map(([key, result]) => {
-          const seller = sellerOf(result);
-          const name = tidyName(seller.name) || "بائع";
-          const price = money(result.ad?.price_amount);
-          return `<article class="fq-card fq-seller picked">
-            <div class="fq-row" style="align-items:flex-start">
-              <button class="fq-tick round on" type="button" data-action="unselect" data-key="${esc(key)}" aria-pressed="true" aria-label="إزالة ${esc(name)}">${ic("check", 14)}</button>
-              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
-                <strong style="font-size:17px;font-weight:700"><bdi>${esc(name)}</bdi></strong>
-                <span class="fq-meta">${esc(cityLabel(result.ad?.city || seller.city || "") || "")}</span>
-                ${price ? `<span class="fq-tag">${esc(price)}</span>` : ""}
-                ${result.score != null ? scoreRing(Math.round(Math.max(0, Math.min(1, result.score)) * 100), "مطابقة") : ""}
-              </span>
-              <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:18px">${initial(name)}</span>
-            </div>
-          </article>`;
-        })
-        .join("")}
-    </div>
-    ${city ? "" : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">في أي مدينة؟</h2>
-      <div class="fq-pills" style="gap:10px">${state.cities.map((item) => `<button class="fq-chip" type="button" data-action="pick-city" data-city="${esc(item.value)}">${esc(item.label)}</button>`).join("")}</div></div>`}
-    <button class="fq-link" type="button" data-action="toggle-extra" aria-expanded="${extra}">${extra ? "إخفاء" : "إضافة"} ملاحظة أو مرفقات (اختياري)</button>
+      <p class="fq-lead"><bdi>${esc(reviewTitle(city))}</bdi></p></div>
+    ${Number.isFinite(cap) ? `<div class="fq-capbanner">تقدر تختار حتى ${esc(suppliers(cap))} لكل بند</div>` : ""}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <button class="fq-link" type="button" data-action="toggle-extra" aria-expanded="${extra}">${extra ? "إخفاء" : "إضافة"} ملاحظة أو مرفقات (اختياري)</button>
+      <span class="fq-count-pill">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(cap) ? ` من ${formatCount(cap)}` : ""}</span></div>
     ${extra
       ? `<div class="fq-card pad">
-          <div class="fq-field"><label for="note">ملاحظة</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="note" rows="2" placeholder="اختياري">${esc(state.note)}</textarea></div></div>
+          <div class="fq-field"><label for="note">ملاحظة</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="note" rows="2" maxlength="500" placeholder="مثلاً: التسريب تحت المغسلة، والأفضل الصباح">${esc(state.note)}</textarea></div></div>
           <div class="fq-pills">
             <label class="fq-pill" style="display:inline-flex;align-items:center;gap:6px">${ic("camera", 16)}<span>صورة</span><input type="file" accept="image/*" data-action="add-files" hidden></label>
             <label class="fq-pill" style="display:inline-flex;align-items:center;gap:6px">${ic("paperclip", 16)}<span>ملف PDF</span><input type="file" accept="application/pdf" data-action="add-files" hidden></label>
@@ -917,6 +1186,35 @@ function renderReview() {
           ${filePreview()}
         </div>`
       : ""}
+    <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
+      ${chosen
+        .map(([key, result]) => {
+          const seller = sellerOf(result);
+          const who = displayName(seller, result);
+          const price = money(result.ad?.price_amount);
+          const need = multiNeed() ? needOf(result) : "";
+          const age = adAge(result.ad);
+          return `<article class="fq-card fq-seller picked">
+            <div class="fq-row" style="align-items:flex-start">
+              <button class="fq-tick round on" type="button" data-action="unselect" data-key="${esc(key)}" aria-pressed="true" aria-label="إزالة ${esc(who.name)}">${ic("check", 14)}</button>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;align-items:flex-start">
+                <strong style="font-size:17px;font-weight:700"><bdi>${esc(who.name)}</bdi></strong>
+                ${who.handle ? `<span class="fq-meta fq-handle" dir="auto">${esc(who.handle)}</span>` : ""}
+                <span class="fq-meta">${esc(cityLabel(result.ad?.city || seller.city || "") || "")}</span>
+                <span class="fq-cardtags">
+                  ${need ? `<span class="fq-tag deep"><bdi>${esc(need)}</bdi></span>` : ""}
+                  ${price ? `<span class="fq-tag">السعر المعلن ${esc(price)}</span>` : ""}
+                  ${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}
+                </span>
+              </span>
+              <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:18px">${initial(who.name)}</span>
+            </div>
+          </article>`;
+        })
+        .join("")}
+    </div>
+    ${city ? "" : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">في أي مدينة؟</h2>
+      <div class="fq-pills" style="gap:10px">${state.cities.map((item) => `<button class="fq-chip" type="button" data-action="pick-city" data-city="${esc(item.value)}">${esc(item.label)}</button>`).join("")}</div></div>`}
     ${state.notice ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.notice)}</p>` : ""}
     <div class="fq-sticky"><button class="fq-btn" type="button" data-action="send" ${ready ? "" : "disabled"}>أرسل طلب التسعير</button></div>
   </section>
@@ -947,7 +1245,7 @@ function renderSending() {
     <div class="fq-sendring spin"><span>فرق</span></div>
     <div style="display:flex;flex-direction:column;gap:14px">
       <h1 class="fq-h1">جاري إرسال طلبك...</h1>
-      <p class="fq-lead">يتم إرسال تفاصيل طلبك الآن لـ ${formatCount(total)} موردين معتمدين في ${esc(cityLabel(customerCity()) || "مدينتك")} للحصول على أفضل العروض.</p></div>
+      <p class="fq-lead">يتم إرسال تفاصيل طلبك الآن إلى ${esc(suppliers(total))} في ${esc(cityLabel(customerCity()) || "مدينتك")} للحصول على أفضل العروض.</p></div>
     <div class="fq-steps" style="align-items:center">${steps
       .map((label, index) => {
         const now = index === steps.length - 1;
@@ -965,13 +1263,13 @@ function renderSent() {
   <section class="fq-body center">
     <div class="fq-blob land">${ic("check", 56)}</div>
     <div><h1 class="fq-h1">تم إرسال طلبك!</h1>
-      <p class="fq-lead">أرسلنا طلب التسعير لـ ${formatCount(info.sellers || 0)} بائعين. راح يوصلك رد خلال دقائق قليلة.</p></div>
+      <p class="fq-lead">طلب التسعير في طريقه إلى ${esc(suppliers(info.sellers || 0))}. نبلغك أول ما يوصلك رد.</p></div>
     <div class="fq-card pad fq-facts" style="width:100%">
-      <div class="fq-row"><span class="fq-meta">تم التواصل معهم</span><strong>${formatCount(info.sellers || 0)} بائعين</strong></div>
+      <div class="fq-row"><span class="fq-meta">عدد الموردين</span><strong>${formatCount(info.sellers || 0)}</strong></div>
       <hr class="fq-line">
-      <div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong><bdi>${esc(info.need || state.query || "")}</bdi></strong></div>
+      <div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong><bdi>${esc(info.need || state.originalText || state.query || "")}</bdi></strong></div>
       <hr class="fq-line">
-      <div class="fq-row"><span class="fq-meta">الرد المتوقع</span><strong style="color:var(--fq-success)">خلال دقائق</strong></div>
+      <div class="fq-row"><span class="fq-meta">الحالة</span><strong style="color:var(--fq-success)">بانتظار الإرسال والردود</strong></div>
     </div>
     <div class="fq-actions" style="width:100%;margin-top:auto">
       <button class="fq-btn" type="button" data-action="open-sent">طلباتي</button>
@@ -1043,13 +1341,21 @@ async function refreshUnread() {
 }
 
 // R01_MyRequests / R01_MyRequests_Empty — nodes 37:9 and 37:119.
+// The status comes from what actually happened: messages still queued, delivered, failed, and
+// the replies that came back — never «all offers received» for a request nobody has seen yet.
 function requestStatus(item) {
-  if (item.awarded_seller_id) return { tone: "ok", label: "✓ تم إختيار أفضل عرض" };
-  const replied = item.replied_count || 0;
+  if (item.awarded_seller_id) return { tone: "ok", label: "✓ تم اختيار أفضل عرض" };
   const total = item.recipient_count || 0;
-  if (replied && replied >= total) return { tone: "warn", label: "● تم استقبال كل العروض" };
-  if (replied) return { tone: "ok", label: "وصلت بعض العروض" };
-  return { tone: "warn", label: "جاري استقبال العروض" };
+  const replied = item.replied_count || 0;
+  const sent = item.sent_count ?? total;
+  const failed = item.failed_count || 0;
+  const queued = item.queued_count ?? Math.max(0, total - sent - failed);
+  if (replied && total && replied >= total) return { tone: "ok", label: "ردّ كل الموردين" };
+  if (replied) return { tone: "ok", label: `ردّ ${formatCount(replied)} من ${formatCount(total)}` };
+  if (total && failed >= total) return { tone: "danger", label: "ما وصل الطلب للموردين" };
+  if (!sent && queued) return { tone: "warn", label: "بانتظار الإرسال" };
+  if (queued) return { tone: "warn", label: `وصل لـ ${formatCount(sent)} من ${formatCount(total)}` };
+  return { tone: "warn", label: "بانتظار الردود" };
 }
 
 function renderRequests() {
@@ -1082,13 +1388,20 @@ function renderRequests() {
         const need = item.need || item.original_text;
         const status = requestStatus(item);
         const unread = item.unread_count || 0;
-        const parts = [`${formatCount(item.recipient_count || 0)} موردًا`];
-        if (item.replied_count) parts.push(`${formatCount(item.replied_count)} عروض`);
-        else parts.push("لم تصل عروض بعد");
-        const waiting = Math.max(0, (item.recipient_count || 0) - (item.replied_count || 0));
-        const live = !item.awarded_seller_id && waiting
-          ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>${formatCount(waiting)} ${waiting === 1 ? "مورد يراجع" : "موردين يراجعون"} طلبك</span></div>`
-          : "";
+        const parts = [suppliers(item.recipient_count || 0)];
+        if (item.replied_count) parts.push(`${plural(item.replied_count, ["رد واحد", "ردّين", "ردود", "رد"])}`);
+        else parts.push("ما وصلت ردود بعد");
+        // only suppliers the request actually reached can be «reviewing» it
+        const reached = item.sent_count ?? item.recipient_count ?? 0;
+        const waiting = Math.max(0, reached - (item.replied_count || 0));
+        const queued = item.queued_count || 0;
+        const live = item.awarded_seller_id
+          ? ""
+          : queued
+            ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>نرسل طلبك إلى ${esc(suppliers(queued))}…</span></div>`
+            : waiting
+              ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>${waiting === 1 ? "مورد واحد يراجع" : `${esc(suppliers(waiting))} يراجعون`} طلبك</span></div>`
+              : "";
         return `<button class="fq-card" type="button" data-action="thread" data-id="${esc(item.id)}" aria-label="افتح محادثة ${esc(need)}">
           ${live}
           <div class="fq-row">
@@ -1165,7 +1478,7 @@ function tidyName(raw) {
   name = name.replace(/\s+/g, " ").replace(/^[\s\-–—.,،/\\]+|[\s\-–—.,،/\\]+$/g, "").trim();
   name = name.replace(/\b[a-z]+\b/g, (word) => word[0].toUpperCase() + word.slice(1));
   name = name.replace(/\b[A-Z]{4,}\b/g, (word) => word[0] + word.slice(1).toLowerCase());
-  return name || "جهة";
+  return name || "مورد";
 }
 
 function sellerIndex(thread, sellerId) {
@@ -1173,7 +1486,7 @@ function sellerIndex(thread, sellerId) {
 }
 
 function sellerName(thread, sellerId) {
-  return tidyName((thread?.recipients || []).find((item) => item.seller_id === sellerId)?.seller_name || "جهة");
+  return tidyName((thread?.recipients || []).find((item) => item.seller_id === sellerId)?.seller_name || "مورد");
 }
 
 // One colour per supplier, from the Farq token palette, handed out in the request's order so no two
@@ -1302,8 +1615,8 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
 
 function waMessages(thread, messages, group) {
   const byId = new Map((thread.messages || []).map((item) => [item.id, item]));
-  const prices = (thread.offers || []).map((item) => item.total_price).filter((value) => value != null);
-  const best = prices.length ? Math.min(...prices) : null;
+  const prices = currentOffers(thread).map((item) => item.total_price);
+  const best = prices.length > 1 ? Math.min(...prices) : null;
   let lastDay = "";
   let lastSender = "";
   return messages
@@ -1326,22 +1639,35 @@ function waMessages(thread, messages, group) {
 // O01_CompareOffers — node 39:180. Its own screen, reached from the conversation.
 // O01_CompareOffers — node 39:180, with the savings ring, the gap chip and the badges
 // the September update added.
+// A supplier who revises his price has one offer on the table: the latest. Comparisons run
+// between those, and within one item.
+function currentOffers(thread) {
+  const latest = new Map();
+  for (const offer of thread?.offers || []) {
+    if (offer.total_price == null) continue;
+    latest.set(`${offer.seller_id}|${offer.need || ""}`, offer);
+  }
+  return [...latest.values()];
+}
+
 function renderCompare() {
   const thread = state.thread;
   if (!thread) return renderRequests();
-  const offers = (thread.offers || []).filter((item) => item.total_price != null).sort((a, b) => a.total_price - b.total_price);
+  const offers = currentOffers(thread).sort((a, b) => a.total_price - b.total_price);
   const cheapest = offers[0]?.total_price ?? 0;
   const dearest = offers[offers.length - 1]?.total_price ?? 0;
   const awarded = thread.awarded_seller_id;
   const chat = `<button class="fq-ibtn light" type="button" data-action="all-sellers" aria-label="المحادثة">${ic("message-circle", 20)}</button>`;
-  return `${fqHead({ title: "قارن العروض", sub: `${formatCount(offers.length)} عروض · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat })}
+  return `${fqHead({ title: "قارن العروض", sub: `${offersCount(offers.length)} · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat })}
   <section class="fq-body tight fq-stagger fq-faceoff">
     ${offers.length ? "" : `<div class="fq-body center"><div class="fq-blob warn">${ic("tag", 48)}</div><h2 class="fq-h2">ما وصلت عروض بأسعار بعد</h2><p class="fq-lead">أول ما يرسل مورد سعرًا يظهر هنا للمقارنة.</p></div>`}
     ${offers
       .map((offer, index) => {
         const won = awarded && awarded === offer.seller_id;
         const gap = offer.total_price - cheapest;
-        const saving = dearest > 0 ? Math.round(((dearest - offer.total_price) / dearest) * 100) : 0;
+        const peers = offers.filter((item) => (item.need || "") === (offer.need || ""));
+        const peerTop = peers.length > 1 ? Math.max(...peers.map((item) => item.total_price)) : 0;
+        const saving = peerTop > offer.total_price ? Math.round(((peerTop - offer.total_price) / peerTop) * 100) : 0;
         const best = index === 0;
         return `<article class="fq-cmp-card${best ? " best" : ""}">
           ${best ? `<span class="fq-valuetag">أفضل قيمة</span>` : ""}
@@ -1353,7 +1679,7 @@ function renderCompare() {
                   ? offers.length > 1 ? `<span class="fq-delta">أوفر بـ ${esc(money(dearest - offer.total_price))}</span><span class="fq-tag deep">الأقل</span>` : ""
                   : `<span class="fq-delta up">+${esc(money(gap))}</span>`}
               </span>
-              ${scoreRing(saving, "وفّر")}
+              ${saving ? scoreRing(saving, "وفّر") : ""}
             </span>
             <span style="display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end">
               ${best ? `<span class="fq-best">أفضل سعر</span>` : ""}
@@ -1433,6 +1759,7 @@ function renderAwarded() {
 // The offers summary above the conversation — node 33:159 (C02 underlay, offers-section).
 function offersBar(thread, offers) {
   if (!offers.length) return "";
+  // (the bar sits above the group conversation — TSR-077: comparing is one visible tap away)
   const sorted = [...offers].sort((a, b) => a.total_price - b.total_price);
   const low = sorted[0].total_price;
   const high = sorted[sorted.length - 1].total_price;
@@ -1440,7 +1767,7 @@ function offersBar(thread, offers) {
   return `<div class="fq-offers-bar">
     <div class="fq-row">
       <button class="fq-pill on" type="button" data-action="open-compare">قارن العروض</button>
-      <span class="fq-small"><b>${formatCount(sorted.length)} عرضًا</b>${sorted.length > 1 ? ` <span class="fq-meta">· من ${esc(money(low))} إلى ${esc(money(high))}</span>` : ""}</span>
+      <span class="fq-small"><b>${esc(offersCount(sorted.length))}</b>${sorted.length > 1 ? ` <span class="fq-meta">· من ${esc(money(low))} إلى ${esc(money(high))}</span>` : ""}</span>
     </div>
     ${top
       .map((offer, index) => `<div class="mini"><span>${esc(money(offer.total_price))}</span>
@@ -1547,14 +1874,14 @@ function renderThread() {
   const messages = (thread.messages || []).filter(
     (message) => !one || message.seller_id === one || (message.deliveries || []).some((item) => item.seller_id === one),
   );
-  const allOffers = (thread.offers || []).filter((item) => item.total_price != null);
+  const allOffers = currentOffers(thread);
   const offers = allOffers.filter((item) => !one || item.seller_id === one);
   const best = [...allOffers].sort((a, b) => a.total_price - b.total_price)[0];
   const need = thread.need || thread.original_text || "المحادثة";
   const title = one ? sellerName(thread, one) : need;
   const sub = one
     ? [need, offers[0]?.total_price != null ? money(offers[0].total_price) : ""].filter(Boolean).join(" · ")
-    : [best ? `${sellerName(thread, best.seller_id)} · ${money(best.total_price)}` : "", allOffers.length ? `${formatCount(allOffers.length)} عروض` : `${formatCount(recipients.length)} موردًا`]
+    : [best ? `${sellerName(thread, best.seller_id)} · ${money(best.total_price)}` : "", allOffers.length ? offersCount(allOffers.length) : suppliers(recipients.length)]
         .filter(Boolean)
         .join(" — ");
   const backAction = state.activeSeller && recipients.length > 1 ? "all-sellers" : "requests";
@@ -1605,6 +1932,7 @@ function renderThread() {
 
   return `${fqHead({ title, sub, back: backAction, backStart: true, end: menu })}
     ${awardedHead}
+    ${group && !awarded ? offersBar(thread, allOffers) : ""}
     ${pills}
     <section class="fq-chat${privateWinner ? " won" : ""}" id="chat-wall">
       ${privateWinner ? `<div class="fq-sys">✓ محادثة خاصة مع ${esc(sellerName(thread, awarded))}</div>` : ""}
@@ -2099,6 +2427,485 @@ function renderSubscribe() {
   ${fqNav("account")}`;
 }
 
+// ---------------------------------------------------------------------------
+// Addresses. Every screen has its own URL, so the phone's Back walks back through the
+// journey instead of leaving the app, a reload lands on the same screen, and a link to a
+// conversation opens it. Moving between screens pushes an entry; Back and Forward only
+// re-draw from what is already here — they never search, send or pay again.
+// ---------------------------------------------------------------------------
+function threadPath(suffix = "") {
+  const id = state.thread?.id || state.pendingThread;
+  return id ? `/r/${encodeURIComponent(id)}${suffix}` : "/requests";
+}
+
+const ROUTE_OF = {
+  home: () => "/",
+  "city-ask": () => "/city",
+  understand: () => "/understand",
+  flow: () => "/results",
+  detail: () => "/results/ad",
+  review: () => "/review",
+  sent: () => "/sent",
+  requests: () => "/requests",
+  thread: () => threadPath(),
+  compare: () => threadPath("/compare"),
+  awarded: () => threadPath(),
+  account: () => "/account",
+  notifications: () => "/notifications",
+  "notify-settings": () => "/account/notifications",
+  subscribe: () => "/subscribe",
+  legal: () => `/${state.legalDoc || "terms"}`,
+  seller: () => `/s/${encodeURIComponent(state.sellerToken)}`,
+  // «sending» and «auth» have no address of their own: they stand over the screen that led to them.
+};
+
+function syncUrl() {
+  const make = ROUTE_OF[state.view];
+  const replace = state.replaceUrl;
+  state.replaceUrl = false;
+  if (!make) return;
+  const path = make();
+  if (location.pathname + location.search === path) return;
+  try {
+    history[replace ? "replaceState" : "pushState"]({ view: state.view }, "", path);
+  } catch (_error) {}
+}
+
+function closeSheets() {
+  state.editing = null;
+  state.capSheet = false;
+  state.pickerOpen = false;
+  state.attachOpen = false;
+  state.awardPick = null;
+}
+
+// Draws the screen an address names, from what this visit already holds. A screen whose data
+// is gone (a review with nothing ticked, results never fetched) falls back one step, and the
+// address is corrected in place.
+function applyRoute(path, { pop = false } = {}) {
+  const [head = "", id = "", sub = ""] = String(path || "/")
+    .split("?")[0]
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch (_error) {
+        return part;
+      }
+    });
+  state.replaceUrl = pop;
+  closeSheets();
+  const show = (view) => {
+    state.view = view;
+    render();
+  };
+  if (head === "terms" || head === "privacy") return openLegal(head);
+  if (head === "s" && id) return openSellerPage(id);
+  if (!state.token) {
+    state.returnRoute = path;
+    state.view = "auth";
+    render();
+    return;
+  }
+  const hasResults = state.results.length > 0 || Boolean(state.searchState);
+  const hasNeeds = Boolean(state.needs || state.intentError || state.intentProblem);
+  if (!head) return show("home");
+  if (head === "city") {
+    if (!state.cityMode) state.cityMode = state.query.trim() ? "request" : "pick";
+    return show("city-ask");
+  }
+  if (head === "understand") return show(hasNeeds ? "understand" : "home");
+  if (head === "results") {
+    if (id === "ad" && state.active && hasResults) return show("detail");
+    state.active = null;
+    return show(hasResults ? "flow" : hasNeeds ? "understand" : "home");
+  }
+  if (head === "review") return show(state.selected.size ? "review" : hasResults ? "flow" : hasNeeds ? "understand" : "home");
+  if (head === "sent") {
+    if (state.sentInfo) return show("sent");
+    return void loadRequests().catch(() => {});
+  }
+  if (head === "requests") return void loadRequests().catch(() => {});
+  if (head === "r" && id) {
+    if (state.thread?.id === id) {
+      state.activeSeller = pop ? state.activeSeller : "";
+      return show(sub === "compare" ? "compare" : "thread");
+    }
+    state.activeSeller = "";
+    state.replyTo = null;
+    state.picked = null;
+    state.stickChat = true;
+    return void loadThread(id)
+      .then(() => {
+        if (sub === "compare" && state.view === "thread") {
+          state.replaceUrl = true;
+          show("compare");
+        }
+      })
+      .catch(() => {});
+  }
+  if (head === "account" && id === "notifications") return show("notify-settings");
+  if (head === "account") {
+    show("account");
+    return void loadSubStatus().catch(() => {});
+  }
+  if (head === "notifications") return void loadNotifications();
+  if (head === "subscribe") {
+    state.subView = state.subView || "my-plan";
+    return void loadSubscribe({ keepView: true }).catch(() => {});
+  }
+  state.replaceUrl = true;
+  return show("home");
+}
+
+// A reload or a closed tab writes the draft at once instead of waiting for the next pause.
+window.addEventListener("pagehide", () => {
+  if (state.view !== "seller" && state.view !== "legal") saveDraft();
+});
+
+window.addEventListener("popstate", () => {
+  // A request on its way finishes on its own; Back does not cancel or repeat it.
+  if (state.view === "sending") return;
+  applyRoute(location.pathname, { pop: true });
+});
+
+// ---------------------------------------------------------------------------
+// The journey in progress — the words, the city, the items and their edits, the results and
+// the ticks — is kept for this tab, so a reload or a dropped connection does not wipe it.
+// Attached photos cannot be kept this way; they are the one thing a reload loses.
+// ---------------------------------------------------------------------------
+const DRAFT_KEY = "farq.draft";
+const DRAFT_TTL = 24 * 60 * 60 * 1000;
+let draftTimer = 0;
+
+function draftSnapshot(withResults = true) {
+  return {
+    v: 1,
+    at: Date.now(),
+    query: state.query,
+    originalText: state.originalText,
+    searchText: state.searchText,
+    city: state.city,
+    cityMode: state.cityMode || "",
+    needs: state.needs,
+    intent: state.intent,
+    intentError: state.intentError || false,
+    intentProblem: state.intentProblem || "",
+    intentQuestion: state.intentQuestion || "",
+    results: withResults ? state.results : [],
+    resultNeeds: withResults ? [...state.resultNeeds.entries()] : [],
+    searchState: withResults ? (state.searching || state.partial ? "" : state.searchState) : "",
+    notice: withResults && !state.searching && !state.partial ? state.notice : "",
+    clarification: state.clarification,
+    selected: [...state.selected.entries()],
+    needFilter: state.needFilter,
+    note: state.note,
+    reviewExtra: state.reviewExtra === true,
+  };
+}
+
+function saveDraft() {
+  clearTimeout(draftTimer);
+  const empty = !state.query && !state.needs && !state.results.length && !state.selected.size;
+  if (empty) return storedSet(DRAFT_KEY, null, "session");
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draftSnapshot(true)));
+  } catch (_error) {
+    // too big for this browser's allowance: keep the request and the ticks, drop the list
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draftSnapshot(false)));
+    } catch (_again) {}
+  }
+}
+
+function scheduleDraftSave() {
+  if (state.view === "seller" || state.view === "legal") return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraft, state.searching ? 1500 : 250);
+}
+
+function restoreDraft() {
+  let draft = null;
+  try {
+    draft = JSON.parse(storedGet(DRAFT_KEY, "session") || "null");
+  } catch (_error) {
+    draft = null;
+  }
+  if (!draft || draft.v !== 1 || Date.now() - (draft.at || 0) > DRAFT_TTL) return;
+  state.query = draft.query || "";
+  state.originalText = draft.originalText || "";
+  state.searchText = draft.searchText || "";
+  state.city = draft.city || "";
+  state.cityMode = draft.cityMode || "";
+  state.needs = Array.isArray(draft.needs) ? draft.needs : null;
+  state.intent = draft.intent || null;
+  state.intentError = Boolean(draft.intentError);
+  state.intentProblem = draft.intentProblem || "";
+  state.intentQuestion = draft.intentQuestion || "";
+  state.results = Array.isArray(draft.results) ? draft.results : [];
+  state.resultNeeds = new Map(Array.isArray(draft.resultNeeds) ? draft.resultNeeds : []);
+  state.searchState = draft.searchState || "";
+  state.notice = draft.notice || "";
+  state.clarification = draft.clarification || "";
+  state.selected = new Map(Array.isArray(draft.selected) ? draft.selected : []);
+  state.needFilter = draft.needFilter || "";
+  state.note = draft.note || "";
+  state.reviewExtra = Boolean(draft.reviewExtra);
+  state.partial = false;
+  state.searching = false;
+  state.seenCards = new Set(state.results.map(resultKey));
+  state.shownCount = state.results.length;
+}
+
+// After a request is sent the journey starts over.
+function clearDraft() {
+  clearTimeout(draftTimer);
+  storedSet(DRAFT_KEY, null, "session");
+  state.query = "";
+  state.originalText = "";
+  state.searchText = "";
+  state.needs = null;
+  state.intent = null;
+  state.intentError = false;
+  state.intentProblem = "";
+  state.results = [];
+  state.resultNeeds = new Map();
+  state.searchState = "";
+  state.notice = "";
+  state.needFilter = "";
+  state.selected.clear();
+  state.reviewExtra = false;
+}
+
+// ---------------------------------------------------------------------------
+// The supplier's quote page — the link in every invitation. No sign-in: the token in the
+// address is the supplier's key to his own request. It shows only what /v1/seller/{token}
+// returns and posts his reply or price back to the customer's conversation.
+// ---------------------------------------------------------------------------
+async function openSellerPage(token) {
+  const changed = state.sellerToken !== token;
+  state.view = "seller";
+  state.sellerToken = token;
+  if (changed) {
+    state.seller = null;
+    state.sellerError = "";
+    state.sellerSent = false;
+  }
+  render();
+  try {
+    state.seller = await api(`/v1/seller/${encodeURIComponent(token)}`, { skipAuth: true });
+    state.sellerError = "";
+  } catch (error) {
+    state.sellerError = error?.status === 404 ? "missing" : "failed";
+  }
+  if (state.view === "seller") render();
+}
+
+async function submitSellerReply(form) {
+  if (state.sellerBusy) return;
+  const data = new FormData(form);
+  const body = String(data.get("body") || "").trim();
+  const amountText = String(data.get("offer_amount") || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[,،\s]/g, "");
+  const deliveryText = String(data.get("delivery_price") || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[,،\s]/g, "");
+  const amount = amountText ? Number(amountText) : null;
+  const included = data.get("delivery_included") === "on";
+  const deliveryPrice = !included && deliveryText ? Number(deliveryText) : null;
+  state.sellerFormError = "";
+  if (amount != null && (!Number.isFinite(amount) || amount <= 0)) state.sellerFormError = "اكتب السعر بالأرقام، مثل 350.";
+  else if (deliveryPrice != null && (!Number.isFinite(deliveryPrice) || deliveryPrice < 0)) state.sellerFormError = "اكتب سعر التوصيل بالأرقام.";
+  else if (!body && amount == null) state.sellerFormError = "اكتب ردّك أو السعر قبل الإرسال.";
+  if (state.sellerFormError) {
+    state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
+    render();
+    return;
+  }
+  const json = { body };
+  if (amount != null) {
+    json.offer_amount = amount;
+    json.delivery_included = included;
+    if (deliveryPrice != null) json.delivery_price = deliveryPrice;
+  }
+  state.sellerBusy = true;
+  render();
+  try {
+    await api(`/v1/seller/${encodeURIComponent(state.sellerToken)}/messages`, { method: "POST", json, skipAuth: true });
+    state.sellerBusy = false;
+    state.sellerSent = true;
+    state.sellerDraft = null;
+    await openSellerPage(state.sellerToken);
+  } catch (error) {
+    state.sellerBusy = false;
+    state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
+    state.sellerFormError = error?.status === 404 ? "هذا الطلب ما عاد متاح." : error?.status === 422 ? "تأكد من البيانات وجرّب مرة ثانية." : "ما قدرنا نرسل ردّك. تأكد من الاتصال وجرّب مرة ثانية.";
+    render();
+  }
+}
+
+function renderSeller() {
+  const head = fqHead({ title: "عرض سعر", mark: true });
+  const view = state.seller;
+  if (state.sellerError) {
+    const missing = state.sellerError === "missing";
+    return `${head}<section class="fq-body center" role="alert">
+      <div class="fq-blob warn">${ic(missing ? "alert-triangle" : "info", 48)}</div>
+      <div><h1 class="fq-h2">${missing ? "الرابط غير صالح أو انتهت صلاحيته" : "ما قدرنا نفتح الطلب"}</h1>
+        <p class="fq-lead">${missing ? "تأكد إنك فتحت الرابط كامل من رسالة فرق." : "تأكد من الاتصال وجرّب مرة ثانية."}</p></div>
+      ${missing ? "" : `<button class="fq-btn" type="button" data-action="seller-reload">حاول مرة ثانية</button>`}
+    </section>`;
+  }
+  if (!view) {
+    const card = `<div class="fq-card"><span class="fq-skel" style="height:22px;width:45%;border-radius:8px"></span><span class="fq-skel" style="height:16px;width:85%;border-radius:8px"></span></div>`;
+    return `${head}<section class="fq-body" aria-busy="true">${card.repeat(2)}</section>`;
+  }
+  const need = view.need || view.original_text || "";
+  const draft = state.sellerDraft || { body: "", amount: "", included: true, delivery: "" };
+  const messages = (view.messages || []).filter((item) => item.body || item.offer);
+  const line = (label, value) => (value ? `<div class="fq-row" style="align-items:flex-start;gap:12px"><span class="fq-meta" style="flex:none">${esc(label)}</span><strong style="text-align:end;white-space:pre-line"><bdi>${esc(value)}</bdi></strong></div>` : "");
+  return `${head}
+  <section class="fq-body tight">
+    <div><h1 class="fq-h2">طلب تسعير من عميل عبر فرق</h1><p class="fq-lead">قدّم سعرك أو اسأل العميل، ويوصله ردّك مباشرة في محادثته.</p></div>
+    <div class="fq-card pad fq-facts">
+      ${line("المطلوب", need)}
+      ${view.original_text && view.original_text !== need ? `<hr class="fq-line">${line("نص الطلب", view.original_text)}` : ""}
+      ${view.city ? `<hr class="fq-line">${line("المدينة", cityLabel(view.city))}` : ""}
+      ${view.notes ? `<hr class="fq-line">${line("التفاصيل", view.notes)}` : ""}
+      ${(view.attachments || []).length
+        ? `<hr class="fq-line"><div style="display:flex;flex-direction:column;gap:8px"><span class="fq-meta">مرفقات من العميل</span>${view.attachments
+            .map((item) => `<a class="fq-link" href="/v1/seller/${encodeURIComponent(state.sellerToken)}/attachments/${encodeURIComponent(item.id)}" target="_blank" rel="noopener">${ic("paperclip", 14)} ${esc(item.filename || "مرفق")}</a>`)
+            .join("")}</div>`
+        : ""}
+    </div>
+    ${messages.length
+      ? `<div style="display:flex;flex-direction:column;gap:8px"><p class="fq-sec-title"><span>المحادثة</span></p>${messages
+          .map((item) => {
+            const me = item.sender_role === "seller";
+            const price = messagePrice(item);
+            return `<div class="fq-card flat fq-seller-msg${me ? " me" : ""}"><span class="fq-meta">${me ? "أنت" : "العميل"} · ${esc(chatTime(item.created_at))}</span>
+              ${price != null ? `<strong style="color:var(--fq-success)">${esc(money(price))}</strong>` : ""}
+              ${item.body ? `<p style="margin:0;white-space:pre-line"><bdi>${esc(item.body)}</bdi></p>` : ""}</div>`;
+          })
+          .join("")}</div>`
+      : ""}
+    ${state.sellerSent ? `<div class="fq-notice" role="status">${ic("check-circle", 16)} وصل ردّك للعميل. تقدر ترسل تحديث إذا تغيّر السعر.</div>` : ""}
+    <form id="seller-reply" class="fq-card pad" style="gap:14px" novalidate>
+      <div class="fq-field"><label for="seller-amount">سعرك (ر.س)</label>
+        <div class="fq-inp"><input id="seller-amount" name="offer_amount" inputmode="decimal" autocomplete="off" placeholder="مثلاً: 350" value="${esc(draft.amount)}" dir="ltr" style="text-align:end"></div></div>
+      <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>السعر شامل التوصيل أو الوصول للموقع</span></label>
+      <div class="fq-field"><label for="seller-delivery">سعر التوصيل إذا غير شامل (ر.س)</label>
+        <div class="fq-inp"><input id="seller-delivery" name="delivery_price" inputmode="decimal" autocomplete="off" placeholder="اختياري" value="${esc(draft.delivery)}" dir="ltr" style="text-align:end"></div></div>
+      <div class="fq-field"><label for="seller-body">رسالتك للعميل</label>
+        <div class="fq-inp" style="min-height:90px;align-items:flex-start"><textarea id="seller-body" name="body" rows="3" maxlength="1000" placeholder="تفاصيل السعر، مدة التنفيذ، أو سؤال للعميل">${esc(draft.body)}</textarea></div></div>
+      ${state.sellerFormError ? `<p class="fq-small" role="alert" style="color:#b3402a;margin:0">${esc(state.sellerFormError)}</p>` : ""}
+      <button class="fq-btn" type="submit" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? "لحظة…" : "أرسل ردّك"}</button>
+    </form>
+    <p class="fq-meta" style="text-align:center">فرق ما يطلب منك أي دفع أو بيانات بنكية أو كلمة مرور على هذه الصفحة.</p>
+  </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Terms and privacy: the text lives in web/legal/*.ar.md and is drawn here, open to anyone
+// signed in or not. The documents are drafts until legal review signs them off.
+// ---------------------------------------------------------------------------
+const LEGAL_TITLES = { terms: "الشروط والأحكام", privacy: "سياسة الخصوصية" };
+
+async function openLegal(doc) {
+  const name = doc === "privacy" ? "privacy" : "terms";
+  if (state.view !== "legal") state.legalFrom = state.view === "auth" || !state.token ? "auth" : state.view;
+  state.view = "legal";
+  if (state.legalDoc !== name) state.legalText = "";
+  state.legalDoc = name;
+  state.legalError = false;
+  render();
+  if (state.legalText) return;
+  try {
+    const response = await fetch(`/legal/${name}.ar.md`);
+    if (!response.ok) throw new Error("legal");
+    const text = await response.text();
+    if (state.legalDoc === name) state.legalText = text;
+  } catch (_error) {
+    state.legalError = true;
+  }
+  if (state.view === "legal") render();
+}
+
+// Enough Markdown for these documents: headings, paragraphs, bullet lists, and a quoted note.
+function markdownHtml(source) {
+  const out = [];
+  let list = false;
+  const close = () => {
+    if (list) out.push("</ul>");
+    list = false;
+  };
+  const inline = (text) => esc(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  for (const raw of String(source || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) {
+      close();
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    if (heading) {
+      close();
+      const level = heading[1].length + 1;
+      out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+    } else if (/^[-*]\s+/.test(line)) {
+      if (!list) out.push("<ul>");
+      list = true;
+      out.push(`<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`);
+    } else if (line.startsWith(">")) {
+      close();
+      out.push(`<div class="fq-notice">${inline(line.replace(/^>\s*/, ""))}</div>`);
+    } else {
+      close();
+      out.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  close();
+  return out.join("");
+}
+
+function renderLegal() {
+  const title = LEGAL_TITLES[state.legalDoc] || LEGAL_TITLES.terms;
+  const other = state.legalDoc === "privacy" ? "terms" : "privacy";
+  const body = state.legalError
+    ? `<div class="fq-body center" role="alert"><h1 class="fq-h2">ما قدرنا نفتح الصفحة</h1><button class="fq-btn" type="button" data-action="legal" data-doc="${esc(state.legalDoc)}">حاول مرة ثانية</button></div>`
+    : state.legalText
+      ? `<article class="fq-legaldoc">${markdownHtml(state.legalText)}</article>`
+      : `<div class="fq-card"><span class="fq-skel" style="height:18px;width:60%;border-radius:8px"></span><span class="fq-skel" style="height:14px;width:90%;border-radius:8px"></span><span class="fq-skel" style="height:14px;width:80%;border-radius:8px"></span></div>`;
+  return `${fqHead({ title, back: "legal-back" })}
+  <section class="fq-body tight">
+    ${body}
+    <a class="fq-link" href="/${other}" data-action="legal" data-doc="${other}" style="align-self:center">${esc(LEGAL_TITLES[other])}</a>
+  </section>`;
+}
+
+// A sheet that opens takes the focus; Tab stays inside it; Escape closes it.
+let lastSheet = false;
+function manageSheetFocus() {
+  const sheet = app.querySelector(".fq-sheet");
+  if (sheet && !lastSheet) {
+    const first = sheet.querySelector("input:not([type=hidden]):not([hidden]), textarea, select, button:not([disabled])");
+    (first || sheet).focus?.();
+  }
+  lastSheet = Boolean(sheet);
+}
+
+function closeTopSheet() {
+  if (state.pushAsk) state.pushAsk = false;
+  else if (state.editing != null) state.editing = null;
+  else if (state.view === "detail") {
+    state.view = "flow";
+    state.active = null;
+  } else if (state.capSheet) state.capSheet = false;
+  else if (state.pickerOpen) state.pickerOpen = false;
+  else if (state.attachOpen) state.attachOpen = false;
+  else if (state.awardPick) state.awardPick = null;
+  else return false;
+  render();
+  return true;
+}
+
 const VIEWS = {
   home: renderHome,
   "city-ask": renderCityAsk,
@@ -2117,6 +2924,8 @@ const VIEWS = {
   "notify-settings": renderNotifySettings,
   subscribe: renderSubscribe,
   auth: renderAuth,
+  seller: renderSeller,
+  legal: renderLegal,
 };
 
 let lastView = "";
@@ -2149,6 +2958,9 @@ function render() {
     const next = document.getElementById("chat-wall");
     if (next) next.scrollTop = next.scrollHeight;
   }
+  manageSheetFocus();
+  syncUrl();
+  scheduleDraftSave();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
   if (state.view === "subscribe" && state.subView === "review" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
 }
@@ -2175,7 +2987,7 @@ function toast(message) {
   }, 2600);
 }
 
-// «٢٠ جهة مطابقة» counts up to the new number instead of jumping.
+// «لقينا 20 مورد» counts up to the new number instead of jumping.
 function bindCounter(root) {
   const node = root.querySelector("[data-count]");
   if (!node) return;
@@ -2184,14 +2996,15 @@ function bindCounter(root) {
   if (from === target) return;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     state.shownCount = target;
-    node.textContent = `تم العثور على ${formatCount(target)} نتيجة`;
+    node.textContent = foundLine(target);
     return;
   }
   const started = performance.now();
   const step = (now) => {
     const ratio = Math.min(1, (now - started) / 200);
-    const value = Math.round(from + (target - from) * ratio);
-    node.textContent = `تم العثور على ${formatCount(value)} نتيجة`;
+    // counting up from nothing never flashes «no results» on the way
+    const value = Math.max(target ? 1 : 0, Math.round(from + (target - from) * ratio));
+    node.textContent = foundLine(value);
     state.shownCount = value;
     if (ratio < 1) requestAnimationFrame(step);
   };
@@ -2243,6 +3056,7 @@ async function readNdjson(response, onEvent) {
 function applyDone(event) {
   state.intent = event.intent;
   state.results = event.results || [];
+  rememberGroups(event.groups);
   state.searchState = event.state;
   state.clarification = event.clarification_question || "";
   state.partial = false;
@@ -2250,14 +3064,34 @@ function applyDone(event) {
   state.notice = asking ? "" : finalNotice(event.state, state.results.length);
 }
 
+// A search gives up after this long: whatever arrived stays on screen, and an empty screen
+// says the search failed and offers to try again. The spinner never outlives the search.
+const SEARCH_TIMEOUT_MS = 30000;
+
+function failSearch(status) {
+  state.searching = false;
+  state.partial = false;
+  if (state.results.length) {
+    // what arrived is real; say the rest did not
+    state.searchState = "PARTIAL_RESULTS";
+    state.notice = finalNotice(status === "TIMEOUT" ? "TIMEOUT" : "PARTIAL_RESULTS", state.results.length);
+  } else {
+    state.searchState = status;
+    state.notice = status === "TIMEOUT" ? "البحث طوّل أكثر من اللازم وما رجعت نتائج." : "ما قدرنا نكمل البحث بسبب خلل في الاتصال.";
+  }
+}
+
 async function runSearch(text, city = "") {
   const query = (text || "").trim();
   if (!query) return;
-  state.query = query;
-  state.city = city || cityInText(query);
+  // The search phrase is kept on its own; the customer's own words (state.originalText) stay as typed.
+  state.searchText = query;
+  if (!state.query) state.query = query;
+  state.city = city || state.city || cityInText(query);
   // Without a city the search is nationwide; ask first, then search inside that city.
   if (!state.city && state.cities.length) {
     state.view = "city-ask";
+    state.cityMode = "request";
     state.results = [];
     state.intent = null;
     state.searching = false;
@@ -2265,25 +3099,34 @@ async function runSearch(text, city = "") {
     return;
   }
   const asked = state.city && !cityInText(query) ? `${query} ${cityLabel(state.city)}` : query;
+  const searchId = `${Date.now()}`;
+  const mine = () => state.searchId === searchId;
   state.view = "flow";
-  state.searchId = `${Date.now()}`;
+  state.searchId = searchId;
   state.partial = true;
   state.searching = true;
   state.seenCards = new Set();
   state.shownCount = 0;
   state.searchState = "";
   state.results = [];
+  state.resultNeeds = new Map();
+  state.needFilter = "";
   state.intent = null;
   state.clarification = "";
   state.notice = "نفهم طلبك…";
   state.selected.clear();
   render();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  const started = Date.now();
+  let finished = false;
   try {
     const headers = { "Content-Type": "application/json" };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked }) });
+    const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked }), signal: controller.signal });
     if (!response.ok || !response.body) throw new Error("stream");
     await readNdjson(response, (event) => {
+      if (!mine()) return;
       if (event.type === "intent") {
         state.intent = event.intent;
         state.clarification = event.clarification_question || "";
@@ -2298,10 +3141,17 @@ async function runSearch(text, city = "") {
         if ((event.results || []).length) state.searching = false;
         if (event.scanned != null) state.scanned = event.scanned;
         state.results = event.results || [];
+        rememberGroups(event.groups);
+        if (event.need && event.results?.length && !event.groups) {
+          const active = (state.needs || []).filter((item) => item.on);
+          const label = active.length === 1 ? needLabel(active[0]) : event.need;
+          for (const result of event.results) if (!state.resultNeeds.has(resultKey(result))) state.resultNeeds.set(resultKey(result), label);
+        }
         state.partial = true;
         state.searchState = event.state;
         if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
       } else if (event.type === "done") {
+        finished = true;
         state.searching = false;
         applyDone(event);
         // one rising pair, only once, and only when the search actually found something
@@ -2309,17 +3159,37 @@ async function runSearch(text, city = "") {
       }
       render();
     });
+    // a stream that closes without its «done» did not finish
+    if (!finished && mine()) {
+      failSearch("INTERNAL_ERROR");
+      render();
+    }
   } catch (_error) {
-    try {
-      const done = await api("/v1/search", { method: "POST", json: { query } });
-      applyDone(done);
-      if (state.results.length) cueOnce(`search:${state.searchId}`, "found", 10);
-    } catch (_fallback) {
-      state.partial = false;
-      state.searchState = "INTERNAL_ERROR";
-      state.notice = finalNotice("INTERNAL_ERROR", 0);
+    if (!mine()) return;
+    const timedOut = controller.signal.aborted;
+    const left = SEARCH_TIMEOUT_MS - (Date.now() - started);
+    // The plain endpoint is a second chance only when the stream failed fast and nothing arrived.
+    if (!timedOut && !state.results.length && left > 3000) {
+      const fallback = new AbortController();
+      const fallbackTimer = setTimeout(() => fallback.abort(), left);
+      try {
+        const done = await api("/v1/search", { method: "POST", json: { query: asked }, signal: fallback.signal });
+        if (!mine()) return;
+        state.searching = false;
+        applyDone(done);
+        if (state.results.length) cueOnce(`search:${state.searchId}`, "found", 10);
+      } catch (_fallback) {
+        if (!mine()) return;
+        failSearch(fallback.signal.aborted ? "TIMEOUT" : "INTERNAL_ERROR");
+      } finally {
+        clearTimeout(fallbackTimer);
+      }
+    } else {
+      failSearch(timedOut ? "TIMEOUT" : "INTERNAL_ERROR");
     }
     render();
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -2369,6 +3239,33 @@ function openQuote(key) {
 }
 
 // M09_SendingProcessing then M10_RequestSent — nodes 85:338 and 27:374.
+// What a supplier is asked to price: the item in the customer's words. The name alone
+// («سباك») tells him nothing; the segment of the request it came from does.
+function needText(item) {
+  if (!item) return "";
+  const name = needLabel(item);
+  const desc = String(item.desc || "").trim();
+  if (!desc || desc === name) return name;
+  return desc.includes(name) ? desc : `${name}: ${desc}`;
+}
+
+// The details that do not fit in one line go to the notes, one line per item.
+function requestNotes(active) {
+  const lines = [];
+  const detailed = active.length > 1 || active.some((item) => item.qty > 1 || item.when);
+  if (detailed) {
+    for (const item of active) {
+      const parts = [needText(item)];
+      if (item.qty > 1) parts.push(`الكمية: ${formatCount(item.qty)}${item.unit ? ` ${item.unit}` : ""}`);
+      if (item.when) parts.push(`الموعد: ${item.when}`);
+      if (item.district) parts.push(`الحي: ${item.district}`);
+      lines.push(`• ${parts.join(" — ")}`);
+    }
+  }
+  if (state.note.trim()) lines.push(state.note.trim());
+  return lines.join("\n") || null;
+}
+
 async function sendRequest() {
   const city = customerCity();
   if (!state.selected.size || !city || state.busy) return;
@@ -2390,17 +3287,26 @@ async function sendRequest() {
     if (state.intent?.condition?.value === "used") attributes.condition = "مستعمل";
     if (state.intent?.condition?.value === "new") attributes.condition = "جديد";
     if (state.intent?.year?.value) attributes.year = state.intent.year.value;
+    const active = (state.needs || []).filter((item) => item.on);
+    const byLabel = new Map(active.map((item) => [needLabel(item), item]));
+    const itemFor = (result) => byLabel.get(needOf(result)) || (active.length === 1 ? active[0] : null);
+    const need = active.length === 1 ? needText(active[0]) : active.length ? active.map(needLabel).join(" + ") : state.intent?.need || null;
     const created = await api("/v1/requests", {
       method: "POST",
       json: {
-        original_text: state.query,
-        need: state.intent?.need || (state.needs || []).filter((item) => item.on).map((item) => item.name).join(" + ") || null,
-        notes: state.note || null,
+        // the words the customer typed, never the search phrase built from them
+        original_text: state.originalText || state.query,
+        need,
+        notes: requestNotes(active),
         city,
         attributes,
         recipients: [...state.selected.values()].map((result) => {
           const seller = sellerOf(result);
-          return { seller_id: seller.id, seller_name: seller.name || "بائع", ad_id: result.ad?.id || null };
+          const item = itemFor(result);
+          const recipient = { seller_id: seller.id, seller_name: seller.name || "مورد", ad_id: result.ad?.id || null };
+          if (item && active.length > 1) recipient.need = needText(item);
+          if (result.ad?.url) recipient.listing_url = result.ad.url;
+          return recipient;
         }),
       },
     });
@@ -2414,7 +3320,7 @@ async function sendRequest() {
       }
       await api(`/v1/requests/${created.id}/attachments`, { method: "POST", form }).catch(() => {});
     }
-    state.sentInfo = { sellers: created.recipients?.length || state.sendingTo, need: created.need || state.query, id: created.id };
+    state.sentInfo = { sellers: created.recipients?.length || state.sendingTo, need: created.need || state.originalText || state.query, id: created.id };
     state.busy = false;
     state.files = [];
     state.note = "";
@@ -2423,8 +3329,10 @@ async function sendRequest() {
     threadCache.set(created.id, created);
     state.thread = null;
     state.replyTo = null;
+    // The journey is done: the draft goes, so neither Back nor a reload can bring it round again.
+    clearDraft();
     state.view = "sent";
-    history.pushState({}, "", "/");
+    state.replaceUrl = true;
     // N02 asks over the success screen, which is where the frame draws it
     if (!state.pushDismissed && state.pushState !== "on") state.pushAsk = true;
     render();
@@ -2436,59 +3344,123 @@ async function sendRequest() {
         setUnread(state.requests);
       })
       .catch(() => {});
-  } catch (_error) {
-    state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
+  } catch (error) {
     state.busy = false;
+    if (error?.auth) {
+      // the sign-in screen is up; it returns to the review with the same suppliers ticked
+      state.notice = "";
+      state.returnView = "review";
+      saveDraft();
+      render();
+      return;
+    }
+    state.notice = "ما قدرنا نرسل الطلب. جرّب مرة ثانية.";
     state.view = "review";
+    state.replaceUrl = true;
     render();
   }
 }
 
 // M01 → M02: the parser splits the sentence into needs before any search runs.
-async function startPricing(text) {
+// `fresh` marks a new request typed by the customer: only then do his words replace the saved ones.
+async function startPricing(text, { fresh = true } = {}) {
   const query = (text || "").trim();
-  if (!query) return;
+  if (!query) {
+    // an empty request answers instead of doing nothing
+    state.composerHint = "اكتب وش تبي نسعّر لك أول، مثلاً: سباك يصلح تسريب.";
+    if (state.view !== "home") state.view = "home";
+    render();
+    document.getElementById("composer-query")?.focus();
+    return;
+  }
+  state.composerHint = "";
   state.query = query;
+  if (fresh || !state.originalText) state.originalText = query;
   state.city = state.city || cityInText(query);
   if (!state.city) {
     state.view = "city-ask";
+    state.cityMode = "request";
     render();
     return;
   }
   state.view = "understand";
   state.needs = null;
   state.editing = null;
+  state.intentError = false;
+  state.intentProblem = "";
+  state.intentQuestion = "";
+  state.results = [];
+  state.searchState = "";
+  state.selected.clear();
   render();
-  let list = [];
+  const intentId = `${Date.now()}`;
+  state.intentId = intentId;
+  let data;
   try {
-    const data = await api("/v1/intent", { method: "POST", json: { query }, skipAuth: true });
-    list = (data.intents || []).length ? data.intents : [data.intent].filter(Boolean);
-    state.intent = list[0] || null;
-    state.clarification = data.clarification_question || "";
+    data = await api("/v1/intent", { method: "POST", json: { query }, skipAuth: true });
   } catch (_error) {
-    list = [];
+    if (state.intentId !== intentId) return;
+    // no fake M02 made of the raw words: say it failed, keep the text, offer a retry
+    state.intentError = true;
+    render();
+    return;
+  }
+  if (state.intentId !== intentId) return;
+  const all = (data.intents || []).length ? data.intents : [data.intent].filter(Boolean);
+  const list = all.filter((intent) => intent.understood);
+  state.intent = list[0] || all[0] || null;
+  state.clarification = data.clarification_question || "";
+  if (!list.length || data.state === "NOT_UNDERSTOOD") {
+    state.intentProblem = "not-understood";
+    render();
+    return;
+  }
+  // The city is already chosen on this screen's way in; only a question about the item itself stops M02.
+  const question = data.state === "CLARIFICATION_REQUIRED" ? data.clarification_question || "" : "";
+  if (question && !question.includes("مدينة")) {
+    state.intentProblem = "question";
+    state.intentQuestion = question;
+    render();
+    return;
   }
   const cityOf = (intent) => (typeof intent?.location_city?.value === "string" ? intent.location_city.value : "") || state.city;
-  state.needs = (list.length ? list : [{ need: query }]).map((intent, index) => ({
+  state.needs = list.map((intent, index) => ({
     key: `n${index}`,
-    name: arabicOnly(intent.model?.value) || arabicOnly(intent.subcategory?.value) || arabicOnly(intent.category?.value) || (intent.need || query).split(/\s+/).slice(0, 2).join(" "),
-    desc: intent.need || query,
+    name: arabicOnly(intent.model?.value) || arabicOnly(intent.subcategory?.value) || arabicOnly(intent.category?.value) || stripCity(intent.need || query).split(/\s+/).slice(0, 2).join(" "),
+    // the customer's own segment when the parser returns it, so «ستانلس» and «يصلح تسريب» survive
+    // (a request with a single item is that item's segment in full)
+    desc: stripCity(intent.segment_text || (list.length === 1 ? query : intent.need) || query),
     city: cityOf(intent),
     district: typeof intent?.location_district?.value === "string" ? intent.location_district.value : "",
     when: "",
-    qty: intent?.quantity?.value || 1,
+    qty: Number(intent?.quantity?.value) || 1,
+    unit: typeof intent?.quantity_unit === "string" ? intent.quantity_unit : intent?.quantity_unit?.value || "",
     on: true,
     intent,
   }));
   render();
 }
 
+// «سباك الرياض» reads «سباك» on a card that already says الرياض underneath.
+function stripCity(text) {
+  let value = String(text || "");
+  for (const city of state.cities) {
+    for (const word of new Set([city.label, city.value])) {
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      value = value.replace(new RegExp(`\\s*(?:في\\s+|بال|ب)?${escaped}(?=\\s|$)`, "g"), " ");
+    }
+  }
+  return value.replace(/\s+/g, " ").trim() || String(text || "").trim();
+}
+
 function searchFromNeeds() {
   const active = (state.needs || []).filter((item) => item.on);
   if (!active.length) return;
-  const text = active.map((item) => [item.desc, item.qty > 1 ? `عدد ${item.qty}` : "", item.when].filter(Boolean).join(" ")).join(" و ");
+  // Each item searches by its own description; the quantity and the date are for the supplier,
+  // not for the ad search, and would only narrow it wrongly.
+  const text = active.map((item) => item.desc || needLabel(item)).filter(Boolean).join(" و ");
   state.intent = active[0].intent || state.intent;
-  runSearch(text || state.query, state.city);
+  runSearch(text || state.originalText || state.query, state.city);
 }
 
 // Screens switch at once: what we already have (or a placeholder) shows while the server answers.
@@ -2689,6 +3661,9 @@ async function loadNotifications() {
     if (item.latest_offer_amount != null) feed.push({ kind: "offer", need, text: `وصل عرض بقيمة ${money(item.latest_offer_amount)}`, at, request_id: item.id, unread: Boolean(item.unread_count) });
     if (item.unread_count) feed.push({ kind: "message", need, text: item.last_message || "رسالة جديدة في المحادثة", at, request_id: item.id, unread: true });
   }
+  // «تحديد الكل كمقروء» is remembered on this device until the server keeps read state.
+  const readAt = Date.parse(storedGet("farq.notesReadAt") || "") || 0;
+  for (const note of feed) if (note.unread && (Date.parse(note.at || "") || 0) <= readAt) note.unread = false;
   state.notifications = feed.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
   if (state.view === "notifications") render();
 }
@@ -2811,6 +3786,17 @@ async function mountPayment(planCode) {
   }
 }
 
+// The place field holds «الحي، المدينة». A city typed in it becomes the item's city; what is
+// left is the district — so saving without touching it never makes «الرياض، الرياض».
+function readPlace(need, text) {
+  const place = String(text || "").trim();
+  const found = state.cities.find((city) => place.includes(city.label) || place.includes(city.value));
+  if (found) need.city = found.value;
+  let district = place;
+  for (const word of [found?.label, found?.value, cityLabel(need.city), need.city].filter(Boolean)) district = district.split(word).join(" ");
+  need.district = district.replace(/[،,]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 document.addEventListener("submit", (event) => {
   const form = event.target;
   if (form.id === "composer") {
@@ -2819,20 +3805,40 @@ document.addEventListener("submit", (event) => {
   } else if (form.id === "answer") {
     event.preventDefault();
     const value = new FormData(form).get("value");
-    if (value) runSearch(`${state.query} ${value}`, state.city);
+    if (value) runSearch(`${state.searchText || state.originalText || state.query} ${value}`, state.city);
+  } else if (form.id === "intent-answer") {
+    event.preventDefault();
+    const value = String(new FormData(form).get("value") || "").trim();
+    if (value) startPricing(`${state.originalText || state.query} ${value}`);
   } else if (form.id === "auth-form") {
     event.preventDefault();
     submitAuth(form);
+  } else if (form.id === "seller-reply") {
+    event.preventDefault();
+    submitSellerReply(form);
   } else if (form.id === "edit-need") {
     event.preventDefault();
     const data = new FormData(form);
-    const need = state.needs?.[Number(form.dataset.index)];
+    const index = Number(form.dataset.index);
+    const adding = state.needs && index === state.needs.length;
+    const need = adding ? blankNeed() : state.needs?.[index];
     if (need) {
-      need.name = String(data.get("name") || need.name).trim() || need.name;
-      need.desc = String(data.get("desc") || need.desc).trim() || need.desc;
-      need.district = String(data.get("district") || "").trim();
-      need.qty = Math.max(1, Number(data.get("qty") || 1));
+      const name = String(data.get("name") || "").trim();
+      const desc = String(data.get("desc") || "").trim();
+      if (adding && !name && !desc) {
+        state.editing = null;
+        render();
+        return;
+      }
+      need.name = name || need.name || desc.split(/\s+/).slice(0, 2).join(" ");
+      need.desc = desc || need.desc || need.name;
+      readPlace(need, data.get("district"));
+      need.qty = Math.max(1, Math.round(Number(String(data.get("qty") || "1").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))) || 1));
       need.when = String(data.get("when") || "").trim();
+      if (adding) {
+        delete need.fresh;
+        state.needs.push(need);
+      }
     }
     state.editing = null;
     render();
@@ -2847,8 +3853,20 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("input", (event) => {
-  if (event.target.id === "note") state.note = event.target.value;
-  if (event.target.name === "query") state.query = event.target.value;
+  if (event.target.id === "note") {
+    state.note = event.target.value;
+    scheduleDraftSave();
+  }
+  if (event.target.name === "query") {
+    state.query = event.target.value;
+    const count = document.getElementById("composer-count");
+    if (count) count.textContent = composerCount(state.query);
+    if (state.composerHint && state.query.trim()) {
+      state.composerHint = "";
+      clearComposerHint();
+    }
+    scheduleDraftSave();
+  }
   if (event.target.closest("#user-reply") && event.target.name === "body" && !state.activeSeller && state.thread) {
     const list = document.getElementById("mention-list");
     const typed = event.target.value.match(/@([^@]*)$/);
@@ -2866,6 +3884,10 @@ document.addEventListener("input", (event) => {
   }
 });
 
+// the hint under the composer goes as soon as there is something to price, without a re-render
+function clearComposerHint() {
+  document.querySelector("#composer [role=alert]")?.remove();
+}
 document.addEventListener("change", async (event) => {
   if (event.target.dataset.action === "chat-files") {
     const files = [...(event.target.files || [])];
@@ -2896,8 +3918,34 @@ document.addEventListener("change", async (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || event.shiftKey) return;
+  if (event.key === "Escape") {
+    if (closeTopSheet()) event.preventDefault();
+    return;
+  }
+  if (event.key === "Tab") {
+    // keep the focus inside an open sheet
+    const sheet = app.querySelector(".fq-sheet");
+    if (!sheet) return;
+    const items = [...sheet.querySelectorAll("a[href], button:not([disabled]), input:not([type=hidden]), textarea, select")].filter((node) => node.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!sheet.contains(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
+    } else if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+    return;
+  }
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
   if (event.target.name === "query") {
+    // On a phone the keyboard's return key writes a new line; the button sends.
+    if (coarsePointer()) return;
     event.preventDefault();
     startPricing(event.target.value);
   } else if (event.target.name === "body" && event.target.closest("#user-reply")) {
@@ -2920,9 +3968,53 @@ document.addEventListener("click", (event) => {
   if (action === "home") {
     event.preventDefault();
     state.view = "home";
-    history.pushState({}, "", "/");
+    state.cityMode = "";
     render();
   } else if (action === "idea") startPricing(target.dataset.query);
+  else if (action === "legal") {
+    event.preventDefault();
+    openLegal(target.dataset.doc);
+  } else if (action === "legal-back") {
+    // back to where the page was opened from; opened directly, it goes home (or to sign-in)
+    if (history.state?.view === "legal" && state.legalFrom && state.legalFrom !== "legal") history.back();
+    else {
+      state.view = state.token ? "home" : "auth";
+      render();
+    }
+  } else if (action === "seller-reload") openSellerPage(state.sellerToken);
+  else if (action === "edit-request") {
+    state.intentError = false;
+    state.intentProblem = "";
+    state.view = "home";
+    render();
+    document.getElementById("composer-query")?.focus();
+  } else if (action === "retry-intent") startPricing(state.originalText || state.query, { fresh: false });
+  else if (action === "retry-search") runSearch(state.searchText || state.originalText || state.query, state.city);
+  else if (action === "add-need") {
+    state.editing = (state.needs || []).length;
+    render();
+  } else if (action === "delete-need") {
+    state.needs?.splice(Number(target.dataset.index), 1);
+    state.editing = null;
+    render();
+  } else if (action === "set-city") {
+    // the header's city control: pick, and back home with the city showing
+    state.city = target.dataset.city || "";
+    state.cityMode = "";
+    storedSet("farq.city", state.city);
+    state.view = "home";
+    render();
+  } else if (action === "research-city") {
+    state.city = target.dataset.city || "";
+    state.cityMode = "";
+    storedSet("farq.city", state.city);
+    for (const need of state.needs || []) need.city = state.city;
+    runSearch(state.searchText || state.originalText || state.query, state.city);
+  } else if (action === "other-city") {
+    state.cityMode = "research";
+    state.view = "city-ask";
+    render();
+  }
   else if (action === "requests") loadRequests().catch(() => {});
   else if (action === "account") {
     state.view = "account";
@@ -2948,9 +4040,14 @@ document.addEventListener("click", (event) => {
     sound.unlock();
     cue("offer", 12);
   } else if (action === "read-all") {
+    const newest = (state.notifications || []).map((item) => item.at || "").sort().pop();
+    storedSet("farq.notesReadAt", newest && newest > new Date().toISOString() ? newest : new Date().toISOString());
     state.notifications = (state.notifications || []).map((item) => ({ ...item, unread: false }));
     render();
-  } else if (action === "change-city") go("city-ask");
+  } else if (action === "change-city") {
+    state.cityMode = "pick";
+    go("city-ask");
+  }
   else if (action === "run-search") searchFromNeeds();
   else if (action === "back-understand") go(state.needs ? "understand" : "home");
   else if (action === "edit-need") {
@@ -2966,6 +4063,11 @@ document.addEventListener("click", (event) => {
   } else if (action === "close-sheet") {
     state.editing = null;
     if (state.view === "detail") {
+      // the detail sheet has its own address; closing it is a step back, not a new step
+      if (history.state?.view === "detail") {
+        history.back();
+        return;
+      }
       state.view = "flow";
       state.active = null;
     }
@@ -2977,7 +4079,8 @@ document.addEventListener("click", (event) => {
     state.reviewExtra = state.reviewExtra !== true;
     render();
   } else if (action === "filter-need") {
-    state.needFilter = state.needFilter === target.dataset.name ? "" : target.dataset.name;
+    const name = target.dataset.name || "";
+    state.needFilter = !name || state.needFilter === name ? "" : name;
     render();
   } else if (action === "open-sent") loadRequests().catch(() => {});
   else if (action === "remove-file") {
@@ -2992,7 +4095,9 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "search-city") {
     state.city = target.dataset.city || "";
-    startPricing(state.query);
+    state.cityMode = "";
+    storedSet("farq.city", state.city);
+    startPricing(state.originalText || state.query, { fresh: false });
   }
   else if (action === "pick-city") {
     state.city = target.dataset.city || "";
@@ -3001,8 +4106,8 @@ document.addEventListener("click", (event) => {
     state.view = "review";
     render();
   } else if (action === "back-results") go("flow");
-  else if (action === "retry") startPricing(state.query);
-  else if (action === "answer") runSearch(`${state.query} ${target.dataset.value}`, target.dataset.city || state.city);
+  else if (action === "retry") startPricing(state.originalText || state.query, { fresh: false });
+  else if (action === "answer") runSearch(`${state.searchText || state.query} ${target.dataset.value}`, target.dataset.city || state.city);
   else if (action === "send") sendRequest();
   else if (action === "clear-notice") {
     state.notice = "";
@@ -3025,8 +4130,12 @@ document.addEventListener("click", (event) => {
   } else if (action === "sign-out") {
     api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     signOutLocally();
+    clearDraft();
     state.returnView = "home";
     state.authMode = "login";
+    try {
+      history.replaceState({}, "", "/");
+    } catch (_error) {}
     requireSignIn();
   } else if (action === "open-compare") {
     state.view = "compare";
@@ -3195,7 +4304,7 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "profile") toast("صفحة بياناتي قيد الإعداد");
   else if (action === "support") toast("الدعم: support@farq.sa");
-  else if (action === "privacy" || action === "terms") toast("الصفحة قيد الإعداد");
+  else if (action === "privacy" || action === "terms") openLegal(action);
   else if (action === "lang") toast("الواجهة الإنجليزية قيد الإعداد");
   else if (action === "forgot") toast("تواصل مع الدعم لإعادة تعيين كلمة المرور");
   else if (action === "emoji") document.querySelector("#user-reply textarea")?.focus();
@@ -3244,10 +4353,17 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// Boot: the journey kept for this tab comes back first, then the address decides the screen.
+restoreDraft();
+state.city = state.city || storedGet("farq.city") || "";
 const openRequest = new URLSearchParams(location.search).get("r");
-if (!state.token) {
+const bootPath = location.pathname;
+const publicPage = /^\/(terms|privacy)\/?$/.test(bootPath) || /^\/s\/[^/]+\/?$/.test(bootPath);
+if (publicPage) {
+  applyRoute(bootPath, { pop: true });
+} else if (!state.token) {
   state.view = "auth";
-  if (openRequest) state.returnView = "requests";
+  state.returnRoute = openRequest ? `/r/${encodeURIComponent(openRequest)}` : bootPath;
   render();
 } else {
   api("/v1/auth/me", { quiet: true })
@@ -3263,11 +4379,8 @@ if (!state.token) {
     state.notifyPrefs = {};
   }
   if (subscribeCallback) handleSubscribeCallback().catch(() => render());
-  else if (openRequest) {
-    history.replaceState({}, "", "/");
-    state.stickChat = true;
-    loadThread(openRequest).catch(() => render());
-  } else render();
+  else if (openRequest) applyRoute(`/r/${encodeURIComponent(openRequest)}`, { pop: true });
+  else applyRoute(bootPath, { pop: true });
 }
 
 if ("serviceWorker" in navigator) {
