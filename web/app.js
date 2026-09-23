@@ -943,12 +943,16 @@ function renderSending() {
   const total = state.sendingTo || state.selected.size;
   const steps = ["تم التحقق من تفاصيل البنود", "تحديد النطاق الجغرافي للموردين", "جاري الإرسال ومطابقة الأسعار"];
   return `${fqHead({ title: "البحث مستمر" })}
-  <section class="fq-body center" aria-live="polite">
-    <div class="fq-ring spin" style="--p:70%"><span>فرق</span></div>
-    <div><h1 class="fq-h1">جاري إرسال طلبك...</h1>
+  <section class="fq-body center on-soft-mint" aria-live="polite" style="padding-top:80px">
+    <div class="fq-sendring spin"><span>فرق</span></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <h1 class="fq-h1">جاري إرسال طلبك...</h1>
       <p class="fq-lead">يتم إرسال تفاصيل طلبك الآن لـ ${formatCount(total)} موردين معتمدين في ${esc(cityLabel(customerCity()) || "مدينتك")} للحصول على أفضل العروض.</p></div>
     <div class="fq-steps" style="align-items:center">${steps
-      .map((label) => `<div class="fq-step" style="gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--fq-success)"></span><span>${esc(label)}</span></div>`)
+      .map((label, index) => {
+        const now = index === steps.length - 1;
+        return `<div class="fq-sendstep${now ? " now" : ""}"><span class="dot"></span><span>${esc(label)}</span></div>`;
+      })
       .join("")}</div>
     <p class="fq-meta" style="margin-top:auto">الرجاء عدم إغلاق التطبيق لضمان استقبال الردود السريعة</p>
   </section>`;
@@ -3153,11 +3157,20 @@ document.addEventListener("click", (event) => {
   else if (action === "emoji") document.querySelector("#user-reply textarea")?.focus();
 });
 
-// Lets a review session step through the subscription states without a card.
+// Lets a review session hold a screen still. Some of them — sending, searching, paying —
+// pass in well under a tenth of a second against a local server, so they cannot otherwise
+// be photographed and put beside their frames. Nothing a customer can reach touches this.
 window.addEventListener("farq:sub", (event) => {
   state.view = "subscribe";
   state.subView = String(event.detail || "my-plan");
   if (!state.subActivePlan && state.subPlans.length) state.subActivePlan = state.subPlans[0].code;
+  render();
+});
+
+window.addEventListener("farq:view", (event) => {
+  const view = String(event.detail || "home");
+  if (view === "sending") state.sendingTo = state.sendingTo || state.selected.size || 6;
+  state.view = view;
   render();
 });
 
