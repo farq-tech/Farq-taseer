@@ -116,7 +116,7 @@ def test_security_headers_and_docs(tmp_path, monkeypatch):
     for path in ("/", "/v1/cities"):
         response = api.get(path)
         csp = response.headers["content-security-policy"]
-        assert "frame-ancestors 'self' https://www.farq.sa https://farq.sa https://localhost" in csp
+        assert all(origin in csp for origin in ("frame-ancestors 'self'", "https://www.farq.sa", "https://farq.sa", "https://localhost"))
         assert "https://cdn.moyasar.com" in csp and "https://fonts.googleapis.com" in csp
         assert "x-frame-options" not in response.headers
         assert response.headers["x-content-type-options"] == "nosniff"
@@ -185,3 +185,13 @@ def test_a_retried_request_or_message_with_an_idempotency_key_is_not_repeated(tm
     # A failed attempt gives the key back.
     assert api.post("/v1/requests/missing/messages", headers={**headers, "Idempotency-Key": "msg-2"}, json=message).status_code == 404
     assert store._connection.execute("select count(*) from idempotency_keys where key = 'msg-2'").fetchone()[0] == 0
+
+
+def test_frame_ancestors_names_exact_origins_and_never_a_wildcard_host(tmp_path):
+    """A wildcard host would let any site on that provider frame Taseer and clickjack it."""
+    api, _ = make(tmp_path)
+    policy = api.get("/health").headers["content-security-policy"]
+    ancestors = next(part for part in policy.split("; ") if part.startswith("frame-ancestors"))
+    assert "*" not in ancestors, ancestors
+    for origin in ("'self'", "https://farq.sa", "https://www.farq.sa", "capacitor://localhost"):
+        assert origin in ancestors

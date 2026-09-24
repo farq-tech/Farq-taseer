@@ -9,6 +9,30 @@ styles only; scripts stay 'self' + Moyasar.
 
 from __future__ import annotations
 
+import os
+
+# Who may put Taseer in a frame. Farq's iOS app and site embed it on /taseer, and Capacitor
+# serves the app from localhost (https:// on Android, capacitor:// on iOS).
+#
+# Never a wildcard host here. "https://*.vercel.app" would have named every site anyone has
+# ever deployed to Vercel, and any one of them could have laid an invisible Taseer over its
+# own buttons and had the customer send a request he never saw. x-frame-options is gone
+# because it cannot express an allowlist at all; frame-ancestors is what browsers read.
+#
+# FARQ_FRAME_ANCESTORS replaces the whole list, for a new embedder (a preview host, another
+# Farq surface) without a code change. Keep it to exact origins.
+DEFAULT_FRAME_ANCESTORS = (
+    "'self' https://farq.sa https://www.farq.sa "
+    "https://localhost capacitor://localhost "
+    "https://farq-taseer-phi.vercel.app"
+)
+
+
+def frame_ancestors() -> str:
+    value = (os.environ.get("FARQ_FRAME_ANCESTORS") or "").strip()
+    return value or DEFAULT_FRAME_ANCESTORS
+
+
 CSP = "; ".join(
     [
         "default-src 'self'",
@@ -23,8 +47,7 @@ CSP = "; ".join(
         "form-action 'self' https://*.moyasar.com",
         "base-uri 'self'",
         "object-src 'none'",
-        # Farq iOS/web embeds Taseer on /taseer. Capacitor serves https://localhost.
-        "frame-ancestors 'self' https://www.farq.sa https://farq.sa https://localhost https://*.vercel.app",
+        f"frame-ancestors {frame_ancestors()}",
     ]
 )
 
