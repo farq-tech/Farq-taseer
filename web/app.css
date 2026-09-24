@@ -1235,9 +1235,6 @@ button, .chat-row, .request-card, .vendor-body, .tab { -webkit-tap-highlight-col
   --fq-base: #a79bdc;     /* Base */
   --fq-deep: #575172;     /* Deep / CTA */
   --fq-success: #575172;
-  /* The cheapest offer keeps its own green, so "أقل سعر" still reads as a price verdict
-     and not as the sector's colour. It is earned by a single winner, never by a tie. */
-  --fq-win: #0f8a4d;
   --fq-warning: #c98720;
   --fq-warning-bg: #fff8e7;
   --fq-text: #16312e;
@@ -1453,7 +1450,7 @@ button.fq-card { cursor: pointer; }
 .fq-offers-bar .mini { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--fq-text); }
 .fq-offers-bar .mini b { font-weight: 700; }
 .fq-cmp-card { background: var(--fq-surface); border: 1.5px solid var(--fq-line); border-radius: var(--fq-r-card); padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--fq-shadow-card); }
-.fq-cmp-card.best { border-color: var(--fq-win); }
+.fq-cmp-card.best { border-color: var(--fq-base); }
 .fq-cmp-card .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fq-cmp-card .amount { font-size: 24px; font-weight: 800; color: var(--fq-deep); }
 .fq-cmp-card .who { font-size: 16px; font-weight: 700; color: var(--fq-text); }
@@ -1631,15 +1628,15 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq-card .fq-row { gap: 10px; }
 .fq-cmp-card { position: relative; }
 .fq-valuetag { position: absolute; top: -1px; inset-inline-end: 16px; background: var(--fq-soft); color: var(--fq-deep); border-radius: 0 0 10px 10px; padding: 4px 10px; font-size: 11px; font-weight: 700; }
-.fq-cmp-card.best { border-color: var(--fq-win); border-top-width: 3px; }
-.fq-best { background: var(--fq-win); }
+.fq-cmp-card.best { border-color: var(--fq-base); border-top-width: 3px; }
+.fq-best { background: var(--fq-base); }
 .fq-delta.up { background: var(--fq-app-bg); color: var(--fq-text-2); }
 .fq-cmp-actions { direction: ltr; }
 .fq-cmp-actions .fq-btn { direction: rtl; }
 .fq-valuetag { inset-inline-end: auto; right: 16px; }
 .fq-cmp-card .top { align-items: flex-start; }
 .fq-cmp-card .who { white-space: nowrap; }
-.fq-cmp-card.best { border-color: var(--fq-line); border-top: 3px solid var(--fq-win); }
+.fq-cmp-card.best { border-color: var(--fq-line); border-top: 3px solid var(--fq-base); }
 
 /* AC01: the profile banner and the one-card-per-entry list. */
 .fq-profile-banner { display: flex; align-items: center; gap: 14px; padding: 20px; background: var(--fq-deep); }
@@ -1838,7 +1835,7 @@ body.fq-auth .fq { background: linear-gradient(135deg, var(--fq-light) 25%, var(
 /* C02: one card per recipient, the mark on the left and the control on the right */
 .fq-rcpt { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; background: var(--fq-surface); border: 1px solid var(--fq-line); border-radius: var(--fq-r-input); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); font: inherit; color: var(--fq-text); direction: ltr; overflow: hidden; }
 .fq-rcpt.on { border-color: var(--fq-light); }
-.fq-rcpt.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-win); }
+.fq-rcpt.on::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-base); }
 .fq-rcpt .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; direction: rtl; text-align: left; }
 .fq-rcpt .meta strong { font-size: 15px; font-weight: 600; }
 .fq-rcpt .price { font-size: 13px; color: var(--fq-success); font-weight: 600; }
@@ -1865,7 +1862,7 @@ body.fq-auth .fq { background: linear-gradient(135deg, var(--fq-light) 25%, var(
 .fq-price.won { color: var(--fq-success); }
 .fq-awardcard { background: var(--fq-soft); border: 1px solid var(--fq-light); }
 .fq-wincard { position: relative; overflow: hidden; }
-.fq-wincard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-win); }
+.fq-wincard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fq-base); }
 .fq-btn.ghost.outline { border-color: var(--fq-success); color: var(--fq-success); }
 .fq-ringstack > span.ring { background: var(--fq-surface); border: 3px solid var(--fq-success); color: var(--fq-success); }
 /* the usage bar fills from the right, the way Arabic reads */
