@@ -1043,24 +1043,6 @@ function rememberGroups(groups) {
   });
 }
 
-// Haraj ads carry token prices (1, 8, 10 ر.س) that mean «call me». A saving is claimed only
-// against real prices for the same item, and only when there are at least two of them.
-const MIN_REAL_PRICE = 50;
-function priceStanding(result) {
-  const mine = result.ad?.price_amount;
-  if (mine == null || mine < MIN_REAL_PRICE) return { saving: null, cheapest: false };
-  const need = needOf(result);
-  const amounts = state.results
-    .filter((item) => needOf(item) === need)
-    .map((item) => item.ad?.price_amount)
-    .filter((value) => value != null && value >= MIN_REAL_PRICE);
-  if (amounts.length < 2) return { saving: null, cheapest: false };
-  const top = Math.max(...amounts);
-  const low = Math.min(...amounts);
-  const saving = top > mine ? Math.round(((top - mine) / top) * 100) : null;
-  return { saving: saving || null, cheapest: mine === low && top > low };
-}
-
 // Haraj usernames are handles («electrician220», «عضو 9103211»). A handle that reads like a
 // name is shown as the name; one that does not becomes «مقدم خدمة · الحي», with the handle
 // kept underneath so the customer can still tell suppliers apart.
@@ -1082,6 +1064,9 @@ function displayName(seller, result) {
 }
 
 let newCardsInBatch = 0;
+// A listing price is not a quote for this customer's job - it can be per metre, per piece,
+// or a token "call me" (1, 8, 10 ر.س). The price reaches us as an offer or in the
+// conversation, so no ad price is shown before the supplier has answered.
 function renderCard(result) {
   const key = resultKey(result);
   const fresh = state.seenCards && !state.seenCards.has(key);
@@ -1091,13 +1076,11 @@ function renderCard(result) {
   const seller = sellerOf(result);
   const who = displayName(seller, result);
   const name = who.name;
-  const price = money(result.ad?.price_amount);
   const where = cityLabel(result.ad?.city || seller.city || "");
   const blurb = snip(result);
-  const { saving, cheapest } = priceStanding(result);
   const age = adAge(result.ad);
   const needName = multiNeed() ? needOf(result) : "";
-  const bar = saving == null ? "var(--fq-line)" : saving >= 55 ? "var(--fq-success)" : saving >= 30 ? "#4bb58f" : "var(--fq-warning)";
+  const bar = "var(--fq-line)";
   const photo = result.ad && imageSources(result.ad).length;
   const avatar = photo
     ? `<span class="fq-av" style="width:40px;height:40px;border-radius:20px;overflow:hidden"><img alt="" data-src="${esc(imageSources(result.ad).join("|"))}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>`
@@ -1116,11 +1099,6 @@ function renderCard(result) {
     </div>
     ${needName || age ? `<div class="fq-cardtags">${needName ? `<span class="fq-tag deep"><bdi>${esc(needName)}</bdi></span>` : ""}${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}</div>` : ""}
     ${blurb ? `<p class="fq-small" style="margin:0"><bdi>${esc(blurb)}</bdi></p>` : ""}
-    <div class="fq-row">${price
-      ? `<span class="fq-price" style="font-size:24px">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>`
-      : `<span class="fq-meta">تواصل للحصول على سعر</span>`}
-      ${cheapest ? `<span class="fq-best">أقل سعر</span>` : ""}
-      ${saving != null ? scoreRing(saving, "وفّر") : ""}</div>
   </article>`;
 }
 
@@ -1140,6 +1118,7 @@ function renderFlow() {
     ${asking || !state.results.length ? "" : `<div class="fq-filters-row">
       <div class="fq-live"><span class="fq-pulse" aria-hidden="true"></span>
         <span data-count="${shown.length}">${esc(foundLine(state.shownCount || shown.length))}</span><span>${state.partial ? " • البحث مستمر" : ""}</span></div>
+      <span class="fq-meta">الأسعار توصلك في عروضهم</span>
       ${tabs.length > 1 ? `<button class="fq-fpill all${state.needFilter ? "" : " on"}" type="button" data-action="filter-need" data-name="" aria-pressed="${!state.needFilter}">الكل</button>${tabs.map((name) => `<button class="fq-fpill${state.needFilter === name ? " on" : ""}" type="button" data-action="filter-need" data-name="${esc(name)}" aria-pressed="${state.needFilter === name}"><bdi>${esc(name)}</bdi></button>`).join("")}` : ""}
     </div>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
@@ -1209,7 +1188,6 @@ function detailSheet() {
   const name = who.name;
   const age = adAge(result.ad);
   const gallery = state.gallery.length ? state.gallery : imageSources(result.ad);
-  const price = money(result.ad?.price_amount);
   const key = resultKey(result);
   const selected = state.selected.has(key);
   const story = adStory(result.ad?.description);
@@ -1228,9 +1206,6 @@ function detailSheet() {
       <hr class="fq-line">
       <h2 style="font-size:15px">عن المورد والخدمة</h2>
       ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">ما فيه وصف إضافي من المورد.</p>`}
-      ${price ? `<div class="fq-pricecard"><span class="fq-meta">السعر المعلن في الإعلان</span>
-        <span class="fq-price" style="font-size:32px;color:var(--fq-success)">${esc(String(price).replace(" ر.س", ""))} <span class="unit">ر.س</span></span>
-        <span class="fq-meta note">هذا السعر من إعلان المورد وليس عرض سعر لطلبك. قد يكون للمتر أو للحبة، والعرض الفعلي يوصلك بعد ما ترسل الطلب.</span></div>` : ""}
       ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)
@@ -1287,7 +1262,6 @@ function renderReview() {
         .map(([key, result]) => {
           const seller = sellerOf(result);
           const who = displayName(seller, result);
-          const price = money(result.ad?.price_amount);
           const need = multiNeed() ? needOf(result) : "";
           const age = adAge(result.ad);
           return `<article class="fq-card fq-seller picked">
@@ -1299,7 +1273,6 @@ function renderReview() {
                 <span class="fq-meta">${esc(cityLabel(result.ad?.city || seller.city || "") || "")}</span>
                 <span class="fq-cardtags">
                   ${need ? `<span class="fq-tag deep"><bdi>${esc(need)}</bdi></span>` : ""}
-                  ${price ? `<span class="fq-tag">السعر المعلن ${esc(price)}</span>` : ""}
                   ${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}
                 </span>
               </span>
