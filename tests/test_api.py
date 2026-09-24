@@ -610,3 +610,81 @@ def test_results_reach_the_customer_while_the_search_is_still_running(tmp_path: 
     rest = list(stream)
     assert rest[-1]["type"] == "done"
     assert len(rest[-1]["response"].results) >= 3
+
+
+def test_opening_the_invite_link_creates_a_guest_supplier_and_grants_nothing(tmp_path: Path):
+    """He shows up, so he stops being a stranger - but the record hands out no access."""
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
+    headers = signed_in(api)
+    created = api.post(
+        "/v1/requests",
+        headers=headers,
+        json={
+            "original_text": "أبي نجار يسوي دولاب",
+            "need": "نجار دولاب",
+            "city": "الرياض",
+            "recipients": [{"seller_id": "5150", "seller_name": "أبو فهد للنجارة"}],
+        },
+    )
+    assert created.status_code == 200, created.text
+    token = created.json()["recipients"][0]["reply_token"]
+
+    assert store.ensure_guest_supplier(None, "بلا معرّف") is None
+    assert store.supplier_by_seller_id("5150") is None
+
+    opened = api.get(f"/v1/seller/{token}")
+    assert opened.status_code == 200
+
+    guest = store.supplier_by_seller_id("5150")
+    assert guest is not None
+    assert guest["status"] == "guest"
+    assert guest["name"] == "أبو فهد للنجارة"
+    # No email and no password, so the sign-in door stays shut for a guest.
+    assert store.login_supplier("", "") is None
+    # Opening it again is the same supplier, not a second one.
+    api.get(f"/v1/seller/{token}")
+    assert store.ensure_guest_supplier("5150", "اسم آخر")["id"] == guest["id"]
+    # And the reply he sends still works exactly as it did before the record existed.
+    replied = api.post(f"/v1/seller/{token}/messages", json={"body": "السعر 300 ريال"})
+    assert replied.status_code in (200, 201), replied.text
+
+
+def test_the_guest_record_does_not_lock_him_out_of_signing_up(tmp_path: Path):
+    """The convenience record must not become the reason he cannot own his account."""
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
+    created = api.post(
+        "/v1/requests",
+        headers=signed_in(api),
+        json={
+            "original_text": "أبي حداد",
+            "need": "حداد",
+            "city": "الرياض",
+            "recipients": [{"seller_id": "7788", "seller_name": "ورشة الحداد"}],
+        },
+    )
+    token = created.json()["recipients"][0]["reply_token"]
+    api.get(f"/v1/seller/{token}")
+    guest = store.supplier_by_seller_id("7788")
+    assert guest["status"] == "guest"
+
+    signed_up = api.post(
+        "/v1/supplier/register",
+        json={
+            "name": "ورشة الحداد",
+            "email": "hadad@example.com",
+            "phone": "0500000000",
+            "password": "secret-pass",
+            "activity_type": "services",
+            "description": "أعمال حدادة وأبواب",
+            "categories": [],
+            "token": token,
+        },
+    )
+    assert signed_up.status_code == 200, signed_up.text
+    # Same row, filled in - not a second supplier for the same Haraj seller.
+    upgraded = store.supplier_by_seller_id("7788")
+    assert upgraded["id"] == guest["id"]
+    assert upgraded["status"] == "active"
+    assert store.login_supplier("hadad@example.com", "secret-pass") is not None

@@ -834,6 +834,18 @@ def create_app(
         # Opening the invite is the step an unregistered supplier reaches; a supplier with an
         # account who opens the same screen has gone one further and viewed the request.
         store.track_supplier("opened", seller, request_id=view.get("request_id"), need=view.get("need"))
+        if supplier is None and seller:
+            # He has shown up, so stop treating him as a stranger next time. The record is
+            # created from what the link already proves and grants nothing by itself: no
+            # session is issued here, so a forwarded link still opens this one request and
+            # not his inbox. He keeps receiving the Haraj invite until a channel that can
+            # reach him exists.
+            # A reply token resolves to exactly one recipient, so that entry is his own row.
+            mine = (view.get("recipients") or [{}])[0]
+            guest = store.ensure_guest_supplier(seller, mine.get("seller_name"))
+            if guest is not None and guest.get("status") == "guest":
+                store.track_supplier("account_created", seller, supplier_id=guest["id"],
+                                     request_id=view.get("request_id"), need=view.get("need"))
         if supplier:
             store.track_supplier("request_viewed", seller, request_id=view.get("request_id"),
                                  supplier_id=supplier["id"], need=view.get("need"), channel="in_app")

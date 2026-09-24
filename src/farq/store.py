@@ -651,10 +651,12 @@ class Store:
             create table if not exists suppliers (
               id text primary key,
               name text not null,
-              email text unique not null,
-              phone text not null,
-              password_hash text not null,
-              salt text not null,
+              -- Null for a guest: a supplier who opened his invite link is recorded from
+              -- what the link proves, and only a real sign-up fills these in.
+              email text unique,
+              phone text,
+              password_hash text,
+              salt text,
               activity_type text not null default 'both',
               description text,
               categories_json text not null default '[]',
@@ -1440,8 +1442,30 @@ class Store:
         supplier_id = uuid4().hex
         salt = secrets.token_hex(16)
         bound = seller_key(haraj_seller_id) if haraj_seller_id else None
-        if bound and self._connection.execute("select 1 from suppliers where haraj_seller_id = ?", (bound,)).fetchone():
-            raise ValueError("seller already registered")
+        existing = self._connection.execute("select * from suppliers where haraj_seller_id = ?", (bound,)).fetchone() if bound else None
+        if existing is not None:
+            if existing["status"] != "guest":
+                raise ValueError("seller already registered")
+            # He already has the record he got for opening his link. Signing up properly
+            # fills it in rather than colliding with it, or the guest record we created for
+            # his convenience would lock him out of his own account.
+            try:
+                self._connection.execute(
+                    "update suppliers set name = ?, email = ?, phone = ?, password_hash = ?, salt = ?,"
+                    " activity_type = ?, description = ?, categories_json = ?, capabilities_json = ?,"
+                    " services_json = ?, products_json = ?, status = 'active', updated_at = ? where id = ?",
+                    (name.strip(), email.lower().strip(), phone.strip(),
+                     _hash_password(password, salt), salt, activity_type, (description or "").strip() or None,
+                     json.dumps(list(categories or []), ensure_ascii=False),
+                     json.dumps(list(capabilities or []), ensure_ascii=False),
+                     json.dumps(list(services or []), ensure_ascii=False),
+                     json.dumps(list(products or []), ensure_ascii=False),
+                     _now(), existing["id"]),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("email already registered") from exc
+            self._connection.commit()
+            return self._supplier_row(self._connection.execute("select * from suppliers where id = ?", (existing["id"],)).fetchone())
         try:
             self._connection.execute(
                 "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
@@ -1457,6 +1481,39 @@ class Store:
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError("email already registered") from exc
+        self._connection.commit()
+        return self._supplier_row(self._connection.execute("select * from suppliers where id = ?", (supplier_id,)).fetchone())
+
+    def supplier_by_seller_id(self, seller_id: str | None) -> dict | None:
+        bound = seller_key(seller_id) if seller_id else None
+        if not bound:
+            return None
+        row = self._connection.execute("select * from suppliers where haraj_seller_id = ?", (bound,)).fetchone()
+        return self._supplier_row(row) if row is not None else None
+
+    def ensure_guest_supplier(self, seller_id: str | None, name: str | None) -> dict | None:
+        """The record a supplier gets for opening his link, without being asked anything.
+
+        Returns the existing row if he already has one, so opening the link twice - or a
+        second request's link - is still one supplier. It grants nothing: no session, no
+        password, and no move off the Haraj lane. It exists so that a man who has already
+        shown up is known, and so the day a reach channel is turned on the ask is one tap
+        rather than the seven-field form that nobody has crossed.
+        """
+        bound = seller_key(seller_id) if seller_id else None
+        if not bound:
+            return None
+        found = self.supplier_by_seller_id(bound)
+        if found is not None:
+            return found
+        supplier_id = uuid4().hex
+        self._connection.execute(
+            "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
+            " categories_json, capabilities_json, services_json, products_json, haraj_seller_id, status, created_at, updated_at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (supplier_id, (name or "").strip() or bound, None, None, None, None, "both", None,
+             "[]", "[]", "[]", "[]", bound, "guest", _now(), _now()),
+        )
         self._connection.commit()
         return self._supplier_row(self._connection.execute("select * from suppliers where id = ?", (supplier_id,)).fetchone())
 

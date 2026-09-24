@@ -924,8 +924,27 @@ class PgStore:
         salt = secrets.token_hex(16)
         bound = seller_key(haraj_seller_id) if haraj_seller_id else None
         with self._pool.connection() as conn:
-            if bound and conn.execute("select 1 from suppliers where haraj_seller_id = %s", (bound,)).fetchone():
-                raise ValueError("seller already registered")
+            existing = conn.execute("select * from suppliers where haraj_seller_id = %s", (bound,)).fetchone() if bound else None
+            if existing is not None:
+                if existing["status"] != "guest":
+                    raise ValueError("seller already registered")
+                # See Store.register_supplier: signing up fills in the record he already got
+                # for opening his link, instead of colliding with it.
+                try:
+                    conn.execute(
+                        "update suppliers set name = %s, email = %s, phone = %s, password_hash = %s, salt = %s,"
+                        " activity_type = %s, description = %s, categories = %s, capabilities = %s,"
+                        " services = %s, products = %s, status = 'active', updated_at = %s where id = %s",
+                        (name.strip(), email.lower().strip(), phone.strip(),
+                         _hash_password(password, salt), salt, activity_type, (description or "").strip() or None,
+                         Jsonb(list(categories or [])), Jsonb(list(capabilities or [])),
+                         Jsonb(list(services or [])), Jsonb(list(products or [])),
+                         _now(), existing["id"]),
+                    )
+                except psycopg.errors.UniqueViolation as exc:
+                    raise ValueError("email already registered") from exc
+                row = conn.execute("select * from suppliers where id = %s", (existing["id"],)).fetchone()
+                return self._supplier_row(row)
             try:
                 conn.execute(
                     "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
@@ -941,6 +960,35 @@ class PgStore:
                 raise ValueError("email already registered") from exc
             row = conn.execute("select * from suppliers where id = %s", (supplier_id,)).fetchone()
         return self._supplier_row(row)
+
+    def supplier_by_seller_id(self, seller_id: str | None) -> dict | None:
+        bound = seller_key(seller_id) if seller_id else None
+        if not bound:
+            return None
+        with self._pool.connection() as conn:
+            row = conn.execute("select * from suppliers where haraj_seller_id = %s", (bound,)).fetchone()
+        return self._supplier_row(row) if row is not None else None
+
+    def ensure_guest_supplier(self, seller_id: str | None, name: str | None) -> dict | None:
+        """See Store.ensure_guest_supplier. Creating it grants nothing on its own."""
+        bound = seller_key(seller_id) if seller_id else None
+        if not bound:
+            return None
+        with self._pool.connection() as conn:
+            found = conn.execute("select * from suppliers where haraj_seller_id = %s", (bound,)).fetchone()
+            if found is not None:
+                return self._supplier_row(found)
+            supplier_id = uuid4().hex
+            conn.execute(
+                "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
+                " categories, capabilities, services, products, haraj_seller_id, status, created_at, updated_at)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                " on conflict (haraj_seller_id) do nothing",
+                (supplier_id, (name or "").strip() or bound, None, None, None, None, "both", None,
+                 Jsonb([]), Jsonb([]), Jsonb([]), Jsonb([]), bound, "guest", _now(), _now()),
+            )
+            row = conn.execute("select * from suppliers where haraj_seller_id = %s", (bound,)).fetchone()
+        return self._supplier_row(row) if row is not None else None
 
     def login_supplier(self, email: str, password: str) -> str | None:
         with self._pool.connection() as conn:
