@@ -23,7 +23,8 @@ CSP = "; ".join(
         "form-action 'self' https://*.moyasar.com",
         "base-uri 'self'",
         "object-src 'none'",
-        "frame-ancestors 'none'",
+        # Farq iOS/web embeds Taseer on /taseer. Capacitor serves https://localhost.
+        "frame-ancestors 'self' https://www.farq.sa https://farq.sa https://localhost https://*.vercel.app",
     ]
 )
 
@@ -31,7 +32,6 @@ HEADERS = [
     (b"content-security-policy", CSP.encode()),
     (b"x-content-type-options", b"nosniff"),
     (b"referrer-policy", b"strict-origin-when-cross-origin"),
-    (b"x-frame-options", b"DENY"),
     (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(self)"),
 ]
 

@@ -2038,3 +2038,7 @@ body.fq-auth .fq { background: linear-gradient(135deg, #eaf8f2 25%, #f7f9f7 75%)
 .fq-cat.on { border-color: var(--fq-success); background: var(--fq-soft); }
 .fq-cat:active { transform: scale(0.96); }
 @media (prefers-reduced-motion: reduce) { .fq-cat { transition: none; } .fq-cat:active { transform: none; } }
+
+/* Inside Farq /taseer the Farq header is already on screen. */
+html.fq-embed .fq-head,
+html.fq-embed .skip { display: none; }

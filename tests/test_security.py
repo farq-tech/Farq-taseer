@@ -116,7 +116,9 @@ def test_security_headers_and_docs(tmp_path, monkeypatch):
     for path in ("/", "/v1/cities"):
         response = api.get(path)
         csp = response.headers["content-security-policy"]
-        assert "frame-ancestors 'none'" in csp and "https://cdn.moyasar.com" in csp and "https://fonts.googleapis.com" in csp
+        assert "frame-ancestors 'self' https://www.farq.sa https://farq.sa https://localhost" in csp
+        assert "https://cdn.moyasar.com" in csp and "https://fonts.googleapis.com" in csp
+        assert "x-frame-options" not in response.headers
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
     assert api.get("/openapi.json").status_code == 200  # local development keeps the docs

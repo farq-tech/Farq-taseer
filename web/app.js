@@ -94,6 +94,17 @@ const app = document.querySelector("#app");
 let poll = 0;
 const subscribeCallback = location.pathname === "/subscribe/callback";
 
+function isFarqEmbed() {
+  try {
+    if (new URLSearchParams(location.search).get("embed") === "1") return true;
+    return window.self !== window.top;
+  } catch (_error) {
+    return false;
+  }
+}
+
+if (isFarqEmbed()) document.documentElement.classList.add("fq-embed");
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
