@@ -1127,7 +1127,7 @@ function renderCard(result) {
   const photo = result.ad && imageSources(result.ad).length;
   const avatar = photo
     ? `<span class="fq-av" style="width:40px;height:40px;border-radius:20px;overflow:hidden"><img alt="" data-src="${esc(imageSources(result.ad).join("|"))}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>`
-    : `<span class="fq-av" style="width:40px;height:40px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:16px">${initial(name)}</span>`;
+    : `<span class="fq-av" style="width:40px;height:40px;background:var(--fq-light);color:var(--fq-deep);font-size:16px">${initial(name)}</span>`;
   return `<article class="fq-card fq-result${animated ? " fq-in" : ""}"${animated ? ` style="--bar:${bar};animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ` style="--bar:${bar}"`}>
     <div class="fq-row" style="align-items:flex-start">
       <button class="fq-tick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? `إزالة ${esc(name)}` : `اختيار ${esc(name)}`}">${selected ? ic("check", 14) : ""}</button>
@@ -1238,7 +1238,7 @@ function detailSheet() {
     <div class="fq-sheet" role="dialog" aria-modal="true" aria-label="${esc(name)}">
       <span class="fq-grab" aria-hidden="true"></span>
       <div class="fq-row" style="align-items:flex-start">
-        <span class="fq-av" style="width:56px;height:56px;border-radius:28px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:20px">${initial(name)}</span>
+        <span class="fq-av" style="width:56px;height:56px;border-radius:28px;background:var(--fq-light);color:var(--fq-deep);font-size:20px">${initial(name)}</span>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;text-align:start">
           <strong style="font-size:22px;font-weight:800"><bdi>${esc(name)}</bdi></strong>
           ${who.handle ? `<span class="fq-meta fq-handle" dir="auto">${esc(who.handle)}</span>` : ""}
@@ -1319,7 +1319,7 @@ function renderReview() {
                   ${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}
                 </span>
               </span>
-              <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-mint);color:var(--fq-deep-green);font-size:18px">${initial(who.name)}</span>
+              <span class="fq-av" style="width:48px;height:48px;border-radius:24px;background:var(--fq-light);color:var(--fq-deep);font-size:18px">${initial(who.name)}</span>
             </div>
           </article>`;
         })
@@ -1535,7 +1535,7 @@ function renderRequests() {
             </span>
           </div>
           ${item.latest_offer_amount != null
-            ? `<hr class="fq-line"><div style="display:flex;justify-content:flex-start"><strong style="font-size:13px;color:var(--fq-deep-green)">أقل عرض ${esc(money(item.latest_offer_amount))}</strong></div>`
+            ? `<hr class="fq-line"><div style="display:flex;justify-content:flex-start"><strong style="font-size:13px;color:var(--fq-deep)">أقل عرض ${esc(money(item.latest_offer_amount))}</strong></div>`
             : ""}
         </button>`;
       }).join("")}
@@ -1685,7 +1685,7 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const quoted = message.reply_to ? byId.get(message.reply_to) : null;
   const time = `<span class="fq-time">${esc(chatTime(message.created_at))}${mine ? deliveryTick(message) : ""}</span>`;
   const quote = quoted
-    ? `<div class="fq-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#009f67"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
+    ? `<div class="fq-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#575172"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
     : "";
   if (mine) {
     const some = message.scope === "some_sellers" ? (message.deliveries || []).map((item) => sellerName(thread, item.seller_id)).join("، ") : "";
@@ -2071,7 +2071,7 @@ function renderThread() {
   const awardedHead = privateWinner
     ? `<div class="fq-offers-bar">
         <div class="fq-row">
-          <strong style="font-size:17px;color:var(--fq-deep-green)">${esc(offers[0]?.total_price != null ? money(offers[0].total_price) : "")}</strong>
+          <strong style="font-size:17px;color:var(--fq-deep)">${esc(offers[0]?.total_price != null ? money(offers[0].total_price) : "")}</strong>
           <span style="display:flex;align-items:center;gap:8px"><span class="fq-tag ok">محادثة خاصة</span><strong><bdi>${esc(sellerName(thread, awarded))}</bdi></strong></span>
         </div>
         <hr class="fq-line">
@@ -3515,9 +3515,9 @@ function renderSeller() {
           <div class="fq-mine-bub">${offer || `${body ? `<p>${body}</p>` : ""}${time}`}</div></div></div>`;
       }
       return `<div class="fq-msg">
-        <span class="fq-av" style="background:var(--fq-mint);color:var(--fq-deep-green)">ع</span>
+        <span class="fq-av" style="background:var(--fq-light);color:var(--fq-deep)">ع</span>
         <div class="fq-grp">
-          <span class="fq-who" style="color:var(--fq-deep-green)">العميل</span>
+          <span class="fq-who" style="color:var(--fq-deep)">العميل</span>
           <div class="fq-bub" style="background:var(--fq-surface);border-left-color:var(--fq-line);border:1px solid var(--fq-line);border-left-width:2px">
             ${body ? `<p>${body}</p>` : ""}${time}</div>
         </div></div>`;
