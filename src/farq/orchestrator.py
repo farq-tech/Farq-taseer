@@ -21,6 +21,7 @@ from farq.eligibility import decide
 from farq.intent import analyze, analyze_needs
 from farq.live_haraj import HarajLiveClient, LiveBatch, QueryFetch
 from farq.ranking import rank, score
+from farq import understand
 
 
 def _now() -> datetime:
@@ -280,7 +281,7 @@ def iter_search(
     now = now or _now()
     trace_id = uuid4().hex
     stages: list[dict] = []
-    needs = analyze_needs(query)
+    needs = understand.refine(query, analyze_needs(query))
     intent = needs[0] if needs else analyze(query)
     stages.append(
         {
@@ -289,6 +290,7 @@ def iter_search(
             "type": intent.type.value,
             "result_unit": intent.result_unit.value,
             "needs": [item.need for item in needs],
+            "read_by": "model" if understand.enabled() else "rules",
         }
     )
     yield {"type": "intent", "intent": intent, "intents": needs, "trace_id": trace_id, "clarification_question": intent.clarification_question}
