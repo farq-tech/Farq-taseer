@@ -94,16 +94,41 @@ const app = document.querySelector("#app");
 let poll = 0;
 const subscribeCallback = location.pathname === "/subscribe/callback";
 
+// Decided once, at boot. The app rewrites the path as the customer moves, which drops
+// ?embed=1 from the URL; re-reading it later would quietly turn the embed off mid-journey
+// and put Taseer's own sign-in screen back in front of a Farq customer.
+let farqEmbed = null;
 function isFarqEmbed() {
-  try {
-    if (new URLSearchParams(location.search).get("embed") === "1") return true;
-    return window.self !== window.top;
-  } catch (_error) {
-    return false;
+  if (farqEmbed === null) {
+    try {
+      farqEmbed = new URLSearchParams(location.search).get("embed") === "1" || window.self !== window.top;
+    } catch (_error) {
+      farqEmbed = false;
+    }
   }
+  return farqEmbed;
 }
 
 if (isFarqEmbed()) document.documentElement.classList.add("fq-embed");
+
+// Inside Farq the customer has already signed in, to Farq. Taseer must not put a second
+// email-and-password door in front of him, so nothing here ever opens Taseer's own auth
+// screen while embedded: the parent is asked to open Farq's sign-in instead, and it decides
+// what to do. Search stays public either way, so browsing and results need no token at all.
+function askFarqToSignIn(reason) {
+  try {
+    window.parent.postMessage({ source: "taseer", type: "farq-auth-required", reason }, "*");
+  } catch (_error) {
+    /* a parent that cannot be reached is not a reason to show our own form */
+  }
+}
+
+/** True when the embed handled it, so the caller must stop. */
+function farqHandlesSignIn(reason) {
+  if (!isFarqEmbed()) return false;
+  askFarqToSignIn(reason);
+  return true;
+}
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -271,7 +296,20 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
 // The sending screen is a moment, not a place: a sign-in asked for while sending returns to the
 // review, where the chosen suppliers are still ticked.
 const RETURN_TO = { sending: "review", detail: "flow" };
+// What he was trying to do when the account was needed, so Farq can say why it is asking.
+const EMBED_REASON = { sending: "send", review: "send", thread: "message", subscribe: "subscribe", plans: "subscribe" };
 function requireSignIn(message = "") {
+  if (isFarqEmbed()) {
+    // Farq owns the sign-in. Ask for it and put him back where he was, with his suppliers
+    // still ticked, rather than stranding him on a spinner or on our own form.
+    askFarqToSignIn(EMBED_REASON[state.view] || "account");
+    const back = RETURN_TO[state.view];
+    if (back) {
+      state.view = back;
+      render();
+    }
+    return;
+  }
   if (state.view !== "auth") state.returnView = RETURN_TO[state.view] || state.view;
   state.view = "auth";
   state.authError = message;
@@ -774,10 +812,15 @@ function fqNav(active) {
     return `<button class="fq-tab${active === key ? " on" : ""}" type="button" data-action="${action}" aria-current="${active === key ? "page" : "false"}">
       <span class="fq-tab-wrap">${ic(glyph, 24)}${badge}</span><span>${label}</span></button>`;
   };
-  return `<nav class="fq-nav" aria-label="التنقل"><div class="fq-nav-row">
-    ${tab("home", "home", "الرئيسية", "home")}
+  // طلباتي and حسابي are a Taseer account. Inside Farq there is none, so the row is the
+  // one tab that needs no session.
+  const tabs = isFarqEmbed()
+    ? tab("home", "home", "الرئيسية", "home")
+    : `${tab("home", "home", "الرئيسية", "home")}
     ${tab("requests", "requests", "طلباتي", "file-text")}
-    ${tab("account", "account", "حسابي", "user")}
+    ${tab("account", "account", "حسابي", "user")}`;
+  return `<nav class="fq-nav" aria-label="التنقل"><div class="fq-nav-row">
+    ${tabs}
   </div></nav>`;
   // (the row itself is laid out left-to-right, so this order renders الرئيسية · طلباتي · حسابي)
 }
@@ -2711,6 +2754,7 @@ function applyRoute(path, { pop = false } = {}) {
   if (head === "supplier") return openSupplier(id);
   if (head === "s" && id) return openSellerPage(id);
   if (!state.token) {
+    if (farqHandlesSignIn("open-request")) return;
     state.returnRoute = path;
     state.view = "auth";
     render();
@@ -3685,7 +3729,7 @@ const VIEWS = {
   notifications: renderNotifications,
   "notify-settings": renderNotifySettings,
   subscribe: renderSubscribe,
-  auth: renderAuth,
+  auth: () => (isFarqEmbed() ? renderHome() : renderAuth()),
   seller: renderSeller,
   legal: renderLegal,
 };
@@ -5183,6 +5227,7 @@ document.addEventListener("click", (event) => {
     sendRequest();
   } else if (action === "choose-plan") {
     if (!state.token) {
+      if (farqHandlesSignIn("subscribe")) return;
       state.returnRoute = "/plans";
       state.view = "auth";
       render();
@@ -5344,8 +5389,10 @@ const publicPage =
 if (publicPage) {
   applyRoute(bootPath, { pop: true });
 } else if (!state.token) {
-  state.view = "auth";
+  // Embedded, the home screen and its search are what he came for; the account screens are
+  // Farq's job. Standalone, the sign-in screen is still the front door.
   state.returnRoute = openRequest ? `/r/${encodeURIComponent(openRequest)}` : bootPath;
+  state.view = isFarqEmbed() ? "home" : "auth";
   render();
 } else {
   api("/v1/auth/me", { quiet: true })

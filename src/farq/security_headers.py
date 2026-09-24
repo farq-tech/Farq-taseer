@@ -23,7 +23,12 @@ import os
 # Farq surface) without a code change. Keep it to exact origins.
 DEFAULT_FRAME_ANCESTORS = (
     "'self' https://farq.sa https://www.farq.sa "
+    # Capacitor: https:// on Android, capacitor:// on iOS.
     "https://localhost capacitor://localhost "
+    # Farq's Vite dev server, so /taseer shows the live product on a developer's machine
+    # instead of a fallback. A page on a developer's own loopback is the only thing this
+    # admits, which is why a port-specific loopback origin is not the wildcard risk.
+    "http://localhost:5173 http://127.0.0.1:5173 "
     "https://farq-taseer-phi.vercel.app"
 )
 

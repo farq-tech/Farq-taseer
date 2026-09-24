@@ -195,3 +195,26 @@ def test_frame_ancestors_names_exact_origins_and_never_a_wildcard_host(tmp_path)
     assert "*" not in ancestors, ancestors
     for origin in ("'self'", "https://farq.sa", "https://www.farq.sa", "capacitor://localhost"):
         assert origin in ancestors
+
+
+def test_the_policy_admits_every_surface_farq_shows_taseer_from(tmp_path):
+    api, _ = make(tmp_path)
+    csp = api.get("/health").headers["content-security-policy"]
+    for origin in (
+        "https://farq.sa",            # Farq web
+        "https://www.farq.sa",
+        "https://localhost",          # Capacitor on Android
+        "capacitor://localhost",      # Capacitor on iOS
+        "http://localhost:5173",      # Farq's Vite dev server
+        "http://127.0.0.1:5173",
+    ):
+        assert origin in csp, origin
+
+
+def test_the_embed_contract_farq_listens_for_does_not_drift():
+    """Farq opens its own AuthModal on this exact message; renaming it here breaks it there."""
+    app_js = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text(encoding="utf-8")
+    assert 'source: "taseer"' in app_js
+    assert 'type: "farq-auth-required"' in app_js
+    # Nothing may push the customer out of Farq's frame into a browser tab.
+    assert "window.top.location" not in app_js
