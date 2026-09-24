@@ -27,7 +27,7 @@ _CAR_PARTS = (
     "مساعد",
 )
 _TRADE_DUMP = ("نجار", "حداد", "سباك", "كهرب", "دهان", "نقل عفش", "مكيف", "مقاول")
-_WANTED = {"مطلوب", "احتاج", "ابحث"}
+_WANTED = {"مطلوب", "مطلوبه", "احتاج", "محتاج", "ابحث", "ابي", "ابغى", "ابغي", "اريد", "ارغب", "نبي", "ودي", "wanted"}
 # Whole words that make a title a thing for sale, not a tradesman. Matched as
 # whole words only, so "سيرلانكي" and "سيراميك" are not "سير".
 _PRODUCT_NOT_TRADE = (
@@ -253,7 +253,10 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             return False, ["part_not_vehicle"]
         if any(contains_term(title, part) for part in _CAR_PARTS):
             return False, ["part_not_vehicle"]
-    if intent.type.value == "property" and title:
+    if title:
+        # Another buyer's wanted-ad, in any section. "ارغب في مقاول يبني لي شقه صغيره" is a
+        # customer like ours, not a supplier, and quoting them helps nobody. Anchored on the
+        # first word so a seller's "... مطلوب التواصل" is untouched.
         first = tokens(title)[:1]
         if first and first[0] in _WANTED:
             return False, ["wanted_not_offered"]

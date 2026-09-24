@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from farq.config import SearchConfig
-from farq.contracts import SearchState
+from farq.contracts import ResultUnit, SearchState
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.eligibility import decide
 from farq.intent import analyze, analyze_needs
@@ -285,3 +285,78 @@ def test_parts_games_and_side_mentions_are_not_the_requested_thing():
     )
     assert decide(carpenter, mover, mover.seller)[0] is False
     assert analyze("أبي شقة في الرياض وجدة").clarification_question
+
+
+def _listing(title: str, seller_name: str = "بائع", **kw):
+    return ad_from_item(
+        {
+            "id": kw.get("id", "1"),
+            "title": title,
+            "bodyTEXT": kw.get("body", ""),
+            "authorId": kw.get("seller_id", "9"),
+            "authorUsername": seller_name,
+            "city": "الرياض",
+            "status": True,
+            "tags": [],
+        }
+    )
+
+
+def test_hiring_verb_turns_a_product_search_into_a_provider_search():
+    # "أبي كاميرات مراقبة" buys a camera; "أبي واحد يركب لي كاميرات مراقبة" hires a technician.
+    # The two used to return the same cameras-for-sale, because the verb was dropped as filler.
+    buying = analyze("ابي كاميرات مراقبة")
+    hiring = analyze("ابي واحد يركب لي كاميرات مراقبة")
+    assert buying.need == hiring.need
+    assert hiring.result_unit.value == "service_provider"
+    assert buying.result_unit.value != "service_provider"
+
+
+def test_long_tail_hiring_request_is_a_service_not_other():
+    intent = analyze("ابي احد يسوي لي مظلة سيارات")
+    assert intent.type.value == "service"
+    assert intent.result_unit.value == "service_provider"
+    ok, _ = decide(intent, _listing("مظلة سيارات للبيع (مستعملة) بحالة ممتازة"), None)
+    assert not ok
+
+
+def test_another_buyers_wanted_ad_is_not_a_supplier_in_any_section():
+    intent = analyze("ابغى مقاول يبني لي ملحق")
+    ok, reason = decide(intent, _listing("ارغب في مقاول يبني لي شقه صغيره مكونه من غرفتين"), None)
+    assert not ok
+    assert reason == ["wanted_not_offered"]
+
+
+def test_the_one_who_does_the_work_outranks_the_one_selling_the_box():
+    intent = analyze("ابي واحد يركب لي كاميرات مراقبة")
+    config = SearchConfig()
+    installer = _listing("تركيب وصيانة كاميرات المراقبة", "مؤسسة أنظمة أمنية")
+    box = _listing("كاميرا مراقبة العدد 4 هارد 500 جديد", "بائع", id="2", seller_id="8")
+    from farq.ranking import score
+
+    ok_installer, ev_installer = decide(intent, installer, installer.seller)
+    ok_box, ev_box = decide(intent, box, box.seller)
+    assert ok_installer and ok_box
+    assert score(intent, installer, installer.seller, ev_installer, config, NOW) > score(
+        intent, box, box.seller, ev_box, config, NOW
+    )
+
+
+def test_results_far_below_the_best_match_are_not_shown():
+    from farq.contracts import SearchResult
+    from farq.ranking import rank
+
+    config = SearchConfig()
+    best = SearchResult(result_unit=ResultUnit.AD, score=1.0, ad=_listing("تركيب كاميرات مراقبة"), seller=None)
+    weak = SearchResult(result_unit=ResultUnit.AD, score=0.2, ad=_listing("باحث عن فرصة عمل", id="2"), seller=None)
+    kept = rank(analyze("ابي واحد يركب لي كاميرات مراقبة"), [best, weak], config, NOW)
+    assert [item.score for item in kept] == [1.0]
+
+
+def test_the_best_match_is_never_filtered_out_by_the_floor():
+    from farq.contracts import SearchResult
+    from farq.ranking import rank
+
+    only = SearchResult(result_unit=ResultUnit.AD, score=0.05, ad=_listing("درابزين"), seller=None)
+    kept = rank(analyze("ابي درابزين"), [only], SearchConfig(), NOW)
+    assert len(kept) == 1

@@ -6,7 +6,23 @@ from datetime import datetime, timezone
 
 from farq.config import SearchConfig
 from farq.contracts import Ad, IntentResponse, SearchResult, Seller
-from farq.eligibility import evidence_text, contains_term
+from farq.eligibility import evidence_text, contains_term, has_word
+
+# When the customer is hiring, "للبيع" is too narrow a test: "كاميرا مراقبة العدد 4 هارد 500
+# جديد" never says it is for sale and still answers nothing. These two lists separate a
+# tradesman's listing from a box on a shelf, and they move the result up or down rather than
+# dropping it, so a real provider with a bare title is not lost.
+_DOES_THE_WORK = (
+    "تركيب", "تمديد", "صيانه", "تصليح", "اصلاح", "تنفيذ", "توريد", "تفصيل", "ترميم",
+    "فني", "فنيين", "مقاول", "مقاولات", "ورشه", "معلم", "خدمات", "مؤسسه", "شركه",
+    "عامل", "عماله", "كشف", "تاسيس", "بناء", "دهان", "لحام", "نجار", "سباك", "كهربائي",
+)
+_SELLS_A_THING = (
+    "للبيع", "جديد", "جديده", "مستعمل", "مستعمله", "بكرتون", "العدد", "حبه", "قطعه",
+    "بسعر", "ماركه", "موديل", "ضمان سنه", "شبه جديد",
+    # Goods sold *to* tradesmen read like trade listings otherwise.
+    "جهاز", "اجهزه", "ماكينه", "اكسسوارات",
+)
 
 
 def _age_days(ad: Ad | None, now: datetime) -> int | None:
@@ -63,9 +79,22 @@ def score(
         value += 0.03
     if seller is not None and seller.specialty_evidence:
         value += 0.02
+    if intent.result_unit.value in {"service_provider", "hybrid"} and ad is not None:
+        where = f"{ad.title or ''} {seller.name if seller is not None else ''}"
+        if has_word(where, _DOES_THE_WORK):
+            value += 0.3
+        if has_word(ad.title, _SELLS_A_THING):
+            value -= 0.3
     return round(value, 4)
 
 
 def rank(intent: IntentResponse, results: list[SearchResult], config: SearchConfig, now: datetime) -> list[SearchResult]:
     del intent
-    return sorted(results, key=lambda item: item.score, reverse=True)[: config.max_results]
+    ordered = sorted(results, key=lambda item: item.score, reverse=True)[: config.max_results]
+    if not ordered or config.min_score_ratio <= 0:
+        return ordered
+    best = ordered[0].score
+    if best <= 0:
+        return ordered
+    floor = best * config.min_score_ratio
+    return [item for item in ordered if item.score >= floor]

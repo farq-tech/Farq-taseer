@@ -200,6 +200,31 @@ _STOP = {
 
 _DIRECTIONS = {"شمال", "جنوب", "شرق", "غرب"}
 
+# The filler verbs above are dropped from the need, but before they go they answer the
+# question the need alone cannot: is the customer buying a thing, or hiring someone to do
+# work? "أبي واحد يركب لي كاميرات مراقبة" and "أبي كاميرات مراقبة" reduce to the same need
+# and used to return the same ads — cameras for sale — when the first one wants a technician.
+# A hit here turns the result unit into a provider, which is what switches on the
+# for_sale_not_service gate in eligibility.
+_SERVICE_VERBS = {
+    "يسوي", "يسويها", "يركب", "يركبها", "يصلح", "يصلحها", "يبني", "يفصل", "يفصلها",
+    "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "ينظف", "يغسل", "يفك",
+    "يضبط", "يشتغل", "يجي", "يجيني", "يعدل", "يحفر", "يزرع", "يشيك", "يصور",
+    "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
+    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك",
+}
+# Whoever does the work. "أبغى مقاول يبني لي ملحق" says provider twice over.
+_SERVICE_AGENTS = {
+    "مقاول", "مقاولات", "فني", "فنيين", "معلم", "معلمين", "عامل", "عماله", "ورشه",
+    "حداد", "نجار", "سباك", "كهربائي", "كهربجي", "دهان", "مبلط", "بلاط", "لحام",
+    "شركه", "مؤسسه", "صنايعي", "استاذ",
+}
+
+
+def _service_request(normalized: str) -> bool:
+    words = set(normalized.split())
+    return bool(words & _SERVICE_VERBS) or bool(words & _SERVICE_AGENTS)
+
 
 @dataclass(frozen=True)
 class Head:
@@ -611,6 +636,15 @@ def analyze(query: str) -> IntentResponse:
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
     intent.result_unit = head.result_unit
+    if _service_request(normalized):
+        # Hiring, not buying. A known head that could go either way (hybrid) resolves to the
+        # tradesman, and a long tail we have no head for becomes a service instead of "other",
+        # so sale listings stop counting as answers.
+        if head.result_unit == ResultUnit.HYBRID:
+            intent.result_unit = ResultUnit.SERVICE_PROVIDER
+        elif head.category is None:
+            intent.result_unit = ResultUnit.SERVICE_PROVIDER
+            intent.type = known("service", 0.6, "طلب تنفيذ")
     intent.location_sensitivity = head.location_sensitivity
     intent.condition = _condition(normalized)
     intent.year = _year(normalized, head.type)

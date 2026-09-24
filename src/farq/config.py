@@ -53,6 +53,14 @@ class SearchConfig:
         "service",
     )
     max_results: int = field(default_factory=lambda: _env_int("FARQ_MAX_RESULTS", 40))
+    # How close to the best match a result must be to be shown at all, as a fraction of the
+    # top score. An absolute floor cannot work here: a hired-tradesman result scores around
+    # 1.0 and a used-tyre result around 0.6, so one number either guts the products or lets
+    # the services keep their junk. Measured against live Haraj, 0.45 cuts the tails that
+    # answer nothing ("باحث عن فرصة عمل" for a plumber, a whole Patrol for tyres) and keeps
+    # roughly the top three quarters. The best match always survives, so this never empties
+    # a result set that had something in it.
+    min_score_ratio: float = field(default_factory=lambda: _env_float("FARQ_MIN_SCORE_RATIO", 0.45))
     fresh_days: int = field(default_factory=lambda: _env_int("FARQ_FRESH_DAYS", 30))
     recent_days: int = field(default_factory=lambda: _env_int("FARQ_RECENT_DAYS", 180))
 
