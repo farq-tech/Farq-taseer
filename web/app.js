@@ -4360,7 +4360,39 @@ function toggle(key) {
     render();
     return;
   } else selectResult(key);
-  render();
+  if (!patchSelection(key)) render();
+}
+
+// A tap on «اختر هذا المورد» used to rebuild the whole list - eighty cards and their
+// pictures - which on a phone read as the page hanging and flashing. Only the card that was
+// tapped and the bar that counts the picks change, so only they are touched.
+function patchSelection(key) {
+  if (state.view !== "flow" || state.needFilter && !visibleResults().some((item) => resultKey(item) === key)) return false;
+  const button = app.querySelector(`button[data-action="toggle"][data-key="${CSS.escape(key)}"]`);
+  const card = button?.closest(".fq-result");
+  const body = app.querySelector(".fq-body");
+  if (!button || !card || !body) return false;
+  const selected = state.selected.has(key);
+  card.classList.toggle("picked", selected);
+  button.classList.toggle("on", selected);
+  button.setAttribute("aria-pressed", String(selected));
+  button.innerHTML = `${ic(selected ? "check" : "plus", 16)}<span>${selected ? "مختار — اضغط للإزالة" : "اختر هذا المورد"}</span>`;
+  const count = state.selected.size;
+  let bar = body.querySelector(".fq-sticky");
+  if (!count) {
+    bar?.remove();
+  } else {
+    const html = `<button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة مع ${esc(suppliers(count))}</button>`;
+    if (bar) bar.innerHTML = html;
+    else {
+      bar = document.createElement("div");
+      bar.className = "fq-sticky";
+      bar.innerHTML = html;
+      body.appendChild(bar);
+    }
+  }
+  scheduleDraftSave();
+  return true;
 }
 
 function openQuote(key) {
