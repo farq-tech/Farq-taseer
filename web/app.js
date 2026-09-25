@@ -139,7 +139,10 @@ function farqHandlesSignIn(reason) {
 // posts the session over (the iOS app shares no cookie), and is asked for it at boot.
 // ---------------------------------------------------------------------------
 const FARQ_SITE = "https://www.farq.sa";
-const FARQ_SESSION_COOKIE = "farq-auth.2";
+// farq.sa keeps the session under the first key (its own auth API); a Supabase-backed Farq
+// under the second. Either is the same person.
+const FARQ_SESSION_COOKIES = ["farq_local_auth_session_v1", "farq-auth.2"];
+const FARQ_SESSION_COOKIE = FARQ_SESSION_COOKIES[1];
 const FARQ_PARENT_ORIGINS = new Set([
   "https://farq.sa",
   "https://www.farq.sa",
@@ -156,15 +159,18 @@ function farqSessionToken() {
       const at = part.indexOf("=");
       return [part.slice(0, at), part.slice(at + 1)];
     }));
-    const chunks = [];
-    for (let i = 0; i < 12; i += 1) {
-      const chunk = jar.get(`${FARQ_SESSION_COOKIE}.c${i}`);
-      if (chunk === undefined) break;
-      chunks.push(chunk);
+    for (const key of FARQ_SESSION_COOKIES) {
+      const chunks = [];
+      for (let i = 0; i < 12; i += 1) {
+        const chunk = jar.get(`${key}.c${i}`);
+        if (chunk === undefined) break;
+        chunks.push(chunk);
+      }
+      if (!chunks.length) continue;
+      const session = JSON.parse(decodeURIComponent(chunks.join("")));
+      if (typeof session?.access_token === "string" && session.access_token) return session.access_token;
     }
-    if (!chunks.length) return "";
-    const session = JSON.parse(decodeURIComponent(chunks.join("")));
-    return typeof session?.access_token === "string" ? session.access_token : "";
+    return "";
   } catch (_error) {
     return "";
   }

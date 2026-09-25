@@ -74,16 +74,43 @@ def test_a_bad_or_missing_token_is_refused(tmp_path):
     assert api.post("/v1/auth/farq", json={}).status_code == 422
 
 
-def test_without_supabase_settings_the_endpoint_says_so(tmp_path, monkeypatch):
+def test_without_any_verifier_settings_the_endpoint_says_so(tmp_path, monkeypatch):
+    monkeypatch.setenv("FARQ_AUTH_API_URL", "")
     monkeypatch.delenv("FARQ_AUTH_SUPABASE_URL", raising=False)
     monkeypatch.delenv("FARQ_AUTH_SUPABASE_ANON_KEY", raising=False)
     api, _store = make(tmp_path, None)
     assert api.post("/v1/auth/farq", json={"access_token": "tok-sara"}).status_code == 503
 
 
+def test_verify_asks_farq_api_first_for_a_farq_sa_session(monkeypatch):
+    from farq import farq_auth
+
+    monkeypatch.setenv("FARQ_AUTH_API_URL", "https://api.example.test/")
+    monkeypatch.delenv("FARQ_AUTH_SUPABASE_URL", raising=False)
+    calls = []
+
+    class Response:
+        def __init__(self, status, body):
+            self.status_code = status; self._body = body
+        def json(self):
+            return self._body
+
+    def fake_get(url, timeout, headers):
+        calls.append((url, headers))
+        if headers["Authorization"] == "Bearer good":
+            return Response(200, {"ok": True, "data": {"user": {"id": "u-7", "email": "Sara@Example.com", "email_verified": True, "display_name": "سارة"}}})
+        return Response(401, {"ok": False})
+
+    monkeypatch.setattr(farq_auth.httpx, "get", fake_get)
+    assert farq_auth.verify("good") == FarqIdentity(user_id="u-7", email="sara@example.com", name="سارة", email_verified=True)
+    assert calls[0][0] == "https://api.example.test/api/auth/me"
+    assert farq_auth.verify("bad") is None
+
+
 def test_verify_reads_the_supabase_user(monkeypatch):
     from farq import farq_auth
 
+    monkeypatch.setenv("FARQ_AUTH_API_URL", "")
     monkeypatch.setenv("FARQ_AUTH_SUPABASE_URL", "https://example.supabase.co/")
     monkeypatch.setenv("FARQ_AUTH_SUPABASE_ANON_KEY", "anon")
     calls = []
