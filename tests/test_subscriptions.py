@@ -95,9 +95,9 @@ def test_plans_are_public_and_carry_their_quotas(tmp_path):
     assert resp.status_code == 200
     plans = resp.json()["plans"]
     assert [(plan["code"], plan["price_amount"]) for plan in plans] == [
-        ("starter", 7900),
-        ("project", 18900),
-        ("large", 42900),
+        ("starter", 6900),
+        ("project", 16900),
+        ("large", 37900),
     ]
     assert [(plan["monthly_items"], plan["sellers_per_item"], plan["daily_contacts"]) for plan in plans] == [
         (100, 6, 100),

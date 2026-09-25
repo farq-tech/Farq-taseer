@@ -2748,7 +2748,7 @@ function applyRoute(path, { pop = false } = {}) {
     state.view = "subscribe";
     state.subView = "plans";
     render();
-    loadSubscribe({ keepView: true }).catch(() => {});
+    loadSubscribe({ keepView: true, allowSignedOut: true }).catch(() => {});
     return;
   }
   if (head === "supplier") return openSupplier(id);
@@ -4446,8 +4446,11 @@ function loadMoyasarSdk() {
   return moyasarScriptPromise;
 }
 
-async function loadSubscribe({ keepView = false } = {}) {
-  await ensureAuth();
+async function loadSubscribe({ keepView = false, allowSignedOut = false } = {}) {
+  // /plans is read by people deciding whether to sign up, and by a payment provider
+  // reviewing the service. Demanding an account there hid the prices from exactly the
+  // two audiences the page exists for.
+  if (!allowSignedOut) await ensureAuth();
   state.view = "subscribe";
   if (!keepView) state.subView = state.subView || "my-plan";
   state.subError = "";
