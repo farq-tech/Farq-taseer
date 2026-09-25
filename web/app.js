@@ -8,6 +8,7 @@ const state = {
   searchText: "",
   needFilter: "",
   resultNeeds: new Map(),
+  streamNeeds: [],
   files: [],
   intent: null,
   searchState: "",
@@ -4155,6 +4156,7 @@ async function runSearch(text, city = "") {
   state.searchState = "";
   state.results = [];
   state.resultNeeds = new Map();
+  state.streamNeeds = [];
   state.needFilter = "";
   state.intent = null;
   state.clarification = "";
@@ -4189,8 +4191,14 @@ async function runSearch(text, city = "") {
         state.results = event.results || [];
         rememberGroups(event.groups);
         if (event.need && event.results?.length && !event.groups) {
+          // The server searches the items in the order M02 listed them, and each batch names
+          // its item by the server's own reading («إصلاح تسريب»). The i-th distinct name is
+          // the i-th item, so the card carries the label the customer saw and picked - the
+          // same label the send uses to tell each supplier which item is his.
           const active = (state.needs || []).filter((item) => item.on);
-          const label = active.length === 1 ? needLabel(active[0]) : event.need;
+          let at = state.streamNeeds.indexOf(event.need);
+          if (at < 0) at = state.streamNeeds.push(event.need) - 1;
+          const label = active.length === 1 ? needLabel(active[0]) : active[at] ? needLabel(active[at]) : event.need;
           for (const result of event.results) if (!state.resultNeeds.has(resultKey(result))) state.resultNeeds.set(resultKey(result), label);
         }
         state.partial = true;
@@ -4340,6 +4348,12 @@ async function sendRequest() {
     const active = (state.needs || []).filter((item) => item.on);
     const byLabel = new Map(active.map((item) => [needLabel(item), item]));
     const itemFor = (result) => byLabel.get(needOf(result)) || (active.length === 1 ? active[0] : null);
+    if (active.length > 1) {
+      for (const result of state.selected.values()) if (!itemFor(result)) {
+        console.warn("taseer: a picked supplier carries no item label", needOf(result));
+        break;
+      }
+    }
     const need = active.length === 1 ? needText(active[0]) : active.length ? active.map(needLabel).join(" + ") : state.intent?.need || null;
     const created = await api("/v1/requests", {
       method: "POST",
