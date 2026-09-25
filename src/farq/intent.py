@@ -14,6 +14,7 @@ from farq.contracts import (
     known,
     unknown,
 )
+from farq.eligibility import _CAR_PARTS, has_word
 from farq.expansion import expand
 from farq.text import normalize, prefix_variants, to_ascii_digits, tokens
 
@@ -679,8 +680,32 @@ def analyze(query: str) -> IntentResponse:
     expansions = head.expansions
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
+    part = _car_part(normalized) if head.type == "vehicle" and head.subcategory == "cars" else None
+    if part:
+        # «صدام كامري 2019» asks for a part of that car, not the car. Read as a car, the
+        # search returned whole Camrys at 65,000 riyals whose body text mentioned a bumper,
+        # and rejected the bumper listings themselves as "part_not_vehicle". The part is the
+        # thing: it names the need, it must lead the listing's title, and the model stays as
+        # the qualifier.
+        intent.type = known("product", 0.8, part)
+        intent.category = known("parts", 0.75, part)
+        intent.subcategory = known("car_parts", 0.7, part)
+        intent.result_unit = ResultUnit.AD
+        part_shown = _display_word(original, part)
+        query_label = f"{part_shown} {label}"
+        intent.need = f"{query_label} {shown_city}".strip()
+        groups = [[part], *groups]
+        intent.eligibility_groups = groups
+        intent.title_groups = [[part], *intent.title_groups]
+        search_label = f"{query_label} {shown_city}".strip()
+        expansions = (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
     return intent
+
+
+def _car_part(normalized: str) -> str | None:
+    """The car part a query names («صدام», «كفرات»), when it names one."""
+    return has_word(normalized, _CAR_PARTS)
 
 
 _CLAUSE_SPLIT = re.compile(r"[،,؛;\n]+|\s+ثم\s+")

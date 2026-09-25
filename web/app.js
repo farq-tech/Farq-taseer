@@ -4508,7 +4508,8 @@ async function startPricing(text, { fresh = true } = {}) {
   const cityOf = (intent) => (typeof intent?.location_city?.value === "string" ? intent.location_city.value : "") || state.city;
   state.needs = list.map((intent, index) => ({
     key: `n${index}`,
-    name: arabicOnly(intent.model?.value) || arabicOnly(intent.subcategory?.value) || arabicOnly(intent.category?.value) || stripCity(intent.need || query).split(/\s+/).slice(0, 2).join(" "),
+    // A part is named by the need («صدام كامري»), never by the car model alone.
+    name: (intent.category?.value === "parts" ? stripCity(intent.need || "").split(/\s+/).slice(0, 3).join(" ") : "") || arabicOnly(intent.model?.value) || arabicOnly(intent.subcategory?.value) || arabicOnly(intent.category?.value) || stripCity(intent.need || query).split(/\s+/).slice(0, 2).join(" "),
     // the customer's own segment when the parser returns it, so «ستانلس» and «يصلح تسريب» survive
     // (a request with a single item is that item's segment in full)
     desc: stripCity(intent.segment_text || (list.length === 1 ? query : intent.need) || query),

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from farq.config import SearchConfig
-from farq.contracts import ResultUnit, SearchState
+from farq.contracts import Ad, ResultUnit, SearchState, Seller
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.eligibility import decide
 from farq.intent import analyze, analyze_needs
@@ -360,3 +360,20 @@ def test_the_best_match_is_never_filtered_out_by_the_floor():
     only = SearchResult(result_unit=ResultUnit.AD, score=0.05, ad=_listing("درابزين"), seller=None)
     kept = rank(analyze("ابي درابزين"), [only], SearchConfig(), NOW)
     assert len(kept) == 1
+
+
+def test_a_car_part_query_is_a_part_not_the_car():
+    intent = analyze("أبي صدام كامري 2019 الرياض")
+    assert intent.subcategory.value == "car_parts"
+    assert intent.result_unit == ResultUnit.AD
+    assert intent.need.startswith("صدام كامري")
+    assert intent.search_terms[0].startswith("صدام كامري")
+    seller = Seller(id="s1", name="قطع غيار")
+    whole_car = Ad(id="1", title="تويوتا كامري 2019 هايبريد GLE", description="صدام امامي مرشوش والباقي وكاله", price_amount=65000, seller=seller)
+    bumper = Ad(id="2", title="صدام كامري 2019 اصلي", description="صدام امامي كامري 2018 2019 2020", price_amount=650, seller=seller)
+    assert decide(intent, whole_car, seller)[0] is False
+    assert decide(intent, bumper, seller)[0] is True
+    # A car query is still a car query.
+    car = analyze("أبي كامري 2019 الرياض")
+    assert car.subcategory.value == "cars"
+    assert decide(car, whole_car, seller)[0] is True
