@@ -1008,6 +1008,17 @@ function cueOnce(key, name, pattern) {
 // The frames put the back chevron on the LEFT and the language control on the RIGHT on every
 // screen except the conversation, which swaps them — `backStart` asks for that swap.
 function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = false, auth = false, backStart = false } = {}) {
+  // Inside Farq the screen's own head is folded away (Farq's header stands above the
+  // frame), which left no way back between Taseer's screens. A slim bar carries the way
+  // back and the screen's name; the home screen and the tabs need none.
+  if (isFarqEmbed()) {
+    if (!back) return "";
+    return `<div class="fq-embar">
+      <button class="fq-embar-back" type="button" data-action="${esc(back)}" aria-label="رجوع">${ic("back", 18)}</button>
+      <div class="fq-embar-mid"><span class="fq-embar-title"><bdi>${esc(title)}</bdi></span>${sub ? `<span class="fq-embar-sub"><bdi>${esc(sub)}</bdi></span>` : ""}</div>
+      ${end && !end.includes("fq-lang") ? `<div class="fq-embar-end">${end}</div>` : "<span></span>"}
+    </div>`;
+  }
   const langBtn = `<button class="fq-lang" type="button" data-action="lang" aria-label="اللغة">${ic("globe", 16)}<span>العربية</span></button>`;
   // the standard header draws a bare chevron; the conversation draws it on white
   const backBtn = back

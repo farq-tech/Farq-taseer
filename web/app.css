@@ -2193,3 +2193,39 @@ html.fq-embed .skip { display: none; }
   z-index: 4;
 }
 .fq-tobottom[hidden] { display: none; }
+
+
+/* ---------- the way back, inside Farq's frame ---------- */
+.fq-embar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--fq-app-bg) 82%, #fff);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--fq-line);
+}
+.fq-embar-back {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  border: 1px solid var(--fq-line);
+  background: #fff;
+  color: var(--fq-deep);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.08);
+  transition: transform 120ms ease, background 120ms ease;
+}
+.fq-embar-back:active { transform: scale(0.92); background: var(--fq-soft); }
+.fq-embar-back svg { width: 18px; height: 18px; }
+.fq-embar-mid { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.fq-embar-title { font-size: 16px; font-weight: 800; color: var(--fq-deep); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq-embar-sub { font-size: 12px; color: var(--fq-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fq-embar-end { display: flex; align-items: center; gap: 6px; }
