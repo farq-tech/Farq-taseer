@@ -1,0 +1,15 @@
+A. /taseer?signin=1 opened the Farq sign-in modal
+   dialogs: 2 ['نستخدم ملفات تعريف الارتباط لتحسين تجربتك. هل توافق على استخدام أدوات التحليل؟ سياسة الخصوصية |  | رفض | قبول', 'Farq | أو | تسجيل الدخول |  | ادخل بياناتك للمتابعة |  | البريد الإلكتروني | كلمة المرور | تسجيل الدخول | ليس لديك حساب؟ إنشاء حساب |  | بالاس']
+   submit buttons: ['تسجيل الدخول']
+B. signed in to Farq (modal closed)
+C. Taseer frame received the Farq session: nav tabs = 3 after 0.8 s
+   (cookie banner covers the frame bottom; accepting it as a user would)
+D. حسابي shows QA email: True | unlimited/trial line: ['التجربة المجانية · 10 بند متبقٍ']
+E. M02 cards: 1 => تعديل | تلفزيون سامسونج |  | تلفزيون سامسونج 65 بوصة |  | الرياض
+F. first result after 4.3 s
+   results: 40 | first titles: ['تلفزيون سامسونج 65 بوصة ذكي', 'سامسونج تلفزيون اوليد 4 كي 65 بوصة ذكي 120هرتز ذكاء اصطناعي', 'شاشة سامسونج سمارت 65 بوصة', 'شاشة سامسونج 65بوصة', 'تلفزيون سامسونج QLED 120Hz 65', 'شاشة سامسونج اوليد 65 s95c و ساوند بار Q930']
+G. review: send button enabled = True (NOT pressed: real suppliers)
+H. after reload the frame shows: 'اختيار الموردين' | tabs: 0 | send present: 1
+--- js errors: []
+--- 4xx/5xx: []
+DONE

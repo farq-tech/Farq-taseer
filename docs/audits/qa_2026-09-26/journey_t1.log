@@ -1,0 +1,42 @@
+start DOMContentLoaded in 0.62 s
+networkidle at 1.52 s ; url = https://taseer.farq.sa/
+elements with text 'تسعير': 1
+   0 'ابدأ التسعير' visible= True box= {'x': 20, 'y': 788.375, 'width': 350, 'height': 52} tag= BUTTON#.fq-btn breathe
+Taseer composer ready at 0.01 s after tap
+iframe box: None viewport: (390, 844)
+CTA visible: True box: {'x': 20, 'y': 788.375, 'width': 350, 'height': 52}
+home headline: فرق Farq
+after CTA -> 'المدينة' in 0.74 s ; frame url: https://taseer.farq.sa/city
+city-ask actions: ['home', 'lang', 'search-city']
+after city -> 'فهم الطلب'
+need cards: 2
+  need 0 => 'تعديل | سباك |  | سباك يصلح تسريب |  | الرياض'
+  need 1 => 'تعديل | كهربائي |  | كهربائي يركب 3 أفياش |  | الرياض | الكمية: 3 أفياش'
+run-search visible: True box: {'x': 20, 'y': 772, 'width': 350, 'height': 52} disabled: None
+first results on screen at 4.35 s ( 2 cards )
+search settled at 18.29 s ; results = 45 ; url: https://taseer.farq.sa/results
+found line: لقينا 45 مورد
+seller name dups among 45 : {'مقدم خدمة · العريجاء الغربية · الرياض', 'مقدم خدمة · الرمال · الرياض', 'مقدم خدمة · الملك فيصل · الرياض', 'مقدم خدمة · المصيف · الرياض', 'مقدم خدمة · النهضة · الرياض'}
+first 8 titles: ['سباك زراعي', 'معلم بلاط وسباكة ودهان بالرياض - المعلم نواب -', 'سباك وكهربائي منازل بالرياض - صيانة فورية', 'فحص تسريبات المياة والتيار الكهربائي', 'صيانة منازل بالرياض كهرباء وسباكة وتكييف خبرة 15 عاماً', 'فني سباكه ..', 'فني كهربائي وسباك في حي المنسية - الرياض خدمة 24 ساعة', 'كهربائي وسباك']
+technical junk text: []
+need filter pills: ['الكل', 'إصلاح تسريب', 'تركيب أفياش كهربائية']
+after 1st select: picked cards = 1 sticky: 1
+review CTA text: 2
+متابعة مع موردين box: {'x': 20, 'y': 772, 'width': 350, 'height': 52}
+review url: https://taseer.farq.sa/review h1: اختيار الموردين
+send button: أرسل طلب التسعير disabled: None box: {'x': 23.5, 'y': 788.3599853515625, 'width': 343, 'height': 50.96002197265625}
+frame after send tap: url https://taseer.farq.sa/review h1: اختيار الموردين
+postMessages to Farq: [{'origin': 'https://taseer.farq.sa', 'data': {'source': 'taseer', 'type': 'farq-auth-required', 'reason': 'send'}, 't': 1790373585515}]
+Farq dialogs: 0 []
+--- reload test ---
+after reload: frame url https://taseer.farq.sa/review h1: تسجيل الدخول composer: None results: 0 needcards: 0
+--- back test ---
+after Back: top url https://taseer.farq.sa/results ; frame h1: تسجيل الدخول
+--- console errors/warnings ---
+--- failed/4xx/5xx ---
+--- API calls ---
+1.0 GET taseer.farq.sa/v1/cities 200
+4.3 POST taseer.farq.sa/v1/intent 200
+15.7 POST taseer.farq.sa/v1/search/stream 200
+37.6 GET taseer.farq.sa/v1/cities 200
+DONE

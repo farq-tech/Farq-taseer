@@ -1,0 +1,20 @@
+A. auto sign-in from Farq cookie: nav tabs = 3 | token in storage: True
+B. understand cards: 2
+C. first result after 0.8 s
+   results: 78
+D. sent screen reached; sellers line: عدد الموردين | 2 | المطلوب تسعيره | سباك + كهربائي | الحالة | بانتظار الإرسال والردود
+   requests on server after double tap: 2
+E. idempotent replay: 403 403 same id: True
+   total requests now: 2
+F. recipients: [('ابو محمد للأعمال الس', 'سباك يصلح تسريب'), ('electrician220', 'سباك يصلح تسريب')]
+   seller view keys: ['attachments', 'awarded_to_me', 'city', 'contact', 'messages', 'need', 'offers_open', 'recipients'] | other seller prices visible: False
+   reply 1: 200
+   reply 2: 200
+   seller 2 sees seller 1 price (350)? False
+   push prompt shown over the success screen; dismissing
+G. thread shows 350: True | 300: True | cheapest badge: False
+H. compare text: أفضل قيمة | 350 ر.س | أوفر بـ 30 ر.س | الأقل | 8% | وفّر | أفضل سعر | ابو محمد للأعمال السباكه | ✓ | أقل عرض وصل | ✓ | شامل التوصيل | ✓ | أقدر أجيك اليوم، السعر 350 ريال شامل | اختيار هذا العرض | مراسلته | 380 ر.س | +30 ر.س | electrician220 | ✓ | أغلى بـ 30 ر.س عن الأقل | ✓ | 300 ريال بدون توصيل | اختيار هذا العرض | مراسلته
+I. after award: تمت الترسية! |  | تم اعتماد هذا العرض وأرسلنا للمورد إشعار القبول. |  | ابو محمد للأعمال السباكه | 350 ر.س | تبي المورد يتصل عليك؟ |  | اختياري. بدونه تكمّلون التنسيق من داخل المحادثة، وما يوصله رقمك. |  | شارك رقمي وموقعي | متابعة المحادثة | عرض تفاصيل العرض | الرئيسية | 4 | طلباتي | حسابي
+J. request status: None awarded: 26026107
+--- js errors: ['Failed to load resource: the server responded with a status of 500 (Internal Server Error)', 'Failed to load resource: the server responded with a status of 401 (Unauthorized)', 'Failed to load resource: the server responded with a status of 500 (Internal Server Error)', 'Failed to load resource: the server responded with a status of 401 (Unauthorized)']
+DONE
