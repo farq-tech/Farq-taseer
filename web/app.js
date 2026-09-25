@@ -371,6 +371,55 @@ function evidenceLines(result) {
   return lines.slice(0, 3);
 }
 
+// The evidence carries the folded matching form ("مراقبه"), which no one writes. Show the
+// word the way the supplier spelled it in his own advert, so the chip reads as language
+// rather than as the machine's internal form.
+function asWritten(word, source) {
+  const folded = normalizeLoose(word);
+  for (const token of String(source || "").split(/[\s،.,()\-—|/\\]+/)) {
+    const clean = token.replace(/[^\p{L}\p{N}]/gu, "");
+    if (!clean) continue;
+    if (normalizeLoose(clean) === folded) return clean;
+    // "المراقبة" is the same word he asked for, wearing the article.
+    const bare = clean.replace(/^ال/, "");
+    if (bare && normalizeLoose(bare) === folded) return bare;
+  }
+  return word;
+}
+
+function matchedWords(result) {
+  const source = `${result.ad?.title || ""} ${result.ad?.description || ""}`;
+  const seen = new Set();
+  const words = [];
+  for (const item of result.match_evidence || []) {
+    const word = String(item || "").trim();
+    if (!word || word.length > 14 || word.split(" ").length > 2) continue;
+    const key = normalizeLoose(word);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    words.push(asWritten(word, source));
+  }
+  return words.slice(0, 3);
+}
+
+// What separates one listing from the next, in the supplier's own words. The match chips
+// say the same thing on every card; these are the reasons to pick this one over that one.
+const OFFER_MARKS = [
+  { label: "تركيب", test: /تركيب|تمديد|تاسيس|تأسيس/ },
+  { label: "ضمان", test: /ضمان/ },
+  { label: "صيانة", test: /صيانه|صيانة/ },
+  { label: "توريد", test: /توريد|بيع وتركيب/ },
+  { label: "زيارة معاينة", test: /معاينه|معاينة|كشف مجاني/ },
+];
+function offerMarks(result) {
+  const text = `${result.ad?.title || ""} ${result.ad?.description || ""}`;
+  return OFFER_MARKS.filter((mark) => mark.test.test(text)).map((mark) => mark.label).slice(0, 3);
+}
+
+function normalizeLoose(value) {
+  return String(value).replace(/[\u064b-\u0652]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").trim();
+}
+
 function facts(intent) {
   if (!intent) return [];
   const items = [];
@@ -1119,29 +1168,41 @@ function renderCard(result) {
   const seller = sellerOf(result);
   const who = displayName(seller, result);
   const name = who.name;
+  // The advert's own headline is the sentence in which the supplier says what he does:
+  // "عروض كاميرات مراقبة مع التركيب". It used to be shown only when there was no body
+  // text, and every listing has body text, so it was never shown at all.
+  const offer = String(result.ad?.title || "").trim();
   const where = cityLabel(result.ad?.city || seller.city || "");
-  const blurb = snip(result);
+  const detail = snip(result);
+  const matched = matchedWords(result);
+  const marks = offerMarks(result);
   const age = adAge(result.ad);
   const needName = multiNeed() ? needOf(result) : "";
-  const bar = "var(--fq-line)";
-  const photo = result.ad && imageSources(result.ad).length;
-  const avatar = photo
-    ? `<span class="fq-av" style="width:40px;height:40px;border-radius:20px;overflow:hidden"><img alt="" data-src="${esc(imageSources(result.ad).join("|"))}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>`
-    : `<span class="fq-av" style="width:40px;height:40px;background:var(--fq-light);color:var(--fq-deep);font-size:16px">${initial(name)}</span>`;
-  return `<article class="fq-card fq-result${animated ? " fq-in" : ""}"${animated ? ` style="--bar:${bar};animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ` style="--bar:${bar}"`}>
-    <div class="fq-row" style="align-items:flex-start">
-      <button class="fq-tick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}" aria-label="${selected ? `إزالة ${esc(name)}` : `اختيار ${esc(name)}`}">${selected ? ic("check", 14) : ""}</button>
-      <button type="button" data-action="open" data-key="${esc(key)}" style="flex:1;min-width:0;display:flex;gap:12px;align-items:center;background:none;border:0;padding:0;font:inherit;text-align:start">
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-          <strong style="font-size:17px;font-weight:700;color:var(--fq-text);display:flex;align-items:center;gap:6px"><bdi>${esc(name)}</bdi>${ic("award", 14)}</strong>
-          ${who.handle ? `<span class="fq-meta fq-handle" dir="auto">${esc(who.handle)}</span>` : ""}
-          ${where ? `<span class="fq-meta">${esc(where)}</span>` : ""}
-        </span>
-        ${avatar}
+  const sources = result.ad ? imageSources(result.ad) : [];
+  // One photo per listing: Haraj gives a thumbnail, and the two URLs are the same picture
+  // at two sizes, not two pictures. So it is shown once, large enough to judge, and opens
+  // the listing when tapped - no carousel over a single image.
+  const photo = sources.length
+    ? `<button class="fq-shot" type="button" data-action="open" data-key="${esc(key)}" aria-label="افتح إعلان ${esc(offer || name)}">
+        <img alt="" data-src="${esc(sources.join("|"))}" loading="lazy" decoding="async"></button>`
+    : "";
+  return `<article class="fq-card fq-result${animated ? " fq-in" : ""}${selected ? " picked" : ""}"${animated ? ` style="animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ""}>
+    <div class="fq-offerrow">
+      ${photo}
+      <button type="button" data-action="open" data-key="${esc(key)}" class="fq-offerhead">
+        ${offer ? `<strong class="fq-offertitle"><bdi>${esc(offer)}</bdi></strong>` : `<strong class="fq-offertitle"><bdi>${esc(name)}</bdi></strong>`}
+        <span class="fq-meta fq-offerwho"><bdi>${esc(name)}</bdi>${where ? ` · ${esc(where)}` : ""}</span>
       </button>
     </div>
-    ${needName || age ? `<div class="fq-cardtags">${needName ? `<span class="fq-tag deep"><bdi>${esc(needName)}</bdi></span>` : ""}${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}</div>` : ""}
-    ${blurb ? `<p class="fq-small" style="margin:0"><bdi>${esc(blurb)}</bdi></p>` : ""}
+    ${matched.length ? `<div class="fq-matched" aria-label="طابق طلبك في">${matched
+      .map((word) => `<span class="fq-hit">${ic("check", 11)}<bdi>${esc(word)}</bdi></span>`)
+      .join("")}</div>` : ""}
+    ${detail ? `<p class="fq-small fq-offerbody"><bdi>${esc(detail)}</bdi></p>` : ""}
+    ${needName || age || marks.length ? `<div class="fq-cardtags">${needName ? `<span class="fq-tag deep"><bdi>${esc(needName)}</bdi></span>` : ""}${marks
+      .map((mark) => `<span class="fq-tag">${esc(mark)}</span>`)
+      .join("")}${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}</div>` : ""}
+    <button class="fq-pick${selected ? " on" : ""}" type="button" data-action="toggle" data-key="${esc(key)}" aria-pressed="${selected}">
+      ${ic(selected ? "check" : "plus", 16)}<span>${selected ? "مختار — اضغط للإزالة" : "اختر هذا المورد"}</span></button>
   </article>`;
 }
 
@@ -1214,8 +1275,15 @@ function emptyState() {
 
 // Haraj ads carry boilerplate lines that mean nothing inside Taseer.
 const AD_NOISE = [/رقم\s*الجوال\s*يظهر/, /اضغط\s*(على\s*)?(زر\s*)?تواصل/, /للتواصل\s*واتس/, /^\s*للجادين\s*فقط\s*$/];
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", nbsp: " ", ndash: "–", mdash: "—", hellip: "…" };
+function unescapeOnce(text) {
+  return String(text || "").replace(/&(amp|lt|gt|quot|#39|nbsp|ndash|mdash|hellip);/g, (_m, name) => ENTITIES[name]);
+}
+
 function adStory(text) {
-  return String(text || "")
+  // Haraj bodies arrive with entities escaped twice ("&amp;ndash;"), which the customer
+  // would otherwise read as markup in the middle of a sentence.
+  return unescapeOnce(unescapeOnce(text))
     .split("\n")
     .filter((line) => line.trim() && !AD_NOISE.some((pattern) => pattern.test(line)))
     .join("\n")

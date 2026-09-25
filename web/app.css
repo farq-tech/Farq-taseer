@@ -2047,3 +2047,37 @@ body.fq-auth .fq { background: linear-gradient(135deg, var(--fq-light) 25%, var(
 /* Inside Farq /taseer the Farq header is already on screen. */
 html.fq-embed .fq-head,
 html.fq-embed .skip { display: none; }
+
+/* ===== The results card, rebuilt around four questions a customer asks =====
+   Does it match what I asked for · what does he actually offer · can I see it ·
+   how do I pick him. Measured on live Haraj: every listing carries a body, a short
+   descriptive title, and exactly one thumbnail. */
+.fq-offerrow { display: flex; gap: 12px; align-items: flex-start; }
+.fq-shot { flex: 0 0 auto; width: 84px; height: 84px; border-radius: var(--fq-r-small); overflow: hidden;
+  border: 1px solid var(--fq-line); background: var(--fq-soft); padding: 0; cursor: pointer; }
+.fq-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fq-offerhead { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  background: none; border: 0; padding: 0; font: inherit; text-align: start; cursor: pointer; }
+/* The offer is the headline, so it gets two lines before it is cut. */
+.fq-offertitle { font-size: 16px; font-weight: 700; color: var(--fq-text); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fq-offerwho { font-size: 12.5px; }
+.fq-offerbody { margin: 0; color: var(--fq-text-2); line-height: 1.6;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* His own words, given back to him: why this listing is in the list at all. */
+.fq-matched { display: flex; flex-wrap: wrap; gap: 6px; }
+.fq-hit { display: inline-flex; align-items: center; gap: 4px; background: var(--fq-soft); color: var(--fq-deep);
+  border-radius: 999px; padding: 3px 9px 3px 7px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.fq-hit svg { flex: none; }
+
+/* Choosing was a 28px tick in the corner. It is the point of the screen, so it is a
+   control the width of the card, and it says what it will do. */
+.fq-pick { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px;
+  border-radius: var(--fq-r-input); border: 1.5px solid var(--fq-light); background: var(--fq-surface);
+  color: var(--fq-deep); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, color .18s ease; }
+.fq-pick:hover { background: var(--fq-soft); }
+.fq-pick.on { background: var(--fq-deep); border-color: var(--fq-deep); color: #fff; }
+.fq-card.fq-result.picked { border-color: var(--fq-base); }
+@media (prefers-reduced-motion: reduce) { .fq-pick { transition: none; } }
