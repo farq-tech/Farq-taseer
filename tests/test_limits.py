@@ -232,3 +232,42 @@ def test_entitlement_travels_with_the_subscription_status(tmp_path: Path):
     paid = api.get("/v1/subscriptions/me", headers=headers).json()["entitlement"]
     assert (paid["plan"], paid["items"], paid["sellers_per_item"], paid["daily_contacts"]) == ("project", 250, 6, 200)
     assert paid["plan_name"] == "مشروع"
+
+
+def test_returning_the_allowance_moves_the_meter_and_keeps_the_history(tmp_path: Path):
+    """Ten items back does not mean ten requests deleted."""
+    from farq.limits import entitlement
+
+    store, api = make(tmp_path)
+    headers = signed_in(api)
+    user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
+    for index in range(3):
+        store.record_search_sellers(f"t{index}", user_id, ["11"])
+        assert ask(api, headers, ["11"], need=f"بند {index}", trace_id=f"t{index}").status_code == 200
+
+    limits = Limits()
+    assert entitlement(store, limits, user_id).items_used == 3
+
+    store.reset_trial(user_id)
+    after = entitlement(store, limits, user_id)
+    assert after.items_used == 0
+    assert after.items_left == limits.trial_items
+    # The requests are still his; only the meter moved.
+    assert len(api.get("/v1/requests", headers=headers).json()["requests"]) == 3
+
+
+def test_an_open_account_is_not_a_subscriber_and_is_not_on_the_trial(tmp_path: Path):
+    from farq.limits import OPEN_ACCOUNT, entitlement
+
+    store, api = make(tmp_path)
+    headers = signed_in(api)
+    user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
+    limits = Limits()
+    assert entitlement(store, limits, user_id).items == limits.trial_items
+
+    store.set_unlimited(user_id)
+    open_account = entitlement(store, limits, user_id)
+    assert open_account.plan_code == OPEN_ACCOUNT
+    assert open_account.items_left > limits.trial_items * 100
+    # The ceiling that protects the shared Haraj account is not lifted with it.
+    assert open_account.sellers_per_item == limits.max_sellers_per_item

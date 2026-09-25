@@ -147,6 +147,23 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
     falls back to the trial numbers rather than to no limit: an unknown allowance must not
     become an unlimited one.
     """
+    # An open account: the owner's own, and any account he opens later. It is neither on the
+    # trial nor a paying subscriber, so it is neither given a plan it never bought nor a
+    # subscription row that would show it a renewal date and a payment history that do not
+    # exist. sellers_per_item still honours the platform ceiling, because that one protects
+    # the shared Haraj account rather than the customer's wallet.
+    if getattr(store, "account_unlimited", None) and store.account_unlimited(user_id):
+        return Entitlement(
+            plan_code=OPEN_ACCOUNT,
+            plan_name="حساب مفتوح",
+            items=OPEN_ALLOWANCE,
+            sellers_per_item=limits.max_sellers_per_item,
+            daily_contacts=OPEN_ALLOWANCE,
+            period_start=None,
+            items_used=store.count_items(user_id, _trial_since(store, user_id)),
+            contacts_today=store.count_contacts(user_id, _since(days=1)),
+        )
+
     subscription = store.get_latest_subscription(user_id) if store.is_subscribed(user_id) else None
     if subscription is None:
         return Entitlement(
@@ -156,7 +173,9 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
             sellers_per_item=limits.trial_sellers_per_item,
             daily_contacts=limits.trial_daily_contacts,
             period_start=None,
-            items_used=store.count_items(user_id),
+            # Since the account's own reset mark, not since it was created, so returning a
+            # customer's allowance never means deleting what he did with it.
+            items_used=store.count_items(user_id, _trial_since(store, user_id)),
             contacts_today=store.count_contacts(user_id, _since(days=1)),
         )
 
@@ -174,6 +193,16 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
         items_used=store.count_items(user_id, period_start),
         contacts_today=store.count_contacts(user_id, _since(days=1)),
     )
+
+
+OPEN_ACCOUNT = "open"
+# Large enough never to be reached, small enough to read as a number on a screen.
+OPEN_ALLOWANCE = 100_000
+
+
+def _trial_since(store, user_id: str) -> str | None:
+    reader = getattr(store, "trial_since", None)
+    return reader(user_id) if reader else None
 
 
 def _items_in(recipients, default_need: str | None) -> dict[str, set[str]]:

@@ -1349,6 +1349,22 @@ class PgStore:
             ).fetchone()
         return int(row["count"])
 
+    def trial_since(self, user_id: str) -> str | None:
+        """When this account's free allowance was last set back to zero, or None.
+
+        The trial counts items for the lifetime of the account, so returning the balance
+        means moving this mark rather than deleting anything the customer did.
+        """
+        with self._pool.connection() as conn:
+            row = conn.execute("select trial_reset_at from users where id = %s", (user_id,)).fetchone()
+        value = row and row.get("trial_reset_at")
+        return value.isoformat() if value is not None else None
+
+    def account_unlimited(self, user_id: str) -> bool:
+        with self._pool.connection() as conn:
+            row = conn.execute("select unlimited from users where id = %s", (user_id,)).fetchone()
+        return bool(row and row.get("unlimited"))
+
     def count_items(self, user_id: str, since: str | None = None) -> int:
         """Items, not requests: one request carries a distinct need per item, and the quota is
         sold per item. Counting requests here would let ten items inside one request cost one."""

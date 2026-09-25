@@ -2257,7 +2257,7 @@ function paymentsOffNote() {
 }
 
 function trialLabel() {
-  return `التجربة المجانية · ${formatCount(allowance().items_left)} بند متبقٍ`;
+  return openAccount() ? "حساب مفتوح" : `التجربة المجانية · ${formatCount(allowance().items_left)} بند متبقٍ`;
 }
 
 // N01_NotificationCenter — node 85:4.
@@ -2380,6 +2380,16 @@ function planPeriod(days) {
 // The constants below are only the fallback for a screen drawn before that call returns.
 const TRIAL_ITEMS = 10;
 const TRIAL_SELLERS = 6;
+
+// An open account has no number worth showing him: "0 من 100,000" reads as a
+// misconfiguration, not as freedom. Anywhere a count would be printed, it says «غير محدود».
+const OPEN_PLAN = "open";
+function openAccount() {
+  return allowance().plan === OPEN_PLAN;
+}
+function formatAllowance(value) {
+  return openAccount() ? "غير محدود" : formatCount(value);
+}
 
 function allowance() {
   const server = state.subStatus?.entitlement;
@@ -2541,7 +2551,7 @@ function renderSubscribe() {
       <div class="fq-squircle warn">${ic("alert-triangle", 56)}</div>
       <div style="display:flex;flex-direction:column;gap:14px">
         <h1 class="fq-h1">استخدمت التجربة المجانية</h1>
-        <p class="fq-lead">${formatCount(allowance().items)} من ${formatCount(allowance().items)} بند</p>
+        <p class="fq-lead">${openAccount() ? "غير محدود" : `${formatCount(allowance().items)} من ${formatCount(allowance().items)} بند`}</p>
         <span class="fq-tag deep" style="font-size:13px;padding:8px 14px;border-radius:999px">طلبك الأخير محفوظ ولن يضيع</span></div>
       ${paymentsOff() ? `<div style="width:100%">${paymentsOffNote()}</div>` : ""}
       <div class="fq-actions" style="width:100%;margin-top:auto;gap:12px">
@@ -2582,7 +2592,7 @@ function renderSubscribe() {
     <section class="fq-body tight">
       <h1 class="fq-h2">اختر الترقية المناسبة</h1>
       <div class="fq-current-strip">
-        <span class="fq-meta">${current ? `${formatCount(Number(current.monthly_items || allowance().items))} بند شهريًا` : "التجربة المجانية"}</span>
+        <span class="fq-meta">${current ? `${formatCount(Number(current.monthly_items || allowance().items))} بند شهريًا` : (openAccount() ? "حساب مفتوح" : "التجربة المجانية")}</span>
         <strong style="font-size:15px">الباقة الحالية: ${esc(current ? planName(current.code) : "التجربة المجانية")}</strong>
       </div>
       <div class="fq-arrow-down">${ic("arrow-down", 18)}</div>
@@ -2615,7 +2625,7 @@ function renderSubscribe() {
         : `<article class="fq-plan trial">
             <div class="fq-row"><span class="fq-tag ok">مفعلة حالياً</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
             <div class="fq-row"><span class="per">ابدأ بدون بطاقة</span><span class="amount">0 ر.س</span></div>
-            <p class="desc">✓ ${formatCount(allowance().items)} بند تسعير • ✓ حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند</p>
+            <p class="desc">✓ ${formatAllowance(allowance().items)} بند تسعير • ✓ حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند</p>
           </article>
           <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
       ${paymentsOff() ? paymentsOffNote() : state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
@@ -2711,7 +2721,7 @@ function renderSubscribe() {
     ${subscribed
       ? upsell
       : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">مزايا الفترة التجريبية:</h2>
-          <div class="fq-feats">${[`حتى ${formatCount(allowance().items)} بند تسعير`, `حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
+          <div class="fq-feats">${[`حتى ${formatAllowance(allowance().items)} بند تسعير`, `حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
             .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
             .join("")}</div></div>
         <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند مجاناً.</p>

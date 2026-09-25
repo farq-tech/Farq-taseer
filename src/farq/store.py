@@ -562,6 +562,8 @@ class Store:
         self._ensure_column("payments", "provider_status", "text")
         self._ensure_column("payments", "refunded_amount", "integer")
         self._hash_legacy_sessions()
+        self._ensure_column("users", "trial_reset_at", "text")
+        self._ensure_column("users", "unlimited", "integer")
         self._ensure_column("requests", "reply_token", "text")
         self._ensure_column("requests", "last_synced_at", "text")
         self._ensure_column("messages", "seller_id", "text")
@@ -1843,6 +1845,23 @@ class Store:
             (user_id, since, since),
         ).fetchone()
         return row["count"]
+
+    def trial_since(self, user_id: str) -> str | None:
+        """See PgStore.trial_since."""
+        row = self._connection.execute("select trial_reset_at from users where id = ?", (user_id,)).fetchone()
+        return (row["trial_reset_at"] if row else None) or None
+
+    def account_unlimited(self, user_id: str) -> bool:
+        row = self._connection.execute("select unlimited from users where id = ?", (user_id,)).fetchone()
+        return bool(row and row["unlimited"])
+
+    def reset_trial(self, user_id: str, at: str | None = None) -> None:
+        self._connection.execute("update users set trial_reset_at = ? where id = ?", (at or _now(), user_id))
+        self._connection.commit()
+
+    def set_unlimited(self, user_id: str, value: bool = True) -> None:
+        self._connection.execute("update users set unlimited = ? where id = ?", (1 if value else 0, user_id))
+        self._connection.commit()
 
     def count_items(self, user_id: str, since: str | None = None) -> int:
         """Items, not requests - see PgStore.count_items."""
