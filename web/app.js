@@ -189,6 +189,8 @@ function clearFarqSession() {
 }
 
 function keepSession(token, account) {
+  clearTimeout(farqWait);
+  state.farqFallback = false;
   state.token = token;
   state.account = account;
   try {
@@ -437,6 +439,25 @@ async function request(path, { method = "GET", json, form, skipAuth = false, qui
 const RETURN_TO = { sending: "review", detail: "flow" };
 // What he was trying to do when the account was needed, so Farq can say why it is asking.
 const EMBED_REASON = { sending: "send", review: "send", thread: "message", subscribe: "subscribe", plans: "subscribe" };
+// Farq was asked for the session this long ago and has not answered: an older Farq app
+// that never posts it, or a session that cannot be read here. The customer must not be
+// left on a button that does nothing, so Taseer's own form opens inside the frame.
+const FARQ_ANSWER_MS = 3000;
+let farqWait = 0;
+function waitForFarq() {
+  clearTimeout(farqWait);
+  farqWait = setTimeout(() => {
+    if (state.token || state.farqLink || farqSignIn) return;
+    state.farqFallback = true;
+    state.legacyAuth = true;
+    state.authMode = "login";
+    state.authError = "";
+    if (state.view !== "auth") state.returnView = RETURN_TO[state.view] || state.view;
+    state.view = "auth";
+    render();
+  }, FARQ_ANSWER_MS);
+}
+
 function requireSignIn(message = "") {
   if (isFarqEmbed()) {
     // A Farq session may already be here (the shared cookie); use it before asking.
@@ -444,6 +465,7 @@ function requireSignIn(message = "") {
     if (farqToken && !farqSignIn) {
       signInWithFarq(farqToken).then((ok) => ok && resumeAfterSignIn());
     }
+    waitForFarq();
     // Farq owns the sign-in. Ask for it and put him back where he was, with his suppliers
     // still ticked, rather than stranding him on a spinner or on our own form.
     askFarqToSignIn(EMBED_REASON[state.view] || "account");
@@ -1054,10 +1076,11 @@ function farqSignInUrl() {
 
 function renderAuth() {
   const register = state.authMode === "register";
-  if (!state.legacyAuth) return renderFarqAuth();
+  if (!state.legacyAuth && !state.farqFallback) return renderFarqAuth();
   const linking = Boolean(state.farqLink) && !register;
+  const fallback = Boolean(state.farqFallback) && !linking && !register;
   const title = register ? "إنشاء حساب" : linking ? "اربط حساب تسعير القديم" : "تسجيل الدخول";
-  const sub = register ? "حساب واحد لكل طلباتك في فرق" : linking ? "عندك حساب تسعير قديم بنفس بريد فرق. ادخل بكلمة مروره مرة وحدة، وبعدها حساب فرق يكفي." : "ادخل إلى حسابك في فرق";
+  const sub = register ? "حساب واحد لكل طلباتك في فرق" : linking ? "عندك حساب تسعير قديم بنفس بريد فرق. ادخل بكلمة مروره مرة وحدة، وبعدها حساب فرق يكفي." : fallback ? "ما وصلتنا جلسة فرق من التطبيق. ادخل بحساب تسعير عشان نكمل إرسال طلبك، أو حدّث تطبيق فرق." : "ادخل إلى حسابك في فرق";
   const lang = `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>`;
   return `<header class="fq-head is-auth">
     <div class="fq-head-row auth">${lang}<span class="fq-wordmark">Farq</span></div>
@@ -1141,9 +1164,10 @@ async function submitAuth(form) {
     state.busy = false;
     state.authError = "";
     state.legacyAuth = false;
-    if (state.farqLink) {
-      state.farqLink = null;
+    if (state.farqLink || state.farqFallback) {
       if (result.farq_linked) toast("تم ربط حسابك بحساب فرق. من الحين حساب فرق يكفي.");
+      state.farqLink = null;
+      state.farqFallback = false;
       if (isFarqEmbed()) {
         state.view = state.returnView || "home";
         state.returnView = "home";
@@ -4009,7 +4033,7 @@ const VIEWS = {
   notifications: renderNotifications,
   "notify-settings": renderNotifySettings,
   subscribe: renderSubscribe,
-  auth: () => (isFarqEmbed() && !state.farqLink ? renderHome() : renderAuth()),
+  auth: () => (isFarqEmbed() && !state.farqLink && !state.farqFallback ? renderHome() : renderAuth()),
   seller: renderSeller,
   legal: renderLegal,
 };
