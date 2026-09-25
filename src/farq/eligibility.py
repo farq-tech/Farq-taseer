@@ -6,9 +6,34 @@ import re
 
 from farq.cities import find_cities
 from farq.contracts import Ad, IntentResponse, Seller
-from farq.text import normalize, prefix_variants, tokens
+from farq.text import normalize, prefix_variants, to_ascii_digits, tokens
 
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+# «70 أمبير», «8 كيلو», «65 بوصة», «10kva»: a number with its unit is a specification. A listing
+# that states the same unit with only other numbers is a different thing (a 150-amp battery
+# for a 70-amp request), however well its words match.
+_UNIT_ALIASES = {
+    "امبير": "امبير", "أمبير": "امبير", "ah": "امبير",
+    "كيلو": "كيلو", "كيلوواط": "كيلو", "كيلو واط": "كيلو", "kva": "كيلو", "kw": "كيلو", "kg": "كيلو",
+    "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه",
+    "قدم": "قدم", "لتر": "لتر", "طن": "طن", "واط": "واط",
+}
+_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|kva|kw|kg|ah)(?![a-z\u0621-\u064a])")
+# A tyre size is three numbers: width, ratio, rim. «265/60 R18», «265 60 18», «18 60 265».
+_TYRE_SIZE = re.compile(r"(?<!\d)(\d{2,3})\s*[/ ]\s*(\d{2,3})\s*[/ ]?\s*r?\s*(\d{2})(?!\d)", re.IGNORECASE)
+# Appliances that a listing leads with when it sells the thing, not the service on it.
+_APPLIANCE_LEAD = ("غساله", "غسالات", "ثلاجه", "ثلاجات", "مكيف", "مكيفات", "فرن", "نشافه", "جوال", "سياره", "شاشه")
+
+
+def _specs(text: str) -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {}
+    for number, unit in _UNIT_SPEC.findall(to_ascii_digits(normalize(text))):
+        found.setdefault(_UNIT_ALIASES.get(unit, unit), set()).add(number.replace(",", ".").rstrip("0").rstrip(".") or "0")
+    return found
+
+
+def _tyre_sizes(text: str) -> set[tuple[str, ...]]:
+    return {tuple(sorted(match)) for match in _TYRE_SIZE.findall(to_ascii_digits(normalize(text)))}
 _CAR_PARTS = (
     "اطار",
     "كفر",
@@ -284,9 +309,30 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
         lead = [word for word in tokens(title) if not set(prefix_variants(word)) & set(_SALE_WORDS)][:1]
         if not lead or not _group_hit(lead[0], intent.eligibility_groups[0]) or lead[0].startswith("لل"):
             return False, ["side_mention_for_sale"]
-    if intent.subcategory.value in {"electrician", "plumber"} and title:
+    if intent.subcategory.value in {"electrician", "plumber", "carpenter"} and title:
         if has_word(title, _PRODUCT_NOT_TRADE):
             return False, ["product_not_trade"]
+    if provider and title:
+        # «غسالة تحتاج صيانة», «غسالة 9 ك بها عطل»: a listing that leads with the appliance
+        # sells the appliance; the technician leads with «صيانة» or «فني».
+        first = tokens(title)[:1]
+        if first and any(_word_is(first[0], word) for word in _APPLIANCE_LEAD):
+            return False, ["item_not_provider"]
+    if ad is not None and title:
+        wanted = _specs(intent.original_query)
+        if wanted:
+            stated = _specs(title)
+            for unit, numbers in wanted.items():
+                if unit in stated and not numbers & stated[unit]:
+                    return False, [f"spec_mismatch:{unit}"]
+        sizes = _tyre_sizes(intent.original_query)
+        if sizes:
+            listed = _tyre_sizes(title)
+            if listed and not sizes & listed:
+                return False, ["tyre_size_mismatch"]
+        asked = normalize(intent.original_query)
+        if "سنوي" in asked.split() and has_word(title, ("شهري", "يومي")) and not has_word(title, ("سنوي",)):
+            return False, ["rent_term_mismatch"]
     if intent.subcategory.value == "electrician" and ad is not None and title:
         if not _electric_trade(title, seller, text):
             return False, ["no_trade_signal"]
