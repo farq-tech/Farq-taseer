@@ -857,6 +857,8 @@ function initial(name) {
 // Feather icon set, inlined so an icon inherits the colour of the text beside it.
 // ---------------------------------------------------------------------------
 const ICONS = {
+  reply: '<path d="M9 17l-5-5 5-5"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+  "chevron-down": '<path d="M6 9l6 6 6-6"/>',
   home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   "file-text": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>',
   user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
@@ -1987,9 +1989,9 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
     const failed = message.delivery_state === "failed" ? `<span class="fq-time" style="color:#b3402a">ما وصلت الرسالة</span>` : "";
     const latest = thread.messages?.filter((item) => item.sender_role !== "seller").slice(-1)[0];
     const progress = latest && latest.id === message.id ? deliveryProgress(message) : "";
-    return `<div class="fq-msg mine"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
-      ${badge}${group ? "" : `<span class="fq-who mineName">أنت (صاحب الطلب)</span>`}
-      <div class="fq-mine-bub">${quote}${media}${body ? `<p>${body}</p>` : ""}${progress ? `<span class="fq-time">${esc(progress)}</span>` : ""}${failed}${time}</div>
+    return `<div class="fq-msg mine${first ? " first" : ""}" data-message="${esc(message.id)}"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:0">
+      ${badge}
+      <div class="fq-mine-bub${first ? " tail" : ""}">${quote}${media}${body ? `<p>${body}</p>` : ""}${progress ? `<span class="fq-time">${esc(progress)}</span>` : ""}${failed}${time}</div>
     </div></div>`;
   }
   const tone = sellerTone(thread, message.seller_id);
@@ -2006,14 +2008,18 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
         <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">ردّ</button></span>
         <span style="color:${tone.ink}">عرض السعر المقدم ⚡</span></div>`
     : "";
-  return `<div class="fq-msg">
+  // The sender's name sits inside the bubble in his colour, as a group chat draws it; the
+  // bubble itself is white, and only the first of a run carries the tail and the avatar.
+  const name = first
+    ? `<button class="fq-who" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${tone.ink}"><bdi>${esc(who)}</bdi>${won ? " ✓" : ""}</button>`
+    : "";
+  return `<div class="fq-msg${first ? " first" : ""}" data-message="${esc(message.id)}">
     <span class="fq-av" style="background:${tone.av};color:${tone.ink};visibility:${first ? "visible" : "hidden"}">${initial(who)}</span>
     <div class="fq-grp">
-      ${first ? `<button class="fq-who" type="button" data-action="seller-filter" data-seller="${esc(message.seller_id || "")}" style="color:${tone.ink};background:none;border:0;padding:0;font-family:inherit;text-align:start"><bdi>${esc(who)}</bdi>${won ? " ✓" : ""}</button>` : ""}
-      <div class="fq-bub" style="background:${tone.bub};border-left-color:${tone.edge}">
-        ${quote}${offer || `${media}${body ? `<p>${body}</p>` : ""}
+      <div class="fq-bub${first ? " tail" : ""}" style="--who:${tone.ink}">
+        ${name}${quote}${offer || `${media}${body ? `<p>${body}</p>` : ""}
           <span class="fq-time">${esc(chatTime(message.created_at))}
-            <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">ردّ</button></span>`}
+            <button class="fq-replybtn" type="button" data-action="reply" data-message="${esc(message.id)}" aria-label="ردّ على ${esc(who)}">${ic("reply", 12)}<span>ردّ</span></button></span>`}
       </div>
     </div>
   </div>`;
@@ -2392,14 +2398,15 @@ function renderThread() {
             .join("")}</div>`
         : ""}
       <div class="mention-list" id="mention-list" hidden></div>
-      <form class="fq-composer" id="user-reply">
-        <button class="fq-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? `<span class="fq-ring spin" style="width:18px;height:18px;--p:60%"></span>` : ic("send", 18)}</button>
+      <form class="fq-composer wa" id="user-reply">
+        <button class="fq-plus" type="button" data-action="open-attach" aria-label="إرفاق">${ic("plus", 22)}</button>
         <div class="fq-inputg">
-          <button class="fq-iconbtn" type="button" data-action="open-attach" aria-label="إرفاق">${ic("paperclip", 20)}</button>
           <textarea name="body" rows="1" placeholder="${esc(placeholder)}" ${nonePicked ? "disabled" : ""}></textarea>
-          <button class="fq-iconbtn" type="button" data-action="emoji" aria-label="رموز">${ic("smile", 20)}</button>
+          <button class="fq-iconbtn" type="button" data-action="emoji" aria-label="رموز">${ic("smile", 22)}</button>
         </div>
+        <button class="fq-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? `<span class="fq-ring spin" style="width:18px;height:18px;--p:60%"></span>` : ic("send", 18)}</button>
       </form>
+      <button class="fq-tobottom" type="button" data-action="chat-bottom" aria-label="إلى آخر المحادثة" hidden>${ic("chevron-down", 20)}</button>
     </div>
     ${state.pickerOpen ? recipientSheet(thread) : ""}
     ${state.attachOpen ? attachSheet() : ""}`;
@@ -4062,6 +4069,7 @@ function render() {
   bindGallery(app);
   bindCounter(app);
   bindGrow(app);
+  bindChat(app);
   if (state.view === "flow" && state.seenCards) for (const result of state.results) state.seenCards.add(resultKey(result));
   if (focused) document.getElementById(focused)?.focus();
   // The business description re-renders while it is being typed in, so the caret goes back
@@ -4083,6 +4091,42 @@ function render() {
   scheduleDraftSave();
   if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
   if (state.view === "subscribe" && state.subView === "review" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
+}
+
+// A conversation behaves like a chat: swipe a supplier's bubble to reply to it, and a
+// chevron appears to jump back to the latest message when the customer has scrolled up.
+function bindChat(root) {
+  const wall = root.querySelector("#chat-wall");
+  const jump = root.querySelector(".fq-tobottom");
+  if (!wall) return;
+  if (jump) {
+    const check = () => {
+      jump.hidden = wall.scrollHeight - wall.scrollTop - wall.clientHeight < 200;
+    };
+    wall.addEventListener("scroll", check, { passive: true });
+    check();
+  }
+  let start = null;
+  wall.addEventListener("touchstart", (event) => {
+    const row = event.target.closest(".fq-msg[data-message]");
+    if (!row || row.classList.contains("mine")) return;
+    const touch = event.touches[0];
+    start = { x: touch.clientX, y: touch.clientY, row };
+  }, { passive: true });
+  wall.addEventListener("touchmove", (event) => {
+    if (!start) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - start.x;
+    if (Math.abs(touch.clientY - start.y) > 24) { start.row.style.transform = ""; start = null; return; }
+    if (dx > 0) start.row.style.transform = `translateX(${Math.min(dx, 56)}px)`;
+  }, { passive: true });
+  wall.addEventListener("touchend", (event) => {
+    if (!start) return;
+    const dx = (event.changedTouches[0]?.clientX ?? start.x) - start.x;
+    start.row.style.transform = "";
+    if (dx > 44) start.row.querySelector("[data-action=reply]")?.click();
+    start = null;
+  });
 }
 
 // The composer grows with the message, up to four lines, the way a chat input does.
@@ -5595,6 +5639,9 @@ document.addEventListener("click", (event) => {
     state.replyTo = { id: message.id, sellerId: message.seller_id, name: sellerName(state.thread, message.seller_id), body: message.body };
     render();
     document.querySelector("#user-reply textarea")?.focus();
+  } else if (action === "chat-bottom") {
+    const wall = document.getElementById("chat-wall");
+    if (wall) wall.scrollTo({ top: wall.scrollHeight, behavior: "smooth" });
   } else if (action === "cancel-reply") {
     state.replyTo = null;
     render();
