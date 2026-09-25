@@ -143,6 +143,17 @@ class PgStore:
             conn.execute("delete from sessions where user_id = %s and created_at < %s", (row["id"], session_cutoff()))
         return token
 
+    def link_farq(self, user_id: str, farq_user_id: str) -> bool:
+        """Tie a Taseer account to a Farq user id, once its owner has proven both: the Taseer
+        password and a live Farq session. False when that Farq id already belongs to another
+        Taseer account."""
+        with self._pool.connection() as conn:
+            other = conn.execute("select id from users where farq_user_id = %s and id <> %s", (farq_user_id, user_id)).fetchone()
+            if other is not None:
+                return False
+            conn.execute("update users set farq_user_id = %s where id = %s", (farq_user_id, user_id))
+        return True
+
     # -- email verification ----------------------------------------------------
 
     def start_email_verification(self, user_id: str, ttl_hours: int = 48) -> str:

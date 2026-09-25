@@ -865,6 +865,15 @@ class Store:
         self._connection.commit()
         return token
 
+    def link_farq(self, user_id: str, farq_user_id: str) -> bool:
+        """See PgStore.link_farq."""
+        other = self._connection.execute("select id from users where farq_user_id = ? and id <> ?", (farq_user_id, user_id)).fetchone()
+        if other is not None:
+            return False
+        self._connection.execute("update users set farq_user_id = ? where id = ?", (farq_user_id, user_id))
+        self._connection.commit()
+        return True
+
     # -- email verification ----------------------------------------------------
 
     def start_email_verification(self, user_id: str, ttl_hours: int = 48) -> str:

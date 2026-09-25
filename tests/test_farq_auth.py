@@ -131,3 +131,21 @@ def test_verify_reads_the_supabase_user(monkeypatch):
     assert calls[0][0] == "https://example.supabase.co/auth/v1/user"
     assert calls[0][1]["Authorization"] == "Bearer abc" and calls[0][1]["apikey"] == "anon"
     assert farq_auth.verify("") is None
+
+
+def test_the_owner_links_a_password_account_by_signing_in_once_with_farq_present(tmp_path):
+    api, store = make(tmp_path, farq_user)
+    # An old Taseer account, and a Farq account with the same but unconfirmed email.
+    assert api.post("/v1/auth/register", json={"email": "a@example.com", "password": "secret-pass", "name": "المالك"}).status_code == 200
+    refused = api.post("/v1/auth/farq", json={"access_token": "tok-unconfirmed"})
+    assert refused.status_code == 409 and refused.json()["detail"]["code"] == "TASEER_ACCOUNT_EXISTS"
+    # The password plus the Farq session, once.
+    signed = api.post("/v1/auth/login", json={"email": "a@example.com", "password": "secret-pass", "farq_access_token": "tok-unconfirmed"})
+    assert signed.status_code == 200 and signed.json()["farq_linked"] is True
+    # From then on the Farq sign-in lands on the same account.
+    again = api.post("/v1/auth/farq", json={"access_token": "tok-unconfirmed"})
+    assert again.status_code == 200 and again.json()["name"] == "المالك"
+    assert store._connection.execute("select count(*) as n from users").fetchone()["n"] == 1
+    # A wrong Farq token links nothing and does not break the password sign-in.
+    plain = api.post("/v1/auth/login", json={"email": "a@example.com", "password": "secret-pass", "farq_access_token": "nope"})
+    assert plain.status_code == 200 and plain.json()["farq_linked"] is False

@@ -193,12 +193,26 @@ function signInWithFarq(accessToken) {
     .then((result) => {
       keepSession(result.token, { name: result.name, email: result.email });
       state.authError = "";
+      state.farqLink = null;
       loadSubStatus().catch(() => {});
       loadVerification().catch(() => {});
       refreshUnread();
       return true;
     })
-    .catch(() => false)
+    .catch((error) => {
+      if (error?.status === 409) {
+        // A Taseer account made with a password carries this email. Its owner proves it once
+        // (the password) with the Farq session present, and the two become one account.
+        state.farqLink = { token: accessToken };
+        state.legacyAuth = true;
+        state.authMode = "login";
+        state.authError = "";
+        if (state.view !== "auth") state.returnView = RETURN_TO[state.view] || state.view;
+        state.view = "auth";
+        render();
+      }
+      return false;
+    })
     .finally(() => {
       farqSignIn = null;
     });
@@ -1021,8 +1035,9 @@ function farqSignInUrl() {
 function renderAuth() {
   const register = state.authMode === "register";
   if (!state.legacyAuth) return renderFarqAuth();
-  const title = register ? "إنشاء حساب" : "تسجيل الدخول";
-  const sub = register ? "حساب واحد لكل طلباتك في فرق" : "ادخل إلى حسابك في فرق";
+  const linking = Boolean(state.farqLink) && !register;
+  const title = register ? "إنشاء حساب" : linking ? "اربط حساب تسعير القديم" : "تسجيل الدخول";
+  const sub = register ? "حساب واحد لكل طلباتك في فرق" : linking ? "عندك حساب تسعير قديم بنفس بريد فرق. ادخل بكلمة مروره مرة وحدة، وبعدها حساب فرق يكفي." : "ادخل إلى حسابك في فرق";
   const lang = `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>`;
   return `<header class="fq-head is-auth">
     <div class="fq-head-row auth">${lang}<span class="fq-wordmark">Farq</span></div>
@@ -1089,6 +1104,8 @@ async function submitAuth(form) {
   const register = state.authMode === "register";
   const json = { email: String(data.get("email") || "").trim(), password: String(data.get("password") || "") };
   if (register) json.name = String(data.get("name") || "").trim();
+  const farqToken = state.farqLink?.token || farqSessionToken();
+  if (!register && farqToken) json.farq_access_token = farqToken;
   if (register && json.name.length < 2) return showAuthError("اكتب اسمك");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(json.email)) return showAuthError("اكتب بريد إلكتروني صحيح");
   if (json.password.length < 8) return showAuthError("كلمة المرور لازم تكون 8 أحرف أو أكثر");
@@ -1103,6 +1120,17 @@ async function submitAuth(form) {
     } catch (_error) {}
     state.busy = false;
     state.authError = "";
+    state.legacyAuth = false;
+    if (state.farqLink) {
+      state.farqLink = null;
+      if (result.farq_linked) toast("تم ربط حسابك بحساب فرق. من الحين حساب فرق يكفي.");
+      if (isFarqEmbed()) {
+        state.view = state.returnView || "home";
+        state.returnView = "home";
+        resumeAfterSignIn();
+        return;
+      }
+    }
     // Back to the screen the sign-in interrupted: the address never left it (a sign-in has
     // none of its own), and the journey's draft is still here — a review keeps its ticks.
     const route = state.returnRoute || location.pathname;
@@ -3962,7 +3990,7 @@ const VIEWS = {
   notifications: renderNotifications,
   "notify-settings": renderNotifySettings,
   subscribe: renderSubscribe,
-  auth: () => (isFarqEmbed() ? renderHome() : renderAuth()),
+  auth: () => (isFarqEmbed() && !state.farqLink ? renderHome() : renderAuth()),
   seller: renderSeller,
   legal: renderLegal,
 };

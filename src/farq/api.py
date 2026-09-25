@@ -67,8 +67,17 @@ GUEST_DOMAIN = "@users.farq.local"
 
 
 class FarqSessionBody(ApiModel):
-    # The Farq (Supabase) access token the embed holds; see farq.farq_auth.
+    # The Farq access token the app holds; see farq.farq_auth.
     access_token: str
+
+
+class LoginBody(ApiModel):
+    email: str
+    password: str
+    name: str | None = None
+    # A Farq session presented together with the Taseer password: both proofs at once tie
+    # this Taseer account to that Farq account, and the Farq sign-in works from then on.
+    farq_access_token: str | None = None
 
 
 class SupplierRegisterBody(ApiModel):
@@ -412,12 +421,19 @@ def create_app(
         }
 
     @app.post("/v1/auth/login")
-    def login(body: RegisterBody, request: Request) -> dict:
+    def login(body: LoginBody, request: Request) -> dict:
         token = throttled_login(request, body.email.strip().lower(), body.password)
         account = store.account_for_token(token) if token else None
         if account is None or str(account["email"]).endswith(GUEST_DOMAIN):
             raise HTTPException(status_code=401, detail="invalid credentials")
-        return {"token": token, "name": account.get("name"), "email": account["email"]}
+        linked = None
+        if body.farq_access_token:
+            identity = verify_farq(body.farq_access_token) if farq_configured() else None
+            if identity is None:
+                linked = False
+            else:
+                linked = store.link_farq(account["id"], identity.user_id)
+        return {"token": token, "name": account.get("name"), "email": account["email"], "farq_linked": linked}
 
     @app.get("/v1/auth/me")
     def me(account: dict = Depends(current_account)) -> dict:
@@ -446,7 +462,10 @@ def create_app(
         try:
             token = store.login_farq(identity.user_id, identity.email, identity.name, identity.email_verified)
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail="this email belongs to another Taseer account") from exc
+            # A Taseer account made with a password already carries this email, and Farq has
+            # not confirmed the address. Its owner links the two by signing in once with that
+            # password while the Farq session is present (POST /v1/auth/login).
+            raise HTTPException(status_code=409, detail={"code": "TASEER_ACCOUNT_EXISTS", "message": "this email belongs to a Taseer account made with a password; sign in with it once to link the two"}) from exc
         account = store.account_for_token(token) or {}
         return {"token": token, "name": account.get("name"), "email": account.get("email", identity.email), "verification_required": False}
 
