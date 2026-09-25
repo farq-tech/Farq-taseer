@@ -27,6 +27,7 @@ from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_refe
 from farq.store import (
     SINGLE_SELLER,
     AwardConflict,
+    SsoConflict,
     _delivery_state,
     choose_thread,
     current_offer_rows,
@@ -106,6 +107,47 @@ class PgStore:
             )
             conn.execute("delete from sessions where user_id = %s and created_at < %s", (row["id"], session_cutoff()))
         return token
+
+    def farq_sso_login(self, farq_user_id: str, email: str, name: str | None, email_verified: bool) -> str:
+        """A session for the Taseer account of a Farq customer, made on first use.
+
+        The account is found by its Farq user id. The first time, an existing Taseer account
+        with the same email is linked only when Farq has verified the address; otherwise
+        anyone could sign up on Farq with someone else's email and walk into his Taseer
+        requests. A new account gets a random password nobody knows: it is reached through
+        Farq, and "forgot password" still works if he ever wants Taseer on its own."""
+        with self._pool.connection() as conn:
+            row = conn.execute("select id from users where farq_user_id = %s", (farq_user_id,)).fetchone()
+            if row is None:
+                row = conn.execute("select id, farq_user_id from users where email = %s for update", (email,)).fetchone()
+                if row is not None:
+                    if row["farq_user_id"] or not email_verified:
+                        raise SsoConflict(email)
+                    conn.execute("update users set farq_user_id = %s where id = %s", (farq_user_id, row["id"]))
+                else:
+                    user_id = uuid4().hex
+                    salt = secrets.token_hex(16)
+                    conn.execute(
+                        "insert into users (id, email, password_hash, salt, name, created_at, farq_user_id) values (%s, %s, %s, %s, %s, %s, %s)",
+                        (user_id, email, _hash_password(secrets.token_urlsafe(32), salt), salt, name, _now(), farq_user_id),
+                    )
+                    row = {"id": user_id}
+            if email_verified:
+                conn.execute("update users set email_verified_at = coalesce(email_verified_at, now()) where id = %s", (row["id"],))
+            token = secrets.token_urlsafe(32)
+            conn.execute("insert into sessions (token, user_id, created_at) values (%s, %s, %s)", (token_digest(token), row["id"], _now()))
+        return token
+
+    def link_farq_user(self, user_id: str, farq_user_id: str) -> bool:
+        """Tie a signed-in Taseer account to a Farq user. The caller has proved both: the
+        Taseer password (the session) and the Farq account (the ticket). True when the two
+        are now linked, False when either side already belongs to someone else."""
+        with self._pool.connection() as conn:
+            taken = conn.execute("select id from users where farq_user_id = %s", (farq_user_id,)).fetchone()
+            if taken is not None:
+                return taken["id"] == user_id
+            cur = conn.execute("update users set farq_user_id = %s where id = %s and farq_user_id is null", (farq_user_id, user_id))
+            return cur.rowcount == 1
 
     # -- email verification ----------------------------------------------------
 

@@ -27,6 +27,7 @@ from farq.idempotency import IdempotencyMiddleware
 from farq.intent import analyze, analyze_needs, split_need_texts
 from farq.taxonomy import GROUPS, catalog as category_catalog, known_keys, read_business
 from farq import mailer, notify
+from farq.farq_sso import TicketError, sso_secret, verify_ticket
 from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
@@ -36,7 +37,7 @@ from farq.orchestrator import iter_search, run_search
 from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware
-from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids, seller_key
+from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, SsoConflict, Store, search_seller_ids, seller_key
 from farq.subscriptions import PaymentsUnavailable, SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -93,6 +94,10 @@ class NotificationReadBody(ApiModel):
 
 class EmailVerifyBody(ApiModel):
     token: str
+
+
+class FarqSsoBody(ApiModel):
+    ticket: str = Field(max_length=4096)
 
 
 class PushBody(ApiModel):
@@ -408,6 +413,45 @@ def create_app(
         if account is None or str(account["email"]).endswith(GUEST_DOMAIN):
             raise HTTPException(status_code=401, detail="invalid credentials")
         return {"token": token, "name": account.get("name"), "email": account["email"]}
+
+    @app.post("/v1/auth/farq-sso")
+    def farq_sso(body: FarqSsoBody, request: Request) -> dict:
+        # Taseer inside Farq: trade Farq's one-minute ticket for a Taseer session. See farq/farq_sso.py.
+        secret = sso_secret()
+        if secret is None:
+            raise HTTPException(status_code=503, detail="farq sign-in is not configured")
+        if not register_limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
+        try:
+            identity = verify_ticket(body.ticket.strip(), secret)
+        except TicketError as exc:
+            raise HTTPException(status_code=401, detail="invalid ticket") from exc
+        if not EMAIL.match(identity["email"]) or identity["email"].endswith(GUEST_DOMAIN):
+            raise HTTPException(status_code=422, detail="invalid email")
+        try:
+            token = store.farq_sso_login(identity["farq_user_id"], identity["email"], identity["name"], identity["email_verified"])
+        except SsoConflict as exc:
+            raise HTTPException(status_code=409, detail={"code": "EMAIL_TAKEN_UNVERIFIED"}) from exc
+        account = store.account_for_token(token)
+        return {"token": token, "name": account.get("name") if account else None, "email": identity["email"]}
+
+    @app.post("/v1/auth/farq-link")
+    def farq_link(body: FarqSsoBody, request: Request, account: dict = Depends(current_account)) -> dict:
+        # The one-time bridge for a customer who had a Taseer account before Farq could
+        # vouch for his email: he signs in to Taseer once, and Farq's ticket for the same
+        # address ties the two. After this, /v1/auth/farq-sso finds him by his Farq id.
+        secret = sso_secret()
+        if secret is None:
+            raise HTTPException(status_code=503, detail="farq sign-in is not configured")
+        if not register_limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
+        try:
+            identity = verify_ticket(body.ticket.strip(), secret)
+        except TicketError as exc:
+            raise HTTPException(status_code=401, detail="invalid ticket") from exc
+        if identity["email"] != str(account["email"]).lower() or not store.link_farq_user(account["id"], identity["farq_user_id"]):
+            raise HTTPException(status_code=409, detail={"code": "FARQ_LINK_REFUSED"})
+        return {"linked": True}
 
     @app.get("/v1/auth/me")
     def me(account: dict = Depends(current_account)) -> dict:

@@ -150,6 +150,11 @@ class AwardConflict(Exception):
     """The request is already awarded to another supplier."""
 
 
+class SsoConflict(Exception):
+    """A Farq sign-in names an email that already has a Taseer account, and Farq has not
+    verified that the person holds that address. Linking would hand the account over."""
+
+
 def visible_to_seller(message: Message, seller_id: str | None, need: str | None) -> bool:
     """A supplier sees his own messages and the customer messages routed to him, nothing else."""
     if message.sender_role == "seller":
@@ -708,6 +713,8 @@ class Store:
             """
         )
         self._ensure_column("users", "email_verified_at", "text")
+        self._ensure_column("users", "farq_user_id", "text")
+        self._connection.execute("create unique index if not exists users_farq_user_id on users (farq_user_id) where farq_user_id is not null")
         self._connection.executescript(
             """
             create table if not exists email_verifications (
@@ -825,6 +832,41 @@ class Store:
         self._connection.execute("delete from sessions where user_id = ? and created_at < ?", (row["id"], session_cutoff().isoformat()))
         self._connection.commit()
         return token
+
+    def farq_sso_login(self, farq_user_id: str, email: str, name: str | None, email_verified: bool) -> str:
+        """See PgStore.farq_sso_login."""
+        conn = self._connection
+        row = conn.execute("select id from users where farq_user_id = ?", (farq_user_id,)).fetchone()
+        if row is None:
+            row = conn.execute("select id, farq_user_id from users where email = ?", (email,)).fetchone()
+            if row is not None:
+                if row["farq_user_id"] or not email_verified:
+                    raise SsoConflict(email)
+                conn.execute("update users set farq_user_id = ? where id = ?", (farq_user_id, row["id"]))
+            else:
+                user_id = uuid4().hex
+                salt = secrets.token_hex(16)
+                conn.execute(
+                    "insert into users (id, email, password_hash, salt, name, created_at, farq_user_id) values (?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, email, _hash_password(secrets.token_urlsafe(32), salt), salt, name, _now(), farq_user_id),
+                )
+                row = {"id": user_id}
+        if email_verified:
+            conn.execute("update users set email_verified_at = coalesce(email_verified_at, ?) where id = ?", (_now(), row["id"]))
+        token = secrets.token_urlsafe(32)
+        conn.execute("insert into sessions (token, user_id, created_at) values (?, ?, ?)", (token_digest(token), row["id"], _now()))
+        conn.commit()
+        return token
+
+    def link_farq_user(self, user_id: str, farq_user_id: str) -> bool:
+        """See PgStore.link_farq_user."""
+        conn = self._connection
+        taken = conn.execute("select id from users where farq_user_id = ?", (farq_user_id,)).fetchone()
+        if taken is not None:
+            return taken["id"] == user_id
+        cur = conn.execute("update users set farq_user_id = ? where id = ? and farq_user_id is null", (farq_user_id, user_id))
+        conn.commit()
+        return cur.rowcount == 1
 
     # -- email verification ----------------------------------------------------
 

@@ -123,6 +123,81 @@ function askFarqToSignIn(reason) {
   }
 }
 
+// Farq answers with a one-minute ticket for its signed-in customer; Taseer trades it for its
+// own session (POST /v1/auth/farq-sso) and carries on with what the tap asked for. Only the
+// page that framed us, on a Farq origin, may hand one in; the server checks the signature.
+const FARQ_PARENT_ORIGINS = new Set([
+  "https://farq.sa",
+  "https://www.farq.sa",
+  "https://localhost", // the Farq apps (Capacitor, https scheme)
+  "capacitor://localhost", // older iOS builds
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]);
+let farqResume = null;
+let farqExchanging = false;
+// Set when his Farq email already has a Taseer account that Farq cannot vouch for: he signs
+// in to Taseer once, and the next Farq ticket ties the two (/v1/auth/farq-link).
+let farqLinkPending = false;
+
+function afterFarqSignIn() {
+  state.notice = "";
+  loadSubStatus().catch(() => {});
+  loadVerification().catch(() => {});
+  refreshUnread();
+  const resume = farqResume;
+  farqResume = null;
+  if (resume === "send" && state.view === "review") sendRequest();
+  else render();
+}
+
+async function acceptFarqTicket(ticket) {
+  if (farqExchanging) return;
+  farqExchanging = true;
+  try {
+    if (farqLinkPending && state.token) {
+      await api("/v1/auth/farq-link", { method: "POST", json: { ticket } });
+      farqLinkPending = false;
+      afterFarqSignIn();
+      return;
+    }
+    const result = await api("/v1/auth/farq-sso", { method: "POST", json: { ticket }, skipAuth: true });
+    state.token = result.token;
+    state.account = { name: result.name, email: result.email };
+    try {
+      localStorage.setItem("farq.token", state.token);
+    } catch (_error) {}
+    afterFarqSignIn();
+  } catch (error) {
+    if (error?.detail?.code === "EMAIL_TAKEN_UNVERIFIED") {
+      // Farq cannot vouch for the address yet, so the Taseer password proves it, once.
+      farqLinkPending = true;
+      if (state.view !== "auth") state.returnView = state.view;
+      state.view = "auth";
+      state.authMode = "login";
+      state.authError = "عندك حساب في تسعير بنفس بريدك. سجّل دخولك مرة وحدة، ونربطه بحسابك في فرق.";
+      render();
+      return;
+    }
+    farqResume = null;
+    farqLinkPending = false;
+    state.notice = "ما قدرنا نربط حسابك في فرق. جرّب مرة ثانية.";
+    render();
+  } finally {
+    farqExchanging = false;
+  }
+}
+
+if (isFarqEmbed()) {
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent || !FARQ_PARENT_ORIGINS.has(event.origin)) return;
+    const data = event.data;
+    if (!data || data.source !== "farq" || data.type !== "farq-sso-ticket") return;
+    if (typeof data.ticket !== "string" || !data.ticket || data.ticket.length > 4096) return;
+    acceptFarqTicket(data.ticket);
+  });
+}
+
 /** True when the embed handled it, so the caller must stop. */
 function farqHandlesSignIn(reason) {
   if (!isFarqEmbed()) return false;
@@ -303,6 +378,16 @@ function requireSignIn(message = "") {
     // Farq owns the sign-in. Ask for it and put him back where he was, with his suppliers
     // still ticked, rather than stranding him on a spinner or on our own form.
     askFarqToSignIn(EMBED_REASON[state.view] || "account");
+    // A send interrupted for the account goes out by itself once Farq has signed him in.
+    farqResume = state.view === "sending" || state.view === "review" ? "send" : null;
+    // A signed-in Farq answers in a second. Silence means the link failed; say so rather
+    // than leave a button that seems to do nothing. A late ticket still clears it.
+    setTimeout(() => {
+      if (!state.token && !farqLinkPending) {
+        state.notice = "ما قدرنا نربط حسابك في فرق. سجّل دخولك في فرق ثم جرّب مرة ثانية.";
+        render();
+      }
+    }, 20000);
     const back = RETURN_TO[state.view];
     if (back) {
       state.view = back;
@@ -959,6 +1044,8 @@ async function submitAuth(form) {
     loadSubStatus().catch(() => {});
     loadVerification().catch(() => {});
     refreshUnread();
+    // The one-time link: now that the Taseer password is proven, ask Farq for a fresh ticket.
+    if (farqLinkPending && isFarqEmbed()) askFarqToSignIn("account");
   } catch (error) {
     state.busy = false;
     const messages = { 401: "البريد أو كلمة المرور غير صحيحة", 409: "هذا البريد مسجّل من قبل، سجّل دخول", 422: "تأكد من البيانات" };
@@ -3797,7 +3884,7 @@ const VIEWS = {
   notifications: renderNotifications,
   "notify-settings": renderNotifySettings,
   subscribe: renderSubscribe,
-  auth: () => (isFarqEmbed() ? renderHome() : renderAuth()),
+  auth: () => (isFarqEmbed() && !farqLinkPending ? renderHome() : renderAuth()),
   seller: renderSeller,
   legal: renderLegal,
 };

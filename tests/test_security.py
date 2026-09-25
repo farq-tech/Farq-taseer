@@ -218,3 +218,15 @@ def test_the_embed_contract_farq_listens_for_does_not_drift():
     assert 'type: "farq-auth-required"' in app_js
     # Nothing may push the customer out of Farq's frame into a browser tab.
     assert "window.top.location" not in app_js
+
+
+def test_the_ticket_farq_sends_back_is_taken_only_from_farq():
+    """Farq answers farq-auth-required with this message; its shape and the origin allowlist
+    are the other half of the contract (Farq: Frontend/src/lib/taseerOrigin.ts)."""
+    app_js = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text(encoding="utf-8")
+    assert 'data.source !== "farq"' in app_js
+    assert 'data.type !== "farq-sso-ticket"' in app_js
+    assert "event.source !== window.parent" in app_js
+    start = app_js.index("const FARQ_PARENT_ORIGINS")
+    allowlist = app_js[start:app_js.index("]);", start)]
+    assert "*" not in allowlist and "vercel.app" not in allowlist
