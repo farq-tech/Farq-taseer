@@ -216,5 +216,12 @@ def test_the_embed_contract_farq_listens_for_does_not_drift():
     app_js = (Path(__file__).resolve().parents[1] / "web" / "app.js").read_text(encoding="utf-8")
     assert 'source: "taseer"' in app_js
     assert 'type: "farq-auth-required"' in app_js
+    # One account: the frame asks Farq for the session and accepts it only from Farq's origins.
+    assert 'type: "farq-session-request"' in app_js
+    assert 'data.type === "farq-session"' in app_js
+    assert "FARQ_PARENT_ORIGINS.has(event.origin)" in app_js
+    assert 'FARQ_SESSION_COOKIE = "farq-auth.2"' in app_js
+    # A retry never creates a second request for the same suppliers.
+    assert '"Idempotency-Key": state.sendKey' in app_js
     # Nothing may push the customer out of Farq's frame into a browser tab.
     assert "window.top.location" not in app_js

@@ -130,6 +130,112 @@ function farqHandlesSignIn(reason) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// One account: the Farq account. Farq keeps its Supabase session in a cookie written for
+// `.farq.sa`, so every *.farq.sa host - this one included, framed or not - can read it. The
+// access token in it is handed to our own server, which asks Farq's Supabase whose it is and
+// answers with a Taseer session for that same person. Inside Farq's frame the parent also
+// posts the session over (the iOS app shares no cookie), and is asked for it at boot.
+// ---------------------------------------------------------------------------
+const FARQ_SITE = "https://www.farq.sa";
+const FARQ_SESSION_COOKIE = "farq-auth.2";
+const FARQ_PARENT_ORIGINS = new Set([
+  "https://farq.sa",
+  "https://www.farq.sa",
+  "capacitor://localhost",
+  "https://localhost",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]);
+
+/** Farq's Supabase access token from the shared cookie, or "". */
+function farqSessionToken() {
+  try {
+    const jar = new Map(document.cookie.split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
+      const at = part.indexOf("=");
+      return [part.slice(0, at), part.slice(at + 1)];
+    }));
+    const chunks = [];
+    for (let i = 0; i < 12; i += 1) {
+      const chunk = jar.get(`${FARQ_SESSION_COOKIE}.c${i}`);
+      if (chunk === undefined) break;
+      chunks.push(chunk);
+    }
+    if (!chunks.length) return "";
+    const session = JSON.parse(decodeURIComponent(chunks.join("")));
+    return typeof session?.access_token === "string" ? session.access_token : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function keepSession(token, account) {
+  state.token = token;
+  state.account = account;
+  try {
+    localStorage.setItem("farq.token", token);
+  } catch (_error) {}
+}
+
+let farqSignIn = null;
+/** Turns a Farq access token into a Taseer session. Resolves true when signed in. */
+function signInWithFarq(accessToken) {
+  if (!accessToken) return Promise.resolve(false);
+  if (farqSignIn) return farqSignIn;
+  farqSignIn = api("/v1/auth/farq", { method: "POST", json: { access_token: accessToken }, skipAuth: true, quiet: true })
+    .then((result) => {
+      keepSession(result.token, { name: result.name, email: result.email });
+      state.authError = "";
+      loadSubStatus().catch(() => {});
+      loadVerification().catch(() => {});
+      refreshUnread();
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      farqSignIn = null;
+    });
+  return farqSignIn;
+}
+
+/** After a sign-in that interrupted something, pick that thing up again. */
+function resumeAfterSignIn() {
+  const pending = state.pendingAuthAction;
+  state.pendingAuthAction = "";
+  if (pending === "send" && state.selected.size) {
+    sendRequest();
+    return;
+  }
+  if (state.returnRoute) {
+    const route = state.returnRoute;
+    state.returnRoute = "";
+    applyRoute(route, { pop: true });
+    return;
+  }
+  render();
+}
+
+function askFarqForSession() {
+  try {
+    window.parent.postMessage({ source: "taseer", type: "farq-session-request" }, "*");
+  } catch (_error) {}
+}
+
+window.addEventListener("message", (event) => {
+  if (!isFarqEmbed() || !FARQ_PARENT_ORIGINS.has(event.origin)) return;
+  const data = event.data;
+  if (!data || typeof data !== "object" || data.source !== "farq") return;
+  if (data.type === "farq-session" && typeof data.access_token === "string") {
+    if (state.token) return;
+    signInWithFarq(data.access_token).then((ok) => ok && resumeAfterSignIn());
+  } else if (data.type === "farq-signed-out") {
+    if (!state.token) return;
+    signOutLocally();
+    if (state.view === "requests" || state.view === "thread" || state.view === "compare" || state.view === "account") state.view = "home";
+    render();
+  }
+});
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
@@ -249,8 +355,8 @@ async function apiSend(path, options = {}) {
   }
 }
 
-async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false, signal, asSupplier = false } = {}) {
-  const headers = {};
+async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false, signal, asSupplier = false, headers: extra } = {}) {
+  const headers = { ...(extra || {}) };
   if (asSupplier) {
     if (state.supplierToken) headers.Authorization = `Bearer ${state.supplierToken}`;
   } else if (state.token && !skipAuth) headers.Authorization = `Bearer ${state.token}`;
@@ -300,6 +406,11 @@ const RETURN_TO = { sending: "review", detail: "flow" };
 const EMBED_REASON = { sending: "send", review: "send", thread: "message", subscribe: "subscribe", plans: "subscribe" };
 function requireSignIn(message = "") {
   if (isFarqEmbed()) {
+    // A Farq session may already be here (the shared cookie); use it before asking.
+    const farqToken = farqSessionToken();
+    if (farqToken && !farqSignIn) {
+      signInWithFarq(farqToken).then((ok) => ok && resumeAfterSignIn());
+    }
     // Farq owns the sign-in. Ask for it and put him back where he was, with his suppliers
     // still ticked, rather than stranding him on a spinner or on our own form.
     askFarqToSignIn(EMBED_REASON[state.view] || "account");
@@ -318,6 +429,8 @@ function requireSignIn(message = "") {
 
 async function ensureAuth() {
   if (state.token) return;
+  // The Farq account is the account: a farq.sa session on this device signs him in here.
+  if (await signInWithFarq(farqSessionToken())) return;
   requireSignIn();
   const error = new Error("sign-in required");
   error.auth = true;
@@ -861,9 +974,9 @@ function fqNav(active) {
     return `<button class="fq-tab${active === key ? " on" : ""}" type="button" data-action="${action}" aria-current="${active === key ? "page" : "false"}">
       <span class="fq-tab-wrap">${ic(glyph, 24)}${badge}</span><span>${label}</span></button>`;
   };
-  // طلباتي and حسابي are a Taseer account. Inside Farq there is none, so the row is the
-  // one tab that needs no session.
-  const tabs = isFarqEmbed()
+  // طلباتي and حسابي need a session. Inside Farq that session is the Farq account, which
+  // arrives on its own; until it has, the row is the one tab that needs none.
+  const tabs = isFarqEmbed() && !state.token
     ? tab("home", "home", "الرئيسية", "home")
     : `${tab("home", "home", "الرئيسية", "home")}
     ${tab("requests", "requests", "طلباتي", "file-text")}
@@ -892,8 +1005,15 @@ function shell(body) {
 // AUTH01_Login_AR — node 19:74.
 // AUTH01_Login_AR — node 19:74. The header is not mirrored: the wordmark sits left, the
 // language control right, the way the frame draws it.
+function farqSignInUrl() {
+  // Sign in on Farq, then come back to the same screen with the journey's draft still here.
+  const back = `${location.pathname}${location.search}`;
+  return `${FARQ_SITE}/taseer?signin=1&back=${encodeURIComponent(back)}`;
+}
+
 function renderAuth() {
   const register = state.authMode === "register";
+  if (!state.legacyAuth) return renderFarqAuth();
   const title = register ? "إنشاء حساب" : "تسجيل الدخول";
   const sub = register ? "حساب واحد لكل طلباتك في فرق" : "ادخل إلى حسابك في فرق";
   const lang = `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>`;
@@ -926,6 +1046,31 @@ function renderAuth() {
       <button class="fq-btn" type="submit" form="auth-form" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : title}</button>
       <p class="fq-small" style="text-align:center">${register ? "عندك حساب؟" : "ليس لديك حساب؟"}
         <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
+    </div>
+    <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a> و<a href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a></p>
+    <p class="fq-legal"><a href="/plans" data-action="show-plans">الباقات والأسعار</a></p>
+  </section>`;
+}
+
+// AUTH00 — one account for all of Farq. Taseer no longer opens its own door: the customer
+// signs in (or up) on farq.sa, and that session signs him in here. The old email-and-password
+// form stays one tap away for an account made on taseer.farq.sa before this.
+function renderFarqAuth() {
+  const lang = `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>`;
+  return `<header class="fq-head is-auth">
+    <div class="fq-head-row auth">${lang}<span class="fq-wordmark">Farq</span></div>
+    <div class="fq-head-accent"></div>
+  </header>
+  <section class="fq-body" style="padding:24px 24px 32px">
+    <div class="fq-hero soft">
+      <span class="halo" aria-hidden="true"></span>
+      <h1 class="fq-h1" style="font-size:28px;font-weight:700">حسابك في فرق يكفي</h1>
+      <p class="fq-lead">تسعير جزء من فرق: نفس الحساب، نفس الدخول. سجّل دخولك مرة وحدة وترجع لنفس المكان.</p>
+    </div>
+    ${state.authError ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.authError)}</p>` : ""}
+    <div class="fq-actions" style="gap:16px;align-items:center">
+      <a class="fq-btn" href="${esc(farqSignInUrl())}" data-action="farq-sign-in" ${state.busy ? 'aria-disabled="true"' : ""}>${state.busy ? "لحظة…" : "تسجيل الدخول بحساب فرق"}</a>
+      <button class="fq-link" type="button" data-action="legacy-auth" style="text-decoration:underline;font-size:14px">عندك حساب تسعير قديم بكلمة مرور؟</button>
     </div>
     <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a> و<a href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a></p>
     <p class="fq-legal"><a href="/plans" data-action="show-plans">الباقات والأسعار</a></p>
@@ -2933,6 +3078,7 @@ function draftSnapshot(withResults = true) {
     needFilter: state.needFilter,
     note: state.note,
     reviewExtra: state.reviewExtra === true,
+    sendKey: state.sendKey || "",
   };
 }
 
@@ -2984,6 +3130,7 @@ function restoreDraft() {
   state.needFilter = draft.needFilter || "";
   state.note = draft.note || "";
   state.reviewExtra = Boolean(draft.reviewExtra);
+  state.sendKey = typeof draft.sendKey === "string" ? draft.sendKey : "";
   state.partial = false;
   state.searching = false;
   state.seenCards = new Set(state.results.map(resultKey));
@@ -3008,6 +3155,7 @@ function clearDraft() {
   state.needFilter = "";
   state.selected.clear();
   state.reviewExtra = false;
+  state.sendKey = "";
 }
 
 // ---------------------------------------------------------------------------
@@ -4179,6 +4327,9 @@ async function sendRequest() {
   state.sendingTo = state.selected.size;
   state.view = "sending";
   render();
+  // One key per attempt at this request: a retry after a dropped answer replays the same
+  // request on the server instead of creating a second one for the same suppliers.
+  if (!state.sendKey) state.sendKey = (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   try {
     await ensureAuth();
     const attributes = {};
@@ -4192,6 +4343,7 @@ async function sendRequest() {
     const need = active.length === 1 ? needText(active[0]) : active.length ? active.map(needLabel).join(" + ") : state.intent?.need || null;
     const created = await api("/v1/requests", {
       method: "POST",
+      headers: { "Idempotency-Key": state.sendKey },
       json: {
         // the words the customer typed, never the search phrase built from them
         original_text: state.originalText || state.query,
@@ -4222,6 +4374,7 @@ async function sendRequest() {
       await api(`/v1/requests/${created.id}/attachments`, { method: "POST", form }).catch(() => {});
     }
     state.sentInfo = { sellers: created.recipients?.length || state.sendingTo, need: created.need || state.originalText || state.query, id: created.id };
+    state.sendKey = "";
     state.busy = false;
     state.files = [];
     state.note = "";
@@ -4248,9 +4401,11 @@ async function sendRequest() {
   } catch (error) {
     state.busy = false;
     if (error?.auth) {
-      // the sign-in screen is up; it returns to the review with the same suppliers ticked
+      // the sign-in screen is up; it returns to the review with the same suppliers ticked,
+      // and the send itself resumes once the session arrives
       state.notice = "";
       state.returnView = "review";
+      state.pendingAuthAction = "send";
       saveDraft();
       render();
       return;
@@ -5146,6 +5301,26 @@ document.addEventListener("click", (event) => {
       next.focus();
       next.setSelectionRange(keep.length, keep.length);
     }
+  } else if (action === "legacy-auth") {
+    state.legacyAuth = true;
+    state.authMode = "login";
+    render();
+  } else if (action === "farq-sign-in") {
+    // A Farq session may have appeared since this screen was drawn (another tab signed in).
+    const farqToken = farqSessionToken();
+    if (farqToken) {
+      event.preventDefault();
+      state.busy = true;
+      render();
+      signInWithFarq(farqToken).then((ok) => {
+        state.busy = false;
+        if (ok) resumeAfterSignIn();
+        else {
+          state.authError = "ما قدرنا نقرأ جلسة فرق، جرّب تسجيل الدخول مرة ثانية.";
+          render();
+        }
+      });
+    }
   } else if (action === "auth-mode") {
     state.authMode = state.authMode === "register" ? "login" : "register";
     state.authError = "";
@@ -5467,15 +5642,31 @@ const publicPage =
   /^\/(terms|privacy|refunds|plans|verify)\/?$/.test(bootPath) ||
   /^\/supplier(\/[^/]*)?\/?$/.test(bootPath) ||
   /^\/s\/[^/]+\/?$/.test(bootPath);
-if (publicPage) {
-  applyRoute(bootPath, { pop: true });
-} else if (!state.token) {
-  // Embedded, the home screen and its search are what he came for; the account screens are
-  // Farq's job. Standalone, the sign-in screen is still the front door.
+// Inside Farq's frame the address is always "/" (the frame is reloaded from its src), so the
+// screen a reload lands on comes from the journey's draft: a review with ticks, results, or
+// the items he was checking.
+function draftView() {
+  if (state.selected.size) return "review";
+  if (state.results.length || state.searchState) return "flow";
+  if (state.needs || state.intentError || state.intentProblem) return "understand";
+  return "home";
+}
+
+function bootSignedOut() {
+  // Embedded, the home screen and its search are what he came for; the account arrives from
+  // Farq. Standalone, the sign-in screen is still the front door - and that door is Farq's.
   state.returnRoute = openRequest ? `/r/${encodeURIComponent(openRequest)}` : bootPath;
-  state.view = isFarqEmbed() ? "home" : "auth";
+  if (isFarqEmbed()) {
+    state.view = draftView();
+    state.replaceUrl = true;
+    askFarqForSession();
+  } else {
+    state.view = "auth";
+  }
   render();
-} else {
+}
+
+function bootSignedIn() {
   api("/v1/auth/me", { quiet: true })
     .then((account) => {
       state.account = account;
@@ -5491,7 +5682,23 @@ if (publicPage) {
   }
   if (subscribeCallback) handleSubscribeCallback().catch(() => render());
   else if (openRequest) applyRoute(`/r/${encodeURIComponent(openRequest)}`, { pop: true });
-  else applyRoute(bootPath, { pop: true });
+  else if (isFarqEmbed() && bootPath === "/") {
+    state.view = draftView();
+    state.replaceUrl = true;
+    render();
+  } else applyRoute(bootPath, { pop: true });
+}
+
+if (publicPage) {
+  applyRoute(bootPath, { pop: true });
+} else if (state.token) {
+  bootSignedIn();
+} else {
+  const farqToken = farqSessionToken();
+  if (farqToken) {
+    // Signed in to Farq on this device: that is the account. No screen of our own first.
+    signInWithFarq(farqToken).then((ok) => (ok ? bootSignedIn() : bootSignedOut()));
+  } else bootSignedOut();
 }
 
 if ("serviceWorker" in navigator) {

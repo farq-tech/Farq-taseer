@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from farq import push, subscriptions
 from farq.cities import city_choices
 from farq.config import PaymentsConfig, SearchConfig
+from farq import farq_auth
 from farq.contracts import Offer, RequestRecipient, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
@@ -63,6 +64,11 @@ class RegisterBody(ApiModel):
 
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
 GUEST_DOMAIN = "@users.farq.local"
+
+
+class FarqSessionBody(ApiModel):
+    # The Farq (Supabase) access token the embed holds; see farq.farq_auth.
+    access_token: str
 
 
 class SupplierRegisterBody(ApiModel):
@@ -260,6 +266,7 @@ def create_app(
     chat: HarajChat | None = None,
     limits: Limits | None = None,
     expose_docs: bool | None = None,
+    farq_verifier=None,
 ) -> FastAPI:
     docs = _docs_enabled() if expose_docs is None else expose_docs
     app = FastAPI(
@@ -275,6 +282,9 @@ def create_app(
     payments = payments or PaymentsConfig()
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
+    # Verifies a Farq session with Supabase; tests hand in a fake.
+    verify_farq = farq_verifier or farq_auth.verify
+    farq_configured = (lambda: True) if farq_verifier else farq_auth.configured
     live_keys = subscriptions.is_live_key(payments.moyasar_secret_key, payments.moyasar_publishable_key)
     # Per-instance throttles (see farq.ratelimit): searches fan out to Haraj, registrations
     # are the one place an unknown caller can probe which emails exist.
@@ -418,6 +428,27 @@ def create_app(
         if authorization and authorization.startswith("Bearer "):
             store.logout(authorization.removeprefix("Bearer ").strip())
         return {"signed_out": True}
+
+    @app.post("/v1/auth/farq")
+    def farq_session(body: FarqSessionBody, request: Request) -> dict:
+        """Sign in with the Farq account the customer already holds on farq.sa.
+
+        The embed reads Farq's session and hands over its access token; Supabase confirms
+        whose it is; the matching Taseer account (created or linked on first visit) gets a
+        session. One login for one product - the reason the embed exists."""
+        if not farq_configured():
+            raise HTTPException(status_code=503, detail="Farq sign-in is not configured on this host")
+        if not register_limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
+        identity = verify_farq(body.access_token)
+        if identity is None:
+            raise HTTPException(status_code=401, detail="Farq session is not valid")
+        try:
+            token = store.login_farq(identity.user_id, identity.email, identity.name, identity.email_verified)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="this email belongs to another Taseer account") from exc
+        account = store.account_for_token(token) or {}
+        return {"token": token, "name": account.get("name"), "email": account.get("email", identity.email), "verification_required": False}
 
     # -- supplier accounts ----------------------------------------------------
     # A supplier who registers from an invite link is bound to the Haraj seller that link

@@ -710,6 +710,9 @@ class Store:
             """
         )
         self._ensure_column("users", "email_verified_at", "text")
+        self._ensure_column("users", "farq_user_id", "text")
+        self._connection.execute("create unique index if not exists users_farq_user_id_key on users (farq_user_id) where farq_user_id is not null")
+        self._connection.commit()
         self._connection.executescript(
             """
             create table if not exists email_verifications (
@@ -819,6 +822,40 @@ class Store:
         row = self._connection.execute("select * from users where email = ?", (email.lower().strip(),)).fetchone()
         if not password_matches(password, row):
             return None
+        token = secrets.token_urlsafe(32)
+        self._connection.execute(
+            "insert into sessions (token, user_id, created_at) values (?, ?, ?)",
+            (token_digest(token), row["id"], _now()),
+        )
+        self._connection.execute("delete from sessions where user_id = ? and created_at < ?", (row["id"], session_cutoff().isoformat()))
+        self._connection.commit()
+        return token
+
+    def login_farq(self, farq_user_id: str, email: str, name: str | None, email_verified: bool) -> str:
+        """See PgStore.login_farq."""
+        email = email.lower().strip()
+        row = self._connection.execute("select id, name, email_verified_at from users where farq_user_id = ?", (farq_user_id,)).fetchone()
+        if row is None:
+            same = self._connection.execute("select id, name, email_verified_at, farq_user_id from users where email = ?", (email,)).fetchone()
+            if same is not None:
+                if not email_verified or self._col(same, "farq_user_id"):
+                    raise ValueError("email belongs to another account")
+                self._connection.execute("update users set farq_user_id = ? where id = ?", (farq_user_id, same["id"]))
+                row = same
+            else:
+                user_id = uuid4().hex
+                salt = secrets.token_hex(16)
+                self._connection.execute(
+                    "insert into users (id, email, password_hash, salt, name, created_at, farq_user_id) values (?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, email, _hash_password(secrets.token_urlsafe(32), salt), salt, name, _now(), farq_user_id),
+                )
+                row = {"id": user_id, "name": name, "email_verified_at": None}
+        current_name = row["name"] if isinstance(row, dict) else self._col(row, "name")
+        verified_at = row["email_verified_at"] if isinstance(row, dict) else self._col(row, "email_verified_at")
+        if name and not current_name:
+            self._connection.execute("update users set name = ? where id = ?", (name, row["id"]))
+        if email_verified and not verified_at:
+            self._connection.execute("update users set email_verified_at = ? where id = ?", (_now(), row["id"]))
         token = secrets.token_urlsafe(32)
         self._connection.execute(
             "insert into sessions (token, user_id, created_at) values (?, ?, ?)",

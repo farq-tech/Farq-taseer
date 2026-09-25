@@ -107,6 +107,42 @@ class PgStore:
             conn.execute("delete from sessions where user_id = %s and created_at < %s", (row["id"], session_cutoff()))
         return token
 
+    def login_farq(self, farq_user_id: str, email: str, name: str | None, email_verified: bool) -> str:
+        """A session for the Farq account (see farq.farq_auth). The Taseer row is found by the
+        Farq user id, else - when Farq has confirmed the address - by the same email, which
+        ties an account made on taseer.farq.sa to its owner's Farq sign-in; else it is
+        created with a password nobody knows. Raises ValueError when the email belongs to
+        another account and Farq has not confirmed it."""
+        email = email.lower().strip()
+        with self._pool.connection() as conn:
+            row = conn.execute("select id, name, email_verified_at from users where farq_user_id = %s", (farq_user_id,)).fetchone()
+            if row is None:
+                same = conn.execute("select id, name, email_verified_at, farq_user_id from users where email = %s", (email,)).fetchone()
+                if same is not None:
+                    if not email_verified or same["farq_user_id"]:
+                        raise ValueError("email belongs to another account")
+                    conn.execute("update users set farq_user_id = %s where id = %s", (farq_user_id, same["id"]))
+                    row = same
+                else:
+                    user_id = uuid4().hex
+                    salt = secrets.token_hex(16)
+                    conn.execute(
+                        "insert into users (id, email, password_hash, salt, name, created_at, farq_user_id) values (%s, %s, %s, %s, %s, %s, %s)",
+                        (user_id, email, _hash_password(secrets.token_urlsafe(32), salt), salt, name, _now(), farq_user_id),
+                    )
+                    row = {"id": user_id, "name": name, "email_verified_at": None}
+            if name and not row.get("name"):
+                conn.execute("update users set name = %s where id = %s", (name, row["id"]))
+            if email_verified and not row.get("email_verified_at"):
+                conn.execute("update users set email_verified_at = now() where id = %s", (row["id"],))
+            token = secrets.token_urlsafe(32)
+            conn.execute(
+                "insert into sessions (token, user_id, created_at) values (%s, %s, %s)",
+                (token_digest(token), row["id"], _now()),
+            )
+            conn.execute("delete from sessions where user_id = %s and created_at < %s", (row["id"], session_cutoff()))
+        return token
+
     # -- email verification ----------------------------------------------------
 
     def start_email_verification(self, user_id: str, ttl_hours: int = 48) -> str:
