@@ -1436,7 +1436,9 @@ button.fq-card { cursor: pointer; }
 .fq-send { width: 40px; height: 40px; border-radius: 20px; border: 0; background: var(--fq-success); color: #fff; display: grid; place-items: center; flex: none; }
 .fq-send:disabled { background: var(--fq-line); color: var(--fq-muted); }
 .fq-send svg { width: 18px; height: 18px; }
-.fq-inputg { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; background: var(--fq-app-bg); border: 1px solid var(--fq-line); border-radius: 20px; padding: 6px 16px; }
+.fq-inputg { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; background: var(--fq-app-bg); border: 1px solid var(--fq-line); border-radius: 22px; padding: 4px 12px; }
+.fq-inputg textarea { min-width: 120px; }
+.fq-composer { padding-bottom: calc(12px + var(--safe-bottom, 0px)); }
 .fq-inputg textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; font: inherit; font-size: 14px; color: var(--fq-text); max-height: 96px; padding: 8px 0; line-height: 1.5; }
 .fq-inputg textarea::placeholder { color: var(--fq-muted); }
 .fq-iconbtn { background: none; border: 0; padding: 0; display: grid; place-items: center; color: var(--fq-muted); flex: none; }

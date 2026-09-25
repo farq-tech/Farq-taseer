@@ -2396,13 +2396,11 @@ function renderThread() {
         <button class="fq-send" type="submit" aria-label="إرسال" ${nonePicked || state.sending ? "disabled" : ""}>${state.sending ? `<span class="fq-ring spin" style="width:18px;height:18px;--p:60%"></span>` : ic("send", 18)}</button>
         <div class="fq-inputg">
           <button class="fq-iconbtn" type="button" data-action="open-attach" aria-label="إرفاق">${ic("paperclip", 20)}</button>
-          ${one ? `<span class="fq-to-chip">${ic("lock", 10)}<bdi>${esc(sellerName(thread, one))}</bdi></span>` : ""}
           <textarea name="body" rows="1" placeholder="${esc(placeholder)}" ${nonePicked ? "disabled" : ""}></textarea>
           <button class="fq-iconbtn" type="button" data-action="emoji" aria-label="رموز">${ic("smile", 20)}</button>
         </div>
       </form>
     </div>
-    ${fqNav("requests")}
     ${state.pickerOpen ? recipientSheet(thread) : ""}
     ${state.attachOpen ? attachSheet() : ""}`;
 }
