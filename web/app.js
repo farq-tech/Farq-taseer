@@ -1070,7 +1070,7 @@ function renderFarqAuth() {
     </div>
     ${state.authError ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.authError)}</p>` : ""}
     <div class="fq-actions" style="gap:16px;align-items:center">
-      <a class="fq-btn" href="${esc(farqSignInUrl())}" data-action="farq-sign-in" ${state.busy ? 'aria-disabled="true"' : ""}>${state.busy ? "لحظة…" : "تسجيل الدخول بحساب فرق"}</a>
+      <a class="fq-btn" href="${esc(farqSignInUrl())}" data-action="farq-sign-in" style="text-decoration:none" ${state.busy ? 'aria-disabled="true"' : ""}>${state.busy ? "لحظة…" : "تسجيل الدخول بحساب فرق"}</a>
       <button class="fq-link" type="button" data-action="legacy-auth" style="text-decoration:underline;font-size:14px">عندك حساب تسعير قديم بكلمة مرور؟</button>
     </div>
     <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a> و<a href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a></p>
