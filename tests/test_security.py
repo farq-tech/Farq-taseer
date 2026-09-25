@@ -222,6 +222,6 @@ def test_the_embed_contract_farq_listens_for_does_not_drift():
     assert "FARQ_PARENT_ORIGINS.has(event.origin)" in app_js
     assert 'FARQ_SESSION_COOKIES = ["farq_local_auth_session_v1", "farq-auth.2"]' in app_js
     # A retry never creates a second request for the same suppliers.
-    assert '"Idempotency-Key": state.sendKey' in app_js
+    assert '"Idempotency-Key": `${state.sendKey}-${index}`' in app_js
     # Nothing may push the customer out of Farq's frame into a browser tab.
     assert "window.top.location" not in app_js

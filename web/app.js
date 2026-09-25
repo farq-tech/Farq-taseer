@@ -176,6 +176,18 @@ function farqSessionToken() {
   }
 }
 
+function clearFarqSession() {
+  try {
+    const domain = location.hostname.endsWith("farq.sa") ? "; Domain=.farq.sa" : "";
+    for (const key of FARQ_SESSION_COOKIES) {
+      for (let i = 0; i < 12; i += 1) {
+        document.cookie = `${key}.c${i}=; Path=/; Max-Age=0; SameSite=Lax${domain}`;
+        document.cookie = `${key}.c${i}=; Path=/; Max-Age=0; SameSite=Lax`;
+      }
+    }
+  } catch (_error) {}
+}
+
 function keepSession(token, account) {
   state.token = token;
   state.account = account;
@@ -674,9 +686,17 @@ function renderUnderstand() {
     return `${fqHead({ title: "فهم الطلب", back: "home" })}<section class="fq-body" aria-busy="true">${card.repeat(2)}</section>`;
   }
   const active = state.needs.filter((item) => item.on);
+  const cityRow = state.city && !state.cityPick
+    ? `<button class="fq-place" type="button" data-action="need-city-change" aria-label="تغيير المدينة">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city))}</span><span class="fq-link" style="margin-inline-start:8px">تغيير</span></button>`
+    : `<div class="fq-card pad" style="gap:10px" data-testid="need-city"><p style="margin:0;font-weight:700">في أي مدينة؟</p>
+        <div class="fq-pills" style="gap:10px">${state.cities.map((city) => {
+          const on = state.city && (state.city === city.value || state.city === city.label);
+          return `<button class="fq-chip${on ? " on" : ""}" type="button" data-action="need-city" data-city="${esc(city.value)}" aria-pressed="${Boolean(on)}">${esc(city.label)}</button>`;
+        }).join("")}</div></div>`;
   return `${fqHead({ title: "فهم الطلب", back: "home" })}
   <section class="fq-body">
     <div><h1 class="fq-h1">هذا اللي فهمناه</h1><p class="fq-lead">راجع طلبك وعدّل اللي تبي قبل نبدأ البحث.</p></div>
+    ${cityRow}
     ${state.needs
       .map((need, index) => `<article class="fq-card fq-needcard${need.on ? "" : " is-off"}">
         <div class="fq-row">
@@ -696,7 +716,7 @@ function renderUnderstand() {
       </article>`)
       .join("")}
     <button class="fq-addbtn" type="button" data-action="add-need" style="align-self:flex-start">${ic("plus", 14)}إضافة بند</button>
-    <div class="fq-sticky"><button class="fq-btn" type="button" data-action="run-search" ${active.length ? "" : "disabled"}>ابحث عن الخيارات</button></div>
+    <div class="fq-sticky"><button class="fq-btn" type="button" data-action="run-search" ${active.length && state.city ? "" : "disabled"}>${state.city ? "ابحث عن الخيارات" : "اختر المدينة أول"}</button></div>
   </section>
   ${state.editing != null ? editSheet(state.editing === state.needs.length ? blankNeed() : state.needs[state.editing], state.editing) : ""}`;
 }
@@ -1220,10 +1240,7 @@ function renderHome() {
         </button>`).join("")}</div>
     </div>
     <div class="fq-pills" style="gap:10px">${chips.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
-    <div style="margin-top:auto;display:flex;flex-direction:column;gap:16px">
-      <hr class="fq-line">
-      <button class="fq-btn breathe" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button>
-    </div>
+    <div class="fq-sticky"><button class="fq-btn breathe" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button></div>
   </section>
   ${fqNav("home")}`;
 }
@@ -1626,11 +1643,13 @@ function renderSent() {
   <section class="fq-body center">
     <div class="fq-blob land">${ic("check", 56)}</div>
     <div><h1 class="fq-h1">تم إرسال طلبك!</h1>
-      <p class="fq-lead">طلب التسعير في طريقه إلى ${esc(suppliers(info.sellers || 0))}. نبلغك أول ما يوصلك رد.</p></div>
+      <p class="fq-lead">${(info.needs || []).length > 1 ? `${formatCount(info.needs.length)} طلبات، كل بند بمحادثته، في طريقها إلى ${esc(suppliers(info.sellers || 0))}.` : `طلب التسعير في طريقه إلى ${esc(suppliers(info.sellers || 0))}.`} نبلغك أول ما يوصلك رد.</p></div>
     <div class="fq-card pad fq-facts" style="width:100%">
       <div class="fq-row"><span class="fq-meta">عدد الموردين</span><strong>${formatCount(info.sellers || 0)}</strong></div>
       <hr class="fq-line">
-      <div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong><bdi>${esc(info.need || state.originalText || state.query || "")}</bdi></strong></div>
+      ${(info.needs || []).length > 1
+        ? info.needs.map((row) => `<div class="fq-row"><span class="fq-meta"><bdi>${esc(row.need || "")}</bdi></span><strong>${esc(suppliers(row.sellers))}</strong></div>`).join('<hr class="fq-line">')
+        : `<div class="fq-row"><span class="fq-meta">المطلوب تسعيره</span><strong><bdi>${esc(info.need || state.originalText || state.query || "")}</bdi></strong></div>`}
       <hr class="fq-line">
       <div class="fq-row"><span class="fq-meta">الحالة</span><strong style="color:var(--fq-success)">بانتظار الإرسال والردود</strong></div>
     </div>
@@ -2392,7 +2411,7 @@ function renderAccount() {
     ${item("سياسة الخصوصية", "privacy")}
     ${item("الشروط والأحكام", "terms")}
     ${item("الإلغاء والاسترداد", "refunds")}
-    ${item("تسجيل الخروج", "sign-out", "", true)}
+    ${isFarqEmbed() ? "" : item("تسجيل الخروج", "sign-out", "", true)}
     <p style="text-align:center;margin:8px 0 0"><span class="fq-chip-version">الإصدار 1.0.0</span></p>
     ${operatorNote()}
   </section>
@@ -4388,47 +4407,63 @@ async function sendRequest() {
         break;
       }
     }
-    const need = active.length === 1 ? needText(active[0]) : active.length ? active.map(needLabel).join(" + ") : state.intent?.need || null;
-    const created = await api("/v1/requests", {
-      method: "POST",
-      headers: { "Idempotency-Key": state.sendKey },
-      json: {
-        // the words the customer typed, never the search phrase built from them
-        original_text: state.originalText || state.query,
-        need,
-        notes: requestNotes(active),
-        city,
-        attributes,
-        // The server only accepts sellers a search showed; a search run before signing in is named here.
-        trace_id: state.traceId || null,
-        recipients: [...state.selected.values()].map((result) => {
-          const seller = sellerOf(result);
-          const item = itemFor(result);
-          const recipient = { seller_id: seller.id, seller_name: seller.name || "مورد", ad_id: result.ad?.id || null };
-          if (item && active.length > 1) recipient.need = needText(item);
-          if (result.ad?.url) recipient.listing_url = result.ad.url;
-          return recipient;
-        }),
-      },
-    });
-    for (const item of state.files) {
-      const form = new FormData();
-      if (item.file.type === "application/pdf") form.append("file", item.file);
-      else {
-        const photo = await preparePhoto(item.file).catch(() => null);
-        if (!photo) continue;
-        form.append("file", photo.blob, photo.name);
+    // One request per item: each item gets its own conversation, its own offers and its own
+    // winner, and a supplier reads only the line that is his. A supplier picked from a card
+    // that carries no item label goes with the first item.
+    const picked = [...state.selected.values()];
+    const groups = active.length > 1
+      ? active.map((item) => ({ item, results: picked.filter((result) => itemFor(result) === item) })).filter((group) => group.results.length)
+      : [{ item: active[0] || null, results: picked }];
+    const orphans = active.length > 1 ? picked.filter((result) => !itemFor(result)) : [];
+    if (orphans.length) (groups[0] || groups.push({ item: active[0], results: [] }) && groups[0]).results.push(...orphans);
+    const created = [];
+    for (const [index, group] of groups.entries()) {
+      const record = await api("/v1/requests", {
+        method: "POST",
+        headers: { "Idempotency-Key": `${state.sendKey}-${index}` },
+        json: {
+          // the words the customer typed, never the search phrase built from them
+          original_text: state.originalText || state.query,
+          need: group.item ? needText(group.item) : state.intent?.need || null,
+          notes: requestNotes(group.item ? [group.item] : []),
+          city,
+          attributes,
+          // The server only accepts sellers a search showed; a search run before signing in is named here.
+          trace_id: state.traceId || null,
+          recipients: group.results.map((result) => {
+            const seller = sellerOf(result);
+            const recipient = { seller_id: seller.id, seller_name: seller.name || "مورد", ad_id: result.ad?.id || null };
+            if (result.ad?.url) recipient.listing_url = result.ad.url;
+            return recipient;
+          }),
+        },
+      });
+      created.push(record);
+      for (const item of state.files) {
+        const form = new FormData();
+        if (item.file.type === "application/pdf") form.append("file", item.file);
+        else {
+          const photo = await preparePhoto(item.file).catch(() => null);
+          if (!photo) continue;
+          form.append("file", photo.blob, photo.name);
+        }
+        await api(`/v1/requests/${record.id}/attachments`, { method: "POST", form }).catch(() => {});
       }
-      await api(`/v1/requests/${created.id}/attachments`, { method: "POST", form }).catch(() => {});
     }
-    state.sentInfo = { sellers: created.recipients?.length || state.sendingTo, need: created.need || state.originalText || state.query, id: created.id };
+    const first = created[0];
+    state.sentInfo = {
+      sellers: created.reduce((sum, record) => sum + (record.recipients?.length || 0), 0) || state.sendingTo,
+      need: created.length > 1 ? created.map((record) => record.need).filter(Boolean).join(" · ") : first.need || state.originalText || state.query,
+      needs: created.map((record) => ({ id: record.id, need: record.need, sellers: record.recipients?.length || 0 })),
+      id: first.id,
+    };
     state.sendKey = "";
     state.busy = false;
     state.files = [];
     state.note = "";
     state.notice = "";
     state.selected.clear();
-    threadCache.set(created.id, created);
+    for (const record of created) threadCache.set(record.id, record);
     state.thread = null;
     state.replyTo = null;
     // The journey is done: the draft goes, so neither Back nor a reload can bring it round again.
@@ -4492,13 +4527,10 @@ async function startPricing(text, { fresh = true } = {}) {
   state.composerHint = "";
   state.query = query;
   if (fresh || !state.originalText) state.originalText = query;
-  state.city = state.city || cityInText(query);
-  if (!state.city) {
-    state.view = "city-ask";
-    state.cityMode = "request";
-    render();
-    return;
-  }
+  // The city named in the sentence wins; else the one he used last time; else M02 asks for
+  // it in place, so the journey does not gain a screen of its own for one tap.
+  state.city = cityInText(query) || state.city || storedGet("farq.city") || "";
+  state.cityPick = false;
   state.view = "understand";
   state.needs = null;
   state.editing = null;
@@ -5276,6 +5308,17 @@ document.addEventListener("click", (event) => {
     go("city-ask");
   }
   else if (action === "run-search") searchFromNeeds();
+  else if (action === "need-city") {
+    const before = state.city;
+    state.city = target.dataset.city || "";
+    state.cityPick = false;
+    storedSet("farq.city", state.city);
+    for (const need of state.needs || []) if (!need.city || need.city === before) need.city = state.city;
+    render();
+  } else if (action === "need-city-change") {
+    state.cityPick = true;
+    render();
+  }
   else if (action === "back-understand") go(state.needs ? "understand" : "home");
   else if (action === "edit-need") {
     state.editing = Number(target.dataset.index);
@@ -5377,6 +5420,9 @@ document.addEventListener("click", (event) => {
   } else if (action === "sign-out") {
     api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     signOutLocally();
+    // One account, one sign-out: the Farq session on this device ends too, or the next
+    // visit would sign him straight back in from the shared cookie.
+    clearFarqSession();
     clearDraft();
     state.returnView = "home";
     state.authMode = "login";

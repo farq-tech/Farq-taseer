@@ -28,7 +28,8 @@ from farq.idempotency import IdempotencyMiddleware
 from farq.intent import analyze, analyze_needs, split_need_texts
 from farq.taxonomy import GROUPS, catalog as category_catalog, known_keys, read_business
 from farq import mailer, notify
-from farq.haraj_chat import HarajChat, NotConnectedChat, chat_from_env
+from farq import understand
+from farq.haraj_chat import HarajChat, NotConnectedChat, _Prefixed, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
@@ -291,6 +292,9 @@ def create_app(
     payments = payments or PaymentsConfig()
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
+    # The model's reading of a sentence is kept in the store, so M02 (/v1/intent) pays for
+    # it once and the search that follows finds it, on whichever instance it lands.
+    understand.use_cache(_Prefixed(store, "understand:"))
     # Verifies a Farq session with Supabase; tests hand in a fake.
     verify_farq = farq_verifier or farq_auth.verify
     farq_configured = (lambda: True) if farq_verifier else farq_auth.configured
@@ -642,7 +646,9 @@ def create_app(
     @app.post("/v1/intent")
     def intent_only(body: SearchBody, request: Request) -> dict:
         guard_search(request, body.query, intent_limiter)
-        intents = analyze_needs(body.query)
+        # The same reading the search will use, so «هذا اللي فهمناه» shows what will be
+        # searched for, and the search does not wait for the model a second time.
+        intents = understand.refine(body.query, analyze_needs(body.query))
         intent = intents[0] if intents else analyze(body.query)
         return {
             "intent": intent.model_dump(mode="json"),

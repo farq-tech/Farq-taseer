@@ -134,3 +134,45 @@ def test_a_different_split_is_left_to_the_rules(monkeypatch):
     intents = analyze_needs(query)
     assert len(intents) == 1
     assert understand.refine(query, intents) is intents
+
+
+def test_a_reading_is_shared_between_instances_through_the_store(monkeypatch):
+    """Two processes (M02 on one, the search on another) share the store, not memory."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    calls = []
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"content": [{"type": "text", "text": '{"needs": [{"need": "صدام كامري", "hiring": false, "must_include": [["صدام"], ["كامري"]], "search_terms": ["صدام كامري 2019"]}]}'}]}
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        return Response()
+
+    class Kv:
+        def __init__(self):
+            self.rows = {}
+
+        def get_value(self, key):
+            return self.rows.get(key)
+
+        def set_value(self, key, value):
+            self.rows[key] = value
+
+    kv = Kv()
+    monkeypatch.setattr(understand.httpx, "post", fake_post)
+    understand._cache.clear()
+    understand.use_cache(kv)
+    try:
+        first = understand.read_query("أبي صدام كامري 2019")
+        assert first and first[0]["need"] == "صدام كامري" and len(calls) == 1
+        assert len(kv.rows) == 1
+        # Another instance: empty memory, same store.
+        understand._cache.clear()
+        second = understand.read_query("ابي صدام كامري 2019")
+        assert second == first and len(calls) == 1
+    finally:
+        understand.use_cache(None)
+        understand._cache.clear()

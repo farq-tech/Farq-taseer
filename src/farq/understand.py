@@ -69,6 +69,46 @@ PROMPT = """أنت تقرأ طلب عميل سعودي يريد تسعيرة، �
 
 _cache: "OrderedDict[str, list[dict] | None]" = OrderedDict()
 _lock = threading.Lock()
+# A cache every instance shares (the store's key/value table). Serverless instances do not
+# share memory, so without it M02's reading and the search's reading were two model calls
+# a few seconds apart, and the second one was what the customer waited for.
+shared_cache = None
+
+
+def use_cache(cache) -> None:
+    global shared_cache
+    shared_cache = cache
+
+
+def _shared_key(folded: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(folded.encode()).hexdigest()[:40]
+
+
+def _shared_get(folded: str):
+    if shared_cache is None:
+        return False, None
+    try:
+        raw = shared_cache.get_value(_shared_key(folded))
+    except Exception:  # noqa: BLE001
+        return False, None
+    if not raw:
+        return False, None
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return False, None
+    return True, (value if isinstance(value, list) and value else None)
+
+
+def _shared_put(folded: str, read) -> None:
+    if shared_cache is None or not read:
+        return
+    try:
+        shared_cache.set_value(_shared_key(folded), json.dumps(read, ensure_ascii=False))
+    except Exception:  # noqa: BLE001
+        log.warning("understand cache write failed", exc_info=True)
 
 
 def _key() -> str:
@@ -164,6 +204,10 @@ def read_query(query: str) -> list[dict] | None:
     hit, value = _cached(folded)
     if hit:
         return value
+    hit, value = _shared_get(folded)
+    if hit:
+        _remember(folded, value)
+        return value
     try:
         response = httpx.post(
             ENDPOINT,
@@ -191,6 +235,7 @@ def read_query(query: str) -> list[dict] | None:
     read = _parse(body)
     # A refusal is not cached; a reading is, so the same query costs one call.
     _remember(folded, read)
+    _shared_put(folded, read)
     return read
 
 

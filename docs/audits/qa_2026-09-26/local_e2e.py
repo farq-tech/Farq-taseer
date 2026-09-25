@@ -29,15 +29,22 @@ with sync_playwright() as p:
     shot(page, "01_home_signed_in")
     page.fill("#composer-query", "أبي سباك يصلح تسريب وكهربائي يركب 3 أفياش")
     page.locator("button[form=composer]").scroll_into_view_if_needed(); page.locator("button[form=composer]").click()
-    page.wait_for_selector("button[data-action=search-city]"); page.locator("button[data-action=search-city]:has-text('الرياض')").first.click()
-    page.wait_for_selector(".fq-needcard"); note("B. understand cards:", page.locator(".fq-needcard").count())
+    page.wait_for_selector(".fq-needcard"); note("B. understand cards:", page.locator(".fq-needcard").count(), "| city asked inline:", page.locator("[data-testid=need-city]").count(), "| run-search text:", page.locator("button[data-action=run-search]").inner_text())
+    if page.locator("[data-action=need-city]").count(): page.locator("button[data-action=need-city]:has-text('الرياض')").first.click(); time.sleep(0.2)
+    note("   after city pick: run-search text:", page.locator("button[data-action=run-search]").inner_text(), "| disabled:", page.locator("button[data-action=run-search]").get_attribute("disabled"))
+    shot(page, "01b_understand_city")
     page.locator("button[data-action=run-search]").click()
     t = time.time(); page.wait_for_selector(".fq-result", timeout=60000); note("C. first result after", round(time.time()-t, 1), "s")
     for _ in range(150):
         if "البحث مستمر" not in page.locator(".fq-body").inner_text(): break
         time.sleep(0.3)
     n = page.locator(".fq-result").count(); note("   results:", n)
-    page.locator("button[data-action=toggle]").nth(0).click(); page.locator("button[data-action=toggle]").nth(1).click()
+    pills = page.locator(".fq-fpill"); note("   pills:", [pills.nth(i).inner_text() for i in range(pills.count())])
+    page.locator("button[data-action=toggle]").nth(0).click()
+    if pills.count() > 2:
+        pills.nth(2).click(); time.sleep(0.3); page.locator("button[data-action=toggle]").nth(0).click(); pills.nth(0).click(); time.sleep(0.3)
+    else: page.locator("button[data-action=toggle]").nth(1).click()
+    tags = page.locator(".fq-result.picked .fq-tag.deep"); note("   picked item tags:", [tags.nth(i).inner_text() for i in range(tags.count())])
     page.locator("button[data-action=review]").click(); page.wait_for_selector("button[data-action=send]")
     shot(page, "02_review")
     # double tap send
@@ -46,11 +53,13 @@ with sync_playwright() as p:
     except Exception: pass
     page.wait_for_function("document.body.innerText.includes('تم إرسال طلبك') || document.body.innerText.includes('ما قدرنا نرسل')", timeout=30000)
     shot(page, "03a_after_send")
-    note("D. sent screen reached; sellers line:", page.locator(".fq-facts").inner_text().replace("\n", " | "))
+    note("D. sent screen reached; facts:", page.locator(".fq-facts").inner_text().replace("\n", " | "), "| lead:", page.locator(".fq-lead").first.inner_text())
     shot(page, "03_sent")
     token = page.evaluate("localStorage.getItem('farq.token')")
     st, lst = api("/v1/requests", token=token); note("   requests on server after double tap:", len(lst.get("requests", [])))
-    rid = lst["requests"][0]["id"]
+    reqs = sorted(lst["requests"], key=lambda r: r.get("created_at", ""), reverse=True)[:2]
+    note("   newest requests:", [(r.get("need"), r.get("recipient_count") or len(r.get("recipients", []))) for r in reqs])
+    rid = reqs[0]["id"]
     # idempotency replay through the API
     body = {"original_text": "أبي نجار", "need": "نجار", "city": "الرياض", "recipients": [{"seller_id": "14371810", "seller_name": "نجار"}]}
     s1, r1 = api("/v1/requests", "POST", body, token, {"Idempotency-Key": "k-1"}); s2, r2 = api("/v1/requests", "POST", body, token, {"Idempotency-Key": "k-1"})
