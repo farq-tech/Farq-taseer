@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from farq.cities import find_cities
+from farq.cities import district_sides, find_cities, find_directions
 from farq.contracts import Ad, IntentResponse, Seller
 from farq.text import normalize, prefix_variants, to_ascii_digits, tokens
 
@@ -30,6 +30,13 @@ _LEFTOVERS = ("مخلفات", "بقايا")
 # whatever it mentions inside. Specific nouns only: «جهاز بلايستيشن» still leads with the device.
 _ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه",
                    "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره")
+# «S23», «A54», «PS5», «R18»: a letter or two glued to a number is a model code. A listing that
+# states the same letters with only other numbers («S26 Ultra», «اس 22», «S10») is another
+# model. Asked glued, as customers type it; read with a space and in Arabic («اس 23»).
+_MODEL_CODE_ASKED = re.compile(r"(?<![a-z0-9ء-ي])([a-z]{1,2})(\d{1,3})(?![0-9])")
+_MODEL_CODE_STATED = re.compile(r"(?<![a-z0-9ء-ي])(اس|[a-z]{1,2}) ?(\d{1,3})(?![0-9])")
+_CODE_LETTERS = {"اس": "s"}
+_SIDES = ("شمال", "جنوب", "شرق", "غرب")
 # A tyre size is three numbers: width, ratio, rim. «265/60 R18», «265 60 18», «18 60 265».
 _TYRE_SIZE = re.compile(r"(?<!\d)(\d{2,3})\s*[/ ]\s*(\d{2,3})\s*[/ ]?\s*r?\s*(\d{2})(?!\d)", re.IGNORECASE)
 # Appliances that a listing leads with when it sells the thing, not the service on it.
@@ -52,6 +59,14 @@ def _specs(text: str) -> dict[str, set[float]]:
 def _spec_agrees(wanted: set[float], stated: set[float]) -> bool:
     """A stated number within a tenth of a wanted one agrees: 5.5 answers 5, 150 does not."""
     return any(abs(have - want) <= max(0.1 * want, 0.01) for want in wanted for have in stated)
+
+
+def _model_codes(text: str, asked: bool) -> dict[str, set[int]]:
+    pattern = _MODEL_CODE_ASKED if asked else _MODEL_CODE_STATED
+    found: dict[str, set[int]] = {}
+    for letters, number in pattern.findall(normalize(text)):
+        found.setdefault(_CODE_LETTERS.get(letters, letters), set()).add(int(number))
+    return found
 
 
 def _tyre_sizes(text: str) -> set[tuple[str, ...]]:
@@ -163,6 +178,8 @@ _ELECTRIC_WORK = (
 )
 # A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
 _NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
+_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار")
+_CAR = ("سياره", "سيارات", "السيارات")
 _MAP_LISTING = ("جوجل", "قوقل", "google")
 _MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
 _SALE_WORDS = ("للبيع", "بيع", "البيع")
@@ -187,6 +204,10 @@ def _token_hits(token: str, needle: str) -> bool:
         if len(needle) >= 5 and form.endswith(needle) and len(form) - len(needle) <= 3:
             return True
         if form.startswith(needle) and len(form) > len(needle) and len(form) - len(needle) <= 6:
+            return True
+        # «بروشورات» asked, «بروشور» listed; «مناسبات» asked, «المناسبة» listed: the sound
+        # plural and its singular are one word.
+        if needle.endswith("ات") and len(needle) >= 6 and form in (needle[:-2], needle[:-2] + "ه"):
             return True
     return False
 
@@ -234,10 +255,16 @@ def has_word(text: str | None, words) -> str | None:
     return None
 
 
+_HASHTAG = re.compile(r"(?<!\w)#\S+")
+
+
 def evidence_text(ad: Ad | None, seller: Seller | None) -> str:
+    """The title and the body, minus the body's hashtags: «#ديكور» under a landscaper's
+    listing is a search-word tacked on, not a claim about the work."""
+
     parts: list[str] = []
     if ad is not None:
-        parts.extend([ad.title, ad.description or "", " ".join(ad.category_tags)])
+        parts.extend([ad.title, _HASHTAG.sub(" ", ad.description or ""), " ".join(ad.category_tags)])
     if seller is not None:
         parts.extend([seller.name, " ".join(seller.specialty_evidence)])
     return " ".join(part for part in parts if part)
@@ -286,6 +313,13 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
     if not normalize(text):
         return False, ["no_evidence_text"]
     title = ad.title if ad is not None else ""
+    if ad is not None and title and intent.location_district.known and intent.location_district.value in _SIDES:
+        # «أرض شمال الرياض»: a listing that says «شرق الرياض», or names «حي الروضة» on the
+        # east side, is on another side of the city. One that names no side is not judged.
+        asked = str(intent.location_district.value)
+        stated = find_directions(text) | district_sides(text)
+        if stated and asked not in stated:
+            return False, ["direction_mismatch"]
     if ad is not None and intent.year.known:
         stated = {int(year) for year in _YEAR.findall(text)}
         title_years = {int(year) for year in _YEAR.findall(title)}
@@ -325,6 +359,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
         first = tokens(title)[:1]
         if has_word(title, ("للبيع",)) or (first and first[0] in {"بيع", "للبيع"}):
             return False, ["for_sale_not_service"]
+        # «تأجير سيارات», «للتأجير السيارات ابو فهد»: a car-rental desk answers a request
+        # for a ride to the airport because its body says «توصيل» and «مطار». Renting a car
+        # is not someone doing the job, unless renting is what was asked.
+        if has_word(title, _RENTAL) and has_word(title, _CAR) and not has_word(intent.original_query, _RENTAL):
+            return False, ["car_rental_not_service"]
     if intent.result_unit.value == "hybrid" and title and intent.eligibility_groups and has_word(title, _SALE_WORDS):
         # "باب حديد مع درابزين للبيع", "زجاج ... للدرابزين البيع بالحبة": the
         # thing for sale is something else; the railing is a side mention.
@@ -361,6 +400,13 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             lead = " ".join(words[:6])
             if not _group_hit(lead, head) and not (seller is not None and _group_hit(seller.name, head)):
                 return False, ["head_not_in_title_lead"]
+            # «مكتب مع كرسي», «طاولة مكتب كمبيوتر مع كرسي قيمنق»: what comes before «مع» is
+            # for sale; what comes after it is thrown in.
+            if "مع" in words:
+                at = words.index("مع")
+                before, after = " ".join(words[:at]), " ".join(words[at + 1 :])
+                if before and not _group_hit(before, head) and _group_hit(after, head):
+                    return False, ["included_not_sold"]
     if ad is not None and title:
         wanted = _specs(intent.original_query)
         if wanted:
@@ -373,6 +419,12 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             listed = _tyre_sizes(title)
             if listed and not sizes & listed:
                 return False, ["tyre_size_mismatch"]
+        asked_codes = _model_codes(intent.original_query, asked=True)
+        if asked_codes:
+            stated_codes = _model_codes(title, asked=False)
+            for letters, numbers in asked_codes.items():
+                if letters in stated_codes and not numbers & stated_codes[letters]:
+                    return False, [f"model_mismatch:{letters}"]
         asked = normalize(intent.original_query)
         if "سنوي" in asked.split() and has_word(title, ("شهري", "يومي")) and not has_word(title, ("سنوي",)):
             return False, ["rent_term_mismatch"]
