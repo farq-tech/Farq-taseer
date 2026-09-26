@@ -968,6 +968,8 @@ const SOUNDS = {
   // name: [ [frequency, start, length], ... ], gain — the note count is the message:
   // one for a reply, two for a price, three falling for a price that beats them all.
   tap: [[[660, 0, 0.05]], 0.05],
+  // A message of his left: a quick rising pop, softer than anything arriving.
+  sent: [[[740, 0, 0.045], [1175, 0.035, 0.07]], 0.05],
   reply: [[[880, 0, 0.08]], 0.06],
   offer: [[[784, 0, 0.1], [1047, 0.09, 0.14]], 0.09],
   lower: [[[1047, 0, 0.09], [784, 0.08, 0.1], [659, 0.16, 0.16]], 0.09],
@@ -5014,6 +5016,8 @@ function warmSearch() {
 const threadCache = new Map();
 
 async function sendChatMessage(body) {
+  // Enter submits without a click, so the send itself is the gesture that unlocks audio.
+  sound.unlock();
   const thread = state.thread;
   const recipients = thread.recipients || [];
   const one = state.activeSeller || (recipients.length === 1 ? recipients[0].seller_id : "");
@@ -5048,6 +5052,8 @@ async function sendChatMessage(body) {
       }
     }
     await api(`/v1/requests/${thread.id}/messages`, { method: "POST", json });
+    // Sounds when the server has it, the way a chat ticks "sent" — never for a draft that fails.
+    cue("sent", 8);
     state.lastChatSendAt = Date.now();
     state.chatFiles.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
     state.chatFiles = [];
@@ -5063,6 +5069,7 @@ async function sendChatMessage(body) {
       threadCache.set(thread.id, state.thread);
     }
     state.notice = error.status === 413 ? "الملف أكبر من 4 ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : error.detail?.message || "ما انرسلت الرسالة، جرّب مرة ثانية";
+    cue("fail", 30);
     render();
   }
 }
