@@ -8,6 +8,7 @@ from uuid import uuid4
 import logging
 import math
 import os
+import threading
 import time
 import re
 from urllib.parse import quote
@@ -719,15 +720,37 @@ def create_app(
         _remember_sellers(trace_id, user_id, _response_results(response))
         return response
 
+    # Searches in flight on this instance, so a search that arrives while its warm-up is
+    # still running waits for it instead of asking Haraj a second time.
+    warming: dict[str, threading.Event] = {}
+    warming_lock = threading.Lock()
+
     def _warm_search(query: str) -> None:
-        if _cached_search(query) is not None:
-            return
+        key = _search_key(query)
+        with warming_lock:
+            if key in warming:
+                return
+            done = warming[key] = threading.Event()
         try:
-            response, _trace = run_search(query, corpus, live_client, config)
+            if _cached_search(query) is None:
+                response, _trace = run_search(query, corpus, live_client, config)
+                _keep_search(query, response)
         except Exception:  # noqa: BLE001 - warming is best effort
             log.warning("search warm failed", exc_info=True)
-            return
-        _keep_search(query, response)
+        finally:
+            with warming_lock:
+                warming.pop(key, None)
+            done.set()
+
+    def _cached_or_warming(query: str):
+        kept = _cached_search(query)
+        if kept is not None:
+            return kept
+        with warming_lock:
+            pending = warming.get(_search_key(query))
+        if pending is not None and pending.wait(25):
+            return _cached_search(query)
+        return None
 
     @app.post("/v1/search/warm")
     def search_warm(body: SearchBody, request: Request, background: BackgroundTasks) -> dict:
@@ -741,7 +764,7 @@ def create_app(
     def search(body: SearchBody, request: Request, authorization: str | None = Header(default=None)) -> dict:
         guard_search(request, body.query, search_limiter)
         user_id = _user_from_header(authorization)
-        kept = _cached_search(body.query)
+        kept = _cached_or_warming(body.query)
         if kept is not None:
             return _serve_cached(kept, body.query, user_id).model_dump(mode="json")
         response, trace = run_search(body.query, corpus, live_client, config)
@@ -756,7 +779,7 @@ def create_app(
         user_id = _user_from_header(authorization)
 
         def generate():
-            kept = _cached_search(body.query)
+            kept = _cached_or_warming(body.query)
             if kept is not None:
                 response = _serve_cached(kept, body.query, user_id)
                 yield json.dumps(_public_event({"type": "intent", "trace_id": response.trace_id, "intent": response.intent, "intents": [group.intent for group in response.groups] or None, "clarification_question": response.clarification_question}), ensure_ascii=False) + "\n"
