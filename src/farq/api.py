@@ -652,7 +652,7 @@ def create_app(
         # sentence is started here and kept in the shared store, so the search that follows a
         # few seconds later finds it ready instead of waiting for it. Measured on production:
         # reading on M02 itself put M02 at 2.3-3s for a first result only 0.5s sooner.
-        intents = analyze_needs(body.query)
+        intents = understand.refine_if_ready(body.query, analyze_needs(body.query))
         if understand.enabled():
             background.add_task(understand.read_query, body.query)
         intent = intents[0] if intents else analyze(body.query)

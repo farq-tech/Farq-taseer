@@ -176,3 +176,22 @@ def test_a_reading_is_shared_between_instances_through_the_store(monkeypatch):
     finally:
         understand.use_cache(None)
         understand._cache.clear()
+
+
+def test_m02_uses_a_reading_already_at_hand_but_never_waits_for_one(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        raise AssertionError("refine_if_ready must not call the model")
+
+    monkeypatch.setattr(understand.httpx, "post", fake_post)
+    understand._cache.clear()
+    intents = analyze_needs("أبي صدام كامري 2019")
+    same = understand.refine_if_ready("أبي صدام كامري 2019", intents)
+    assert same is intents and not calls
+    understand._remember(understand.normalize("أبي صدام كامري 2019"), [{"need": "صدام كامري أمامي", "hiring": False, "must_include": [["صدام"], ["كامري"]], "search_terms": ["صدام كامري 2019"]}])
+    read = understand.refine_if_ready("أبي صدام كامري 2019", analyze_needs("أبي صدام كامري 2019"))
+    assert read[0].need == "صدام كامري أمامي" and not calls
+    understand._cache.clear()

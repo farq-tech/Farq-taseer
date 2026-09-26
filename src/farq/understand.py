@@ -261,6 +261,27 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     return intent
 
 
+def refine_if_ready(query: str, intents: list[IntentResponse]) -> list[IntentResponse]:
+    """Apply the model's reading only when it is already at hand (memory or the shared
+    store) - never a model call. M02 uses it: a sentence read before shows its proper
+    names at once; a new one shows the rules and the reading warms up behind it."""
+    if not enabled():
+        return intents
+    folded = normalize(query)
+    hit, value = _cached(folded)
+    if not hit:
+        hit, value = _shared_get(folded)
+        if hit:
+            _remember(folded, value)
+    if not hit or not value:
+        return intents
+    if len(value) == len(intents):
+        return [_apply(intent, item) for intent, item in zip(intents, value)]
+    if len(value) == 1 and len(intents) == 1:
+        return [_apply(intents[0], value[0])]
+    return intents
+
+
 def refine(query: str, intents: list[IntentResponse]) -> list[IntentResponse]:
     """Replace what the model read better, keep everything else the rules found."""
     read = read_query(query)
