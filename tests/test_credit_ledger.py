@@ -26,6 +26,14 @@ from farq.limits import Limits
 from farq.store import Store
 
 
+def _envelope(ok: bool, data: dict) -> dict:
+    """The exact envelope api.farq.sa sends: fields ride in `data`, top level is chrome."""
+    body = {"ok": ok, "data": data, "partialResults": False, "message": "OK" if ok else data.get("code", "ERROR"), "meta": {"requestId": "t", "version": "test"}}
+    if not ok:
+        body["errors"] = [{"code": data.get("code"), "message": data.get("code")}]
+    return body
+
+
 class CentralLedger:
     """In-memory twin of Farq's billing S2S contract, served over httpx.MockTransport."""
 
@@ -51,29 +59,29 @@ class CentralLedger:
                 return httpx.Response(500)
             user, key, amount = body["user_id"], body["idempotency_key"], body["amount"]
             if user not in self.balances:
-                return httpx.Response(404, json={"code": "UNKNOWN_USER"})
+                return httpx.Response(404, json=_envelope(False, {"code": "USER_NOT_FOUND"}))
             if key in self.consumes:
                 # Idempotent replay is a success, never a conflict.
-                return httpx.Response(200, json={"balance": self.balances[user], "replayed": True})
+                return httpx.Response(200, json=_envelope(True, {"balance": self.balances[user], "replayed": True}))
             if self.balances[user] < amount:
-                return httpx.Response(402, json={"code": "INSUFFICIENT_CREDITS", "balance": self.balances[user]})
+                return httpx.Response(402, json=_envelope(False, {"code": "INSUFFICIENT_CREDITS", "balance": self.balances[user]}))
             self.balances[user] -= amount
             self.consumes[key] = {"user_id": user, "amount": amount}
-            return httpx.Response(200, json={"balance": self.balances[user]})
+            return httpx.Response(200, json=_envelope(True, {"balance": self.balances[user]}))
         if path == "/api/billing/credits/reverse":
             body = json.loads(request.content)
             user, key, consume_key = body["user_id"], body["idempotency_key"], body["consume_key"]
             if consume_key not in self.consumes:
-                return httpx.Response(404, json={"code": "CONSUME_NOT_FOUND"})
+                return httpx.Response(404, json=_envelope(False, {"code": "CONSUME_NOT_FOUND"}))
             if key not in self.reversals:
                 self.reversals[key] = consume_key
                 self.balances[user] += self.consumes[consume_key]["amount"]
-            return httpx.Response(200, json={"balance": self.balances[user]})
+            return httpx.Response(200, json=_envelope(True, {"balance": self.balances[user]}))
         if path == "/api/billing/credits/balance":
             user = request.url.params.get("user_id")
             if user not in self.balances:
                 return httpx.Response(404)
-            return httpx.Response(200, json={"balance": self.balances[user]})
+            return httpx.Response(200, json=_envelope(True, {"balance": self.balances[user]}))
         return httpx.Response(404)
 
     def balance_reads(self) -> int:

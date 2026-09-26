@@ -129,8 +129,14 @@ class Billing:
 
     @staticmethod
     def _json(response: httpx.Response) -> dict:
+        """The response's machine payload. Farq's API wraps every answer in an
+        envelope {ok, data, errors, ...}; the fields this client reads (balance,
+        replayed, code) live in `data`, so unwrap it when it is there."""
         try:
-            data = response.json()
+            body = response.json()
         except ValueError:
             return {}
-        return data if isinstance(data, dict) else {}
+        if not isinstance(body, dict):
+            return {}
+        data = body.get("data")
+        return data if isinstance(data, dict) else body
