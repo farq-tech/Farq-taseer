@@ -1364,7 +1364,8 @@ function rememberGroups(groups) {
   if (!Array.isArray(groups) || !groups.length) return;
   const active = (state.needs || []).filter((item) => item.on);
   groups.forEach((group, index) => {
-    const label = active.length === groups.length ? needLabel(active[index]) : stripCity(group.need || "");
+    const at = Number.isInteger(group.need_index) ? group.need_index : index;
+    const label = active[at] && (Number.isInteger(group.need_index) || active.length === groups.length) ? needLabel(active[at]) : stripCity(group.need || "");
     for (const result of group.results || []) if (label && !state.resultNeeds.has(resultKey(result))) state.resultNeeds.set(resultKey(result), label);
   });
 }
@@ -4343,7 +4344,7 @@ async function runSearch(text, city = "") {
           // the i-th item, so the card carries the label the customer saw and picked - the
           // same label the send uses to tell each supplier which item is his.
           const active = (state.needs || []).filter((item) => item.on);
-          let at = state.streamNeeds.indexOf(event.need);
+          let at = Number.isInteger(event.need_index) ? event.need_index : state.streamNeeds.indexOf(event.need);
           if (at < 0) at = state.streamNeeds.push(event.need) - 1;
           const label = active.length === 1 ? needLabel(active[0]) : active[at] ? needLabel(active[at]) : event.need;
           for (const result of event.results) if (!state.resultNeeds.has(resultKey(result))) state.resultNeeds.set(resultKey(result), label);

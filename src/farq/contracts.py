@@ -142,6 +142,10 @@ class NeedGroup(ContractModel):
     intent: IntentResponse
     results: list[SearchResult] = Field(default_factory=list)
     state: SearchState = SearchState.RESULTS
+    # Which of the customer's items this group answers, in the order M02 listed them. Items
+    # are searched at the same time and finish in any order, so the position in the list
+    # no longer says which item a group belongs to.
+    need_index: int | None = None
 
 
 class SearchResponse(ContractModel):

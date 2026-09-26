@@ -239,6 +239,8 @@ def _public_event(event: dict) -> dict:
         }
         if event.get("need"):
             payload["need"] = event["need"]
+        if event.get("need_index") is not None:
+            payload["need_index"] = event["need_index"]
         if event.get("groups"):
             payload["groups"] = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in event["groups"]]
         return payload

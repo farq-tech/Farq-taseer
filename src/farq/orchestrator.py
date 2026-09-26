@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import queue
+import threading
 from datetime import datetime, timezone
 from typing import Iterator
 from uuid import uuid4
@@ -326,31 +328,42 @@ def iter_search(
         yield finish(SearchState.CLARIFICATION_REQUIRED, [], first.clarification_question)
         return
 
+    # Every item is searched at the same time - two items took twice as long when they
+    # were searched one after the other (16s on production for «سباك وكهربائي»). Each
+    # item's events are tagged with its index, and the combined picture is rebuilt in M02
+    # order whenever an item finishes.
+    done: dict[int, dict] = {}
     groups: list[NeedGroup] = []
     flat: list[SearchResult] = []
-    for need_intent in needs:
-        state = SearchState.NO_QUALIFIED_RESULTS
-        ordered: list[SearchResult] = []
-        for event in _search_need(need_intent, corpus, live_client, config, now, trace_id):
-            if event["type"] != "need_done":
-                yield event
-                continue
-            state, ordered, need_stages = event["state"], event["results"], event["stages"]
-            stages.extend(need_stages)
-        label = need_intent.need or need_intent.original_query
-        groups.append(NeedGroup(need=label, intent=need_intent, results=ordered, state=state))
-        seen = {(item.ad.id if item.ad else None, item.seller.id if item.seller else None) for item in flat}
-        for item in ordered:
-            key = (item.ad.id if item.ad else None, item.seller.id if item.seller else None)
-            if key in seen:
-                continue
-            seen.add(key)
-            flat.append(item)
+
+    def snapshot() -> None:
+        groups.clear()
+        flat.clear()
+        seen: set = set()
+        for index in sorted(done):
+            outcome = done[index]
+            need_intent = needs[index]
+            label = need_intent.need or need_intent.original_query
+            groups.append(NeedGroup(need=label, intent=need_intent, results=outcome["results"], state=outcome["state"], need_index=index))
+            for item in outcome["results"]:
+                key = (item.ad.id if item.ad else None, item.seller.id if item.seller else None)
+                if key in seen:
+                    continue
+                seen.add(key)
+                flat.append(item)
+
+    for index, event in _search_needs_together(needs, corpus, live_client, config, now, trace_id):
+        if event["type"] != "need_done":
+            yield {**event, "need_index": index}
+            continue
+        done[index] = event
+        stages.extend(event["stages"])
+        snapshot()
         yield {
             "type": "results",
             "state": SearchState.PARTIAL_RESULTS,
-            "results": flat,
-            "groups": groups,
+            "results": list(flat),
+            "groups": list(groups),
             "trace_id": trace_id,
             "partial": True,
         }
@@ -361,6 +374,36 @@ def iter_search(
     any_results = any(group.results for group in groups)
     state = SearchState.RESULTS if any_results else SearchState.NO_QUALIFIED_RESULTS
     yield finish(state, flat, groups=groups)
+
+
+def _search_needs_together(needs, corpus, live_client, config, now, trace_id):
+    """(index, event) for every item, as the events come, all items searched at once.
+    One item is searched inline; several run on threads and meet in one queue. A search
+    that raises answers for its item with INTERNAL_ERROR rather than taking the rest down."""
+    if len(needs) == 1:
+        for event in _search_need(needs[0], corpus, live_client, config, now, trace_id):
+            yield 0, event
+        return
+    box: queue.Queue = queue.Queue()
+
+    def worker(index: int, need_intent) -> None:
+        try:
+            for event in _search_need(need_intent, corpus, live_client, config, now, trace_id):
+                box.put((index, event))
+        except Exception as exc:  # noqa: BLE001 - one item's failure is that item's outcome
+            box.put((index, {"type": "need_done", "state": SearchState.INTERNAL_ERROR, "results": [], "stages": [{"stage": "error", "need": need_intent.need, "error": str(exc)[:200]}]}))
+        finally:
+            box.put((index, None))
+
+    for index, need_intent in enumerate(needs):
+        threading.Thread(target=worker, args=(index, need_intent), daemon=True).start()
+    open_items = len(needs)
+    while open_items:
+        index, event = box.get()
+        if event is None:
+            open_items -= 1
+            continue
+        yield index, event
 
 
 def run_search(
