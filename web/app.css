@@ -2310,6 +2310,19 @@ html.fq-embed .skip { display: none; }
   }
 }
 
+
+/* One typeface with farq.sa: the licensed ITF Huwiya files, served by farq.sa
+   (Access-Control-Allow-Origin: *, CSP font-src allows https://www.farq.sa).
+   The files carry the full Latin set, so Arabic, English and digits all match. */
+@font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Black.woff2") format("woff2"); font-weight: 900; font-style: normal; font-display: swap; }
+:root {
+  --fq-font: "ITF Huwiya", Cairo, "Noto Naskh Arabic", Tahoma, sans-serif;
+  --font-arabic: var(--fq-font);
+}
+
 .fq-entry.danger, .fq-entry.danger .go { color: var(--fq-danger); }
 
 /* Buttons: same radius family and elevation as Farq, no violet glow */
@@ -2363,6 +2376,9 @@ html.fq-embed .skip { display: none; }
 .fq-cmp-card .top > span:first-child { flex: none; }
 .fq-cmp-card .top > span:last-child { min-width: 0; flex-wrap: wrap-reverse; row-gap: 6px; }
 .fq-cmp-card .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The «أفضل قيمة» tab hangs from the top edge: keep a 4-digit price clear of it */
+.fq-cmp-card.best .top { margin-top: 18px; }
 
 /* Prices and counts: fixed-width digits */
 .amount, .fq-ring > span, .fq-btn .count { font-variant-numeric: tabular-nums; }
