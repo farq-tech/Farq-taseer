@@ -2348,3 +2348,8 @@ html.fq-embed .skip { display: none; }
   .wa-recipient:active, .tab:active, .tick:active { transform: none; }
   .fq-delta { animation: none; }
 }
+
+/* The count above the results is one line; the reminder beside it gives way first. */
+.fq-filters-row .fq-live { white-space: nowrap; flex: none; }
+.fq-filters-row > .fq-meta { flex: 1; min-width: 0; }
+.fq-chip.ghost { background: transparent; border: 1px dashed var(--fq-line); color: var(--fq-deep); }

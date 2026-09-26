@@ -711,10 +711,10 @@ function renderUnderstand() {
   const cityRow = state.city && !state.cityPick
     ? `<button class="fq-place" type="button" data-action="need-city-change" aria-label="تغيير المدينة">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city))}</span><span class="fq-link" style="margin-inline-start:8px">تغيير</span></button>`
     : `<div class="fq-card pad" style="gap:10px" data-testid="need-city"><p style="margin:0;font-weight:700">في أي مدينة؟</p>
-        <div class="fq-pills" style="gap:10px">${state.cities.map((city) => {
+        <div class="fq-pills" style="gap:10px">${(state.allCities ? state.cities : state.cities.slice(0, 6)).map((city) => {
           const on = state.city && (state.city === city.value || state.city === city.label);
           return `<button class="fq-chip${on ? " on" : ""}" type="button" data-action="need-city" data-city="${esc(city.value)}" aria-pressed="${Boolean(on)}">${esc(city.label)}</button>`;
-        }).join("")}</div></div>`;
+        }).join("")}${!state.allCities && state.cities.length > 6 ? `<button class="fq-chip ghost" type="button" data-action="more-cities">مدن أخرى ▾</button>` : ""}</div></div>`;
   return `${fqHead({ title: "فهم الطلب", back: "home" })}
   <section class="fq-body">
     <div><h1 class="fq-h1">هذا اللي فهمناه</h1><p class="fq-lead">راجع طلبك وعدّل اللي تبي قبل نبدأ البحث.</p></div>
@@ -5507,6 +5507,9 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "need-city-change") {
     state.cityPick = true;
+    render();
+  } else if (action === "more-cities") {
+    state.allCities = true;
     render();
   }
   else if (action === "back-understand") go(state.needs ? "understand" : "home");
