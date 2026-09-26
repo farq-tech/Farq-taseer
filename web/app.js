@@ -1960,6 +1960,7 @@ const TICK = {
 };
 
 function deliveryTick(message) {
+  if (message.pending) return TICK.queued;
   const deliveries = message.deliveries || [];
   if (!deliveries.length) return "";
   const sent = deliveries.filter((item) => item.status === "sent").length;
@@ -2450,15 +2451,13 @@ function renderAccount() {
       <span class="lead">${esc(label)}</span>
       ${badge ? `<span class="fq-tag deep">${esc(badge)}</span>` : ""}
       <span class="go">${ic("forward", 16)}</span></button>`;
-  const right = `<span style="display:flex;align-items:center;gap:10px"><span class="fq-head-mark">فرق</span>
-    <button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button></span>`;
+  const right = `<span style="display:flex;align-items:center;gap:10px"><span class="fq-head-mark">فرق</span></span>`;
   return `${fqHead({ title: "حسابي", start: right })}
   <div class="fq-profile-banner">
     <span class="pic">${initial(name)}</span>
     <span><b><bdi>${esc(name)}</bdi></b><span dir="ltr">${esc(contact)}</span></span>
   </div>
   <section class="fq-body tight fq-stagger unfold">
-    ${item("بياناتي", "profile")}
     ${item("اشتراكي", "subscribe", plan)}
     ${item("الإشعارات", "notifications")}
     ${item("إعدادات الإشعارات", "notify-settings")}
@@ -4790,7 +4789,16 @@ async function sendChatMessage(body) {
     if (!picked.length) return;
     json.seller_ids = picked;
   }
+  // The bubble appears the moment he sends, with a clock, the way a chat does; the server's
+  // answer replaces it (or, on failure, takes it back and says so).
+  const draft = { id: `tmp-${Date.now()}`, sender_role: "user", body, created_at: new Date().toISOString(), pending: true, seller_id: json.seller_id || null, scope: json.seller_id ? "single_seller" : json.seller_ids ? "some_sellers" : "all_sellers", need: json.need || null, reply_to: json.reply_to || null };
+  const optimistic = Boolean(body && !state.chatFiles.length);
+  if (optimistic && state.thread) {
+    state.thread = { ...state.thread, messages: [...(state.thread.messages || []), draft] };
+    threadCache.set(thread.id, state.thread);
+  }
   state.sending = true;
+  state.stickChat = true;
   render();
   try {
     if (state.chatFiles.length) {
@@ -4814,6 +4822,10 @@ async function sendChatMessage(body) {
     render();
   } catch (error) {
     state.sending = false;
+    if (optimistic && state.thread) {
+      state.thread = { ...state.thread, messages: (state.thread.messages || []).filter((item) => item.id !== draft.id) };
+      threadCache.set(thread.id, state.thread);
+    }
     state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : error.detail?.message || "ما انرسلت الرسالة، جرّب مرة ثانية";
     render();
   }
