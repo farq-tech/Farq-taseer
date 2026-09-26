@@ -4750,6 +4750,7 @@ async function startPricing(text, { fresh = true } = {}) {
     intent,
   }));
   render();
+  warmSearch();
 }
 
 // «سباك الرياض» reads «سباك» on a card that already says الرياض underneath.
@@ -4764,14 +4765,27 @@ function stripCity(text) {
   return value.replace(/\s+/g, " ").trim() || String(text || "").trim();
 }
 
+function searchTextFromNeeds() {
+  const active = (state.needs || []).filter((item) => item.on);
+  // Each item searches by its own description; the quantity and the date are for the supplier,
+  // not for the ad search, and would only narrow it wrongly.
+  return active.map((item) => item.desc || needLabel(item)).filter(Boolean).join(" و ") || state.originalText || state.query;
+}
+
 function searchFromNeeds() {
   const active = (state.needs || []).filter((item) => item.on);
   if (!active.length) return;
-  // Each item searches by its own description; the quantity and the date are for the supplier,
-  // not for the ad search, and would only narrow it wrongly.
-  const text = active.map((item) => item.desc || needLabel(item)).filter(Boolean).join(" و ");
   state.intent = active[0].intent || state.intent;
-  runSearch(text || state.originalText || state.query, state.city);
+  runSearch(searchTextFromNeeds(), state.city);
+}
+
+// M02 is a moment of reading; the search for what it shows starts on the server meanwhile,
+// so the tap on «ابحث عن الخيارات» usually finds the results ready.
+function warmSearch() {
+  const query = (searchTextFromNeeds() || "").trim();
+  if (!query || !state.city) return;
+  const asked = cityInText(query) ? query : `${query} ${cityLabel(state.city)}`;
+  api("/v1/search/warm", { method: "POST", json: { query: asked }, skipAuth: true, quiet: true }).catch(() => {});
 }
 
 // Screens switch at once: what we already have (or a placeholder) shows while the server answers.

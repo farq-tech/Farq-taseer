@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from uuid import uuid4
 import logging
 import math
 import os
@@ -22,13 +23,14 @@ from farq import push, subscriptions
 from farq.cities import city_choices
 from farq.config import PaymentsConfig, SearchConfig
 from farq import farq_auth
-from farq.contracts import Offer, RequestRecipient, SearchResult
+from farq.contracts import Offer, RequestRecipient, SearchResponse, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
 from farq.intent import analyze, analyze_needs, split_need_texts
 from farq.taxonomy import GROUPS, catalog as category_catalog, known_keys, read_business
 from farq import mailer, notify
 from farq import understand
+from farq.text import normalize
 from farq.haraj_chat import HarajChat, NotConnectedChat, _Prefixed, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
@@ -678,13 +680,74 @@ def create_app(
     def _response_results(response) -> list:
         return [*response.results, *(result for group in response.groups for result in group.results)]
 
+    # A finished search is kept for ten minutes, for everyone. The same sentence searched
+    # again (after an edit that changed nothing, a reload, a second customer) answers from
+    # the store in a moment instead of asking Haraj again; and M02 warms the search for the
+    # sentence it shows, so the tap on «ابحث» usually finds it ready.
+    SEARCH_CACHE_SECONDS = 600
+
+    def _search_key(query: str) -> str:
+        return "search:" + hashlib.sha256(normalize(query).encode()).hexdigest()[:40]
+
+    def _cached_search(query: str):
+        try:
+            raw = store.get_value(_search_key(query))
+            if not raw:
+                return None
+            kept = json.loads(raw)
+            if time.time() - float(kept.get("at", 0)) > SEARCH_CACHE_SECONDS:
+                return None
+            response = SearchResponse.model_validate(kept["response"])
+        except Exception:  # noqa: BLE001 - a bad cache row is a miss
+            return None
+        if response.state.value not in ("RESULTS", "NO_QUALIFIED_RESULTS", "LIVE_EMPTY", "LOCAL_EMPTY"):
+            return None
+        return response
+
+    def _keep_search(query: str, response) -> None:
+        if response.state.value not in ("RESULTS", "NO_QUALIFIED_RESULTS", "LIVE_EMPTY", "LOCAL_EMPTY"):
+            return
+        try:
+            store.set_value(_search_key(query), json.dumps({"at": time.time(), "response": response.model_dump(mode="json")}, ensure_ascii=False))
+        except Exception:  # noqa: BLE001
+            log.warning("search cache write failed", exc_info=True)
+
+    def _serve_cached(response, query: str, user_id: str | None):
+        trace_id = uuid4().hex
+        response = response.model_copy(update={"trace_id": trace_id})
+        store.record_journey(trace_id, user_id, query, response.state.value, [{"stage": "cache"}])
+        _remember_sellers(trace_id, user_id, _response_results(response))
+        return response
+
+    def _warm_search(query: str) -> None:
+        if _cached_search(query) is not None:
+            return
+        try:
+            response, _trace = run_search(query, corpus, live_client, config)
+        except Exception:  # noqa: BLE001 - warming is best effort
+            log.warning("search warm failed", exc_info=True)
+            return
+        _keep_search(query, response)
+
+    @app.post("/v1/search/warm")
+    def search_warm(body: SearchBody, request: Request, background: BackgroundTasks) -> dict:
+        guard_search(request, body.query, search_limiter)
+        hit = _cached_search(body.query) is not None
+        if not hit:
+            background.add_task(_warm_search, body.query)
+        return {"warming": not hit, "ready": hit}
+
     @app.post("/v1/search")
     def search(body: SearchBody, request: Request, authorization: str | None = Header(default=None)) -> dict:
         guard_search(request, body.query, search_limiter)
-        response, trace = run_search(body.query, corpus, live_client, config)
         user_id = _user_from_header(authorization)
+        kept = _cached_search(body.query)
+        if kept is not None:
+            return _serve_cached(kept, body.query, user_id).model_dump(mode="json")
+        response, trace = run_search(body.query, corpus, live_client, config)
         store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
         _remember_sellers(response.trace_id, user_id, _response_results(response))
+        _keep_search(body.query, response)
         return response.model_dump(mode="json")
 
     @app.post("/v1/search/stream")
@@ -693,6 +756,14 @@ def create_app(
         user_id = _user_from_header(authorization)
 
         def generate():
+            kept = _cached_search(body.query)
+            if kept is not None:
+                response = _serve_cached(kept, body.query, user_id)
+                yield json.dumps(_public_event({"type": "intent", "trace_id": response.trace_id, "intent": response.intent, "intents": [group.intent for group in response.groups] or None, "clarification_question": response.clarification_question}), ensure_ascii=False) + "\n"
+                payload = response.model_dump(mode="json")
+                payload["type"] = "done"
+                yield json.dumps(payload, ensure_ascii=False) + "\n"
+                return
             for event in iter_search(body.query, corpus, live_client, config):
                 if event["type"] == "results":
                     # The app lets customers pick from a batch before the search ends.
@@ -701,6 +772,7 @@ def create_app(
                     response = event["response"]
                     store.record_journey(response.trace_id, user_id, body.query, response.state.value, event["trace"])
                     _remember_sellers(response.trace_id, user_id, _response_results(response))
+                    _keep_search(body.query, response)
                 yield json.dumps(_public_event(event), ensure_ascii=False) + "\n"
 
         return StreamingResponse(generate(), media_type="application/x-ndjson")

@@ -248,7 +248,7 @@ def test_unique_reply_tokens_and_delivery_total(tmp_path: Path):
 
 
 def test_search_stream_reports_live_before_the_final_result(tmp_path: Path):
-    from farq.live_haraj import LiveBatch, QueryFetch, ad_from_item
+    from farq.live_haraj import LiveBatch, QueryFetch, LiveBatch, QueryFetch, ad_from_item
 
     ad = ad_from_item(
         {
@@ -688,3 +688,38 @@ def test_the_guest_record_does_not_lock_him_out_of_signing_up(tmp_path: Path):
     assert upgraded["id"] == guest["id"]
     assert upgraded["status"] == "active"
     assert store.login_supplier("hadad@example.com", "secret-pass") is not None
+
+
+def test_a_finished_search_is_served_from_the_store_for_ten_minutes(tmp_path: Path):
+    """The same sentence again answers from the cache: no second trip to Haraj, a fresh trace, the sellers remembered."""
+    calls = []
+
+    class CountingHaraj:
+        def search_iter(self, queries, city):
+            calls.append(list(queries))
+            yield QueryFetch(ads=[], pages=1, has_next=False)
+
+        def search(self, queries, city):
+            calls.append(list(queries))
+            return LiveBatch()
+
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), CountingHaraj(), SearchConfig(enable_live=True)))
+    first = api.post("/v1/search", json={"query": "أبي سباك بالرياض"})
+    assert first.status_code == 200
+    seen = len(calls)
+    assert seen >= 1
+    second = api.post("/v1/search", json={"query": "ابي سباك بالرياض"})
+    assert second.status_code == 200
+    assert len(calls) == seen, "the second search must not reach Haraj"
+    assert second.json()["trace_id"] != first.json()["trace_id"]
+    # streaming answers from the cache too, ending with «done»
+    lines = [json.loads(line) for line in api.post("/v1/search/stream", json={"query": "أبي سباك بالرياض"}).text.splitlines() if line.strip()]
+    assert lines[-1]["type"] == "done" and len(calls) == seen
+    # warming: a sentence not yet searched is searched in the background, then found ready
+    warmed = api.post("/v1/search/warm", json={"query": "أبي نجار بالرياض"})
+    assert warmed.status_code == 200 and warmed.json()["warming"] is True
+    assert api.post("/v1/search/warm", json={"query": "أبي نجار بالرياض"}).json()["ready"] is True
+    after = len(calls)
+    api.post("/v1/search", json={"query": "أبي نجار بالرياض"})
+    assert len(calls) == after
