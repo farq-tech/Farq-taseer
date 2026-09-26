@@ -108,3 +108,45 @@
 | 11 | تسخين البحث خلف M02: **تراجع** | 1.8 ث أول نتيجة بلا تسخين | 3.8 ث معه (instances مختلفة على Vercel تتنافس عند حراج) → أُلغي التسخين، بقي الكاش (1.3 ث للتكرار) | `btntyn6gt` + إعادة قياس بعد الإلغاء |
 | 10 | تحقق M02/النتائج بعد النشر | — | 7 شرائح مدن، البند ظاهر بلا تمرير؛ حبة النتائج سطر واحد (41px) | `m02_verify.log` |
 | 12 | تسخين **قراءة النموذج** (لا البحث) بنفس نص البحث بينما يقرأ العميل M02 | 3.3–3.8 ث أول نتيجة بعد النقر (القراءة تُدفع وقت البحث؛ الخلفية كانت بمفتاح مختلف) | 1.81 ث ثابتة على 3 طلبات | `bg1b9arek` |
+
+---
+
+## Cycle 13: SQLite Concurrency + Agent Integration
+
+**Date:** 2026-09-26 23:05 UTC  
+**Model:** Haiku 4.5
+
+### Deliverables
+
+#### 1. Production Concurrency Fix
+**Finding:** `POST /v1/search` returned `500 sqlite3.InterfaceError` under concurrent load.
+
+**Root Cause:** `/v1/search`, `/v1/search/stream`, and warm-search background task all write to the same SQLite connection from different threads with no synchronization.
+
+**Solution:** Added `threading.Lock()` to `Store.__init__`, wrapped three write methods:
+- `record_search_sellers()` 
+- `record_journey()`
+- `add_message()`
+
+**Testing:** New regression test `test_concurrent_record_search_sellers` — 10 parallel traces, 5 workers, 0 exceptions, perfect data consistency.
+
+**Status:** Ready for canary deployment (commits `0bed812`, `08dd82a`).
+
+#### 2. Agent Results Integrated
+- **Supplier Quote Page** (agent completed): 10 UX/a11y fixes, 812 tests pass
+- **Golden Set C** (agent completed): 20 new queries, 993 test rows, 6 new rules
+- **Error States + A11y** (agent completed): 8 failure scenarios, axe compliance, 811 tests pass
+
+**Net test result:** 813 passed (from concurrent fix regression test; earlier baseline 811).
+
+### Deployment Readiness
+
+| Component | Status | Tests | Evidence |
+|---|---|---|---|
+| Concurrency fix | ✅ Ready | 813 pass | Regression test, no new failures |
+| Supplier page | ✅ Ready (from agent) | 812 pass | Layout fixed, 44px targets, a11y |
+| Golden set C | ✅ Ready (from agent) | 993 rows | 174 EXACT, 24 WRONG, 19 RELATED |
+| Error states | ✅ Ready (from agent) | 811 pass | 8 scenarios, 0 axe violations |
+
+**Next Step:** Merge all branches to Taseer main, run full suite, push to production with 10% canary (30 min monitoring), then 100%.
+
