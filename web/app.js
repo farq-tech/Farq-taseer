@@ -5988,6 +5988,16 @@ document.addEventListener("click", (event) => {
     state.subView = "my-plan";
     loadSubscribe().catch(() => {});
   } else if (action === "show-plans") {
+    // Inside Farq one account has one set of plans (restaurants, grocery and Taseer):
+    // Farq shows its own page. Standalone, and at /plans for reviewers, ours stays.
+    if (isFarqEmbed()) {
+      try {
+        window.parent.postMessage({ source: "taseer", type: "farq-open-plans" }, "*");
+        return;
+      } catch (_error) {
+        /* no parent to ask: fall through to our own plans */
+      }
+    }
     state.subView = "plans";
     state.view = "subscribe";
     render();
