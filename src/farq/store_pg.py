@@ -612,6 +612,26 @@ class PgStore:
                 item["id"]: item["haraj_text"]
                 for item in conn.execute("select id, haraj_text from messages where request_id = %s and haraj_text is not null", (row["id"],))
             }
+            # His own current price with its delivery terms, so his page can say what the
+            # customer reads. Only his rows, and no `cheapest` mark: whether he undercut anyone
+            # stays private.
+            mine = [] if own is None else [
+                {
+                    "need": item["need"],
+                    "base_price": _num(item["base_price"]),
+                    "delivery_included": item["delivery_included"],
+                    "delivery_price": _num(item["delivery_price"]),
+                    "total_price": _num(item["total_price"]),
+                    "currency": item["currency"] or "SAR",
+                    "created_at": _iso(item["created_at"]),
+                }
+                for item in current_offer_rows(
+                    conn.execute(
+                        "select * from offers where request_id = %s and seller_id = %s order by created_at desc",
+                        (row["id"], own["seller_id"]),
+                    ).fetchall()
+                )
+            ]
         seller_id = own["seller_id"] if own is not None else None
         awarded_to_me = row["awarded_seller_id"] is not None and seller_id is not None and seller_key(row["awarded_seller_id"]) == seller_key(seller_id)
         # The invite promises the item and the city only: the customer's own words and notes stay with him.
@@ -624,6 +644,7 @@ class PgStore:
             "awarded_to_me": awarded_to_me,
             "contact": self.shared_contact(row["id"], seller_id) if awarded_to_me else None,
             "offers_open": row["awarded_seller_id"] in (None, seller_id),
+            "offers": mine,
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
             # Each seller sees their own thread, never another seller's messages or who else was asked.
@@ -1051,7 +1072,9 @@ class PgStore:
                 "insert into suppliers (id, name, email, phone, password_hash, salt, activity_type, description,"
                 " categories, capabilities, services, products, haraj_seller_id, status, created_at, updated_at)"
                 " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                " on conflict (haraj_seller_id) do nothing",
+                # The unique index is partial (where haraj_seller_id is not null); the
+                # conflict target has to say the same or Postgres finds no index to arbitrate.
+                " on conflict (haraj_seller_id) where haraj_seller_id is not null do nothing",
                 (supplier_id, (name or "").strip() or bound, None, None, None, None, "both", None,
                  Jsonb([]), Jsonb([]), Jsonb([]), Jsonb([]), bound, "guest", _now(), _now()),
             )

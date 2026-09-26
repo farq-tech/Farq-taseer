@@ -3143,6 +3143,30 @@ function applyRoute(path, { pop = false } = {}) {
 }
 
 // A reload or a closed tab writes the draft at once instead of waiting for the next pause.
+// iOS Safari does not shrink the layout when the keyboard rises, so a screen that is
+// exactly one viewport tall keeps its composer under the keys. On the supplier's page the
+// shell follows the visible part instead, and the chat stays pinned to its last message.
+function fitVisibleViewport() {
+  const vv = window.visualViewport;
+  const root = document.documentElement;
+  if (!vv || state.view !== "seller" || vv.scale !== 1 || window.innerHeight - vv.height < 120) {
+    root.style.removeProperty("--fq-vh");
+    return;
+  }
+  root.style.setProperty("--fq-vh", `${Math.round(vv.height)}px`);
+  window.scrollTo(0, 0);
+  const wall = document.getElementById("chat-wall");
+  if (wall) wall.scrollTop = wall.scrollHeight;
+}
+window.visualViewport?.addEventListener("resize", fitVisibleViewport);
+// Where the keyboard shrinks the layout itself (Android), the chat keeps its last message
+// in view instead of leaving the conversation scrolled to somewhere in the middle.
+window.addEventListener("resize", () => {
+  if (state.view !== "seller") return;
+  const wall = document.getElementById("chat-wall");
+  if (wall) wall.scrollTop = wall.scrollHeight;
+});
+
 window.addEventListener("pagehide", () => {
   if (state.view !== "seller" && state.view !== "legal") saveDraft();
 });
@@ -3393,22 +3417,70 @@ function supplierMessage(error, fallback) {
   return fallback;
 }
 
+// Digits the way a Saudi keyboard writes them: Arabic-Indic numerals, thousands separators
+// and stray spaces all read as one number.
+function numberText(value) {
+  return String(value || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[,،\s]/g, "");
+}
+
+// The supplier's price the way the customer will see it: base, delivery and the total the
+// server will compute (priced_offer adds delivery only when it is not included).
+function sellerTotalLine(amountText, included, deliveryText) {
+  const amount = amountText ? Number(amountText) : null;
+  if (amount == null || !Number.isFinite(amount) || amount <= 0) return "";
+  const delivery = !included && deliveryText ? Number(deliveryText) : 0;
+  if (!Number.isFinite(delivery) || delivery < 0) return "";
+  if (included) return `يشوف العميل: ${money(amount)} شامل التوصيل`;
+  if (delivery) return `يشوف العميل: ${money(amount)} + ${money(delivery)} توصيل = ${money(amount + delivery)}`;
+  return `يشوف العميل: ${money(amount)} — التوصيل غير شامل`;
+}
+
+// Keeps the price drawer honest while he types: the delivery field only exists when the
+// price does not include it, and the total line says what the customer will read. The
+// draft is kept in state so an error re-render does not empty the fields under him.
+function syncSellerForm(form) {
+  if (!form || form.id !== "seller-reply") return;
+  const data = new FormData(form);
+  const included = data.get("delivery_included") === "on";
+  const amount = numberText(data.get("offer_amount"));
+  const delivery = numberText(data.get("delivery_price"));
+  state.sellerDraft = { body: String(data.get("body") || ""), amount, included, delivery };
+  const wrap = form.querySelector("#seller-delivery-wrap");
+  if (wrap) wrap.hidden = included;
+  const total = form.querySelector("#seller-total");
+  if (total) {
+    const line = sellerTotalLine(amount, included, delivery);
+    total.textContent = line;
+    total.hidden = !line;
+  }
+}
+
 async function submitSellerReply(form) {
   if (state.sellerBusy) return;
   const data = new FormData(form);
   const body = String(data.get("body") || "").trim();
-  const amountText = String(data.get("offer_amount") || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[,،\s]/g, "");
-  const deliveryText = String(data.get("delivery_price") || "").replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[,،\s]/g, "");
+  const amountText = numberText(data.get("offer_amount"));
+  const deliveryText = numberText(data.get("delivery_price"));
   const amount = amountText ? Number(amountText) : null;
   const included = data.get("delivery_included") === "on";
   const deliveryPrice = !included && deliveryText ? Number(deliveryText) : null;
   state.sellerFormError = "";
-  if (amount != null && (!Number.isFinite(amount) || amount <= 0)) state.sellerFormError = "اكتب السعر بالأرقام، مثل 350.";
-  else if (deliveryPrice != null && (!Number.isFinite(deliveryPrice) || deliveryPrice < 0)) state.sellerFormError = "اكتب سعر التوصيل بالأرقام.";
-  else if (!body && amount == null) state.sellerFormError = "اكتب ردّك أو السعر قبل الإرسال.";
+  let focus = "";
+  if (amount != null && (!Number.isFinite(amount) || amount <= 0)) {
+    state.sellerFormError = "اكتب السعر بالأرقام فقط، مثل 350.";
+    focus = "seller-amount";
+  } else if (deliveryPrice != null && (!Number.isFinite(deliveryPrice) || deliveryPrice < 0)) {
+    state.sellerFormError = "اكتب سعر التوصيل بالأرقام فقط، مثل 50.";
+    focus = "seller-delivery";
+  } else if (!body && amount == null) {
+    state.sellerFormError = state.sellerPriceOpen ? "اكتب سعرك في الخانة فوق، أو اكتب رسالة للعميل." : "اكتب رسالة للعميل، أو اضغط «أضف سعرك».";
+    focus = state.sellerPriceOpen ? "seller-amount" : "seller-body";
+  }
   if (state.sellerFormError) {
+    state.sellerSent = false;
     state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
     render();
+    document.getElementById(focus)?.focus();
     return;
   }
   const json = { body };
@@ -3422,14 +3494,18 @@ async function submitSellerReply(form) {
   try {
     await api(`/v1/seller/${encodeURIComponent(state.sellerToken)}/messages`, { method: "POST", json, skipAuth: true });
     state.sellerBusy = false;
-    state.sellerSent = true;
+    state.sellerSent = amount != null ? "price" : "message";
     state.sellerDraft = null;
+    // The price went out; the drawer folds so the confirmation and the chat are what he sees.
+    if (amount != null) state.sellerPriceOpen = false;
+    state.stickChat = true;
     await openSellerPage(state.sellerToken);
   } catch (error) {
     state.sellerBusy = false;
+    state.sellerSent = false;
     state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
     const reason = typeof error?.detail === "string" ? error.detail : error?.detail?.message;
-    state.sellerFormError = error?.status === 404 ? "هذا الطلب ما عاد متاح." : error?.status === 409 || /award/i.test(reason || "") ? "اختار العميل عرضاً آخر لهذا الطلب." : error?.status === 422 ? "تأكد من البيانات وجرّب مرة ثانية." : "ما قدرنا نرسل ردّك. تأكد من الاتصال وجرّب مرة ثانية.";
+    state.sellerFormError = error?.status === 404 ? "هذا الطلب ما عاد متاح." : error?.status === 409 || /award/i.test(reason || "") ? "اختار العميل عرضاً آخر لهذا الطلب، فما عاد يستقبل أسعاراً." : error?.status === 422 ? "تأكد من السعر والرسالة وجرّب مرة ثانية." : "ما وصل ردّك. تأكد من الاتصال وجرّب مرة ثانية.";
     render();
   }
 }
@@ -3798,9 +3874,10 @@ function renderSeller() {
   const need = view?.need || view?.original_text || "";
   const priced = (view?.messages || []).filter((item) => item.sender_role === "seller" && messagePrice(item) != null);
   const mine = priced.length ? messagePrice(priced[priced.length - 1]) : null;
+  const closed = view?.offers_open === false;
   const head = fqHead({
     title: need || "عرض سعر",
-    sub: view ? [cityLabel(view.city), mine != null ? money(mine) : "لم تقدّم سعرًا بعد"].filter(Boolean).join(" · ") : "",
+    sub: view ? [cityLabel(view.city), closed ? "أُغلق الطلب" : mine != null ? `سعرك ${money(mine)}` : "بانتظار سعرك"].filter(Boolean).join(" · ") : "",
     mark: !fromList,
     back: fromList ? "supplier-home" : "",
     backStart: fromList,
@@ -3811,7 +3888,7 @@ function renderSeller() {
     return `${head}<section class="fq-body center" role="alert">
       <div class="fq-blob warn">${ic(missing ? "alert-triangle" : "info", 48)}</div>
       <div><h1 class="fq-h2">${missing ? "الرابط غير صالح أو انتهت صلاحيته" : "ما قدرنا نفتح الطلب"}</h1>
-        <p class="fq-lead">${missing ? "تأكد إنك فتحت الرابط كامل من رسالة فرق." : "تأكد من الاتصال وجرّب مرة ثانية."}</p></div>
+        <p class="fq-lead">${missing ? "افتح الرابط كاملاً من رسالة فرق في حراج، أو اطلب من العميل يرسله لك مرة ثانية." : "تأكد من الاتصال وجرّب مرة ثانية."}</p></div>
       ${missing ? "" : `<button class="fq-btn" type="button" data-action="seller-reload">حاول مرة ثانية</button>`}
     </section>`;
   }
@@ -3822,35 +3899,57 @@ function renderSeller() {
     </section>`;
   }
 
-  const closed = view.offers_open === false;
   const draft = state.sellerDraft || { body: "", amount: "", included: true, delivery: "" };
+  const open = Boolean(state.sellerPriceOpen);
   // The invite already reached him in Haraj; repeating it here is noise.
   const messages = (view.messages || [])
     .filter((item) => item.body || item.offer)
     .filter((item) => !(item.sender_role !== "seller" && /^\s*السلام عليكم عزيزي البائع/.test(item.body || "")));
-  const facts = [
-    ["المطلوب", need],
-    ["المدينة", view.city ? cityLabel(view.city) : ""],
-    ["التفاصيل", view.notes || ""],
-  ].filter(([, value]) => value);
+
+  // What he is asked for, in one glance: the item, the city, and any pictures the customer
+  // attached. The customer's own notes are not his to see (seller_view keeps them back).
+  const attachments = (view.attachments || []).length
+    ? `<div class="fq-brief-files">${view.attachments
+        .map((item) => `<a class="fq-link" href="/v1/seller/${encodeURIComponent(state.sellerToken)}/attachments/${encodeURIComponent(item.id)}" target="_blank" rel="noopener">${ic("paperclip", 14)} ${esc(item.filename || "مرفق")}</a>`)
+        .join("")}</div>`
+    : "";
+  const brief = `<div class="fq-offers-bar fq-brief">
+      <div class="mini"><span class="fq-meta">يطلب العميل</span><strong><bdi>${esc(need || "—")}</bdi></strong></div>
+      ${view.city ? `<div class="mini"><span class="fq-meta">المدينة</span><span class="fq-brief-city">${ic("map-pin", 14)}<bdi>${esc(cityLabel(view.city))}</bdi></span></div>` : ""}
+      ${attachments}
+    </div>`;
 
   const bubbles = messages
     .map((item) => {
       const me = item.sender_role === "seller";
       const price = messagePrice(item);
       const time = `<span class="fq-time">${esc(chatTime(item.created_at))}</span>`;
-      const body = esc(item.body || "").replace(/\n/g, "<br>");
+      // The server writes «الإجمالي: 450 ر.س» when a price goes out without words; the
+      // card already shows the number, so that line is not repeated under it.
+      const auto = me && price != null && /^الإجمالي:\s/.test(item.body || "");
+      const body = auto ? "" : esc(item.body || "").replace(/\n/g, "<br>");
       if (me) {
-        const offer = price != null
-          ? `<div class="fq-offer" style="color:var(--fq-success)">
-              <div class="head"><span></span><span class="amount">${esc(money(price))}</span></div>
+        // The message carries the amount only; the delivery terms live on his current offer
+        // row. A price that no longer matches it (an older, revised one) gets no caption
+        // rather than a guessed one.
+        const current = (view.offers || []).find((row) => Number(row.total_price) === Number(price));
+        const delivery = !current || current.delivery_included == null
+          ? ""
+          : current.delivery_included
+            ? "شامل التوصيل"
+            : current.delivery_price
+              ? `منها توصيل ${money(current.delivery_price)}`
+              : "غير شامل التوصيل";
+        const card = price != null
+          ? `<div class="fq-offer" style="color:var(--fq-deep)">
+              <div class="head"><span class="fq-offer-delivery">${delivery ? esc(delivery) : ""}</span><span class="amount">${esc(money(price))}</span></div>
               ${body ? `<p class="fq-offer-note">${body}</p>` : ""}
             </div>
-            <div class="fq-offer-foot">${time}<span style="color:var(--fq-success)">سعرك المقدَّم ⚡</span></div>`
+            <div class="fq-offer-foot fq-offer-mine">${time}<span>سعرك المقدَّم ⚡</span></div>`
           : "";
         return `<div class="fq-msg mine"><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
-          <span class="fq-who mineName">أنت (المورد)</span>
-          <div class="fq-mine-bub">${offer || `${body ? `<p>${body}</p>` : ""}${time}`}</div></div></div>`;
+          <span class="fq-who mineName">أنت</span>
+          <div class="fq-mine-bub">${card || `${body ? `<p>${body}</p>` : ""}${time}`}</div></div></div>`;
       }
       return `<div class="fq-msg">
         <span class="fq-av" style="background:var(--fq-light);color:var(--fq-deep)">ع</span>
@@ -3862,46 +3961,57 @@ function renderSeller() {
     })
     .join("");
 
+  // The first thing he reads answers «who is asking and what happens to my reply».
+  const intro = closed
+    ? `<div class="fq-sys">أُغلق هذا الطلب — اختار العميل عرضاً آخر</div>`
+    : `<div class="fq-sys">طلب تسعير من عميل عبر فرق — ردّك يوصله مباشرة</div>
+      ${bubbles ? "" : `<div class="fq-sys fq-sys-soft">اكتب سعرك تحت، أو اسأل العميل عن التفاصيل. العميل يقارن العروض ويختار، وإذا اختارك يكمل معك من هنا.</div>`}`;
+
+  const sent = state.sellerSent
+    ? `<div class="fq-target" role="status">${ic("check-circle", 14)}<span>${state.sellerSent === "price" ? "وصل سعرك للعميل. نبلغك هنا إذا ردّ أو اختارك." : "وصلت رسالتك للعميل."}</span></div>`
+    : "";
+
+  const priceFields = open
+    ? `<div class="fields">
+        <label class="fq-lbl" for="seller-amount">${mine != null ? "سعرك الجديد بالريال" : "سعرك بالريال"}</label>
+        <div class="fq-inp fq-inp-money"><input id="seller-amount" name="offer_amount" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="مثلاً 350" value="${esc(draft.amount)}" dir="ltr"><span class="fq-unit">ر.س</span></div>
+        <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>السعر شامل التوصيل</span></label>
+        <div class="fq-inp fq-inp-money" id="seller-delivery-wrap" ${draft.included ? "hidden" : ""}><input id="seller-delivery" name="delivery_price" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="سعر التوصيل، مثلاً 50" value="${esc(draft.delivery)}" dir="ltr"><span class="fq-unit">ر.س</span></div>
+        <p class="fq-meta fq-total" id="seller-total" ${sellerTotalLine(draft.amount, draft.included, draft.delivery) ? "" : "hidden"}>${esc(sellerTotalLine(draft.amount, draft.included, draft.delivery))}</p>
+        <button class="fq-btn r14" type="submit" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? `<span class="fq-arc" style="width:18px;height:18px"></span>` : `${ic("send", 16)} ${mine != null ? "إرسال السعر الجديد" : "إرسال السعر للعميل"}`}</button>
+      </div>`
+    : "";
+
   return `${head}
-    <div class="fq-offers-bar">
-      ${facts.map(([label, value]) => `<div class="mini"><span><bdi>${esc(value)}</bdi></span><span class="fq-meta">${esc(label)}</span></div>`).join("")}
-      ${(view.attachments || []).length
-        ? `<div style="display:flex;gap:10px;flex-wrap:wrap">${view.attachments
-            .map((item) => `<a class="fq-link" href="/v1/seller/${encodeURIComponent(state.sellerToken)}/attachments/${encodeURIComponent(item.id)}" target="_blank" rel="noopener">${ic("paperclip", 14)} ${esc(item.filename || "مرفق")}</a>`)
-            .join("")}</div>`
-        : ""}
-    </div>
+    ${brief}
     <section class="fq-chat" id="chat-wall">
-      <div class="fq-sys">طلب تسعير من عميل عبر فرق — ردّك يوصله مباشرة</div>
-      ${bubbles || `<div class="fq-sys">ابدأ بتقديم سعرك أو اسأل العميل عن التفاصيل.</div>`}
+      ${intro}
+      ${bubbles}
       ${view.awarded_to_me ? sellerAwarded(view) : ""}
     </section>
     ${closed
-      ? `<div class="fq-card pad grey" style="margin:16px" role="status">
-          <h2 class="fq-h2" style="font-size:17px">لم يتم اختيار عرضك لهذا الطلب</h2>
-          <p class="fq-lead">اختار العميل مورداً آخر. لا تقلق — بنرسل لك فرص تسعير جديدة ومناسبة لمجالك.</p>
-          ${state.supplierToken
-            ? `<button class="fq-btn ghost r14" type="button" data-action="supplier-home">شاهد الفرص المتاحة ←</button>`
-            : `<button class="fq-btn ghost r14" type="button" data-action="supplier-join">سجّل كمورد لتوصلك الطلبات مباشرة</button>`}
+      ? `<div class="fq-closed" role="status">
+          <div class="fq-card pad grey">
+            <h2 class="fq-h2" style="font-size:17px">لم يتم اختيار عرضك لهذا الطلب</h2>
+            <p class="fq-lead">اختار العميل مورداً آخر. لا تقلق — بنرسل لك فرص تسعير جديدة ومناسبة لمجالك.</p>
+            ${state.supplierToken
+              ? `<button class="fq-btn ghost r14" type="button" data-action="supplier-home">شاهد الفرص المتاحة ←</button>`
+              : `<button class="fq-btn ghost r14" type="button" data-action="supplier-join">سجّل كمورد لتوصلك الطلبات مباشرة</button>`}
+          </div>
         </div>`
       : `<form id="seller-reply" novalidate>
-          ${state.sellerFormError ? `<div class="fq-target" style="background:#fdeee9;color:#b3402a" role="alert">${esc(state.sellerFormError)}</div>` : ""}
-          ${state.sellerSent ? `<div class="fq-target" role="status">${ic("check-circle", 14)}<span>وصل ردّك للعميل. تقدر ترسل تحديث إذا تغيّر السعر.</span></div>` : ""}
-          <div class="fq-pricebar${state.sellerPriceOpen ? "" : " shut"}">
-            <button class="fq-pricetoggle" type="button" data-action="toggle-price">${ic("tag", 14)}<span>${mine != null ? "حدّث السعر" : "أضف سعرك"}</span></button>
-            ${state.sellerPriceOpen ? `<div class="fields">
-              <div class="fq-inp"><input name="offer_amount" inputmode="decimal" autocomplete="off" placeholder="السعر (ر.س)" value="${esc(draft.amount)}" dir="ltr" style="text-align:end"></div>
-              <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>شامل التوصيل</span></label>
-              <div class="fq-inp"><input name="delivery_price" inputmode="decimal" autocomplete="off" placeholder="سعر التوصيل (اختياري)" value="${esc(draft.delivery)}" dir="ltr" style="text-align:end"></div>
-            </div>` : ""}
+          ${state.sellerFormError ? `<div class="fq-target fq-target-err" role="alert">${ic("alert-triangle", 14)}<span>${esc(state.sellerFormError)}</span></div>` : sent}
+          <div class="fq-pricebar${open ? "" : " shut"}">
+            <button class="fq-pricetoggle" type="button" data-action="toggle-price" aria-expanded="${open}" aria-controls="seller-price-fields">${ic(open ? "chevron-down" : "tag", 14)}<span>${open ? "إخفاء خانة السعر" : mine != null ? "حدّث السعر" : "أضف سعرك"}</span></button>
+            <div id="seller-price-fields">${priceFields}</div>
           </div>
           <div class="fq-composer">
             <button class="fq-send" type="submit" aria-label="إرسال" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? `<span class="fq-arc" style="width:18px;height:18px"></span>` : ic("send", 18)}</button>
             <div class="fq-inputg">
-              <textarea name="body" rows="1" maxlength="1000" placeholder="اكتب للعميل… تفاصيل السعر أو سؤال">${esc(draft.body)}</textarea>
+              <textarea id="seller-body" name="body" rows="1" maxlength="1000" placeholder="${open ? "ملاحظة مع السعر (اختياري)" : "اكتب للعميل… سؤال أو تفصيل"}">${esc(draft.body)}</textarea>
             </div>
           </div>
-          <p class="fq-meta" style="text-align:center;padding:0 16px 12px">فرق ما يطلب منك أي دفع أو بيانات بنكية أو كلمة مرور على هذه الصفحة.</p>
+          <p class="fq-meta fq-safe">${ic("shield", 12)} فرق ما يطلب منك أي دفع أو بيانات بنكية أو كلمة مرور على هذه الصفحة.</p>
         </form>`}`;
 }
 
@@ -5293,6 +5403,10 @@ document.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.closest?.("#seller-reply")) {
+    syncSellerForm(event.target.closest("#seller-reply"));
+    return;
+  }
   if (event.target.id === "join-desc") {
     // Reading happens as he writes, so the categories and his own terms appear under the
     // box instead of after a submit that might drop them. The text lives in state because
@@ -5338,6 +5452,10 @@ function clearComposerHint() {
   document.querySelector("#composer [role=alert]")?.remove();
 }
 document.addEventListener("change", async (event) => {
+  if (event.target.name === "delivery_included") {
+    syncSellerForm(event.target.closest("#seller-reply"));
+    return;
+  }
   if (event.target.dataset.action === "chat-files") {
     const files = [...(event.target.files || [])];
     event.target.value = "";
@@ -5439,6 +5557,7 @@ document.addEventListener("click", (event) => {
     }
   } else if (action === "toggle-price") {
     state.sellerPriceOpen = !state.sellerPriceOpen;
+    syncSellerForm(document.getElementById("seller-reply"));
     render();
   } else if (action === "seller-reload") openSellerPage(state.sellerToken);
   else if (action === "edit-request") {
