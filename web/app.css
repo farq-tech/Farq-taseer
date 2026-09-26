@@ -2229,3 +2229,122 @@ html.fq-embed .skip { display: none; }
 .fq-embar-title { font-size: 16px; font-weight: 800; color: var(--fq-deep); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fq-embar-sub { font-size: 12px; color: var(--fq-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fq-embar-end { display: flex; align-items: center; gap: 6px; }
+
+/* =====================================================================
+   FARQ Design Language 2026 — Taseer alignment
+   Taseer keeps its sector colour (violet soft/light/base/deep). Everything
+   else — ink, radius, elevation, motion, press feedback, the difference
+   indicator and winner marks — comes from the one Farq system shared with
+   restaurants and grocery (farq.sa Frontend/src/styles/farq-dl-2026.css).
+   This block is last on purpose: it overrides without rewriting the Figma
+   token block above.
+   ===================================================================== */
+:root {
+  /* Farq green-ink text family (was #16312e / #667b77 / #90a19d) */
+  --fq-text: #0e2622;
+  --fq-text-2: #4a5f5a;
+  --fq-muted: #829691;
+
+  /* Farq radius ladder: 8 · 12 · 16 · 24 */
+  --fq-r-small: 8px;
+  --fq-r-input: 12px;
+  --fq-r-card: 16px;
+  --fq-r-sheet: 24px;
+
+  /* Farq elevation: brand-tinted, soft — the same light source on every sector */
+  --fq-shadow-card: 0 1px 2px rgba(4, 52, 52, 0.04);
+  --fq-shadow-form: 0 1px 2px rgba(4, 52, 52, 0.04), 0 6px 16px -6px rgba(4, 52, 52, 0.1);
+  --fq-shadow-sheet: 0 -1px 0 rgba(4, 52, 52, 0.03), 0 18px 40px -12px rgba(4, 52, 52, 0.22);
+
+  /* Farq semantic feedback */
+  --fq-danger: #dc6e41;
+  --fq-danger-bg: #fef2f2;
+  --fq-danger-soft: #fef2f2;
+
+  /* The difference is the hero: one colour pair for every «أوفر/أقل/فرق» */
+  --farq-diff-fg: #0f8a4d;
+  --farq-diff-bg: #e6fbef;
+  --farq-diff-line: #b8eccf;
+  --farq-success: #0f8a4d;
+
+  /* Farq motion — sampled damped springs, shared with farq.sa */
+  --farq-press-scale: 0.98;
+  --farq-spring-snappy-duration: 330ms;
+  --farq-spring-standard-duration: 440ms;
+  --farq-spring-snappy: cubic-bezier(0.2, 1.05, 0.3, 1);
+  --farq-spring-standard: cubic-bezier(0.2, 1.02, 0.32, 1);
+  --fq-spring: var(--farq-spring-standard);
+  --fq-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --farq-spring-standard: linear(0, 0.067, 0.211, 0.37, 0.531, 0.663, 0.775, 0.856, 0.917, 0.958, 0.984, 1, 1.008, 1.012, 1.012, 1.009, 1.005, 1.003, 1.001, 1);
+    --farq-spring-snappy: linear(0, 0.07, 0.211, 0.376, 0.536, 0.676, 0.789, 0.875, 0.937, 0.978, 1.003, 1.017, 1.023, 1.021, 1.013, 1.007, 1.002, 1);
+  }
+}
+
+.fq-entry.danger, .fq-entry.danger .go { color: var(--fq-danger); }
+
+/* Buttons: same radius family and elevation as Farq, no violet glow */
+.fq-btn { box-shadow: var(--fq-shadow-form); }
+.fq-btn.ghost, .fq-btn.quiet, .fq-btn.mint { box-shadow: none; }
+/* No decorative loops on a primary action (motion budget) */
+.fq-btn.breathe { animation: none; }
+
+/* One tap language: instant press to 0.98, spring back */
+.fq-btn, .fq-pill, .fq-cmp-card, .fq-cat, .fq-embar-back, .fq-ibtn,
+.primary, .chips button, .choices button, .compare-pick, .wa-recipient {
+  transition: transform var(--farq-spring-snappy-duration) var(--farq-spring-snappy),
+    background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.fq-btn:active:not(:disabled), .fq-pill:active, .fq-cat:active, .fq-embar-back:active,
+.fq-ibtn:active, .primary:active, .chips button:active, .choices button:active,
+.compare-pick:active, .wa-recipient:active, .tab:active, .tick:active {
+  transform: scale(var(--farq-press-scale));
+  transition-duration: 0ms;
+}
+.tab:active { opacity: 0.8; }
+
+/* Sheets: Farq layer 3 — same radius, overlay and spring as the Farq sheet */
+.fq-scrim { background: rgba(4, 22, 20, 0.32); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.fq-sheet { border-radius: var(--fq-r-sheet) var(--fq-r-sheet) 0 0; animation-timing-function: var(--farq-spring-standard); animation-duration: var(--farq-spring-standard-duration); }
+
+/* FARQ Difference Indicator — identical to restaurants / grocery */
+.fq-delta {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--farq-diff-line); background: var(--farq-diff-bg); color: var(--farq-diff-fg);
+  border-radius: 999px; padding: 2px 8px; font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  animation: farq-diff-reveal var(--farq-spring-standard-duration) var(--farq-spring-standard) both;
+}
+.fq-delta::before {
+  content: ""; width: 0.8em; height: 0.8em; flex: none; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 3v10M4 9l4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 3v10M4 9l4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* A dearer offer's gap is not a saving: neutral, no arrow, no green */
+.fq-delta.up { border-color: var(--fq-line); background: var(--fq-app-bg); color: var(--fq-text-2); animation: none; }
+.fq-delta.up::before { content: none; }
+@keyframes farq-diff-reveal { from { opacity: 0; transform: translateY(4px) scale(0.96); } }
+
+/* Winner mark keeps the sector colour: the difference above is the one green
+   element on the card (never repeat the same green claim in two bands). */
+.fq-best { background: var(--fq-deep); color: #fff; }
+
+/* Long seller names truncate instead of spilling out of the card */
+.fq-cmp-card .top > span:first-child { flex: none; }
+.fq-cmp-card .top > span:last-child { min-width: 0; flex-wrap: wrap-reverse; row-gap: 6px; }
+.fq-cmp-card .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Prices and counts: fixed-width digits */
+.amount, .fq-ring > span, .fq-btn .count { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fq-btn, .fq-pill, .fq-cmp-card, .fq-cat, .fq-embar-back, .fq-ibtn,
+  .primary, .chips button, .choices button, .compare-pick, .wa-recipient { transition: none; }
+  .fq-btn:active, .fq-pill:active, .fq-cat:active, .fq-embar-back:active, .fq-ibtn:active,
+  .primary:active, .chips button:active, .choices button:active, .compare-pick:active,
+  .wa-recipient:active, .tab:active, .tick:active { transform: none; }
+  .fq-delta { animation: none; }
+}
