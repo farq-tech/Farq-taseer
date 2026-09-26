@@ -1648,6 +1648,14 @@ class PgStore:
         with self._pool.connection() as conn:
             conn.execute("delete from push_subscriptions where endpoint = %s", (endpoint,))
 
+    def farq_user_for_request(self, request_id: str) -> str | None:
+        """The Farq account that owns this request, or None while its owner is unlinked."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select u.farq_user_id from requests r join users u on u.id = r.owner_user_id where r.id = %s", (request_id,)
+            ).fetchone()
+        return (row["farq_user_id"] if row else None) or None
+
     def push_subscriptions_for_request(self, request_id: str) -> list[dict]:
         with self._pool.connection() as conn:
             rows = conn.execute(

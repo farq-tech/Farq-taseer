@@ -4836,6 +4836,11 @@ async function sendRequest() {
     clearDraft();
     state.view = "sent";
     state.replaceUrl = true;
+    // Inside the Farq app the phone's own notifications carry supplier replies; tell Farq this
+    // is the moment to offer them. No request data travels with it.
+    if (isFarqEmbed()) {
+      try { window.parent.postMessage({ source: "taseer", type: "request-sent" }, "*"); } catch (_error) { /* no parent */ }
+    }
     // N02 asks over the success screen, which is where the frame draws it
     if (!state.pushDismissed && state.pushState !== "on") state.pushAsk = canAskForPush();
     render();

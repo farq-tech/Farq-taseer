@@ -2323,6 +2323,13 @@ class Store:
         self._connection.execute("delete from push_subscriptions where endpoint = ?", (endpoint,))
         self._connection.commit()
 
+    def farq_user_for_request(self, request_id: str) -> str | None:
+        """The Farq account that owns this request, or None while its owner is unlinked."""
+        row = self._connection.execute(
+            "select u.farq_user_id from requests r join users u on u.id = r.owner_user_id where r.id = ?", (request_id,)
+        ).fetchone()
+        return (row["farq_user_id"] if row else None) or None
+
     def push_subscriptions_for_request(self, request_id: str) -> list[dict]:
         rows = self._connection.execute(
             "select s.* from push_subscriptions s join requests r on r.owner_user_id = s.user_id where r.id = ?", (request_id,)
