@@ -1,0 +1,646 @@
+{
+  "pack": "stress_boq_v1",
+  "read": {
+    "source": "pdf-table",
+    "table_rows": 1395,
+    "table_issues": 273,
+    "issue_kinds": {
+      "unreadable-unit": 122,
+      "missing-unit": 127,
+      "missing-qty": 4,
+      "row-without-number": 19,
+      "gap-in-numbering": 1
+    },
+    "lines_read": 1395,
+    "lines_expected": 1650,
+    "ids_matched": 1310,
+    "qty_correct": 1310,
+    "unit_correct": 1310,
+    "name_arabic_forward": 1140,
+    "name_arabic_reversed": 0,
+    "name_arabic_missing": 113,
+    "description_column_suspect": true,
+    "coded_items_suspect": false,
+    "read_ms": 120,
+    "wrong_qty_sample": [],
+    "wrong_unit_sample": []
+  },
+  "read_traps": {
+    "qty_385_not_2085": 385,
+    "wrapped_1": {
+      "qty": "7",
+      "name": "لوحة تحكم مضخات"
+    },
+    "wrapped_2": {
+      "qty": "12",
+      "name": "وحدة مناولة هواء"
+    },
+    "amp_43": {
+      "id": 43,
+      "qty": "18"
+    },
+    "amp_44": {
+      "id": 44,
+      "qty": "22"
+    },
+    "group_legitimate_kept": true,
+    "legit_duplicate_both_kept": false,
+    "sequence_gap_ids_present": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "synthetic_rows": 443,
+    "unnumbered_truth": 531,
+    "sequence_gap_reported": 151,
+    "unicode_rtl": null,
+    "arabic_indic_3_5": "3.5",
+    "thousands_1250_5": "1,250.5",
+    "arabic_decimal_12_75": "12.75",
+    "empty_unit": null
+  },
+  "send_guard": {
+    "BOQ-0070": {
+      "read": false,
+      "qty_raw": null,
+      "blocked": null
+    },
+    "BOQ-0071": {
+      "read": false,
+      "qty_raw": null,
+      "blocked": null
+    },
+    "BOQ-0072": {
+      "read": false,
+      "qty_raw": null,
+      "blocked": null
+    },
+    "BOQ-0073": {
+      "read": false,
+      "qty_raw": null,
+      "blocked": null
+    }
+  },
+  "naming": {
+    "levels": {
+      "A": 810,
+      "B": 499,
+      "C": 86,
+      "not_supply": 3
+    },
+    "naming_ms": 5548,
+    "pairs": [
+      {
+        "pair": "T_CLASS_PAIR_01",
+        "lines": [
+          "ستد جبس 0.45 مم",
+          "Structural steel channel C100"
+        ],
+        "got": [
+          "ARCHITECTURAL_FINISHES/interior_systems/-",
+          "STRUCTURAL_METALS/structural_steel/structural_steel_section"
+        ],
+        "split": true
+      },
+      {
+        "pair": "T_CLASS_PAIR_02",
+        "lines": [
+          "كابل ألياف بصرية 24 كور",
+          "Power cable 4x35mm2"
+        ],
+        "got": [
+          "DATACENTER_ICT/structured_cabling/fiber_optic_cable",
+          "-/-/-"
+        ],
+        "split": false
+      },
+      {
+        "pair": "T_CLASS_PAIR_03",
+        "lines": [
+          "عزل مواسير مطاطي",
+          "حامل مواسير مجلفن"
+        ],
+        "got": [
+          "BUILDING_ENVELOPE/thermal_insulation/pipe_duct_insulation",
+          "MEP_WATER/pipe_supports/pipe_hanger"
+        ],
+        "split": true
+      },
+      {
+        "pair": "T_CLASS_PAIR_04",
+        "lines": [
+          "مواسير كهرباء EMT",
+          "مواسير مياه PPR"
+        ],
+        "got": [
+          "ELECTRICAL/cable_accessories/electrical_conduit",
+          "MEP_WATER/pipes_fittings/-"
+        ],
+        "split": true
+      },
+      {
+        "pair": "T_CLASS_PAIR_05",
+        "lines": [
+          "لوح جبس مقاوم للحريق",
+          "رشاش حريق K80"
+        ],
+        "got": [
+          "ARCHITECTURAL_FINISHES/interior_systems/gypsum_board",
+          "FIRE/fire_fighting/fire_sprinkler"
+        ],
+        "split": true
+      },
+      {
+        "pair": "T_CLASS_PAIR_06",
+        "lines": [
+          "كوبلنج سوكت للسباكة",
+          "Socket wrench tool 24mm"
+        ],
+        "got": [
+          "-/-/-",
+          "TOOLS_WORKSHOP/hand_tools/wrenches_spanners"
+        ],
+        "split": false
+      },
+      {
+        "pair": "T_CLASS_PAIR_07",
+        "lines": [
+          "فلتر ري شبكي",
+          "Respirator filter P100"
+        ],
+        "got": [
+          "MEP_WATER/irrigation_systems/irrigation_filter",
+          "SAFETY_PPE/respiratory_protection/respirator_mask"
+        ],
+        "split": true
+      },
+      {
+        "pair": "T_CLASS_PAIR_08",
+        "lines": [
+          "لوحة كهربائية MDB",
+          "Sheet metal panel 2mm"
+        ],
+        "got": [
+          "ELECTRICAL/switchgear_panels/-",
+          "-/-/-"
+        ],
+        "split": false
+      },
+      {
+        "pair": "T_CLASS_PAIR_09",
+        "lines": [
+          "عداد طاقة ثلاثي",
+          "Flow meter DN50"
+        ],
+        "got": [
+          "unread",
+          "MEP_WATER/flow_instrumentation/flow_meter"
+        ],
+        "split": false
+      },
+      {
+        "pair": "T_CLASS_PAIR_10",
+        "lines": [
+          "رشاش ري pop-up",
+          "رشاش حريق upright"
+        ],
+        "got": [
+          "MEP_WATER/irrigation_systems/irrigation_emitter",
+          "FIRE/fire_fighting/fire_sprinkler"
+        ],
+        "split": true
+      },
+      {
+        "pair": "T_CLASS_PAIR_11",
+        "lines": [
+          "بطاقات PVC بيضاء",
+          "طابعة بطاقات PVC"
+        ],
+        "got": [
+          "DATACENTER_ICT/it_peripherals/card_printers",
+          "DATACENTER_ICT/it_peripherals/card_printers"
+        ],
+        "split": false
+      },
+      {
+        "pair": "T_CLASS_PAIR_12",
+        "lines": [
+          "كاميرا حرارية أمنية perimeter",
+          "كاميرا حرارية للفحص والصيانة"
+        ],
+        "got": [
+          "DATACENTER_ICT/physical_security/thermal_security_camera",
+          "INSTRUMENTS/measuring_instruments/thermal_imaging"
+        ],
+        "split": true
+      }
+    ],
+    "weak": [
+      {
+        "line": "كاميرا",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "قارئ",
+        "got": null
+      },
+      {
+        "line": "scanner",
+        "got": null
+      },
+      {
+        "line": "جهاز اختبار",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "وحدة",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "لوحة",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "فلتر",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "حساس",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "terminal",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "module",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        }
+      }
+    ],
+    "work": [
+      {
+        "line": "حفر وردم ودك",
+        "not_supply": true,
+        "work_only": false
+      },
+      {
+        "line": "أعمال حفر وردم ودك للتأسيس",
+        "not_supply": true,
+        "work_only": false
+      },
+      {
+        "line": "Excavation backfilling and compaction",
+        "not_supply": true,
+        "work_only": false
+      }
+    ],
+    "level_c": [
+      {
+        "line": "GNSS RTK",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "توريد GNSS RTK",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "GNSS RTK industrial grade",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "GNSS RTK كامل الملحقات",
+        "got": null,
+        "ai_eligible": false
+      },
+      {
+        "line": "GNSS RTK high accuracy",
+        "got": null,
+        "ai_eligible": false
+      },
+      {
+        "line": "SD-WAN",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "توريد SD-WAN",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "SD-WAN industrial grade",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "SD-WAN كامل الملحقات",
+        "got": null,
+        "ai_eligible": false
+      },
+      {
+        "line": "SD-WAN high accuracy",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "مزيل رطوبة صناعي",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "توريد مزيل رطوبة صناعي",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "مزيل رطوبة صناعي industrial grade",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      },
+      {
+        "line": "مزيل رطوبة صناعي كامل الملحقات",
+        "got": null,
+        "ai_eligible": false
+      },
+      {
+        "line": "مزيل رطوبة صناعي high accuracy",
+        "got": {
+          "level": "unresolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "ai_eligible": true
+      }
+    ],
+    "context": [
+      {
+        "trap": "T_CONTEXT_BASE_NEAR",
+        "line": "مواسير PPR PN20 مقاس 160 مم",
+        "got": {
+          "level": "local_resolved",
+          "sector": "MEP_WATER",
+          "family": "pipes_fittings",
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "trap": "T_CONTEXT_INHERIT_WITHIN_WINDOW",
+        "line": "نفس البند السابق مقاس 200",
+        "got": {
+          "level": "local_resolved",
+          "sector": "MEP_WATER",
+          "family": "pipes_fittings",
+          "intent": null,
+          "not_supply": false,
+          "inherited": true
+        }
+      },
+      {
+        "trap": "T_CONTEXT_BASE_FAR",
+        "line": "كابل نحاس XLPE 4x70 مم2",
+        "got": {
+          "level": "local_resolved",
+          "sector": "ELECTRICAL",
+          "family": "power_cables",
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "trap": "T_CONTEXT_OUTSIDE_WINDOW",
+        "line": "نفس البند السابق مقاس 95",
+        "got": null
+      }
+    ],
+    "consistency": [
+      {
+        "line": "محبس فراشة DN100",
+        "got": {
+          "level": "local_resolved",
+          "sector": "MEP_WATER",
+          "family": "valves",
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "Butterfly valve 100mm",
+        "got": {
+          "level": "local_resolved",
+          "sector": "MEP_WATER",
+          "family": "valves",
+          "intent": null,
+          "not_supply": false
+        }
+      },
+      {
+        "line": "صمام فراشة مقاس 100 مم",
+        "got": {
+          "level": "local_resolved",
+          "sector": "MEP_WATER",
+          "family": "valves",
+          "intent": null,
+          "not_supply": false
+        }
+      }
+    ],
+    "attributes": [
+      {
+        "line": "PVC Pipe DN110",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "pool_facets": null
+      },
+      {
+        "line": "Steel Pipe DN110",
+        "got": {
+          "level": "local_resolved",
+          "sector": "MEP_WATER",
+          "family": "pipes_fittings",
+          "intent": null,
+          "not_supply": false
+        },
+        "pool_facets": null
+      },
+      {
+        "line": "Copper Pipe DN110",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "pool_facets": null
+      },
+      {
+        "line": "Motor 220V 2kW",
+        "got": {
+          "level": "local_resolved",
+          "sector": null,
+          "family": null,
+          "intent": null,
+          "not_supply": false
+        },
+        "pool_facets": null
+      },
+      {
+        "line": "Motor 380V 2kW",
+        "got": null,
+        "pool_facets": null
+      },
+      {
+        "line": "Anchor bolt M20 ASTM F1554",
+        "got": null,
+        "pool_facets": null
+      },
+      {
+        "line": "Anchor bolt M20 BS 7419",
+        "got": {
+          "level": "local_resolved",
+          "sector": "TOOLS_WORKSHOP",
+          "family": "fasteners",
+          "intent": null,
+          "not_supply": false
+        },
+        "pool_facets": null
+      }
+    ],
+    "anomaly_names": [
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE",
+      "-SITE"
+    ]
+  }
+}

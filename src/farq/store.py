@@ -425,6 +425,7 @@ class Store:
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._settlement_lock = threading.Lock()
+        self._db_lock = threading.Lock()  # Protects concurrent writes to _connection
         self._migrate()
 
     def _migrate(self) -> None:
@@ -1000,11 +1001,12 @@ class Store:
         self._connection.commit()
 
     def record_journey(self, trace_id: str, user_id: str | None, query: str, state: str, trace: dict) -> None:
-        self._connection.execute(
-            "insert or replace into search_journeys (trace_id, user_id, query, state, trace_json, created_at) values (?, ?, ?, ?, ?, ?)",
-            (trace_id, user_id, query, state, json.dumps(trace, ensure_ascii=False), _now()),
-        )
-        self._connection.commit()
+        with self._db_lock:
+            self._connection.execute(
+                "insert or replace into search_journeys (trace_id, user_id, query, state, trace_json, created_at) values (?, ?, ?, ?, ?, ?)",
+                (trace_id, user_id, query, state, json.dumps(trace, ensure_ascii=False), _now()),
+            )
+            self._connection.commit()
 
     def journey(self, trace_id: str, owner_user_id: str | None = None) -> dict | None:
         """With an owner, only that account's own searches are found."""
@@ -1103,33 +1105,34 @@ class Store:
         haraj_message_id: str | None = None,
     ) -> Message:
         message_id = uuid4().hex
-        created = created_at or _now()
-        self._connection.execute(
-            "insert into messages (id, request_id, sender_role, sender_user_id, seller_id, need, reply_to, scope, haraj_conversation_id, haraj_message_id, body, offer_amount, offer_currency, attachment_ids_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                message_id,
-                request_id,
-                sender_role,
-                sender_user_id,
-                seller_id,
-                need,
-                reply_to,
-                scope,
-                haraj_conversation_id,
-                haraj_message_id,
-                body,
-                None if offer is None else offer.amount,
-                None if offer is None else offer.currency,
-                json.dumps(attachment_ids or []),
-                created,
-            ),
-        )
-        if sender_user_id:
+        with self._db_lock:
+            created = created_at or _now()
             self._connection.execute(
-                "insert into notifications (id, user_id, request_id, kind, created_at) values (?, ?, ?, ?, ?)",
-                (uuid4().hex, sender_user_id, request_id, "message", created),
+                "insert into messages (id, request_id, sender_role, sender_user_id, seller_id, need, reply_to, scope, haraj_conversation_id, haraj_message_id, body, offer_amount, offer_currency, attachment_ids_json, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    message_id,
+                    request_id,
+                    sender_role,
+                    sender_user_id,
+                    seller_id,
+                    need,
+                    reply_to,
+                    scope,
+                    haraj_conversation_id,
+                    haraj_message_id,
+                    body,
+                    None if offer is None else offer.amount,
+                    None if offer is None else offer.currency,
+                    json.dumps(attachment_ids or []),
+                    created,
+                ),
             )
-        self._connection.commit()
+            if sender_user_id:
+                self._connection.execute(
+                    "insert into notifications (id, user_id, request_id, kind, created_at) values (?, ?, ?, ?, ?)",
+                    (uuid4().hex, sender_user_id, request_id, "message", created),
+                )
+            self._connection.commit()
         return Message(
             id=message_id,
             request_id=request_id,
@@ -1868,13 +1871,14 @@ class Store:
 
     def record_search_sellers(self, trace_id: str, user_id: str | None, seller_ids) -> None:
         created = _now()
-        for seller_id in seller_ids:
-            self._connection.execute(
-                "insert into search_sellers (trace_id, user_id, seller_id, created_at) values (?, ?, ?, ?)"
-                " on conflict (trace_id, seller_id) do update set user_id = coalesce(search_sellers.user_id, excluded.user_id)",
-                (trace_id, user_id, seller_id, created),
-            )
-        self._connection.commit()
+        with self._db_lock:
+            for seller_id in seller_ids:
+                self._connection.execute(
+                    "insert into search_sellers (trace_id, user_id, seller_id, created_at) values (?, ?, ?, ?)"
+                    " on conflict (trace_id, seller_id) do update set user_id = coalesce(search_sellers.user_id, excluded.user_id)",
+                    (trace_id, user_id, seller_id, created),
+                )
+            self._connection.commit()
 
     def searched_sellers(self, user_id: str, trace_id: str | None, since: str) -> set[str]:
         """Sellers this user's searches showed since then, and those of an anonymous search he names."""
