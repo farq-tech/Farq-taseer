@@ -1216,11 +1216,11 @@ function showAuthError(message) {
 const CATEGORIES = [
   { code: "trades", name: "صيانة وحرفيين", examples: ["سباك يصلح تسريب حمام", "كهربائي يركب 3 أفياش", "دهان غرفتين"] },
   { code: "building_materials", name: "مواد بناء ومقاولات", examples: ["مقاول تشطيب شقة", "طوب أحمر 5000 حبة", "صبة خرسانة جاهزة"] },
-  { code: "vehicles", name: "سيارات", examples: ["لاندكروزر ٢٠٢٥ لون ابيض", "كامري مستعملة موديل ٢٠٢٠", "هايلكس غمارتين"] },
+  { code: "vehicles", name: "سيارات", examples: ["لاندكروزر 2025 لون ابيض", "كامري مستعملة موديل 2020", "هايلكس غمارتين"] },
   { code: "parts", name: "قطع غيار السيارات", examples: ["إطارات 265/60 R18", "بطارية 100 أمبير", "دبل كلتش هايلكس"] },
   { code: "property", name: "عقار", examples: ["شقة إيجار سنوي بالملقا", "أرض تجارية شمال الرياض", "فيلا للبيع بالياسمين"] },
   { code: "appliances", name: "أجهزة منزلية", examples: ["تركيب مكيف سبليت", "غسالة أوتوماتيك 8 كيلو", "ثلاجة بابين"] },
-  { code: "electronics", name: "إلكترونيات", examples: ["تلفزيون سامسونج ٦٥ بوصة", "آيفون 15 برو ماكس", "لابتوب للتصميم"] },
+  { code: "electronics", name: "إلكترونيات", examples: ["تلفزيون سامسونج 65 بوصة", "آيفون 15 برو ماكس", "لابتوب للتصميم"] },
   { code: "furniture", name: "أثاث", examples: ["كنب زاوية 6 مقاعد", "غرفة نوم كاملة", "طاولة طعام 8 كراسي"] },
   { code: "moving", name: "نقل وسطحات", examples: ["نقل عفش شقة من الرياض لجدة", "سطحة نقل سيارة", "دينا نقل أغراض"] },
   { code: "equipment", name: "معدات", examples: ["مولد كهرباء 10 كيلو", "ضاغط هواء", "سقالات للإيجار"] },
@@ -1247,7 +1247,7 @@ function composerCount(text) {
 function coarsePointer() {
   return Boolean(window.matchMedia?.("(pointer: coarse)").matches);
 }
-const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر ٢٠٢٥ لون ابيض", "تركيب مكيف", "تلفزيون سامسونج ٦٥ بوصة"];
+const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر 2025 لون ابيض", "تركيب مكيف", "تلفزيون سامسونج 65 بوصة"];
 function renderHome() {
   const place = `<button class="fq-place" type="button" data-action="change-city">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
   const picked = activeCategory();
@@ -3416,7 +3416,7 @@ function supplierMessage(error, fallback) {
   if (error?.status === 429) return "محاولات كثيرة. انتظر شوي وحاول مرة ثانية.";
   if (detail === "invalid phone") return "رقم الجوال غير صحيح. اكتبه بصيغة 05xxxxxxxx.";
   if (detail === "invalid email") return "البريد الإلكتروني غير صحيح.";
-  if (detail === "password too short") return "كلمة المرور لازم ٨ أحرف على الأقل.";
+  if (detail === "password too short") return "كلمة المرور لازم 8 أحرف على الأقل.";
   if (detail === "name required") return "اكتب اسم المنشأة أو اسمك.";
   return fallback;
 }
@@ -3759,7 +3759,7 @@ function renderSupplierAuth() {
         <div class="fq-inp">${ic("phone", 16)}<input id="join-phone" name="phone" inputmode="tel" autocomplete="tel" placeholder="05xxxxxxxx" dir="ltr" required></div></div>
       <div class="fq-field"><label for="join-password">كلمة المرور</label>
         <div class="fq-inp"><input id="join-password" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
-        <span class="fq-meta">٨ أحرف على الأقل</span></div>
+        <span class="fq-meta">8 أحرف على الأقل</span></div>
 
       <hr class="fq-line">
       <div class="fq-field"><label>نوع النشاط</label>
@@ -4991,7 +4991,7 @@ async function sendChatMessage(body) {
       state.thread = { ...state.thread, messages: (state.thread.messages || []).filter((item) => item.id !== draft.id) };
       threadCache.set(thread.id, state.thread);
     }
-    state.notice = error.status === 413 ? "الملف أكبر من ٤ ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : error.detail?.message || "ما انرسلت الرسالة، جرّب مرة ثانية";
+    state.notice = error.status === 413 ? "الملف أكبر من 4 ميجا" : error.status === 415 ? "نرسل صور وملفات PDF فقط" : error.detail?.message || "ما انرسلت الرسالة، جرّب مرة ثانية";
     render();
   }
 }
