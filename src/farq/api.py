@@ -669,6 +669,18 @@ def create_app(
             "clarification_question": intent.clarification_question if len(intents) <= 1 else None,
         }
 
+    @app.post("/v1/intent/warm")
+    def intent_warm(body: SearchBody, request: Request) -> dict:
+        """Read the sentence with the model now, so the search that follows finds the reading in
+        the shared store. Called by the app right after M02 is drawn, and not awaited there. A
+        request that runs to its end is reliable on the serverless host; a background task
+        started after a response is not."""
+        guard_search(request, body.query, intent_limiter)
+        if not understand.enabled():
+            return {"ready": False, "read": False}
+        read = understand.read_query(body.query)
+        return {"ready": bool(read), "read": True}
+
     def _user_from_header(authorization: str | None) -> str | None:
         if authorization and authorization.startswith("Bearer "):
             return store.user_for_token(authorization.removeprefix("Bearer ").strip())
