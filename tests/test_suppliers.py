@@ -263,13 +263,18 @@ def test_one_customer_cannot_share_on_another_customers_request(tmp_path: Path):
 
 
 def funnel(api, store=None):
-    return {row["step"]: row for row in api.get("/v1/internal/supplier-funnel").json()["steps"]}
+    # The report is an internal endpoint behind the same CRON_SECRET door as haraj-sync.
+    report = api.get("/v1/internal/supplier-funnel", headers={"Authorization": "Bearer test-cron-secret"})
+    return {row["step"]: row for row in report.json()["steps"]}
 
 
-def test_the_funnel_records_where_a_supplier_stops(tmp_path: Path):
+def test_the_funnel_records_where_a_supplier_stops(tmp_path: Path, monkeypatch):
     """Not "did he answer" but "how far did he get": invite_received -> opened ->
     registered -> request_viewed -> quote_submitted -> buyer_replied -> awarded."""
+    monkeypatch.setenv("CRON_SECRET", "test-cron-secret")
     store, api = make(tmp_path)
+    # Without the secret the report is not public.
+    assert api.get("/v1/internal/supplier-funnel").status_code == 401
     customer = signed_in(api)
     request_id = ask(api, customer, ["5001"]).json()["id"]
     token = store._connection.execute(

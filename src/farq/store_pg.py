@@ -204,7 +204,7 @@ class PgStore:
             return None
         keys = list(session_keys(token))
         row = conn.execute(
-            "select s.token, s.created_at, u.id, u.email, u.name from sessions s join users u on u.id = s.user_id where s.token = any(%s)",
+            "select s.token, s.created_at, u.id, u.email, u.name, u.farq_user_id from sessions s join users u on u.id = s.user_id where s.token = any(%s)",
             (keys,),
         ).fetchone()
         if row is None:
@@ -224,7 +224,7 @@ class PgStore:
     def account_for_token(self, token: str) -> dict | None:
         with self._pool.connection() as conn:
             row = self._session(conn, token)
-        return None if row is None else {"id": row["id"], "email": row["email"], "name": row["name"]}
+        return None if row is None else {"id": row["id"], "email": row["email"], "name": row["name"], "farq_user_id": row["farq_user_id"]}
 
     def logout(self, token: str) -> None:
         with self._pool.connection() as conn:
@@ -313,13 +313,15 @@ class PgStore:
         city: str | None,
         attributes: dict,
         recipients: list[RequestRecipient],
+        request_id: str | None = None,
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
         city_name = known_city(city)
         if city_name is None:
             raise ValueError("city is required")
-        request_id = uuid4().hex
+        # The id may be handed in so a caller can spend ledger credits against it first.
+        request_id = request_id or uuid4().hex
         first_token = secrets.token_urlsafe(16)
         with self._pool.connection() as conn:
             ref_code = next(code for code in iter(new_reference, None) if conn.execute("select 1 from requests where ref_code = %s", (code,)).fetchone() is None)
@@ -1469,6 +1471,88 @@ class PgStore:
                 (user_id, since, since),
             ).fetchone()
         return int(row["count"])
+
+    # -- credit ledger ---------------------------------------------------------
+    # The item allowance as credits, behind TASEER_LEDGER_ENABLED (see farq.limits).
+    # Rows in taseer.credit_ledger are append-only (trigger-enforced); a trigger moves
+    # taseer.credit_balances inside the same transaction, and balance >= 0 is a schema
+    # check, so an overdraft aborts the whole transaction even if this code is wrong.
+
+    def _lock_credits(self, conn, user_id: str) -> None:
+        """Serializes credit writes for one user behind the same advisory-lock pattern as
+        _lock_user_for_settlement, so two concurrent consumes of the last credit cannot
+        both read a sufficient balance before either writes."""
+        conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (user_id,))
+
+    def credits_balance(self, user_id: str) -> int:
+        with self._pool.connection() as conn:
+            row = conn.execute("select balance from credit_balances where user_id = %s", (user_id,)).fetchone()
+        return int(row["balance"]) if row else 0
+
+    def _credit_entry(self, conn, user_id: str, entry_type: str, amount: int, idempotency_key: str,
+                      reason: str | None, ref_type: str | None, ref_id: str | None) -> bool:
+        """Insert one ledger row; False when its idempotency key was already written.
+        The balance moves with the insert (trigger), only for the row actually inserted."""
+        cur = conn.execute(
+            "insert into credit_ledger (user_id, entry_type, amount, reason, ref_type, ref_id, idempotency_key)"
+            " values (%s, %s, %s, %s, %s, %s, %s) on conflict (idempotency_key) do nothing",
+            (user_id, entry_type, amount, reason, ref_type, ref_id, idempotency_key),
+        )
+        return cur.rowcount > 0
+
+    def grant_credits(self, user_id: str, amount: int, idempotency_key: str, *,
+                      reason: str | None = None, ref_type: str | None = None, ref_id: str | None = None) -> bool:
+        """Add credits once per idempotency key. True when this call wrote the grant;
+        False when the key had already been written (and the balance was left alone)."""
+        if amount <= 0:
+            raise ValueError("a grant must add at least one credit")
+        with self._pool.connection() as conn:
+            self._lock_credits(conn, user_id)
+            return self._credit_entry(conn, user_id, "GRANT", amount, idempotency_key, reason, ref_type, ref_id)
+
+    def consume_credit(self, user_id: str, request_id: str, need: str | None, amount: int = 1) -> dict:
+        """Spend `amount` credits for one item, atomically: one transaction, the user's
+        advisory lock, keyed item:<request_id>:<need> so a retry never spends twice.
+        {"ok", "duplicate", "balance"}."""
+        if amount <= 0:
+            raise ValueError("a consume must spend at least one credit")
+        key = f"item:{request_id}:{need or ''}"
+        with self._pool.connection() as conn:
+            self._lock_credits(conn, user_id)
+            row = conn.execute("select balance from credit_balances where user_id = %s", (user_id,)).fetchone()
+            balance = int(row["balance"]) if row else 0
+            if balance < amount:
+                # Unless this exact item was already paid for - then the retry is a success.
+                seen = conn.execute(
+                    "select 1 from credit_ledger where idempotency_key = %s and entry_type = 'CONSUME'", (key,)
+                ).fetchone()
+                if seen:
+                    return {"ok": True, "duplicate": True, "balance": balance}
+                return {"ok": False, "duplicate": False, "balance": balance}
+            if not self._credit_entry(conn, user_id, "CONSUME", -amount, key, None, "request_item", request_id):
+                return {"ok": True, "duplicate": True, "balance": balance}
+            return {"ok": True, "duplicate": False, "balance": balance - amount}
+
+    def refund_credit(self, user_id: str, request_id: str, need: str | None, *, reason: str | None = None) -> dict:
+        """Give back what item:<request_id>:<need> consumed, once, as a REVERSAL row
+        keyed reversal:item:<request_id>:<need>. Nothing is minted: without a matching
+        consume there is nothing to reverse."""
+        consume_key = f"item:{request_id}:{need or ''}"
+        key = f"reversal:{consume_key}"
+        with self._pool.connection() as conn:
+            self._lock_credits(conn, user_id)
+            consumed = conn.execute(
+                "select user_id, amount from credit_ledger where idempotency_key = %s and entry_type = 'CONSUME'", (consume_key,)
+            ).fetchone()
+            if consumed is None or consumed["user_id"] != user_id:
+                return {"ok": False, "duplicate": False, "balance": self._balance_in(conn, user_id)}
+            if not self._credit_entry(conn, user_id, "REVERSAL", -int(consumed["amount"]), key, reason, "request_item", request_id):
+                return {"ok": True, "duplicate": True, "balance": self._balance_in(conn, user_id)}
+            return {"ok": True, "duplicate": False, "balance": self._balance_in(conn, user_id)}
+
+    def _balance_in(self, conn, user_id: str) -> int:
+        row = conn.execute("select balance from credit_balances where user_id = %s", (user_id,)).fetchone()
+        return int(row["balance"]) if row else 0
 
     def count_contacts(self, user_id: str, since: str | None = None) -> int:
         """Supplier contacts: what actually consumes the shared Haraj send capacity."""

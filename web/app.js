@@ -195,6 +195,9 @@ function keepSession(token, account) {
   state.account = account;
   try {
     localStorage.setItem("farq.token", token);
+    // Marks a session that mirrors a Farq sign-in, so a boot can re-check the Farq
+    // cookie before trusting it. A password sign-in has no Farq session to mirror.
+    localStorage.setItem("farq.viaFarq", "1");
   } catch (_error) {}
 }
 
@@ -256,15 +259,55 @@ function askFarqForSession() {
   } catch (_error) {}
 }
 
+/** The `sub` claim of a JWT-shaped token, or "" when it is not one. */
+function jwtSub(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return "";
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload?.sub === "string" ? payload.sub : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+/** A farq-session arriving while a session is already here. The same person is a no-op;
+ * a DIFFERENT Farq account (the parent switched users) ends the old session - server and
+ * local - and signs the new one in, so requests never leak across accounts. */
+async function reconcileFarqSession(accessToken) {
+  const sub = jwtSub(accessToken);
+  if (!sub) return; // not decodable here; a signed-out parent still posts farq-signed-out
+  const me = await api("/v1/auth/me", { quiet: true }).catch(() => null);
+  if (!me) {
+    // The stored session was already dead (the 401 handler cleared it): the token in
+    // hand is the sign-in itself.
+    if (!state.token) signInWithFarq(accessToken).then((ok) => ok && resumeAfterSignIn());
+    return;
+  }
+  if (!me.farq_user_id || me.farq_user_id === sub) return;
+  api("/v1/auth/logout", { method: "POST" }).catch(() => {});
+  signOutLocally();
+  clearDraft();
+  const ok = await signInWithFarq(accessToken);
+  state.view = "home";
+  if (ok) resumeAfterSignIn();
+  else render();
+}
+
 window.addEventListener("message", (event) => {
   if (!isFarqEmbed() || !FARQ_PARENT_ORIGINS.has(event.origin)) return;
   const data = event.data;
   if (!data || typeof data !== "object" || data.source !== "farq") return;
   if (data.type === "farq-session" && typeof data.access_token === "string") {
-    if (state.token) return;
+    if (state.token) {
+      reconcileFarqSession(data.access_token);
+      return;
+    }
     signInWithFarq(data.access_token).then((ok) => ok && resumeAfterSignIn());
   } else if (data.type === "farq-signed-out") {
     if (!state.token) return;
+    // One sign-out: the server session must not outlive the Farq one by 30 days.
+    api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     signOutLocally();
     if (state.view === "requests" || state.view === "thread" || state.view === "compare" || state.view === "account") state.view = "home";
     render();
@@ -477,6 +520,9 @@ function requireSignIn(message = "") {
     return;
   }
   if (state.view !== "auth") state.returnView = RETURN_TO[state.view] || state.view;
+  // Standalone, the Farq button leaves this page: keep where he was, so back= carries it
+  // and the sign-in returns him there.
+  if (!state.returnRoute && location.pathname !== "/") state.returnRoute = `${location.pathname}${location.search}`;
   state.view = "auth";
   state.authError = message;
   render();
@@ -502,6 +548,7 @@ function signOutLocally() {
   threadCache.clear();
   try {
     localStorage.removeItem("farq.token");
+    localStorage.removeItem("farq.viaFarq");
   } catch (_error) {}
 }
 
@@ -1083,8 +1130,10 @@ function shell(body) {
 // AUTH01_Login_AR — node 19:74. The header is not mirrored: the wordmark sits left, the
 // language control right, the way the frame draws it.
 function farqSignInUrl() {
-  // Sign in on Farq, then come back to the same screen with the journey's draft still here.
-  const back = `${location.pathname}${location.search}`;
+  // Sign in on Farq, then come back to the same screen with the journey's draft still
+  // here. The screen the sign-in interrupted (a deep link, a 401 mid-journey) wins over
+  // the address bar, which may already show the auth screen's own path.
+  const back = state.returnRoute || `${location.pathname}${location.search}` || "/";
   return `${FARQ_SITE}/taseer?signin=1&back=${encodeURIComponent(back)}`;
 }
 
@@ -1123,8 +1172,8 @@ function renderAuth() {
     </form>
     <div class="fq-actions" style="gap:20px;align-items:center">
       <button class="fq-btn" type="submit" form="auth-form" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : title}</button>
-      <p class="fq-small" style="text-align:center">${register ? "عندك حساب؟" : "ليس لديك حساب؟"}
-        <button class="fq-link" type="button" data-action="auth-mode" style="text-decoration:underline;font-size:14px;font-weight:700">${register ? "تسجيل الدخول" : "إنشاء حساب جديد"}</button></p>
+      <p class="fq-small" style="text-align:center">ما عندك حساب تسعير قديم؟
+        <a class="fq-link" href="${esc(farqSignInUrl())}" data-action="farq-sign-in" style="text-decoration:underline;font-size:14px;font-weight:700">سجّل بحساب فرق</a></p>
     </div>
     <p class="fq-legal">باستخدامك للتطبيق، فإنك توافق على <a href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> و<a href="/privacy" data-action="legal" data-doc="privacy">سياسة الخصوصية</a> و<a href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a></p>
     <p class="fq-legal"><a href="/plans" data-action="show-plans">الباقات والأسعار</a></p>
@@ -5752,6 +5801,12 @@ document.addEventListener("click", (event) => {
     state.authMode = "login";
     render();
   } else if (action === "farq-sign-in") {
+    // Inside Farq's frame the parent owns the sign-in; never navigate the frame away.
+    if (isFarqEmbed() && !farqSessionToken()) {
+      event.preventDefault();
+      askFarqToSignIn(EMBED_REASON[state.returnView] || "account");
+      return;
+    }
     // A Farq session may have appeared since this screen was drawn (another tab signed in).
     const farqToken = farqSessionToken();
     if (farqToken) {
@@ -5767,10 +5822,6 @@ document.addEventListener("click", (event) => {
         }
       });
     }
-  } else if (action === "auth-mode") {
-    state.authMode = state.authMode === "register" ? "login" : "register";
-    state.authError = "";
-    render();
   } else if (action === "sign-out") {
     api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     signOutLocally();
@@ -6144,7 +6195,18 @@ function bootSignedIn() {
 if (publicPage) {
   applyRoute(bootPath, { pop: true });
 } else if (state.token) {
-  bootSignedIn();
+  // A stored session that mirrors a Farq sign-in must not outlive it: standalone, the
+  // shared cookie is re-checked before the token is trusted, so signing out of Farq on
+  // this device signs Taseer out too instead of leaving a 30-day ghost session. In the
+  // embed the parent posts farq-signed-out and owns this. A password session (no
+  // farq.viaFarq mark) has no Farq sign-in to mirror and is untouched.
+  if (!isFarqEmbed() && storedGet("farq.viaFarq") === "1" && !farqSessionToken()) {
+    api("/v1/auth/logout", { method: "POST" }).catch(() => {});
+    signOutLocally();
+    bootSignedOut();
+  } else {
+    bootSignedIn();
+  }
 } else {
   const farqToken = farqSessionToken();
   if (farqToken) {

@@ -759,6 +759,50 @@ class Store:
             create index if not exists search_sellers_user on search_sellers (user_id, created_at);
             """
         )
+        self._connection.executescript(
+            """
+            create table if not exists credit_ledger (
+              id text primary key,
+              user_id text not null,
+              entry_type text not null check (entry_type in ('GRANT', 'CONSUME', 'REVERSAL', 'ADJUSTMENT')),
+              amount integer not null,
+              reason text,
+              ref_type text,
+              ref_id text,
+              idempotency_key text unique,
+              created_at text not null,
+              check (
+                (entry_type = 'GRANT' and amount > 0)
+                or (entry_type = 'CONSUME' and amount < 0)
+                or (entry_type = 'REVERSAL' and amount > 0)
+                or (entry_type = 'ADJUSTMENT' and amount <> 0)
+              )
+            );
+            create index if not exists credit_ledger_user_idx on credit_ledger (user_id, created_at);
+            create table if not exists credit_balances (
+              user_id text primary key,
+              balance integer not null default 0 check (balance >= 0),
+              updated_at text not null
+            );
+            -- The balance is derived state, moved by the same transaction as every ledger
+            -- insert; balance >= 0 aborts an overdraft at the schema. Update first, insert
+            -- only for a first-ever entry: an UPSERT cannot serve here because the CHECK is
+            -- evaluated on the proposed row before the conflict is seen.
+            create trigger if not exists credit_ledger_apply after insert on credit_ledger begin
+              update credit_balances set balance = balance + new.amount, updated_at = new.created_at
+               where user_id = new.user_id;
+              insert into credit_balances (user_id, balance, updated_at)
+                select new.user_id, new.amount, new.created_at
+                where not exists (select 1 from credit_balances where user_id = new.user_id);
+            end;
+            create trigger if not exists credit_ledger_no_update before update on credit_ledger begin
+              select raise(abort, 'credit_ledger is append-only');
+            end;
+            create trigger if not exists credit_ledger_no_delete before delete on credit_ledger begin
+              select raise(abort, 'credit_ledger is append-only');
+            end;
+            """
+        )
         self._connection.commit()
         self._seed_plans()
 
@@ -942,7 +986,7 @@ class Store:
         user_id = self._session_user(token)
         if user_id is None:
             return None
-        row = self._connection.execute("select id, email, name from users where id = ?", (user_id,)).fetchone()
+        row = self._connection.execute("select id, email, name, farq_user_id from users where id = ?", (user_id,)).fetchone()
         return None if row is None else dict(row)
 
     def logout(self, token: str) -> None:
@@ -1027,13 +1071,15 @@ class Store:
         city: str | None,
         attributes: dict,
         recipients: list[RequestRecipient],
+        request_id: str | None = None,
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
         city_name = known_city(city)
         if city_name is None:
             raise ValueError("city is required")
-        request_id = uuid4().hex
+        # The id may be handed in so a caller can spend ledger credits against it first.
+        request_id = request_id or uuid4().hex
         first_token = secrets.token_urlsafe(16)
         created = _now()
         ref_code = next(code for code in iter(new_reference, None) if self._connection.execute("select 1 from requests where ref_code = ?", (code,)).fetchone() is None)
@@ -1912,6 +1958,81 @@ class Store:
     def set_unlimited(self, user_id: str, value: bool = True) -> None:
         self._connection.execute("update users set unlimited = ? where id = ?", (1 if value else 0, user_id))
         self._connection.commit()
+
+    # -- credit ledger ---------------------------------------------------------
+    # The item allowance as credits, behind TASEER_LEDGER_ENABLED (see farq.limits).
+    # Append-only rows in credit_ledger; a trigger moves credit_balances in the same
+    # transaction and balance >= 0 is a schema check, so an overdraft cannot commit.
+    # In-process writes serialize on _settlement_lock, the SQLite stand-in for the
+    # advisory lock PgStore takes (see PgStore._lock_credits).
+
+    def credits_balance(self, user_id: str) -> int:
+        row = self._connection.execute("select balance from credit_balances where user_id = ?", (user_id,)).fetchone()
+        return int(row["balance"]) if row else 0
+
+    def _credit_entry(self, user_id: str, entry_type: str, amount: int, idempotency_key: str,
+                      reason: str | None, ref_type: str | None, ref_id: str | None) -> bool:
+        """Insert one ledger row; False when its idempotency key was already written."""
+        if self._connection.execute("select 1 from credit_ledger where idempotency_key = ?", (idempotency_key,)).fetchone():
+            return False
+        self._connection.execute(
+            "insert into credit_ledger (id, user_id, entry_type, amount, reason, ref_type, ref_id, idempotency_key, created_at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (uuid4().hex, user_id, entry_type, amount, reason, ref_type, ref_id, idempotency_key, _now()),
+        )
+        return True
+
+    def grant_credits(self, user_id: str, amount: int, idempotency_key: str, *,
+                      reason: str | None = None, ref_type: str | None = None, ref_id: str | None = None) -> bool:
+        """Add credits once per idempotency key. True when this call wrote the grant;
+        False when the key had already been written (and the balance was left alone)."""
+        if amount <= 0:
+            raise ValueError("a grant must add at least one credit")
+        with self._settlement_lock:
+            try:
+                granted = self._credit_entry(user_id, "GRANT", amount, idempotency_key, reason, ref_type, ref_id)
+                self._connection.commit()
+            except sqlite3.IntegrityError:
+                self._connection.rollback()
+                return False
+        return granted
+
+    def consume_credit(self, user_id: str, request_id: str, need: str | None, amount: int = 1) -> dict:
+        """Spend `amount` credits for one item, atomically. Keyed item:<request_id>:<need>,
+        so a retry of the same item never spends twice. {"ok", "duplicate", "balance"}."""
+        if amount <= 0:
+            raise ValueError("a consume must spend at least one credit")
+        key = f"item:{request_id}:{need or ''}"
+        with self._settlement_lock:
+            try:
+                if not self._credit_entry(user_id, "CONSUME", -amount, key, None, "request_item", request_id):
+                    return {"ok": True, "duplicate": True, "balance": self.credits_balance(user_id)}
+                self._connection.commit()
+            except sqlite3.IntegrityError:
+                # The balance check refused the overdraft; nothing was written.
+                self._connection.rollback()
+                return {"ok": False, "duplicate": False, "balance": self.credits_balance(user_id)}
+        return {"ok": True, "duplicate": False, "balance": self.credits_balance(user_id)}
+
+    def refund_credit(self, user_id: str, request_id: str, need: str | None, *, reason: str | None = None) -> dict:
+        """Give back what item:<request_id>:<need> consumed, once, as a REVERSAL row.
+        Nothing is minted: without a matching consume there is nothing to reverse."""
+        consume_key = f"item:{request_id}:{need or ''}"
+        key = f"reversal:{consume_key}"
+        with self._settlement_lock:
+            consumed = self._connection.execute(
+                "select user_id, amount from credit_ledger where idempotency_key = ? and entry_type = 'CONSUME'", (consume_key,)
+            ).fetchone()
+            if consumed is None or consumed["user_id"] != user_id:
+                return {"ok": False, "duplicate": False, "balance": self.credits_balance(user_id)}
+            try:
+                if not self._credit_entry(user_id, "REVERSAL", -int(consumed["amount"]), key, reason, "request_item", request_id):
+                    return {"ok": True, "duplicate": True, "balance": self.credits_balance(user_id)}
+                self._connection.commit()
+            except sqlite3.IntegrityError:
+                self._connection.rollback()
+                return {"ok": False, "duplicate": False, "balance": self.credits_balance(user_id)}
+        return {"ok": True, "duplicate": False, "balance": self.credits_balance(user_id)}
 
     def count_items(self, user_id: str, since: str | None = None) -> int:
         """Items, not requests - see PgStore.count_items."""

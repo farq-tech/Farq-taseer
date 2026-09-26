@@ -271,6 +271,13 @@ def _hashed(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()[:32]
 
 
+def _password_signup_open() -> bool:
+    """The independent email-and-password door. The Farq account is the account, so this
+    door is closed unless TASEER_PASSWORD_SIGNUP=1 turns it back on; /v1/auth/login stays
+    open for the accounts made while it was."""
+    return (os.environ.get("TASEER_PASSWORD_SIGNUP") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def create_app(
     store: Store,
     corpus: MemoryCorpus,
@@ -366,6 +373,11 @@ def create_app(
 
     @app.post("/v1/auth/register")
     def register(body: RegisterBody, request: Request) -> dict:
+        if not _password_signup_open():
+            raise HTTPException(
+                status_code=410,
+                detail={"code": "REGISTER_CLOSED", "message": "التسجيل المستقل مقفل. حسابك في فرق يكفي - سجّل دخولك بحساب فرق."},
+            )
         if not register_limiter.allow(client_ip(request)):
             raise HTTPException(status_code=429, detail="too many attempts, try again later", headers={"Retry-After": "3600"})
         email = body.email.strip().lower()
@@ -449,7 +461,9 @@ def create_app(
 
     @app.get("/v1/auth/me")
     def me(account: dict = Depends(current_account)) -> dict:
-        return {"email": account["email"], "name": account.get("name")}
+        # farq_user_id lets the embed see WHOSE session this is, so a different Farq
+        # account arriving from the parent is a sign-out-and-switch, not ignored.
+        return {"email": account["email"], "name": account.get("name"), "farq_user_id": account.get("farq_user_id")}
 
     @app.post("/v1/auth/logout")
     def logout(authorization: str | None = Header(default=None)) -> dict:
@@ -617,8 +631,18 @@ def create_app(
         store.remove_supplier_push_subscription(endpoint)
         return {"subscribed": False}
 
+    def require_cron(authorization: str | None) -> None:
+        """The /v1/internal/* door: the same "Authorization: Bearer $CRON_SECRET" that
+        Vercel Cron sends to haraj-sync. Unset means nobody gets in, not everybody."""
+        secret = os.environ.get("CRON_SECRET")
+        if not secret:
+            raise HTTPException(status_code=503, detail="CRON_SECRET is not set")
+        if authorization != f"Bearer {secret}":
+            raise HTTPException(status_code=401, detail="unauthorized")
+
     @app.get("/v1/internal/supplier-funnel")
-    def supplier_funnel_report(days: int = 30) -> dict:
+    def supplier_funnel_report(days: int = 30, authorization: str | None = Header(default=None)) -> dict:
+        require_cron(authorization)
         # invite_received -> opened -> registered -> request_viewed -> quote_submitted ->
         # buyer_replied -> awarded. Where a supplier stops is the number that decides
         # whether moving more of them onto the in-app lane is a gain or a loss.
@@ -884,6 +908,35 @@ def create_app(
             check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
         except LimitExceeded as exc:
             raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+        # With the ledger on, the atomic debit here IS the item-allowance gate: the id is
+        # made first so each item is spent under its own idempotency key, and a request
+        # that then cannot be created gives every credit back. check_new_request above
+        # still holds the other caps (sellers per item, daily contacts, daily requests).
+        request_id = uuid4().hex
+        ledger_active = limits.ledger_enabled and not (
+            getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
+        )
+        needs = list(dict.fromkeys(item.need or body.need or "" for item in body.recipients))
+
+        def _give_back(spent_needs, why: str) -> None:
+            for done in spent_needs:
+                store.refund_credit(user_id, request_id, done or None, reason=why)
+
+        if ledger_active:
+            spent = []
+            for item_need in needs:
+                outcome = store.consume_credit(user_id, request_id, item_need or None)
+                if not outcome["ok"]:
+                    _give_back(spent, "request refused: balance ran out mid-request")
+                    raise HTTPException(
+                        status_code=402,
+                        detail={
+                            "code": "ITEM_ALLOWANCE_EXHAUSTED",
+                            "message": f"رصيدك من البنود ({outcome['balance']}) لا يكفي لهذا الطلب. اشترك أو جدّد رصيدك.",
+                            "limit": None,
+                        },
+                    )
+                spent.append(item_need)
         try:
             request_id = store.create_request(
                 user_id,
@@ -902,9 +955,16 @@ def create_app(
                     )
                     for item in body.recipients
                 ],
+                request_id=request_id,
             )
         except ValueError as exc:
+            if ledger_active:
+                _give_back(needs, "request was not created")
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception:
+            if ledger_active:
+                _give_back(needs, "request creation failed")
+            raise
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         # Registered suppliers are told here, in the app, because nothing will be sent to
         # them through Haraj. The rest are reached by the worker, as before.
@@ -1236,11 +1296,7 @@ def create_app(
     @app.get("/v1/internal/haraj-sync")
     def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
         # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
-        secret = os.environ.get("CRON_SECRET")
-        if not secret:
-            raise HTTPException(status_code=503, detail="CRON_SECRET is not set")
-        if authorization != f"Bearer {secret}":
-            raise HTTPException(status_code=401, detail="unauthorized")
+        require_cron(authorization)
         # One run a minute: up to three sends 20 s apart, then read replies.
         started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
@@ -1283,7 +1339,8 @@ def create_app(
         return rung
 
     @app.get("/v1/internal/queue-health")
-    def queue_health_report() -> dict:
+    def queue_health_report(authorization: str | None = Header(default=None)) -> dict:
+        require_cron(authorization)
         return _watch_queue()
 
     # Registered after every API route: an unknown /v1 path is a JSON 404, never the web app.

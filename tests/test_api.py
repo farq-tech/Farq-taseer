@@ -481,7 +481,7 @@ def test_every_customer_signs_in_and_sees_only_their_requests(tmp_path: Path):
     assert api.post("/v1/auth/login", json={"email": "s@example.com", "password": "wrong-pass"}).status_code == 401
     login = api.post("/v1/auth/login", json={"email": "s@example.com", "password": "secret-pass"}).json()
     saad = {"Authorization": f"Bearer {login['token']}"}
-    assert api.get("/v1/auth/me", headers=saad).json() == {"email": "s@example.com", "name": "سعد"}
+    assert api.get("/v1/auth/me", headers=saad).json() == {"email": "s@example.com", "name": "سعد", "farq_user_id": None}
 
     other = signed_in(api)
     body = {"original_text": "سباك", "need": "سباك", "city": "الرياض", "recipients": [{"seller_id": "11", "seller_name": "محمد"}]}

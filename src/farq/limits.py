@@ -46,6 +46,12 @@ class Limits:
     # confirmation nobody can receive would lock out every customer, so the gate follows
     # the mail provider rather than standing open or shut on its own. "on"/"off" override.
     require_email_verification: str = field(default_factory=lambda: (_env_str("FARQ_REQUIRE_EMAIL_VERIFICATION", "auto")).strip().lower())
+    # The credit ledger (default off). On, the item allowance is a spendable balance in
+    # taseer.credit_ledger/credit_balances instead of a recount of this period's rows, so
+    # what is granted survives the period and every spend is auditable. The other caps
+    # (sellers per item, daily contacts, daily requests, recipients-from-search) do not
+    # move to the ledger and keep working exactly as before.
+    ledger_enabled: bool = field(default_factory=lambda: _env_bool("TASEER_LEDGER_ENABLED", False))
 
     def verification_required(self) -> bool:
         if self.require_email_verification == "on":
@@ -111,6 +117,8 @@ class Entitlement:
     period_start: str | None  # None means the allowance is for the lifetime of the account
     items_used: int
     contacts_today: int
+    # The spendable ledger balance, or None while TASEER_LEDGER_ENABLED is off.
+    credits: int | None = None
 
     @property
     def subscribed(self) -> bool:
@@ -118,6 +126,9 @@ class Entitlement:
 
     @property
     def items_left(self) -> int:
+        # With the ledger on, what may still be sent IS the balance.
+        if self.credits is not None:
+            return max(0, self.credits)
         return max(0, self.items - self.items_used)
 
     @property
@@ -125,7 +136,7 @@ class Entitlement:
         return max(0, self.daily_contacts - self.contacts_today)
 
     def as_dict(self) -> dict:
-        return {
+        payload = {
             "plan": self.plan_code,
             "plan_name": self.plan_name,
             "subscribed": self.subscribed,
@@ -138,6 +149,9 @@ class Entitlement:
             "contacts_left_today": self.contacts_left_today,
             "period_start": self.period_start,
         }
+        if self.credits is not None:
+            payload["credits"] = self.credits
+        return payload
 
 
 def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
@@ -164,6 +178,10 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
             contacts_today=store.count_contacts(user_id, _since(days=1)),
         )
 
+    # With the ledger on, what may still be sent is the spendable balance rather than a
+    # recount of this period's rows. An open (unlimited) account never spends credits.
+    credits = store.credits_balance(user_id) if limits.ledger_enabled else None
+
     subscription = store.get_latest_subscription(user_id) if store.is_subscribed(user_id) else None
     if subscription is None:
         return Entitlement(
@@ -177,6 +195,7 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
             # customer's allowance never means deleting what he did with it.
             items_used=store.count_items(user_id, _trial_since(store, user_id)),
             contacts_today=store.count_contacts(user_id, _since(days=1)),
+            credits=credits,
         )
 
     plan = store.get_plan(subscription["plan"]) or {}
@@ -192,6 +211,7 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
         period_start=period_start,
         items_used=store.count_items(user_id, period_start),
         contacts_today=store.count_contacts(user_id, _since(days=1)),
+        credits=credits,
     )
 
 
@@ -226,7 +246,10 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
     allowance = entitlement(store, limits, user_id)
 
     if len(per_item) > allowance.items_left:
-        if allowance.subscribed:
+        # With the ledger on the allowance is a balance, not this period's count.
+        if allowance.credits is not None:
+            message = f"رصيدك من البنود ({allowance.credits}) لا يكفي لهذا الطلب. اشترك أو جدّد رصيدك."
+        elif allowance.subscribed:
             message = (
                 f"وصلت لحد باقتك ({allowance.items} بند في الشهر)."
                 f" استخدمت {allowance.items_used}. رقِّ باقتك أو انتظر تجديد الفترة."

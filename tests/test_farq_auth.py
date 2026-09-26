@@ -34,7 +34,8 @@ def test_a_farq_session_becomes_a_taseer_session_without_a_second_password(tmp_p
     headers = {"Authorization": f"Bearer {first.json()['token']}"}
     assert first.json()["email"] == "sara@example.com"
     assert first.json()["name"] == "سارة"
-    assert api.get("/v1/auth/me", headers=headers).json() == {"email": "sara@example.com", "name": "سارة"}
+    # farq_user_id travels with /me so the embed can tell WHOSE session it holds.
+    assert api.get("/v1/auth/me", headers=headers).json() == {"email": "sara@example.com", "name": "سارة", "farq_user_id": "farq-1"}
     # Farq confirmed the address, so the first send is not blocked behind Taseer's own email check.
     assert api.get("/v1/auth/verify/status", headers=headers).json()["verified"] is True
     sent = api.post(
