@@ -1703,6 +1703,13 @@ function renderSent() {
   ${fqNav("home")}`;
 }
 
+// The ask for notifications is only worth making where a yes can be honoured: the browser
+// supports push, and this is not Farq's frame (inside Farq the app itself owns notifications,
+// and an iPhone will not grant them to a frame at all).
+function canAskForPush() {
+  return pushSupported && !isFarqEmbed() && !state.pushDismissed && state.pushState !== "on";
+}
+
 // Phone notifications when a supplier replies. iPhone only allows them for a site added to the home screen.
 const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const isStandalone = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -4627,7 +4634,7 @@ async function sendRequest() {
     state.view = "sent";
     state.replaceUrl = true;
     // N02 asks over the success screen, which is where the frame draws it
-    if (!state.pushDismissed && state.pushState !== "on") state.pushAsk = true;
+    if (!state.pushDismissed && state.pushState !== "on") state.pushAsk = canAskForPush();
     render();
     // refresh the list behind the screen without navigating away from it
     api("/v1/requests", { quiet: true })
