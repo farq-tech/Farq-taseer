@@ -1454,12 +1454,7 @@ function renderFlow() {
   return `${fqHead({ title: "نتائج البحث", back: "back-understand" })}
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
-    ${asking || !state.results.length ? "" : `<div class="fq-filters-row">
-      <div class="fq-live"><span class="fq-pulse" aria-hidden="true"></span>
-        <span data-count="${shown.length}">${esc(foundLine(state.shownCount || shown.length))}</span><span>${state.partial ? " • البحث مستمر" : ""}</span></div>
-      <span class="fq-meta">الأسعار توصلك في عروضهم</span>
-      ${tabs.length > 1 ? `<button class="fq-fpill all${state.needFilter ? "" : " on"}" type="button" data-action="filter-need" data-name="" aria-pressed="${!state.needFilter}">الكل</button>${tabs.map((name) => `<button class="fq-fpill${state.needFilter === name ? " on" : ""}" type="button" data-action="filter-need" data-name="${esc(name)}" aria-pressed="${state.needFilter === name}"><bdi>${esc(name)}</bdi></button>`).join("")}` : ""}
-    </div>`}
+    ${asking || !state.results.length ? "" : `<div class="fq-filters-row">${filtersRow(tabs, shown)}</div>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
     ${showEmpty ? emptyState() : ""}
     ${shown.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), shown.map(renderCard).join(""))}</div>` : ""}
@@ -1467,6 +1462,15 @@ function renderFlow() {
   </section>
   ${state.view === "detail" ? detailSheet() : ""}
   ${state.capSheet ? capSheet() : ""}`;
+}
+
+// The count, the «still searching» mark and the item pills above the list. Drawn whole on a
+// full render, and redrawn alone when a streamed batch changes the count or adds an item.
+function filtersRow(tabs, shown) {
+  return `<div class="fq-live"><span class="fq-pulse" aria-hidden="true"></span>
+        <span data-count="${shown.length}">${esc(foundLine(state.shownCount || shown.length))}</span><span data-partial>${state.partial ? " • البحث مستمر" : ""}</span></div>
+      <span class="fq-meta">الأسعار توصلك في عروضهم</span>
+      ${tabs.length > 1 ? `<button class="fq-fpill all${state.needFilter ? "" : " on"}" type="button" data-action="filter-need" data-name="" aria-pressed="${!state.needFilter}">الكل</button>${tabs.map((name) => `<button class="fq-fpill${state.needFilter === name ? " on" : ""}" type="button" data-action="filter-need" data-name="${esc(name)}" aria-pressed="${state.needFilter === name}"><bdi>${esc(name)}</bdi></button>`).join("")}` : ""}`;
 }
 
 function foundLine(count) {
@@ -4439,19 +4443,16 @@ function toggle(key) {
 
 function patchResults() {
   const list = app.querySelector(".fq-body .fq-stagger");
-  const counter = app.querySelector(".fq-live [data-count]");
-  if (!list || !counter || state.needFilter) return false;
-  const pills = app.querySelectorAll(".fq-fpill").length;
-  const tabs = new Set(state.results.map(needOf).filter(Boolean)).size;
-  if ((tabs > 1 ? tabs + 1 : 0) !== pills) return false;
+  const row = app.querySelector(".fq-filters-row");
+  if (!list || !row || state.needFilter) return false;
   const present = new Set([...list.querySelectorAll("button[data-action=toggle]")].map((node) => node.dataset.key));
   const fresh = state.results.filter((result) => !present.has(resultKey(result)));
   newCardsInBatch = 0;
   if (fresh.length) list.insertAdjacentHTML("beforeend", fresh.map(renderCard).join(""));
   bindImages(list);
   for (const result of state.results) state.seenCards.add(resultKey(result));
-  counter.textContent = foundLine(state.results.length);
-  counter.dataset.count = String(state.results.length);
+  const tabs = [...new Set(state.results.map(needOf).filter(Boolean))];
+  row.innerHTML = filtersRow(tabs, visibleResults());
   const notice = app.querySelector(".fq-body > p.fq-meta[aria-live]");
   if (notice) notice.textContent = state.notice;
   scheduleDraftSave();
