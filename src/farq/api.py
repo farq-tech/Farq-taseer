@@ -720,9 +720,17 @@ def create_app(
         _remember_sellers(trace_id, user_id, _response_results(response))
         return response
 
-    # Searches in flight on this instance, so a search that arrives while its warm-up is
-    # still running waits for it instead of asking Haraj a second time.
-    warming: dict[str, threading.Event] = {}
+    # A warm-up in flight on this instance keeps every event it has produced so far. A search
+    # for the same sentence that arrives meanwhile replays those events and follows the rest
+    # as they come: the customer who read M02 for two seconds sees the first suppliers at
+    # once, and Haraj is asked once, not twice.
+    class Warm:
+        def __init__(self) -> None:
+            self.events: list[dict] = []
+            self.done = threading.Event()
+            self.cond = threading.Condition()
+
+    warming: dict[str, Warm] = {}
     warming_lock = threading.Lock()
 
     def _warm_search(query: str) -> None:
@@ -730,25 +738,50 @@ def create_app(
         with warming_lock:
             if key in warming:
                 return
-            done = warming[key] = threading.Event()
+            warm = warming[key] = Warm()
         try:
             if _cached_search(query) is None:
-                response, _trace = run_search(query, corpus, live_client, config)
-                _keep_search(query, response)
+                for event in iter_search(query, corpus, live_client, config):
+                    with warm.cond:
+                        warm.events.append(event)
+                        warm.cond.notify_all()
+                    if event["type"] == "done":
+                        _keep_search(query, event["response"])
         except Exception:  # noqa: BLE001 - warming is best effort
             log.warning("search warm failed", exc_info=True)
         finally:
             with warming_lock:
                 warming.pop(key, None)
-            done.set()
+            with warm.cond:
+                warm.done.set()
+                warm.cond.notify_all()
+
+    def _warming_for(query: str):
+        with warming_lock:
+            return warming.get(_search_key(query))
+
+    def _follow_warm(warm, timeout: float = 40.0):
+        """Every event of the warm-up, those already produced and those still to come."""
+        seen = 0
+        deadline = time.time() + timeout
+        while True:
+            with warm.cond:
+                while len(warm.events) <= seen and not warm.done.is_set():
+                    if not warm.cond.wait(timeout=max(0.1, deadline - time.time())) and time.time() > deadline:
+                        return
+                batch = warm.events[seen:]
+            seen += len(batch)
+            for event in batch:
+                yield event
+            if warm.done.is_set() and len(warm.events) <= seen:
+                return
 
     def _cached_or_warming(query: str):
         kept = _cached_search(query)
         if kept is not None:
             return kept
-        with warming_lock:
-            pending = warming.get(_search_key(query))
-        if pending is not None and pending.wait(25):
+        warm = _warming_for(query)
+        if warm is not None and warm.done.wait(25):
             return _cached_search(query)
         return None
 
@@ -787,7 +820,9 @@ def create_app(
                 payload["type"] = "done"
                 yield json.dumps(payload, ensure_ascii=False) + "\n"
                 return
-            for event in iter_search(body.query, corpus, live_client, config):
+            warm = _warming_for(body.query)
+            source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, live_client, config)
+            for event in source:
                 if event["type"] == "results":
                     # The app lets customers pick from a batch before the search ends.
                     _remember_sellers(event["trace_id"], user_id, event["results"])
@@ -795,7 +830,8 @@ def create_app(
                     response = event["response"]
                     store.record_journey(response.trace_id, user_id, body.query, response.state.value, event["trace"])
                     _remember_sellers(response.trace_id, user_id, _response_results(response))
-                    _keep_search(body.query, response)
+                    if warm is None:
+                        _keep_search(body.query, response)
                 yield json.dumps(_public_event(event), ensure_ascii=False) + "\n"
 
         return StreamingResponse(generate(), media_type="application/x-ndjson")

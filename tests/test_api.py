@@ -725,3 +725,39 @@ def test_a_finished_search_is_served_from_the_store_for_ten_minutes(tmp_path: Pa
     after = len(calls)
     api.post("/v1/search", json={"query": "أبي نجار بالرياض"})
     assert len(calls) == after
+
+
+def test_a_search_that_arrives_during_its_warm_up_follows_it_instead_of_starting_over(tmp_path: Path):
+    import threading as _threading
+
+    calls = []
+    gate = _threading.Event()
+
+    class GatedHaraj:
+        def search_iter(self, queries, city):
+            calls.append(list(queries))
+            yield QueryFetch(ads=[], pages=1, has_next=True)
+            gate.wait(5)
+            yield QueryFetch(ads=[], pages=1, has_next=False)
+
+        def search(self, queries, city):
+            calls.append(list(queries))
+            return LiveBatch()
+
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), GatedHaraj(), SearchConfig(enable_live=True)))
+    # The warm-up starts in the background and blocks on the gate...
+    assert api.post("/v1/search/warm", json={"query": "أبي سباك بالرياض"}).json()["warming"] is True
+    out = {}
+
+    def follow():
+        out["lines"] = [json.loads(line) for line in api.post("/v1/search/stream", json={"query": "أبي سباك بالرياض"}).text.splitlines() if line.strip()]
+
+    follower = _threading.Thread(target=follow)
+    follower.start()
+    time.sleep(0.3)
+    gate.set()
+    follower.join(10)
+    assert out["lines"][-1]["type"] == "done"
+    # ...and Haraj was asked once for the sentence, not twice.
+    assert len(calls) == 1
