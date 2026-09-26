@@ -1257,7 +1257,7 @@ function renderHome() {
     <div class="fq-hero">
       <span class="halo" aria-hidden="true"></span>
       <h1>وش تبي نسعّر لك؟</h1>
-      <p>قل لنا وش تحتاج و ماعليك فرق بيجيب الفرق من عدت مصادر و في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
+      <p>قل لنا وش تحتاج، وفرق يجيب لك الفرق من عدة مصادر في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
     </div>
     <form class="fq-card pad" id="composer" style="gap:10px">
       <label class="sr" for="composer-query">وش تبي نسعّر لك؟</label>
@@ -1690,6 +1690,11 @@ function renderSent() {
       <hr class="fq-line">
       <div class="fq-row"><span class="fq-meta">الحالة</span><strong style="color:var(--fq-success)">بانتظار الإرسال والردود</strong></div>
     </div>
+    ${state.pushAsk ? `<div class="fq-card pad fq-askcard" style="width:100%;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px"><span class="fq-bell small">${ic("bell", 20)}</span><strong>نبلغك أول ما يوصلك عرض؟</strong></div>
+      <p class="fq-small fq-muted" style="margin:0">تنبيه فوري عند وصول رسالة أو عرض سعر على طلبك.</p>
+      <div style="display:flex;gap:8px"><button class="fq-btn sm success r14" type="button" data-action="enable-notify" style="flex:1">تفعيل</button><button class="fq-btn sm soft r14" type="button" data-action="dismiss-notify" style="flex:1">لاحقًا</button></div>
+    </div>` : ""}
     <div class="fq-actions" style="width:100%;margin-top:auto">
       <button class="fq-btn" type="button" data-action="open-sent">طلباتي</button>
       <button class="fq-btn ghost" type="button" data-action="home">العودة للرئيسية</button>
@@ -1814,10 +1819,13 @@ function renderRequests() {
         const reached = item.sent_count ?? item.recipient_count ?? 0;
         const waiting = Math.max(0, reached - (item.replied_count || 0));
         const queued = item.queued_count || 0;
+        // One shared sending account, one contact every 20 seconds: the wait is the queue
+        // ahead plus this request's own suppliers, said plainly instead of «يراجع طلبك».
+        const eta = queued ? Math.max(1, Math.ceil(((item.queue_ahead || 0) + queued) * 20 / 60)) : 0;
         const live = item.awarded_seller_id
           ? ""
           : queued && !item.replied_count
-            ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>نرسل طلبك إلى ${esc(suppliers(queued))}…</span></div>`
+            ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>في طابور الإرسال إلى ${esc(suppliers(queued))} · يوصلهم خلال ${eta === 1 ? "دقيقة تقريبًا" : `~${formatCount(eta)} دقائق`}</span></div>`
             : waiting
               ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>${waiting === 1 ? "مورد واحد يراجع" : `${esc(suppliers(waiting))} يراجعون`} طلبك</span></div>`
               : "";
@@ -4065,7 +4073,7 @@ function render() {
   // A streaming search re-renders the list many times; that is not an arrival.
   const arriving = state.view !== lastView && !(state.view === "flow" && state.results.length);
   const banner = state.token && !SUPPLIER_VIEWS.has(state.view) && state.view !== "verify" ? verifyBanner() : "";
-  app.innerHTML = shell(`${banner}${view()}${state.pushAsk ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
+  app.innerHTML = shell(`${banner}${view()}${state.pushAsk && state.view !== "sent" ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
   document.body.classList.toggle("fq-web", window.innerWidth >= 900);
   document.body.classList.toggle("fq-auth", state.view === "auth");
   // the choreographed entrance belongs to the screen, not to every render of it
@@ -4316,6 +4324,7 @@ async function runSearch(text, city = "") {
         state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
       } else if (event.type === "results") {
         // partial batches move the counter and the list, and say nothing
+        const hadCards = state.results.length > 0;
         if ((event.results || []).length) state.searching = false;
         if (event.scanned != null) state.scanned = event.scanned;
         state.results = event.results || [];
@@ -4334,6 +4343,9 @@ async function runSearch(text, city = "") {
         state.partial = true;
         state.searchState = event.state;
         if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
+        // A batch that arrives on a list already on screen adds its new cards to the end
+        // instead of redrawing eighty cards and their pictures; the search's end reorders.
+        if (hadCards && state.view === "flow" && patchResults()) return;
       } else if (event.type === "done") {
         finished = true;
         state.searching = false;
@@ -4414,6 +4426,27 @@ function toggle(key) {
     return;
   } else selectResult(key);
   if (!patchSelection(key)) render();
+}
+
+function patchResults() {
+  const list = app.querySelector(".fq-body .fq-stagger");
+  const counter = app.querySelector(".fq-live [data-count]");
+  if (!list || !counter || state.needFilter) return false;
+  const pills = app.querySelectorAll(".fq-fpill").length;
+  const tabs = new Set(state.results.map(needOf).filter(Boolean)).size;
+  if ((tabs > 1 ? tabs + 1 : 0) !== pills) return false;
+  const present = new Set([...list.querySelectorAll("button[data-action=toggle]")].map((node) => node.dataset.key));
+  const fresh = state.results.filter((result) => !present.has(resultKey(result)));
+  newCardsInBatch = 0;
+  if (fresh.length) list.insertAdjacentHTML("beforeend", fresh.map(renderCard).join(""));
+  bindImages(list);
+  for (const result of state.results) state.seenCards.add(resultKey(result));
+  counter.textContent = foundLine(state.results.length);
+  counter.dataset.count = String(state.results.length);
+  const notice = app.querySelector(".fq-body > p.fq-meta[aria-live]");
+  if (notice) notice.textContent = state.notice;
+  scheduleDraftSave();
+  return true;
 }
 
 // A tap on «اختر هذا المورد» used to rebuild the whole list - eighty cards and their

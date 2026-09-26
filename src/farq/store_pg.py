@@ -555,7 +555,16 @@ class PgStore:
                     "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = %s order by created_at",
                     (request_id,),
                 ).fetchall()
-                items.append(request_summary(row, recipients, offers, messages))
+                summary = request_summary(row, recipients, offers, messages)
+                if summary.get("queued_count"):
+                    # Everyone's suppliers still waiting ahead of this request in the one queue.
+                    ahead = conn.execute(
+                        "select count(*) as n from request_recipients rr join requests r on r.id = rr.request_id"
+                        " where rr.send_status = 'queued' and r.created_at < %s",
+                        (row["created_at"],),
+                    ).fetchone()
+                    summary["queue_ahead"] = int(ahead["n"]) if ahead else 0
+                items.append(summary)
             return items
 
     def _request_by_token(self, token: str):

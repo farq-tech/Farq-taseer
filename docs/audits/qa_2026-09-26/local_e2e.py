@@ -71,12 +71,13 @@ with sync_playwright() as p:
     note("F. recipients:", [(r["seller_name"][:20], r["need"]) for r in recips])
     s, v = api(f"/v1/seller/{recips[0]['reply_token']}"); note("   seller view keys:", sorted(v.keys())[:8], "| other seller prices visible:", "price" in json.dumps(v, ensure_ascii=False))
     s, _ = api(f"/v1/seller/{recips[0]['reply_token']}/messages", "POST", {"body": "أقدر أجيك اليوم، السعر 350 ريال شامل", "offer_amount": 350, "delivery_included": True, "phone": "0555555555"}); note("   reply 1:", s)
-    s, _ = api(f"/v1/seller/{recips[1]['reply_token']}/messages", "POST", {"body": "300 ريال بدون توصيل", "offer_amount": 300, "delivery_included": False, "delivery_price": 80}); note("   reply 2:", s)
-    s, v2 = api(f"/v1/seller/{recips[1]['reply_token']}"); leak = "350" in json.dumps(v2, ensure_ascii=False); note("   seller 2 sees seller 1 price (350)?", leak)
+    if len(recips) > 1:
+        s, _ = api(f"/v1/seller/{recips[1]['reply_token']}/messages", "POST", {"body": "300 ريال بدون توصيل", "offer_amount": 300, "delivery_included": False, "delivery_price": 80}); note("   reply 2:", s)
+        s, v2 = api(f"/v1/seller/{recips[1]['reply_token']}"); leak = "350" in json.dumps(v2, ensure_ascii=False); note("   seller 2 sees seller 1 price (350)?", leak)
     # customer opens the conversation
-    if page.locator("[data-action=dismiss-notify]").count():
-        note("   push prompt shown over the success screen; dismissing"); page.locator("button[data-action=dismiss-notify]").first.click(); time.sleep(0.3)
+    note("   inline ask card on sent screen:", page.locator(".fq-askcard").count(), "| blocking scrim:", page.locator(".fq-scrim.deep").count())
     page.locator("button[data-action=open-sent]").click(); page.wait_for_selector("[data-action=thread]")
+    live = page.locator(".fq-live.wide"); note("   requests list live lines:", [live.nth(i).inner_text() for i in range(min(live.count(), 3))])
     shot(page, "04_requests")
     page.locator("[data-action=thread]").first.click(); page.wait_for_selector(".fq-composer, #user-reply", timeout=15000); time.sleep(0.8)
     body_text = page.locator("main").inner_text(); note("G. thread shows 350:", "350" in body_text, "| 300:", "300" in body_text, "| cheapest badge:", "الأرخص" in body_text)

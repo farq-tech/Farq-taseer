@@ -2078,7 +2078,15 @@ class Store:
                 "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
                 (row["id"],),
             ).fetchall()
-            items.append(request_summary(row, recipients, self._offers_for_request(row["id"]), messages))
+            summary = request_summary(row, recipients, self._offers_for_request(row["id"]), messages)
+            if summary.get("queued_count"):
+                ahead = self._connection.execute(
+                    "select count(*) as n from request_recipients rr join requests r on r.id = rr.request_id"
+                    " where rr.send_status = 'queued' and r.created_at < ?",
+                    (row["created_at"],),
+                ).fetchone()
+                summary["queue_ahead"] = int(ahead["n"]) if ahead else 0
+            items.append(summary)
         return items
 
     def _request_by_token(self, token: str):
