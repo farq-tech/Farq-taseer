@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+import urllib.parse
 import urllib.request
 from urllib.error import HTTPError, URLError
 
@@ -41,8 +42,10 @@ def listing_images(url: str, opener=None, now: float | None = None) -> list[str]
     cached = _CACHE.get(url)
     if cached and moment - cached[0] < _TTL_SECONDS:
         return list(cached[1])
+    # Listing addresses carry the title in Arabic; urllib refuses a non-ASCII URL outright
+    # (UnicodeEncodeError, a ValueError, swallowed below), so every gallery came back empty.
     request = urllib.request.Request(
-        url,
+        urllib.parse.quote(url, safe=":/?&=%#+,;@"),
         headers={
             "User-Agent": "Mozilla/5.0 (compatible; FARQ-individuals/1.0)",
             "Accept": "text/html",
