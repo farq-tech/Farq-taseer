@@ -1390,7 +1390,7 @@ function renderQuestion() {
 function snip(result) {
   const lines = evidenceLines(result);
   const text = adStory(result.ad?.description) || lines[1] || lines[0] || "";
-  return String(text).replace(/\s+/g, " ").trim().slice(0, 72);
+  return withoutPrices(String(text).replace(/\s+/g, " ")).slice(0, 72);
 }
 
 // M05_SearchResults result card — node 27:180. The tick sits on the left, the supplier's
@@ -1458,7 +1458,7 @@ function renderCard(result) {
   // The advert's own headline is the sentence in which the supplier says what he does:
   // "عروض كاميرات مراقبة مع التركيب". It used to be shown only when there was no body
   // text, and every listing has body text, so it was never shown at all.
-  const offer = String(result.ad?.title || "").trim();
+  const offer = withoutPrices(result.ad?.title);
   const where = cityLabel(result.ad?.city || seller.city || "");
   const detail = snip(result);
   const matched = matchedWords(result);
@@ -1571,12 +1571,29 @@ function unescapeOnce(text) {
   return String(text || "").replace(/&(amp|lt|gt|quot|#39|nbsp|ndash|mdash|hellip);/g, (_m, name) => ENTITIES[name]);
 }
 
+// While the customer is choosing suppliers no price is shown at all — an ad price is not a
+// quote for this job, and the supplier's own words («السعر 150 ريال») are the ad price again.
+const PRICE_NUM = "[\\d٠-٩][\\d٠-٩,.،٫]*(?:\\s*(?:الف|ألف|آلاف|k))?";
+const PRICE_CUR = "(?:ريالات|ريال|﷼|ر\\s?\\.?\\s?س\\.?|رس|sar|sr|rs)(?![\\p{L}])";
+const PRICE_UNIT = "(?:\\s*(?:لل|/\\s*)(?:متر|م|حبه|حبة|قطعه|قطعة|ساعه|ساعة|يوم|شهر|نقله|نقلة)(?![\\p{L}]))?";
+const PRICE_SOURCE = `(?:(?:(?:و?ب?(?:ال)?(?:سعر|اسعار|أسعار)|يبدأ من|ابتداء من|ابتداءً من)\\s*[:：\\-]?\\s*(?:بـ?\\s*)?${PRICE_NUM}(?:\\s*${PRICE_CUR})?|(?:بـ?\\s*)?${PRICE_NUM}\\s*${PRICE_CUR}|${PRICE_CUR}\\s*${PRICE_NUM})${PRICE_UNIT})`;
+const PRICE_ANY = new RegExp(PRICE_SOURCE, "iu");
+const PRICE_ALL = new RegExp(PRICE_SOURCE, "giu");
+function withoutPrices(text) {
+  return String(text || "")
+    .replace(PRICE_ALL, " ")
+    .replace(/\s*[-–—:|،,]+\s*$/u, "")
+    .replace(/^\s*[-–—:|،,]+\s*/u, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function adStory(text) {
   // Haraj bodies arrive with entities escaped twice ("&amp;ndash;"), which the customer
   // would otherwise read as markup in the middle of a sentence.
   return unescapeOnce(unescapeOnce(text))
     .split("\n")
-    .filter((line) => line.trim() && !AD_NOISE.some((pattern) => pattern.test(line)))
+    .filter((line) => line.trim() && !AD_NOISE.some((pattern) => pattern.test(line)) && !PRICE_ANY.test(line))
     .join("\n")
     .trim();
 }
@@ -1866,7 +1883,7 @@ function renderRequests() {
     ${isFarqEmbed() ? `<h1 class="fq-sr-only">طلباتي</h1>` : ""}
     <div class="fq-row"><span class="fq-small" style="font-weight:600">تابع عروضك وطلباتك من مكان واحد</span>
       <button class="fq-addbtn" type="button" data-action="home">${ic("plus", 14)}طلب جديد</button></div>
-    <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تمت الترسية")}${pill("done", "مكتملة")}</div>
+    <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تم إختيار افضل سعر")}${pill("done", "مكتملة")}</div>
     <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
       ${state.requests.filter(match).map((item) => {
         const need = item.need || item.original_text;
