@@ -355,7 +355,10 @@ def create_app(
         return {"status": "ok", "contract_version": "1"}
 
     @app.get("/v1/cities")
-    def cities() -> dict:
+    def cities(response: Response) -> dict:
+        # A fixed list: the edge may keep it an hour, the browser five minutes, so the
+        # first call at boot does not cross to Sydney.
+        response.headers["Cache-Control"] = "public, max-age=300, s-maxage=3600"
         return {"cities": city_choices()}
 
     @app.post("/v1/auth/register")
@@ -1152,11 +1155,14 @@ def create_app(
         # near the visitor (s-maxage; each deployment starts a fresh cache), and browsers revalidate
         # the page, script and styles so a deploy shows up at once.
         def static_file(path: Path) -> FileResponse:
-            if path.suffix in {".png", ".svg", ".ico", ".woff2"}:
+            # The runtime's mimetypes table lacks webp; served as octet-stream, the
+            # browser still drew it, but not with the type it deserves.
+            media = "image/webp" if path.suffix == ".webp" else None
+            if path.suffix in {".png", ".svg", ".ico", ".woff2", ".webp"}:
                 cache = "public, max-age=86400, s-maxage=31536000"
             else:
                 cache = "public, max-age=0, must-revalidate, s-maxage=31536000"
-            return FileResponse(path, headers={"Cache-Control": cache})
+            return FileResponse(path, headers={"Cache-Control": cache}, media_type=media)
 
         @app.get("/")
         def index() -> FileResponse:
