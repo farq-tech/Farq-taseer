@@ -3054,9 +3054,7 @@ function renderSubscribe() {
             : near
               ? `<button class="fq-btn amber-chip r14" type="button" disabled>تجربتك نشطة</button>`
               : `<button class="fq-btn mint r14" type="button" disabled>تجربتك مفعلة</button>`}
-          ${paymentsOff()
-            ? `<p class="fq-small" style="text-align:center;margin-top:12px">الاشتراك غير متاح حالياً</p>`
-            : `<p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>`}
+          <p class="fq-small" style="text-align:center;margin-top:12px">${paymentsOff() ? "الاشتراك غير متاح حالياً ·" : "تحتاج أكثر؟"} <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
         </div>`}
   </section>
   ${fqNav("account")}`;
