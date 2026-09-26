@@ -675,7 +675,7 @@ function understandProblem() {
   if (state.intentError) {
     return `${head}<section class="fq-body center" role="alert">
       <div class="fq-blob warn">${ic("alert-triangle", 48)}</div>
-      <div><h1 class="fq-h2">ما قدرنا نقرأ طلبك الحين</h1><p class="fq-lead">صار خلل في الاتصال بفرق. طلبك محفوظ، جرّب مرة ثانية بعد لحظات.</p></div>
+      <div><h1 class="fq-h2">ما قدرنا نقرأ طلبك الحين</h1><p class="fq-lead">${state.intentErrorReason === "rate" ? "طلبات كثيرة خلال دقيقة. طلبك محفوظ، انتظر شوي ثم حاول مرة ثانية." : "صار خلل في الاتصال بفرق. طلبك محفوظ، جرّب مرة ثانية بعد لحظات."}</p></div>
       ${quote}
       <div class="fq-actions" style="width:100%">
         <button class="fq-btn" type="button" data-action="retry-intent">حاول مرة ثانية</button>
@@ -808,6 +808,7 @@ function finalNotice(status, count) {
   if (status === "SELLER_UNAVAILABLE") return "المورد ما عاد متاح.";
   if (status === "STALE_AD") return "هذي الإعلانات قديمة. تأكد قبل ما ترسل.";
   if (status === "INTERNAL_ERROR") return "صار خطأ عندنا. جرّب مرة ثانية.";
+  if (status === "RATE_LIMITED") return "طلبات كثيرة خلال دقيقة. انتظر شوي ثم حاول مرة ثانية.";
   return "";
 }
 
@@ -1015,7 +1016,7 @@ function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = 
     if (!back) return "";
     return `<div class="fq-embar">
       <button class="fq-embar-back" type="button" data-action="${esc(back)}" aria-label="رجوع">${ic("back", 18)}</button>
-      <div class="fq-embar-mid"><span class="fq-embar-title"><bdi>${esc(title)}</bdi></span>${sub ? `<span class="fq-embar-sub"><bdi>${esc(sub)}</bdi></span>` : ""}</div>
+      <div class="fq-embar-mid"><h1 class="fq-embar-title"><bdi>${esc(title)}</bdi></h1>${sub ? `<span class="fq-embar-sub"><bdi>${esc(sub)}</bdi></span>` : ""}</div>
       ${end && !end.includes("fq-lang") ? `<div class="fq-embar-end">${end}</div>` : "<span></span>"}
     </div>`;
   }
@@ -1297,11 +1298,13 @@ function renderSearching() {
       <span class="fq-skel" style="flex:1;height:34px;border-radius:10px"></span></div>
     <span class="fq-skel" style="height:14px;width:70%;border-radius:8px"></span>
     <span class="fq-skel" style="height:22px;width:35%;border-radius:8px"></span></div>`;
-  return `${fqHead({ title: "ماعليك فرق بيجيب الفرق" })}
-  <section class="fq-body" aria-live="polite">
+  // The way back stays open while the search runs: nobody is held on a spinner.
+  return `${fqHead({ title: "ماعليك فرق بيجيب الفرق", back: "back-understand" })}
+  <section class="fq-body" aria-live="polite" aria-busy="true">
     <div class="fq-card pad" style="gap:14px">
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
         <span style="flex:1">${state.results.length ? `وصل ${suppliers(state.results.length)} حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
+      ${state.slowSearch ? `<p class="fq-meta" role="status" style="margin:0">البحث ياخذ وقت أطول من العادة. لو ما رجع شيء خلال لحظات بنوقفه ونقول لك.</p>` : ""}
       <div class="fq-live-count">
         <span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>تحديث في الوقت الفعلي</span>
@@ -1455,7 +1458,7 @@ function renderFlow() {
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
     ${asking || !state.results.length ? "" : `<div class="fq-filters-row">${filtersRow(tabs, shown)}</div>`}
-    ${state.notice && !showEmpty ? `<p class="fq-meta" aria-live="polite">${esc(state.notice)}</p>` : ""}
+    ${state.notice && !showEmpty ? `<p class="fq-meta" role="status" aria-live="polite">${esc(state.notice)}${!live && !asking && state.results.length && state.searchState === "PARTIAL_RESULTS" ? ` <button class="fq-link" type="button" data-action="retry-search">ابحث مرة ثانية</button>` : ""}</p>` : ""}
     ${showEmpty ? emptyState() : ""}
     ${shown.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), shown.map(renderCard).join(""))}</div>` : ""}
     ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة مع ${esc(suppliers(count))}</button></div>` : ""}
@@ -1481,7 +1484,7 @@ function foundLine(count) {
 // again as it is; an empty search needs a different wording, item or city, not the same search.
 function emptyState() {
   const status = state.searchState;
-  const failed = ["INTERNAL_ERROR", "TIMEOUT", "LIVE_UNAVAILABLE", "PARTIAL_RESULTS"].includes(status);
+  const failed = ["INTERNAL_ERROR", "TIMEOUT", "LIVE_UNAVAILABLE", "PARTIAL_RESULTS", "RATE_LIMITED"].includes(status);
   const city = cityLabel(customerCity());
   const blob = (glyph) => `<div class="fq-blob warn">${ic(glyph, 48)}</div>`;
   if (failed) {
@@ -1809,8 +1812,9 @@ function renderRequests() {
     if (filter === "done") return Boolean(item.awarded_seller_id);
     return true;
   };
-  const pill = (key, label) => `<button class="fq-pill${filter === key ? " on" : ""}" type="button" data-action="req-filter" data-filter="${key}">${label}</button>`;
+  const pill = (key, label) => `<button class="fq-pill${filter === key ? " on" : ""}" type="button" data-action="req-filter" data-filter="${key}" aria-pressed="${filter === key}">${label}</button>`;
   return `${head}<section class="fq-body tight">
+    ${isFarqEmbed() ? `<h1 class="fq-sr-only">طلباتي</h1>` : ""}
     <div class="fq-row"><span class="fq-small" style="font-weight:600">تابع عروضك وطلباتك من مكان واحد</span>
       <button class="fq-addbtn" type="button" data-action="home">${ic("plus", 14)}طلب جديد</button></div>
     <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تمت الترسية")}${pill("done", "مكتملة")}</div>
@@ -4388,15 +4392,24 @@ const SEARCH_TIMEOUT_MS = 30000;
 function failSearch(status) {
   state.searching = false;
   state.partial = false;
+  state.slowSearch = false;
   if (state.results.length) {
     // what arrived is real; say the rest did not
     state.searchState = "PARTIAL_RESULTS";
     state.notice = finalNotice(status === "TIMEOUT" ? "TIMEOUT" : "PARTIAL_RESULTS", state.results.length);
   } else {
     state.searchState = status;
-    state.notice = status === "TIMEOUT" ? "البحث طوّل أكثر من اللازم وما رجعت نتائج." : "ما قدرنا نكمل البحث بسبب خلل في الاتصال.";
+    state.notice = status === "TIMEOUT"
+      ? "البحث طوّل أكثر من اللازم وما رجعت نتائج."
+      : status === "RATE_LIMITED"
+        ? "طلبات كثيرة خلال دقيقة. انتظر شوي ثم حاول مرة ثانية."
+        : "ما قدرنا نكمل البحث بسبب خلل في الاتصال.";
   }
 }
+
+// A search that is still empty after this long says so: the customer sees the wait is known,
+// and the way back stays open the whole time.
+const SLOW_SEARCH_MS = 12000;
 
 async function runSearch(text, city = "") {
   const query = (text || "").trim();
@@ -4432,17 +4445,27 @@ async function runSearch(text, city = "") {
   state.intent = null;
   state.clarification = "";
   state.notice = "نفهم طلبك…";
+  state.slowSearch = false;
   state.selected.clear();
   render();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  const slowTimer = setTimeout(() => {
+    if (!mine() || !state.searching || state.results.length) return;
+    state.slowSearch = true;
+    if (state.view === "flow") render();
+  }, SLOW_SEARCH_MS);
   const started = Date.now();
   let finished = false;
   try {
     const headers = { "Content-Type": "application/json" };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked }), signal: controller.signal });
-    if (!response.ok || !response.body) throw new Error("stream");
+    if (!response.ok || !response.body) {
+      const refused = new Error("stream");
+      refused.status = response.status;
+      throw refused;
+    }
     await readNdjson(response, (event) => {
       if (!mine()) return;
       if (event.trace_id) state.traceId = event.trace_id;
@@ -4497,8 +4520,11 @@ async function runSearch(text, city = "") {
     if (!mine()) return;
     const timedOut = controller.signal.aborted;
     const left = SEARCH_TIMEOUT_MS - (Date.now() - started);
-    // The plain endpoint is a second chance only when the stream failed fast and nothing arrived.
-    if (!timedOut && !state.results.length && left > 3000) {
+    if (_error?.status === 429) {
+      // The server asked for a pause: a second request now would only lengthen it.
+      failSearch("RATE_LIMITED");
+    } else if (!timedOut && !state.results.length && left > 3000) {
+      // The plain endpoint is a second chance only when the stream failed fast and nothing arrived.
       const fallback = new AbortController();
       const fallbackTimer = setTimeout(() => fallback.abort(), left);
       try {
@@ -4509,7 +4535,7 @@ async function runSearch(text, city = "") {
         if (state.results.length) cueOnce(`search:${state.searchId}`, "found", 10);
       } catch (_fallback) {
         if (!mine()) return;
-        failSearch(fallback.signal.aborted ? "TIMEOUT" : "INTERNAL_ERROR");
+        failSearch(fallback.signal.aborted ? "TIMEOUT" : _fallback?.status === 429 ? "RATE_LIMITED" : "INTERNAL_ERROR");
       } finally {
         clearTimeout(fallbackTimer);
       }
@@ -4519,6 +4545,8 @@ async function runSearch(text, city = "") {
     render();
   } finally {
     clearTimeout(timer);
+    clearTimeout(slowTimer);
+    if (mine()) state.slowSearch = false;
   }
 }
 
@@ -4807,6 +4835,7 @@ async function startPricing(text, { fresh = true } = {}) {
   state.needs = null;
   state.editing = null;
   state.intentError = false;
+  state.intentErrorReason = "";
   state.intentProblem = "";
   state.intentQuestion = "";
   state.results = [];
@@ -4822,6 +4851,8 @@ async function startPricing(text, { fresh = true } = {}) {
     if (state.intentId !== intentId) return;
     // no fake M02 made of the raw words: say it failed, keep the text, offer a retry
     state.intentError = true;
+    // a server that asked for a pause is not a broken connection; say which
+    state.intentErrorReason = _error?.status === 429 ? "rate" : "";
     render();
     return;
   }

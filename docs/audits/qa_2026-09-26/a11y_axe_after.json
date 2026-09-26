@@ -1,0 +1,40 @@
+{
+ "home": {
+  "rules": 1,
+  "nodes": 2,
+  "small": 0,
+  "ids": [
+   "target-size"
+  ]
+ },
+ "m02": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 3,
+  "ids": []
+ },
+ "results": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 0,
+  "ids": []
+ },
+ "review": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 3,
+  "ids": []
+ },
+ "requests": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 4,
+  "ids": []
+ },
+ "thread": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 9,
+  "ids": []
+ }
+}

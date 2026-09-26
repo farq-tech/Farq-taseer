@@ -2381,3 +2381,29 @@ html.fq-embed .skip { display: none; }
 .fq-filters-row > .fq-meta { flex: 1; min-width: 0; }
 .fq-chip.ghost { background: transparent; border: 1px dashed var(--fq-line); color: var(--fq-deep); }
 .fq-filters-row .fq-live { max-width: none; }
+/* ---------- Accessibility, 2026-09-26 (axe + touch audit) ----------
+   The sector's colours stay as published; only where text sat on --fq-muted at small sizes
+   (3.1:1 on white) it moves one step up the same Farq ink family, --fq-text-2 (7:1). */
+/* Keyboard focus is visible on every control, drawn in the sector's deep violet. */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible, summary:focus-visible { outline: 3px solid var(--fq-deep); outline-offset: 2px; }
+.fq-btn:focus-visible, .fq-tab:focus-visible, .fq-embar-back:focus-visible, .fq-send:focus-visible { outline-offset: 3px; }
+.fq-inp:focus-within, .fq-inputg:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fq-deep) 28%, transparent); }
+/* The embedded screen name is the page's heading, not a decorated span. */
+.fq-embar-title { margin: 0; line-height: 1.3; }
+/* Small text that read in --fq-muted: the tab labels, times, upcoming steps, the reply link. */
+.fq-tab { color: var(--fq-text-2); }
+.fq-muted, .fq-time, .fq-note .when, .mention-when, .fq-handle, .fq-inc .n, .fq-step, .fq-chip-version { color: var(--fq-text-2); }
+.fq-replybtn { color: var(--fq-deep); opacity: 1; }
+.fq-inp input::placeholder, .fq-inp textarea::placeholder, .fq-inputg textarea::placeholder { color: var(--fq-text-2); opacity: 0.9; }
+/* Touch targets of 44 px: the slim back button grows; icon and pill buttons keep their look and
+   gain the same invisible 44 px hit area the other small controls already have. */
+.fq-embar { grid-template-columns: 44px 1fr auto; }
+.fq-embar-back { width: 44px; height: 44px; border-radius: 22px; }
+.fq-ibtn, .fq-plus, .fq-send, .fq-chip, .fq-pill, .fq-eye { position: relative; }
+.fq-ibtn::after, .fq-plus::after, .fq-send::after, .fq-chip::after, .fq-pill::after, .fq-eye::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);
+}
+.fq-editbtn, .fq-place { min-height: 32px; }
+.fq-pill { min-height: 36px; }
+/* A heading read by screen readers only: inside Farq the tab screens have no bar of their own. */
+.fq-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
