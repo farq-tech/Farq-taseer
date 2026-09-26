@@ -215,6 +215,7 @@ JOURNEYS = [
     "test_offer_amounts_names_and_phones_are_checked",
     "test_a_request_is_awarded_once",
     "test_offers_close_after_the_award_but_the_winner_can_still_talk",
+    "test_the_seller_view_carries_his_own_delivery_terms_and_no_ranking",
 ]
 
 
