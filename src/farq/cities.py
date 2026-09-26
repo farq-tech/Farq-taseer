@@ -152,3 +152,43 @@ def find_direction(text: str | None) -> str | None:
         if f" {direction} " in f" {normalized} ":
             return direction
     return None
+
+
+# Riyadh districts by side of the city, for a request that names a side («أرض شمال الرياض»).
+# Only districts whose side is beyond doubt; a listing is matched on «حي X» so that «الروضة»
+# the garden and «الخليج» the gulf are not read as districts.
+RIYADH_DISTRICTS: dict[str, tuple[str, ...]] = {
+    "شمال": ("النرجس", "الياسمين", "الملقا", "حطين", "الصحافة", "العقيق", "الربيع", "النفل", "الوادي", "الغدير", "القيروان", "العارض", "بنبان", "النخيل", "الفلاح", "المصيف", "الازدهار", "التعاون", "الواحة", "المرسلات", "الندى", "المروج", "النزهة", "الرحمانية", "الخير"),
+    "شرق": ("الروضة", "الرمال", "الشعلة", "النسيم", "الريان", "الخليج", "اليرموك", "القادسية", "المونسية", "الجنادرية", "اشبيليا", "اشبيلية", "غرناطة", "الحمراء", "قرطبة", "الملك فيصل", "الندوة", "الروابي", "النظيم", "الفيحاء", "المنار", "الرماية", "النهضة"),
+    "غرب": ("المهدية", "العريجاء", "ظهرة لبن", "لبن", "طويق", "السويدي", "عرقة", "نمار", "الحزم", "ديراب", "ظهرة نمار", "الموسى", "البديعة", "الزهرة"),
+    "جنوب": ("البطحاء", "الدار البيضاء", "المنصورة", "العزيزية", "الشفا", "منفوحة", "بدر", "الدريهمية", "المروة", "عكاظ", "الحاير", "الغنامية", "المصانع"),
+}
+_DISTRICT_SIDE: dict[str, str] = {normalize(name): side for side, names in RIYADH_DISTRICTS.items() for name in names}
+_DISTRICT_LEAD = re.compile(r"(?:^| )(?:و|ب|في )?حي (\S+(?: \S+)?)")
+
+
+def find_directions(text: str | None) -> set[str]:
+    """Sides of the city a text names outright («شرق الرياض», «شمال وشرق الرياض»)."""
+
+    padded = f" {normalize(text)} "
+    found: set[str] = set()
+    for direction in _DIRECTIONS:
+        if f" {direction} " in padded or f" و{direction} " in padded or f" ب{direction} " in padded:
+            found.add(direction)
+    return found
+
+
+def district_sides(text: str | None) -> set[str]:
+    """Sides of Riyadh the districts named as «حي X» in a text sit on."""
+
+    normalized = normalize(text)
+    sides: set[str] = set()
+    for match in _DISTRICT_LEAD.finditer(normalized):
+        words = match.group(1).split()
+        for length in (2, 1):
+            name = " ".join(words[:length])
+            side = _DISTRICT_SIDE.get(name)
+            if side:
+                sides.add(side)
+                break
+    return sides

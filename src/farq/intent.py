@@ -212,13 +212,15 @@ _SERVICE_VERBS = {
     "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "ينظف", "يغسل", "يفك",
     "يضبط", "يشتغل", "يجي", "يجيني", "يعدل", "يحفر", "يزرع", "يشيك", "يصور",
     "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
-    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك",
+    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم",
 }
-# Whoever does the work. "أبغى مقاول يبني لي ملحق" says provider twice over.
+# Whoever does the work. "أبغى مقاول يبني لي ملحق" says provider twice over. A cook, a
+# photographer, a tutor, a driver: people hired for an occasion, not things bought.
 _SERVICE_AGENTS = {
     "مقاول", "مقاولات", "فني", "فنيين", "معلم", "معلمين", "عامل", "عماله", "ورشه",
     "حداد", "نجار", "سباك", "كهربائي", "كهربجي", "دهان", "مبلط", "بلاط", "لحام",
     "شركه", "مؤسسه", "صنايعي", "استاذ",
+    "طباخ", "طباخه", "مصور", "مصوره", "مدرس", "مدرسه", "سائق", "قهوجي", "مصمم", "خادمه", "شغاله",
 }
 
 
@@ -304,7 +306,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="trades", subcategory="carpenter", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نجار", "نجاره", "نجارة", "carpenter"), eligibility=(("نجار", "نجاره"),), expansions=("نجار", "نجار موبيليا", "تفصيل دولاب", "نجاره")),
     _head(type="service", category="trades", subcategory="plumber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سباك", "سباكه", "سباكة", "plumber"), eligibility=(("سباك", "سباكه", "سباكة"),), expansions=("سباك", "سباك صحي", "تسليك مجاري")),
     _head(type="service", category="trades", subcategory="electrician", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كهربائي", "كهرباء", "كهربائي منازل", "فني كهرباء", "electrician"), label="كهربائي", eligibility=(("كهربائي", "كهرباء", "كهربا"),), expansions=("كهربائي", "كهربائي منازل", "فني كهرباء", "تمديد كهرباء")),
-    _head(type="service", category="trades", subcategory="insulation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("عزل سطح", "عزل اسطح", "مقاول عزل"), eligibility=(("عزل",), ("سطح", "اسطح", "فوم")), expansions=("عزل اسطح", "عزل فوم", "مقاول عزل")),
+    _head(type="service", category="trades", subcategory="insulation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("عزل سطح", "عزل اسطح", "عزل فوم", "مقاول عزل"), eligibility=(("عزل",), ("سطح", "اسطح", "فوم")), expansions=("عزل اسطح", "عزل فوم", "مقاول عزل")),
     _head(type="service", category="building_materials", subcategory="railings", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("درابزين",), eligibility=(("درابزين",),), expansions=("درابزين ستانلس", "درابزين درج", "درابزين سلالم", "تفصيل درابزين", "تركيب درابزين")),
     _head(type="service", category="trades", subcategory="glazing", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("زجاج سيكوريت", "زجاج سكريت", "سيكوريت", "سكريت", "تركيب واجهات", "واجهات زجاج", "شاور زجاج", "قاطع زجاج"), label_from_match=True, eligibility=(_GLAZING_WORDS,), expansions=("زجاج سيكوريت", "زجاج سكريت", "تركيب واجهات زجاج", "شاورات زجاج")),
     _head(type="service", category="services", subcategory="ac_cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تنظيف مكيفات", "تنظيف مكيف", "غسيل مكيفات", "غسيل مكيف", "تنظيف المكيفات", "غسيل المكيفات", "ac cleaning"), label="تنظيف مكيفات", label_from_match=True, verbs=_AC_CLEAN_VERBS, objects=_AC_OBJECTS, eligibility=(_AC_CLEAN_VERBS + ("صيانة",), _AC_OBJECTS), title_groups=(_AC_CLEAN_VERBS + ("صيانة", "فني", "تكييف"),), expansions=("تنظيف مكيفات", "غسيل مكيفات", "صيانة مكيفات")),
@@ -547,6 +549,20 @@ def _content_tokens(normalized: str) -> list[str]:
     return content
 
 
+def _bare(token: str) -> str:
+    """The customer's word without its attached «لل»/«ال»: «للمناسبات» is asked as «مناسبات».
+
+    A listing carries the word in whatever form («المناسبات», «مناسبات», «للمناسبات»), and the
+    matcher strips the listing's prefixes but not the request's, so the attached form found
+    nothing. Only the article comes off; «لحام» keeps its «ل».
+    """
+
+    for prefix in ("لل", "ال"):
+        if token.startswith(prefix) and len(token) - len(prefix) >= 3:
+            return token[len(prefix):]
+    return token
+
+
 def _long_tail(normalized: str) -> Head | None:
     content = _content_tokens(normalized)
     if not content:
@@ -565,7 +581,7 @@ def _long_tail(normalized: str) -> Head | None:
         result_unit=ResultUnit.AD,
         location_sensitivity=LocationSensitivity.PREFERRED,
         phrases=(phrase,),
-        eligibility=tuple((token,) for token in words),
+        eligibility=tuple((_bare(token),) for token in words),
         expansions=tuple(expansions),
         label=phrase,
         raw_phrases=(phrase,),
