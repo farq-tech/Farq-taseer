@@ -1,0 +1,47 @@
+{
+ "home": {
+  "rules": 1,
+  "nodes": 2,
+  "small": 0,
+  "ids": [
+   "target-size"
+  ]
+ },
+ "m02": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 4,
+  "ids": []
+ },
+ "results": {
+  "rules": 1,
+  "nodes": 1,
+  "small": 1,
+  "ids": [
+   "page-has-heading-one"
+  ]
+ },
+ "review": {
+  "rules": 0,
+  "nodes": 0,
+  "small": 4,
+  "ids": []
+ },
+ "requests": {
+  "rules": 1,
+  "nodes": 1,
+  "small": 4,
+  "ids": [
+   "page-has-heading-one"
+  ]
+ },
+ "thread": {
+  "rules": 2,
+  "nodes": 4,
+  "small": 10,
+  "ids": [
+   "color-contrast",
+   "page-has-heading-one"
+  ]
+ }
+}
