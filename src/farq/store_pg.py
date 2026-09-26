@@ -523,7 +523,10 @@ class PgStore:
         return messages
 
     def _offers(self, conn, request_id: str) -> list[Offer]:
-        rows = current_offer_rows(conn.execute("select * from offers where request_id = %s order by created_at desc", (request_id,)).fetchall())
+        return self._offers_from_rows(conn.execute("select * from offers where request_id = %s order by created_at desc", (request_id,)).fetchall())
+
+    def _offers_from_rows(self, rows) -> list[Offer]:
+        rows = current_offer_rows(rows)
         return mark_cheapest(
             [
                 Offer(
@@ -544,26 +547,35 @@ class PgStore:
         )
 
     def list_requests(self, owner_user_id: str) -> list[dict]:
+        # Five queries for the whole list, whatever its length: the requests, then their
+        # recipients, offers and messages in one query each, and the sending queue once.
+        # It was four queries per request (a customer with 25 requests waited on 100).
         with self._pool.connection() as conn:
             rows = conn.execute("select * from requests where owner_user_id = %s order by created_at desc", (owner_user_id,)).fetchall()
+            if not rows:
+                return []
+            ids = [row["id"] for row in rows]
+            by_request: dict[str, dict[str, list]] = {rid: {"recipients": [], "offers": [], "messages": []} for rid in ids}
+            for item in conn.execute("select * from request_recipients where request_id = any(%s) order by id", (ids,)):
+                by_request[item["request_id"]]["recipients"].append(item)
+            for item in conn.execute("select * from offers where request_id = any(%s) order by created_at desc", (ids,)):
+                by_request[item["request_id"]]["offers"].append(item)
+            for item in conn.execute(
+                "select request_id, sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = any(%s) order by created_at",
+                (ids,),
+            ):
+                by_request[item["request_id"]]["messages"].append(item)
+            queued_at = [
+                item["created_at"]
+                for item in conn.execute("select r.created_at from request_recipients rr join requests r on r.id = rr.request_id where rr.send_status = 'queued'")
+            ]
             items = []
             for row in rows:
-                request_id = row["id"]
-                recipients = [_recipient(item) for item in conn.execute("select * from request_recipients where request_id = %s order by id", (request_id,))]
-                offers = self._offers(conn, request_id)
-                messages = conn.execute(
-                    "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = %s order by created_at",
-                    (request_id,),
-                ).fetchall()
-                summary = request_summary(row, recipients, offers, messages)
+                parts = by_request[row["id"]]
+                summary = request_summary(row, [_recipient(item) for item in parts["recipients"]], self._offers_from_rows(parts["offers"]), parts["messages"])
                 if summary.get("queued_count"):
                     # Everyone's suppliers still waiting ahead of this request in the one queue.
-                    ahead = conn.execute(
-                        "select count(*) as n from request_recipients rr join requests r on r.id = rr.request_id"
-                        " where rr.send_status = 'queued' and r.created_at < %s",
-                        (row["created_at"],),
-                    ).fetchone()
-                    summary["queue_ahead"] = int(ahead["n"]) if ahead else 0
+                    summary["queue_ahead"] = sum(1 for moment in queued_at if moment < row["created_at"])
                 items.append(summary)
             return items
 

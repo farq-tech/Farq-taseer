@@ -2070,22 +2070,31 @@ class Store:
         return message
 
     def list_requests(self, owner_user_id: str) -> list[dict]:
+        """See PgStore.list_requests: a handful of queries for the whole list."""
         rows = self._connection.execute("select * from requests where owner_user_id = ? order by created_at desc", (owner_user_id,)).fetchall()
+        if not rows:
+            return []
+        ids = [row["id"] for row in rows]
+        marks = ", ".join("?" for _ in ids)
+        by_request: dict[str, dict[str, list]] = {rid: {"recipients": [], "offers": [], "messages": []} for rid in ids}
+        for item in self._connection.execute(f"select * from request_recipients where request_id in ({marks})", ids):
+            by_request[item["request_id"]]["recipients"].append(item)
+        for item in self._connection.execute(f"select * from offers where request_id in ({marks}) order by created_at desc", ids):
+            by_request[item["request_id"]]["offers"].append(item)
+        for item in self._connection.execute(
+            f"select request_id, sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id in ({marks}) order by created_at", ids
+        ):
+            by_request[item["request_id"]]["messages"].append(item)
+        queued_at = [
+            item["created_at"]
+            for item in self._connection.execute("select r.created_at from request_recipients rr join requests r on r.id = rr.request_id where rr.send_status = 'queued'")
+        ]
         items = []
         for row in rows:
-            recipients = [self._recipient_from_row(item) for item in self._connection.execute("select * from request_recipients where request_id = ?", (row["id"],))]
-            messages = self._connection.execute(
-                "select sender_role, seller_id, body, offer_amount, offer_currency, created_at from messages where request_id = ? order by created_at",
-                (row["id"],),
-            ).fetchall()
-            summary = request_summary(row, recipients, self._offers_for_request(row["id"]), messages)
+            parts = by_request[row["id"]]
+            summary = request_summary(row, [self._recipient_from_row(item) for item in parts["recipients"]], self._offers_from_rows(parts["offers"]), parts["messages"])
             if summary.get("queued_count"):
-                ahead = self._connection.execute(
-                    "select count(*) as n from request_recipients rr join requests r on r.id = rr.request_id"
-                    " where rr.send_status = 'queued' and r.created_at < ?",
-                    (row["created_at"],),
-                ).fetchone()
-                summary["queue_ahead"] = int(ahead["n"]) if ahead else 0
+                summary["queue_ahead"] = sum(1 for moment in queued_at if moment < row["created_at"])
             items.append(summary)
         return items
 
@@ -2116,7 +2125,9 @@ class Store:
         )
 
     def _offers_for_request(self, request_id: str) -> list[Offer]:
-        rows = self._connection.execute("select * from offers where request_id = ? order by created_at desc", (request_id,)).fetchall()
+        return self._offers_from_rows(self._connection.execute("select * from offers where request_id = ? order by created_at desc", (request_id,)).fetchall())
+
+    def _offers_from_rows(self, rows) -> list[Offer]:
         offers: list[Offer] = []
         for item in current_offer_rows(rows):
             offer = Offer(
