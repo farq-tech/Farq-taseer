@@ -33,7 +33,11 @@ def public_key() -> str | None:
 
 
 def notify_reply(store, request_id: str, seller_id: str | None, body: str) -> int:
-    """Notify every device the request's owner turned notifications on for. Returns how many took it."""
+    """Notify every device the request's owner turned notifications on for. Returns how many
+    browsers took it; the Farq app's phone is reached separately, through the Farq API."""
+    from farq.farq_push import notify_farq_reply
+
+    notify_farq_reply(store, request_id, seller_id, body)
     private_key = os.environ.get("VAPID_PRIVATE_KEY")
     if not private_key or not public_key():
         return 0
