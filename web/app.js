@@ -4750,9 +4750,17 @@ async function startPricing(text, { fresh = true } = {}) {
     intent,
   }));
   render();
-  // Not the search itself (measured: two searches for one sentence compete at Haraj), only
-  // the model's reading of the sentence, which the search will find in the shared store.
-  api("/v1/intent/warm", { method: "POST", json: { query }, skipAuth: true, quiet: true }).catch(() => {});
+  warmReading();
+}
+
+// Not the search itself (measured: two searches for one sentence compete at Haraj), only the
+// model's reading of the sentence the search will run - the items' words plus the city, the
+// exact text runSearch builds - so the search finds it in the shared store.
+function warmReading() {
+  const query = (searchTextFromNeeds() || "").trim();
+  if (!query || !state.city) return;
+  const asked = cityInText(query) ? query : `${query} ${cityLabel(state.city)}`;
+  api("/v1/intent/warm", { method: "POST", json: { query: asked }, skipAuth: true, quiet: true }).catch(() => {});
 }
 
 // «سباك الرياض» reads «سباك» on a card that already says الرياض underneath.
@@ -5507,6 +5515,7 @@ document.addEventListener("click", (event) => {
     storedSet("farq.city", state.city);
     for (const need of state.needs || []) if (!need.city || need.city === before) need.city = state.city;
     render();
+    warmReading();
   } else if (action === "need-city-change") {
     state.cityPick = true;
     render();
