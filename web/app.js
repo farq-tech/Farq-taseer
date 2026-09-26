@@ -1656,20 +1656,15 @@ function capSheet() {
 // M09_SendingProcessing — node 85:338.
 function renderSending() {
   const total = state.sendingTo || state.selected.size;
-  const steps = ["تم التحقق من تفاصيل البنود", "تحديد النطاق الجغرافي للموردين", "جاري الإرسال ومطابقة الأسعار"];
-  return `${fqHead({ title: "البحث مستمر" })}
+  // What actually happens here: the request is recorded and joins the one sending queue.
+  // No invented "geographic scope" steps - the honest line, and the wait it implies.
+  return `${fqHead({ title: "إرسال الطلب" })}
   <section class="fq-body center on-soft-mint" aria-live="polite" style="padding-top:80px">
     <div class="fq-sendring spin"><span>فرق</span></div>
     <div style="display:flex;flex-direction:column;gap:14px">
-      <h1 class="fq-h1">جاري إرسال طلبك...</h1>
-      <p class="fq-lead">يتم إرسال تفاصيل طلبك الآن إلى ${esc(suppliers(total))} في ${esc(cityLabel(customerCity()) || "مدينتك")} للحصول على أفضل العروض.</p></div>
-    <div class="fq-steps" style="align-items:center">${steps
-      .map((label, index) => {
-        const now = index === steps.length - 1;
-        return `<div class="fq-sendstep${now ? " now" : ""}"><span class="dot"></span><span>${esc(label)}</span></div>`;
-      })
-      .join("")}</div>
-    <p class="fq-meta" style="margin-top:auto">الرجاء عدم إغلاق التطبيق لضمان استقبال الردود السريعة</p>
+      <h1 class="fq-h1">نسجّل طلبك...</h1>
+      <p class="fq-lead">طلبك إلى ${esc(suppliers(total))} في ${esc(cityLabel(customerCity()) || "مدينتك")} يدخل طابور الإرسال، ويوصلهم واحدًا واحدًا خلال دقائق. نبلغك أول ما يرد أحدهم.</p></div>
+    <p class="fq-meta" style="margin-top:auto">تقدر تغلق التطبيق؛ الإرسال يكمل من عندنا.</p>
   </section>`;
 }
 
@@ -4108,7 +4103,20 @@ function render() {
   manageSheetFocus();
   syncUrl();
   scheduleDraftSave();
-  if (state.view === "thread" && state.thread?.id) poll = setInterval(() => loadThread(state.thread.id, true).catch(() => {}), 4000);
+  if (state.view === "thread" && state.thread?.id) {
+    // A reply is most likely soon after the conversation opens or a message goes out, so the
+    // first two minutes poll every 4s; after that every 12s, and never while the tab is hidden
+    // (it refreshes on return). Three quarters fewer calls on an idle conversation.
+    const opened = Date.now();
+    state.threadOpenedAt = opened;
+    poll = setInterval(() => {
+      if (document.visibilityState === "hidden" || !state.thread?.id) return;
+      const quick = Date.now() - (state.lastChatSendAt || opened) < 120_000;
+      const tick = Math.floor((Date.now() - opened) / 4000);
+      if (!quick && tick % 3 !== 0) return;
+      loadThread(state.thread.id, true).catch(() => {});
+    }, 4000);
+  }
   if (state.view === "subscribe" && state.subView === "review" && state.subActivePlan && state.subMountedPlan !== state.subActivePlan && !state.subMountFailed) mountPayment(state.subActivePlan);
 }
 
@@ -4783,6 +4791,7 @@ async function sendChatMessage(body) {
       }
     }
     await api(`/v1/requests/${thread.id}/messages`, { method: "POST", json });
+    state.lastChatSendAt = Date.now();
     state.chatFiles.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
     state.chatFiles = [];
     state.replyTo = null;
