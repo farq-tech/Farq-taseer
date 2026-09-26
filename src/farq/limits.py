@@ -47,10 +47,11 @@ class Limits:
     # the mail provider rather than standing open or shut on its own. "on"/"off" override.
     require_email_verification: str = field(default_factory=lambda: (_env_str("FARQ_REQUIRE_EMAIL_VERIFICATION", "auto")).strip().lower())
     # The credit ledger (default off). On, the item allowance is a spendable balance in
-    # taseer.credit_ledger/credit_balances instead of a recount of this period's rows, so
-    # what is granted survives the period and every spend is auditable. The other caps
-    # (sellers per item, daily contacts, daily requests, recipients-from-search) do not
-    # move to the ledger and keep working exactly as before.
+    # Farq's CENTRAL billing ledger (see farq.billing) instead of a recount of this
+    # period's rows: Taseer holds no balance of its own, every debit is an S2S consume
+    # keyed by the customer's Farq user id, and what is granted survives the period. The
+    # other caps (sellers per item, daily contacts, daily requests, recipients-from-search)
+    # do not move to the ledger and keep working exactly as before.
     ledger_enabled: bool = field(default_factory=lambda: _env_bool("TASEER_LEDGER_ENABLED", False))
 
     def verification_required(self) -> bool:
@@ -154,7 +155,7 @@ class Entitlement:
         return payload
 
 
-def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
+def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlement:
     """Read the customer's allowance from their plan, or fall back to the free trial.
 
     A plan row with no quotas set (the retired sandbox placeholder, or a plan added by hand)
@@ -178,9 +179,15 @@ def entitlement(store, limits: Limits, user_id: str) -> Entitlement:
             contacts_today=store.count_contacts(user_id, _since(days=1)),
         )
 
-    # With the ledger on, what may still be sent is the spendable balance rather than a
-    # recount of this period's rows. An open (unlimited) account never spends credits.
-    credits = store.credits_balance(user_id) if limits.ledger_enabled else None
+    # With the ledger on, the number shown is the CENTRAL balance (Farq's
+    # billing.credit_ledger, keyed by the Farq user id) - display only, briefly cached,
+    # never the debit decision; that decision is the consume call itself in api.py.
+    # None while the flag is off, the account is unlinked, or central cannot be read.
+    credits = None
+    if limits.ledger_enabled and billing is not None and billing.configured():
+        farq_uid = store.farq_user_id(user_id) if getattr(store, "farq_user_id", None) else None
+        if farq_uid:
+            credits = billing.balance(farq_uid)
 
     subscription = store.get_latest_subscription(user_id) if store.is_subscribed(user_id) else None
     if subscription is None:
@@ -245,11 +252,12 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
     per_item = _items_in(recipients, default_need)
     allowance = entitlement(store, limits, user_id)
 
-    if len(per_item) > allowance.items_left:
-        # With the ledger on the allowance is a balance, not this period's count.
-        if allowance.credits is not None:
-            message = f"رصيدك من البنود ({allowance.credits}) لا يكفي لهذا الطلب. اشترك أو جدّد رصيدك."
-        elif allowance.subscribed:
+    # With the ledger on, the item allowance is NOT decided here: only the consume call
+    # against Farq's central billing ledger (in api.py's create_request) grants an item.
+    # A locally read balance is display-only and stale by design, so refusing on it would
+    # make a cached number the authority. Every other cap below still holds.
+    if not limits.ledger_enabled and len(per_item) > allowance.items_left:
+        if allowance.subscribed:
             message = (
                 f"وصلت لحد باقتك ({allowance.items} بند في الشهر)."
                 f" استخدمت {allowance.items_used}. رقِّ باقتك أو انتظر تجديد الفترة."

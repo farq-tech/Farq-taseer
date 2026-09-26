@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, ConfigDict, Field
 
 from farq import push, subscriptions
+from farq.billing import Billing, BillingUnavailable
 from farq.cities import city_choices
 from farq.config import PaymentsConfig, SearchConfig
 from farq import farq_auth
@@ -289,6 +290,7 @@ def create_app(
     limits: Limits | None = None,
     expose_docs: bool | None = None,
     farq_verifier=None,
+    billing: Billing | None = None,
 ) -> FastAPI:
     docs = _docs_enabled() if expose_docs is None else expose_docs
     app = FastAPI(
@@ -302,6 +304,9 @@ def create_app(
     app.add_middleware(SecurityHeadersMiddleware)
     limits = limits or Limits()
     payments = payments or PaymentsConfig()
+    # Farq's central credit ledger (api.farq.sa) - the only authority on credits.
+    # Tests hand in a Billing built on an httpx.MockTransport speaking the same contract.
+    billing = billing or Billing()
     moyasar = moyasar or MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
     chat = chat or NotConnectedChat()
     # The model's reading of a sentence is kept in the store, so M02 (/v1/intent) pays for
@@ -908,35 +913,67 @@ def create_app(
             check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
         except LimitExceeded as exc:
             raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
-        # With the ledger on, the atomic debit here IS the item-allowance gate: the id is
-        # made first so each item is spent under its own idempotency key, and a request
-        # that then cannot be created gives every credit back. check_new_request above
-        # still holds the other caps (sellers per item, daily contacts, daily requests).
+        # With the ledger on, the debit against Farq's CENTRAL billing ledger here IS the
+        # item-allowance gate (check_new_request above still holds the other caps: sellers
+        # per item, daily contacts, daily requests, recipients-from-search). The id is made
+        # first so each item is spent under its own idempotency key, a replay of the same
+        # key is a success, and a request that then cannot be created reverses every spend.
+        # Fail closed: no clear yes from central means the item is NOT granted.
         request_id = uuid4().hex
         ledger_active = limits.ledger_enabled and not (
             getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
         )
         needs = list(dict.fromkeys(item.need or body.need or "" for item in body.recipients))
+        item_keys = [f"item:{request_id}:{item_need or ''}" for item_need in needs]
 
-        def _give_back(spent_needs, why: str) -> None:
-            for done in spent_needs:
-                store.refund_credit(user_id, request_id, done or None, reason=why)
+        farq_uid = store.farq_user_id(user_id) if ledger_active else None
+        if ledger_active and not farq_uid:
+            # Credits belong to the Farq account; a legacy password account has none until
+            # its owner links the two (sign in once with the password while the Farq
+            # session is present - POST /v1/auth/login).
+            raise HTTPException(
+                status_code=402,
+                detail={"code": "FARQ_ACCOUNT_NOT_LINKED",
+                        "message": "الرصيد مربوط بحساب فرق. اربط حسابك بحساب فرق أولاً ثم أرسل الطلب.", "limit": None},
+            )
+
+        def _give_back(spent_keys, why: str) -> None:
+            # Reversals are idempotent (reversal:item:...), so a retry after a failure is
+            # always safe; a reverse that fails is logged loudly for reconciliation.
+            for key in spent_keys:
+                try:
+                    if not billing.reverse(farq_uid, f"reversal:{key}", key):
+                        log.warning("credit reverse: central never saw consume %s (%s)", key, why)
+                except BillingUnavailable:
+                    log.error("credit reverse FAILED for farq user %s key %s (%s) - must be retried", farq_uid, key, why)
 
         if ledger_active:
             spent = []
-            for item_need in needs:
-                outcome = store.consume_credit(user_id, request_id, item_need or None)
+            for key in item_keys:
+                try:
+                    outcome = billing.consume(farq_uid, key, reference={"type": "request_item", "id": request_id})
+                except BillingUnavailable as exc:
+                    log.error("credit consume unavailable for %s: %s", key, exc)
+                    _give_back(spent, "billing unavailable mid-request")
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"code": "BILLING_UNAVAILABLE",
+                                "message": "تعذّر خصم الرصيد الآن ولم يُرسل الطلب. جرّب بعد قليل.", "limit": None},
+                    ) from exc
                 if not outcome["ok"]:
-                    _give_back(spent, "request refused: balance ran out mid-request")
+                    _give_back(spent, "central refused an item mid-request")
+                    if outcome.get("code") == "UNKNOWN_USER":
+                        raise HTTPException(
+                            status_code=402,
+                            detail={"code": "BILLING_ACCOUNT_UNKNOWN",
+                                    "message": "ما لقينا حساب رصيدك في فرق. تواصل مع الدعم.", "limit": None},
+                        )
                     raise HTTPException(
                         status_code=402,
-                        detail={
-                            "code": "ITEM_ALLOWANCE_EXHAUSTED",
-                            "message": f"رصيدك من البنود ({outcome['balance']}) لا يكفي لهذا الطلب. اشترك أو جدّد رصيدك.",
-                            "limit": None,
-                        },
+                        detail={"code": "ITEM_ALLOWANCE_EXHAUSTED",
+                                "message": "رصيدك من البنود لا يكفي لهذا الطلب. اشترك أو جدّد رصيدك.", "limit": None},
                     )
-                spent.append(item_need)
+                spent.append(key)
         try:
             request_id = store.create_request(
                 user_id,
@@ -959,11 +996,11 @@ def create_app(
             )
         except ValueError as exc:
             if ledger_active:
-                _give_back(needs, "request was not created")
+                _give_back(item_keys, "request was not created")
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception:
             if ledger_active:
-                _give_back(needs, "request creation failed")
+                _give_back(item_keys, "request creation failed")
             raise
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         # Registered suppliers are told here, in the app, because nothing will be sent to
@@ -1207,8 +1244,9 @@ def create_app(
     def subscription_me(user_id: str = Depends(current_user)) -> dict:
         status = subscriptions.get_status(store, user_id)
         # The app shows what is left before it lets someone pick suppliers, so the same
-        # numbers the server enforces travel with the status.
-        status["entitlement"] = entitlement(store, limits, user_id).as_dict()
+        # numbers the server enforces travel with the status. With the ledger on, the
+        # credits number is read from Farq's central billing ledger (display-only).
+        status["entitlement"] = entitlement(store, limits, user_id, billing=billing).as_dict()
         return status
 
     @app.post("/v1/subscriptions/checkout")
