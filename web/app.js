@@ -4750,7 +4750,9 @@ async function startPricing(text, { fresh = true } = {}) {
     intent,
   }));
   render();
-  warmSearch();
+  // No warm-up from here: on the serverless host the warm-up and the customer's own search
+  // land on different instances and compete at Haraj - measured 3.8s to the first supplier
+  // against 1.8s without. The ten-minute cache stays; a repeated sentence answers from it.
 }
 
 // «سباك الرياض» reads «سباك» on a card that already says الرياض underneath.
