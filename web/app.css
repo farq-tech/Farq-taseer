@@ -1605,7 +1605,7 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 
 /* The shell is exactly one viewport tall so the conversation scrolls inside it and the
    composer stays above the navigation instead of sliding under it. */
-.fq { height: 100dvh; }
+.fq { height: var(--fq-vh, 100dvh); }
 @media (min-width: 900px) { body.fq-web .fq { height: calc(100dvh - 48px); } }
 .fq-grp { align-items: flex-start; }
 .fq-bub, .fq-offer, .fq-offer-foot { align-self: stretch; }
@@ -1619,7 +1619,7 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq-replybtn { align-self: auto; }
 .fq-offer-foot { gap: 10px; }
 .fq-offer .head { direction: ltr; }
-.fq-offer .head .amount, .fq-offer .head .low { direction: rtl; }
+.fq-offer .head .amount, .fq-offer .head .low, .fq-offer .head .fq-offer-delivery { direction: rtl; }
 /* The pin and the globe sit before their label, as the header frames draw them. */
 .fq-lang, .fq-place { direction: ltr; }
 .fq-lang span, .fq-place span { direction: rtl; }
@@ -2024,16 +2024,43 @@ body.fq-auth .fq { background: linear-gradient(135deg, var(--fq-light) 25%, var(
 .fq-suprow .fq-row { width: 100%; }
 .fq-suprow.won { border-color: var(--fq-success); }
 
-/* The supplier's conversation: the price is a drawer above the composer, not a form page. */
+/* The supplier's conversation: the price is a drawer above the composer, not a form page.
+   Every control he taps is at least 44px tall; the delivery field exists only when the
+   price does not include delivery; the total line says what the customer will read. */
 #seller-reply { background: var(--fq-surface); border-top: 1px solid var(--fq-line); }
-.fq-pricebar { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 0; }
-.fq-pricebar .fields { display: flex; flex-direction: column; gap: 10px; }
-.fq-pricetoggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--fq-success); background: var(--fq-soft); color: var(--fq-success); font: inherit; font-size: 13px; font-weight: 700; }
+#seller-reply [hidden] { display: none !important; }
+.fq-pricebar { display: flex; flex-direction: column; gap: 10px; padding: 10px 16px 0; }
+.fq-pricebar .fields { display: flex; flex-direction: column; gap: 10px; padding-top: 2px; }
+.fq-pricetoggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--fq-deep); background: var(--fq-soft); color: var(--fq-deep); font: inherit; font-size: 14px; font-weight: 700; }
 .fq-pricebar.shut .fq-pricetoggle { border-color: var(--fq-line); background: var(--fq-app-bg); color: var(--fq-text-2); }
-.fq-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--fq-text); }
-.fq-check input { width: 18px; height: 18px; accent-color: var(--fq-success); }
+.fq-pricebar:not(.shut) .fq-pricetoggle { padding: 6px 12px; font-size: 13px; border-color: transparent; background: transparent; color: var(--fq-text-2); }
+.fq-lbl { font-size: 14px; font-weight: 700; color: var(--fq-text); }
+.fq-inp-money { direction: ltr; }
+.fq-inp-money input { text-align: end; font-size: 18px; font-weight: 700; }
+.fq-inp-money .fq-unit { font-size: 13px; font-weight: 700; color: var(--fq-text-2); flex: none; }
+.fq-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; font-weight: 600; color: var(--fq-text); }
+.fq-check input { width: 24px; height: 24px; accent-color: var(--fq-deep); flex: none; margin: 0; }
+.fq-total { margin: 0; font-weight: 700; color: var(--fq-deep); }
 #seller-reply .fq-composer { border-top: 0; }
+#seller-reply .fq-send { width: 44px; height: 44px; border-radius: 22px; }
+#seller-reply .fq-inputg { min-height: 44px; }
+#seller-reply .fq-inputg textarea { padding: 10px 0; }
+.fq-safe { display: flex; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 0 16px 12px; margin: 0; line-height: 1.5; }
+.fq-safe svg { width: 12px; height: 12px; flex: none; }
+.fq-target-err { background: #fdeee9; color: #b3402a; }
 .fq-offers-bar .mini .fq-meta { flex: none; }
+.fq-brief .mini { justify-content: flex-start; gap: 12px; }
+.fq-brief .mini > :last-child { flex: 1; min-width: 0; text-align: start; overflow-wrap: anywhere; }
+.fq-brief .mini .fq-meta { width: 76px; }
+.fq-brief-city { display: inline-flex; align-items: center; gap: 4px; }
+.fq-brief-city svg { width: 14px; height: 14px; color: var(--fq-muted); }
+.fq-brief-files { display: flex; gap: 10px; flex-wrap: wrap; }
+.fq-brief-files .fq-link { min-height: 44px; display: inline-flex; align-items: center; gap: 4px; }
+.fq-sys-soft { font-weight: 600; text-align: center; max-width: 320px; line-height: 1.6; border-radius: 16px; padding: 8px 14px; }
+.fq-offer-delivery { font-size: 12px; font-weight: 700; color: var(--fq-text-2); }
+.fq-offer-mine, .fq-offer-mine .fq-time { color: #fff; }
+.fq-closed { padding: 16px; }
+.fq-chat .fq-card { direction: rtl; }
 
 /* The categories are a strip you drag sideways, the way a food app does it. It bleeds past
    the screen's gutter on both sides so it reads as «there is more that way». */

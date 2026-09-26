@@ -2168,6 +2168,24 @@ class Store:
         }
         awarded = self._col(row, "awarded_seller_id")
         awarded_to_me = awarded is not None and own is not None and seller_key(awarded) == seller_key(own)
+        # His own current price with its delivery terms, so his page can say what the customer
+        # reads. Only his rows, and no `cheapest` mark: whether he undercut anyone stays private.
+        mine = [] if own is None else [
+            {
+                "need": item["need"],
+                "base_price": item["base_price"],
+                "delivery_included": bool(item["delivery_included"]) if item["delivery_included"] is not None else None,
+                "delivery_price": item["delivery_price"],
+                "total_price": item["total_price"],
+                "currency": item["currency"] or "SAR",
+                "created_at": item["created_at"],
+            }
+            for item in current_offer_rows(
+                self._connection.execute(
+                    "select * from offers where request_id = ? and seller_id = ? order by created_at desc", (row["id"], own)
+                ).fetchall()
+            )
+        ]
         # The invite promises the item and the city only: the customer's own words and notes stay with him.
         # The phone and the place are here only when this supplier won AND the customer chose to share them.
         return {
@@ -2178,6 +2196,7 @@ class Store:
             "awarded_to_me": awarded_to_me,
             "contact": self.shared_contact(row["id"], own) if awarded_to_me else None,
             "offers_open": awarded in (None, own),
+            "offers": mine,
             "recipients": [item.model_dump(mode="json") for item in recipients],
             "attachments": attachments,
             # Each seller sees their own thread, never another seller's messages or who else was asked.

@@ -225,3 +225,18 @@ def test_seller_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
 
     monkeypatch.setattr(journeys, "Store", pg_store)
     getattr(journeys, name)(tmp_path)
+
+
+def test_the_seller_view_carries_his_own_delivery_terms_and_no_ranking(tmp_path: Path):
+    api, _store = app_with_store(tmp_path)
+    headers = signed_in(api)
+    created = plumber_request(api, headers)
+    api.post(f"/v1/seller/{created['tokens']['12']}/messages", json={"offer_amount": 100, "body": "أرخص"})
+    api.post(f"/v1/seller/{created['tokens']['11']}/messages", json={"offer_amount": 300, "delivery_included": False, "delivery_price": 50})
+    body = api.get(f"/v1/seller/{created['tokens']['11']}").json()
+    assert [(item["base_price"], item["delivery_included"], item["delivery_price"], item["total_price"]) for item in body["offers"]] == [(300.0, False, 50.0, 350.0)]
+    assert all("cheapest" not in item and "seller_id" not in item and "provider_name" not in item for item in body["offers"])
+    assert "أرخص" not in api.get(f"/v1/seller/{created['tokens']['11']}").text
+    # A revised price replaces the earlier one: still a single row, his newest.
+    api.post(f"/v1/seller/{created['tokens']['11']}/messages", json={"offer_amount": 280})
+    assert [(item["total_price"], item["delivery_included"]) for item in api.get(f"/v1/seller/{created['tokens']['11']}").json()["offers"]] == [(280.0, True)]
