@@ -25,8 +25,11 @@ _GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
 _LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
 _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
-# A listing that leads with the accessory sells the accessory, not the device.
-_ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه")
+# A listing that leads with the accessory sells the accessory, not the device; one that leads
+# with another thing («كاميرا مراقبة بطارية طاقة شمسية», «كشاف طاقة شمسية») sells that thing,
+# whatever it mentions inside. Specific nouns only: «جهاز بلايستيشن» still leads with the device.
+_ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه",
+                   "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره")
 # A tyre size is three numbers: width, ratio, rim. «265/60 R18», «265 60 18», «18 60 265».
 _TYRE_SIZE = re.compile(r"(?<!\d)(\d{2,3})\s*[/ ]\s*(\d{2,3})\s*[/ ]?\s*r?\s*(\d{2})(?!\d)", re.IGNORECASE)
 # Appliances that a listing leads with when it sells the thing, not the service on it.
