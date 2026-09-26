@@ -13,23 +13,42 @@ _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 # that states the same unit with only other numbers is a different thing (a 150-amp battery
 # for a 70-amp request), however well its words match.
 _UNIT_ALIASES = {
-    "امبير": "امبير", "أمبير": "امبير", "ah": "امبير",
+    "امبير": "امبير", "أمبير": "امبير", "ah": "امبير", "كراسي": "كراسي", "كرسي": "كراسي",
     "كيلو": "كيلو", "كيلوواط": "كيلو", "كيلو واط": "كيلو", "kva": "كيلو", "kw": "كيلو", "kg": "كيلو",
     "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه",
     "قدم": "قدم", "لتر": "لتر", "طن": "طن", "واط": "واط",
 }
-_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|kva|kw|kg|ah)(?![a-z\u0621-\u064a])")
+_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|كراسي|كرسي|kva|kw|kg|ah)(?![a-z\u0621-\u064a])")
+# A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
+# account, a pile of leftovers from a job.
+_GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
+_LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
+_SCRAPPED_CAR = ("تشليح",)
+_LEFTOVERS = ("مخلفات", "بقايا")
+# A listing that leads with the accessory sells the accessory, not the device.
+_ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه")
 # A tyre size is three numbers: width, ratio, rim. «265/60 R18», «265 60 18», «18 60 265».
 _TYRE_SIZE = re.compile(r"(?<!\d)(\d{2,3})\s*[/ ]\s*(\d{2,3})\s*[/ ]?\s*r?\s*(\d{2})(?!\d)", re.IGNORECASE)
 # Appliances that a listing leads with when it sells the thing, not the service on it.
 _APPLIANCE_LEAD = ("غساله", "غسالات", "ثلاجه", "ثلاجات", "مكيف", "مكيفات", "فرن", "نشافه", "جوال", "سياره", "شاشه")
 
 
-def _specs(text: str) -> dict[str, set[str]]:
-    found: dict[str, set[str]] = {}
-    for number, unit in _UNIT_SPEC.findall(to_ascii_digits(normalize(text))):
-        found.setdefault(_UNIT_ALIASES.get(unit, unit), set()).add(number.replace(",", ".").rstrip("0").rstrip(".") or "0")
+def _specs(text: str) -> dict[str, set[float]]:
+    # On the raw text: normalize() strips the dot, and «13.5 كيلو» would read as «5 كيلو».
+    found: dict[str, set[float]] = {}
+    for number, unit in _UNIT_SPEC.findall(to_ascii_digits(text or "").replace("،", ",").lower()):
+        try:
+            value = float(number.replace(",", "."))
+        except ValueError:
+            continue
+        unit = unit.replace("أ", "ا").replace("ة", "ه")
+        found.setdefault(_UNIT_ALIASES.get(unit, unit), set()).add(value)
     return found
+
+
+def _spec_agrees(wanted: set[float], stated: set[float]) -> bool:
+    """A stated number within a tenth of a wanted one agrees: 5.5 answers 5, 150 does not."""
+    return any(abs(have - want) <= max(0.1 * want, 0.01) for want in wanted for have in stated)
 
 
 def _tyre_sizes(text: str) -> set[tuple[str, ...]]:
@@ -318,12 +337,33 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
         first = tokens(title)[:1]
         if first and any(_word_is(first[0], word) for word in _APPLIANCE_LEAD):
             return False, ["item_not_provider"]
+        # «مخلفات ترميم فيلا»: what a job left behind, for sale - not the contractor.
+        if first and any(_word_is(first[0], word) for word in _LEFTOVERS):
+            return False, ["leftovers_not_provider"]
+    if title and has_word(title, _GONE):
+        return False, ["already_sold"]
+    if intent.result_unit.value == "ad" and title:
+        words = tokens(title)
+        if intent.type.value == "vehicle" and any(word in normalize(title) for word in _SCRAPPED_CAR):
+            return False, ["scrapped_not_vehicle"]
+        if has_word(title, _LOCKED_PHONE):
+            return False, ["locked_device"]
+        if intent.eligibility_groups:
+            head = intent.eligibility_groups[0]
+            # The thing asked for is named early in a listing that sells it: «Hisense QLED E7 55
+            # شاشة» still, but not «كشاف طاقة شمسية ... مع بطارية». The accessory that leads a
+            # title («سماعة سوني بلايستيشن») is what is for sale.
+            if words and any(_word_is(words[0], word) for word in _ACCESSORY_LEAD) and not _group_hit(words[0], head):
+                return False, ["accessory_not_device"]
+            lead = " ".join(words[:6])
+            if not _group_hit(lead, head) and not (seller is not None and _group_hit(seller.name, head)):
+                return False, ["head_not_in_title_lead"]
     if ad is not None and title:
         wanted = _specs(intent.original_query)
         if wanted:
             stated = _specs(title)
             for unit, numbers in wanted.items():
-                if unit in stated and not numbers & stated[unit]:
+                if unit in stated and not _spec_agrees(numbers, stated[unit]):
                     return False, [f"spec_mismatch:{unit}"]
         sizes = _tyre_sizes(intent.original_query)
         if sizes:
