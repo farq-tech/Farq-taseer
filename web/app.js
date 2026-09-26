@@ -3278,6 +3278,10 @@ async function openSellerPage(token) {
   try {
     state.seller = await api(`/v1/seller/${encodeURIComponent(token)}`, { skipAuth: true });
     state.sellerError = "";
+    // A supplier who has not priced yet came here to price: the fields are open, not
+    // behind a button he has to find first.
+    const priced = (state.seller?.messages || []).some((item) => item.sender_role === "seller" && item.offer_amount != null);
+    if (changed && !priced && state.seller?.offers_open !== false && !state.seller?.awarded_to_me) state.sellerPriceOpen = true;
   } catch (error) {
     state.sellerError = error?.status === 404 ? "missing" : "failed";
   }
