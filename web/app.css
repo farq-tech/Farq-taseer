@@ -2353,3 +2353,4 @@ html.fq-embed .skip { display: none; }
 .fq-filters-row .fq-live { white-space: nowrap; flex: none; }
 .fq-filters-row > .fq-meta { flex: 1; min-width: 0; }
 .fq-chip.ghost { background: transparent; border: 1px dashed var(--fq-line); color: var(--fq-deep); }
+.fq-filters-row .fq-live { max-width: none; }
