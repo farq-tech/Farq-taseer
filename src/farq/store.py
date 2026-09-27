@@ -126,8 +126,8 @@ def invite_text(item: str, city: str | None) -> str:
     """Farq's fixed invite: the item only, no quantities, prices, notes or buyer number.
     The link is each seller's own quote page, filled in when the message is sent. The seller's
     guest account exists before this goes out (worker.dispatch_pending), so the line saying it
-    is ready is true when he reads it. A reply here in Haraj reaches the buyer too; quoting the
-    request number (appended by with_reference) is what files it when he has several buyers."""
+    is ready is true when he reads it. A reply here in Haraj reaches the buyer too: the request
+    number with_reference appends files it, and the seller page settles the rare ambiguous one."""
     line = f"{item.strip()} في {city}" if city else item.strip()
     return "\n".join(
         [
@@ -136,7 +136,7 @@ def invite_text(item: str, city: str | None) -> str:
             line,
             "جهّزنا لك حساباً في فرق تسعير بدون كلمة مرور، تقدّم منه عرضك وتتابعه وتراسل المشتري:",
             QUOTE_LINK,
-            "أو رد هنا في حراج واذكر رقم الطلب، ويوصل ردك للمشتري.",
+            "أو رد هنا في حراج، ويوصل ردك للمشتري.",
         ]
     )
 

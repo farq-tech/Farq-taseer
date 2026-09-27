@@ -354,7 +354,7 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
             f"{item} في الرياض\n"
             "جهّزنا لك حساباً في فرق تسعير بدون كلمة مرور، تقدّم منه عرضك وتتابعه وتراسل المشتري:\n"
             f"https://taseer.farq.sa/s/{tokens[seller]}\n"
-            "أو رد هنا في حراج واذكر رقم الطلب، ويوصل ردك للمشتري."
+            "أو رد هنا في حراج، ويوصل ردك للمشتري."
         )
 
     # Farq's fixed invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
