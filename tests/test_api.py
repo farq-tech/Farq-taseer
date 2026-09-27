@@ -351,8 +351,10 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     def invite(item, seller):
         return tagged(
             "السلام عليكم عزيزي البائع\nلدينا مشتري يطلب توفير:\n"
-            f"{item} في الرياض\nفي حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك\n"
-            f"https://taseer.farq.sa/s/{tokens[seller]}"
+            f"{item} في الرياض\n"
+            "جهّزنا لك حساباً في فرق تسعير بدون كلمة مرور، تقدّم منه عرضك وتتابعه وتراسل المشتري:\n"
+            f"https://taseer.farq.sa/s/{tokens[seller]}\n"
+            "أو رد هنا في حراج واذكر رقم الطلب، ويوصل ردك للمشتري."
         )
 
     # Farq's fixed invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
@@ -362,6 +364,11 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
         ("21", invite("كهربائي", "21")),
     ]
     assert len(set(tokens.values())) == 3
+    # The invite says his account is ready, so it was made before the invite went: a guest
+    # account per seller, no password, nothing granted beyond his own link.
+    for seller in ("11", "12", "21"):
+        guest = store.supplier_by_seller_id(seller)
+        assert guest is not None and guest["status"] == "guest"
     assert {item["send_status"] for item in api.get(f"/v1/requests/{request_id}", headers=headers).json()["recipients"]} == {"sent"}
 
     haraj.inbox["p2p1_11"] = [InboundMessage("p2p1_11:90", "أقدر بكرة والسعر ٢٥٠ ريال", "2099-01-01T00:00:01+00:00", 90)]

@@ -1299,11 +1299,14 @@ class PgStore:
                     select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id,
                       (select r.reply_token from request_recipients r where r.request_id = %s and r.seller_id = %s
                        order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token,
+                      (select r.seller_name from request_recipients r where r.request_id = %s and r.seller_id = %s
+                       order by coalesce(r.need, '') = %s desc, r.id limit 1) as seller_name,
                       (select q.ref_code from requests q where q.id = t.request_id) as ref_code
                     from messages m join haraj_threads t on t.request_id = %s and t.seller_id = %s and t.need = %s
                     where m.id = %s
                     """,
-                    (row["request_id"], row["seller_id"], row["need"], row["request_id"], row["seller_id"], row["need"], row["message_id"]),
+                    (row["request_id"], row["seller_id"], row["need"], row["request_id"], row["seller_id"], row["need"],
+                     row["request_id"], row["seller_id"], row["need"], row["message_id"]),
                 ).fetchone()
                 claimed.append({"id": row["id"], "request_id": row["request_id"], "seller_id": row["seller_id"], "need": row["need"], **(detail or {})})
             return claimed

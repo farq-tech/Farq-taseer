@@ -93,6 +93,7 @@ def dispatch_pending(
                     store.finish_delivery(item["id"], error="NO_QUOTE_LINK", retry=False)
                     continue
                 body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
+                _ready_account(store, item)
             # The seller's one conversation with us is shared by every buyer: the reference tells his replies apart.
             body = with_reference(body, item.get("ref_code"))
             attachments = []
@@ -132,6 +133,19 @@ def dispatch_pending(
             store.finish_delivery(item["id"], sent=result)
             sent += 1
     return sent
+
+
+def _ready_account(store, item: dict) -> None:
+    """The invite tells the seller his account is ready, so it is made before the invite goes.
+    It holds only what Haraj already shows (his seller id and name) and grants nothing by
+    itself: the link still opens only this request. A failure here must not hold the invite."""
+    try:
+        guest = store.ensure_guest_supplier(item.get("seller_id"), item.get("seller_name"))
+        if guest is not None and guest.get("status") == "guest":
+            store.track_supplier("account_created", item.get("seller_id"), supplier_id=guest["id"],
+                                 request_id=item.get("request_id"), need=item.get("need") or None)
+    except Exception:  # noqa: BLE001 - the seller page makes it on first open anyway
+        log.warning("guest account for %s not prepared before the invite", item.get("seller_id"), exc_info=True)
 
 
 MEDIA_COPY_LIMIT = 10 * 1024 * 1024

@@ -124,15 +124,19 @@ QUOTE_LINK = "{quote_link}"
 
 def invite_text(item: str, city: str | None) -> str:
     """Farq's fixed invite: the item only, no quantities, prices, notes or buyer number.
-    The link is each seller's own quote page, filled in when the message is sent."""
+    The link is each seller's own quote page, filled in when the message is sent. The seller's
+    guest account exists before this goes out (worker.dispatch_pending), so the line saying it
+    is ready is true when he reads it. A reply here in Haraj reaches the buyer too; quoting the
+    request number (appended by with_reference) is what files it when he has several buyers."""
     line = f"{item.strip()} في {city}" if city else item.strip()
     return "\n".join(
         [
             "السلام عليكم عزيزي البائع",
             "لدينا مشتري يطلب توفير:",
             line,
-            "في حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك",
+            "جهّزنا لك حساباً في فرق تسعير بدون كلمة مرور، تقدّم منه عرضك وتتابعه وتراسل المشتري:",
             QUOTE_LINK,
+            "أو رد هنا في حراج واذكر رقم الطلب، ويوصل ردك للمشتري.",
         ]
     )
 
@@ -1769,10 +1773,15 @@ class Store:
             self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1, last_attempt_at = ? where id = ?", (_now(), row["id"]))
             # Looked up per row: SQLite 3.45 cannot resolve d.need inside a correlated subquery's order by.
             token = self._connection.execute(
-                "select reply_token from request_recipients where request_id = ? and seller_id = ? order by coalesce(need, '') = ? desc limit 1",
+                "select reply_token, seller_name from request_recipients where request_id = ? and seller_id = ? order by coalesce(need, '') = ? desc limit 1",
                 (row["request_id"], row["seller_id"], row["need"]),
             ).fetchone()
-            claimed.append({**dict(row), "reply_token": token["reply_token"] if token else None, "media": json.loads(row["media"]) if row["media"] else []})
+            claimed.append({
+                **dict(row),
+                "reply_token": token["reply_token"] if token else None,
+                "seller_name": token["seller_name"] if token else None,
+                "media": json.loads(row["media"]) if row["media"] else [],
+            })
         self._connection.commit()
         return claimed
 
