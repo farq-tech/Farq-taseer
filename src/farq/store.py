@@ -346,6 +346,32 @@ def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | Non
     return latest(open_rows)
 
 
+def unfiled_for(rows: list[dict], seller_id: str | None, request_id: str) -> list[dict]:
+    """The kept replies a seller may file into this request: his own, and only where it was a candidate."""
+    if not seller_id or not request_id:
+        return []
+    key = seller_key(seller_id)
+    return [
+        {"id": row["haraj_message_id"], "body": row["body"], "sent_at": _iso_text(row["sent_at"]), "media": list(row.get("media") or [])}
+        for row in rows
+        if seller_key(row["seller_id"]) == key and request_id in row["candidate_request_ids"]
+    ]
+
+
+def filed_inbound(row: dict, threads: list[dict], media=None) -> tuple[dict, InboundMessage]:
+    """The thread a kept reply goes to inside the request chosen for it, and the reply to record there."""
+    sent_at = _iso_text(row["sent_at"]) or _now()
+    thread = choose_thread(threads, row["body"], sent_at) or threads[0]
+    kept = tuple(media) if media is not None else tuple(row.get("media") or ())
+    return thread, InboundMessage(haraj_message_id=row["haraj_message_id"], body=row["body"], sent_at=sent_at, media=kept)
+
+
+def _iso_text(value) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
 def search_seller_ids(results) -> set[str]:
     """The Haraj seller ids a search showed, the only ones a customer may then send a request to."""
     found = set()
@@ -1867,7 +1893,28 @@ class Store:
         rows = self._connection.execute(
             "select * from haraj_unmatched where ? is null or haraj_conversation_id = ? order by sent_at", (conversation_id, conversation_id)
         ).fetchall()
-        return [{**dict(row), "candidate_request_ids": json.loads(row["candidate_request_ids_json"])} for row in rows]
+        return [
+            {**dict(row), "candidate_request_ids": json.loads(row["candidate_request_ids_json"]), "media": json.loads(row["media_json"] or "[]")}
+            for row in rows
+        ]
+
+    def unfiled_for_seller(self, seller_id: str | None, request_id: str) -> list[dict]:
+        """His own Haraj replies that no request could safely claim and that this request may own."""
+        return unfiled_for(self.unmatched_inbound(), seller_id, request_id)
+
+    def file_unmatched(self, haraj_message_id: str, request_id: str, media=None) -> tuple[dict, Message | None]:
+        """Move a kept reply into one of the requests it could belong to. Raises LookupError otherwise."""
+        row = next((item for item in self.unmatched_inbound() if item["haraj_message_id"] == haraj_message_id), None)
+        if row is None or request_id not in row["candidate_request_ids"]:
+            raise LookupError("unfiled reply not found")
+        threads = [item for item in self._inbound_candidates(row["haraj_conversation_id"]) if item["request_id"] == request_id]
+        if not threads:
+            raise LookupError("unfiled reply not found")
+        thread, inbound = filed_inbound(row, threads, media)
+        message = self.record_inbound(thread, inbound)
+        self._connection.execute("delete from haraj_unmatched where haraj_message_id = ?", (haraj_message_id,))
+        self._connection.commit()
+        return thread, message
 
     # --- Limits: who may be asked, and how often -------------------------------------------------
 

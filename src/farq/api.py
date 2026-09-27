@@ -34,7 +34,7 @@ from farq import mailer, notify
 from farq import understand
 from farq.text import normalize
 from farq.haraj_chat import HarajChat, NotConnectedChat, _Prefixed, chat_from_env
-from farq.worker import dispatch_pending, start_poller, sync_replies
+from farq.worker import dispatch_pending, keep_media, media_label, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
@@ -105,6 +105,10 @@ class SupplierLoginBody(ApiModel):
 
 class SupplierClaimBody(ApiModel):
     token: str
+
+
+class FileUnmatchedBody(ApiModel):
+    request_id: str
 
 
 class NotificationReadBody(ApiModel):
@@ -1154,7 +1158,35 @@ def create_app(
         if supplier:
             store.track_supplier("request_viewed", seller, request_id=view.get("request_id"),
                                  supplier_id=supplier["id"], need=view.get("need"), channel="in_app")
+        # His own Haraj replies we could not file on our own because his open requests belong
+        # to more than one customer. He knows which request he meant; nobody else may guess.
+        view["unfiled"] = [
+            {"id": item["id"], "body": item["body"], "sent_at": item["sent_at"], "media_count": len(item["media"])}
+            for item in store.unfiled_for_seller(seller, view.get("request_id"))
+        ]
         return view
+
+    def _file_reply(message_id: str, request_id: str, media, background: BackgroundTasks) -> dict:
+        # Haraj media links expire after a day; keep our own copy before the reply is filed.
+        kept = keep_media(store, request_id, media)
+        try:
+            thread, message = store.file_unmatched(message_id, request_id, media=kept)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="reply not found") from exc
+        if message is not None:
+            background.add_task(push.notify_reply, store, request_id, thread["seller_id"], message.body or media_label(kept))
+        return {"filed": message is not None, "request_id": request_id}
+
+    @app.post("/v1/seller/{token}/unfiled/{message_id}")
+    def seller_file_reply(token: str, message_id: str, background: BackgroundTasks) -> dict:
+        view = store.seller_view(token)
+        if view is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        seller = store.seller_id_for_reply_token(token)
+        mine = next((item for item in store.unfiled_for_seller(seller, view["request_id"]) if item["id"] == message_id), None)
+        if mine is None:
+            raise HTTPException(status_code=404, detail="reply not found")
+        return _file_reply(message_id, view["request_id"], mine["media"], background)
 
     @app.post("/v1/requests/{request_id}/award")
     def award(request_id: str, body: AwardBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
@@ -1375,6 +1407,36 @@ def create_app(
                 store, [row["seller_id"]], "closing_soon", request_id=row["request_id"], need=row.get("need"),
             )
         return rung
+
+    @app.get("/v1/internal/haraj-unmatched")
+    def haraj_unmatched_report(authorization: str | None = Header(default=None)) -> dict:
+        require_cron(authorization)
+        # Replies that reached Taseer's Haraj account but no customer yet. Each one names the
+        # requests it could belong to; filing it is a person's call, never a guess.
+        rows = store.unmatched_inbound()
+        return {
+            "count": len(rows),
+            "replies": [
+                {
+                    "id": row["haraj_message_id"],
+                    "seller_id": row["seller_id"],
+                    "body": row["body"],
+                    "sent_at": row["sent_at"],
+                    "media_count": len(row["media"]),
+                    "candidate_request_ids": row["candidate_request_ids"],
+                }
+                for row in rows
+            ],
+        }
+
+    @app.post("/v1/internal/haraj-unmatched/{message_id}/file")
+    def haraj_unmatched_file(message_id: str, body: FileUnmatchedBody, background: BackgroundTasks,
+                             authorization: str | None = Header(default=None)) -> dict:
+        require_cron(authorization)
+        row = next((item for item in store.unmatched_inbound() if item["haraj_message_id"] == message_id), None)
+        if row is None:
+            raise HTTPException(status_code=404, detail="reply not found")
+        return _file_reply(message_id, body.request_id, row["media"], background)
 
     @app.get("/v1/internal/queue-health")
     def queue_health_report(authorization: str | None = Header(default=None)) -> dict:

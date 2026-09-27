@@ -166,3 +166,73 @@ def test_references_are_read_however_the_seller_types_them(body):
     alice = _row("a", "alice", "T-111111", ["2026-09-01T10:00:00+00:00"])
     bob = _row("b", "bob", "T-222222", ["2026-09-01T11:00:00+00:00"])
     assert choose_thread([alice, bob], body, "2026-09-01T13:00:00+00:00")["request_id"] == "a"
+
+
+def _unfiled_market(tmp_path: Path):
+    market = Market(tmp_path)
+    alice = market.ask(market.alice, "كامري 2015")
+    bob = market.ask(market.bob, "لاندكروزر")
+    market.run()
+    market.reply(100, "الكامري 2015 موجودة بسعر 45000 ريال")
+    assert market.run() == (0, 0)
+    return market, alice, bob
+
+
+def test_the_seller_files_his_own_unmatched_reply_from_his_page(tmp_path: Path):
+    market, alice, bob = _unfiled_market(tmp_path)
+    token = alice["recipients"][0]["reply_token"]
+    view = market.api.get(f"/v1/seller/{token}").json()
+    assert [(item["id"], item["body"]) for item in view["unfiled"]] == [(f"{CONVERSATION}:100", "الكامري 2015 موجودة بسعر 45000 ريال")]
+    filed = market.api.post(f"/v1/seller/{token}/unfiled/{CONVERSATION}:100")
+    assert filed.status_code == 200, filed.text
+    assert filed.json() == {"filed": True, "request_id": alice["id"]}
+    assert market.seen_by(market.alice, alice) == (["الكامري 2015 موجودة بسعر 45000 ريال"], [45000.0])
+    assert market.seen_by(market.bob, bob) == ([], [])
+    assert market.store.unmatched_inbound() == []
+    assert market.api.get(f"/v1/seller/{token}").json()["unfiled"] == []
+    # Filed once: a second tap and the next sync change nothing.
+    assert market.api.post(f"/v1/seller/{token}/unfiled/{CONVERSATION}:100").status_code == 404
+    assert market.run() == (0, 0)
+    assert market.seen_by(market.alice, alice)[0] == ["الكامري 2015 موجودة بسعر 45000 ريال"]
+
+
+def test_another_sellers_link_cannot_see_or_file_the_reply(tmp_path: Path):
+    market = Market(tmp_path)
+    alice = market.ask(market.alice, "كامري 2015", sellers=("77", "88"))
+    market.ask(market.bob, "لاندكروزر")
+    market.run()
+    market.reply(100, "الكامري موجودة 45000")
+    market.run()
+    other = next(item["reply_token"] for item in alice["recipients"] if item["seller_id"] == "88")
+    assert market.api.get(f"/v1/seller/{other}").json()["unfiled"] == []
+    assert market.api.post(f"/v1/seller/{other}/unfiled/{CONVERSATION}:100").status_code == 404
+    assert len(market.store.unmatched_inbound()) == 1
+
+
+def test_a_reply_is_filed_only_into_a_request_it_could_belong_to(tmp_path: Path):
+    market, alice, bob = _unfiled_market(tmp_path)
+    carol = signed_in(market.api)
+    later = market.ask(carol, "هايلكس", sellers=("99",))
+    token = later["recipients"][0]["reply_token"]
+    assert market.api.post(f"/v1/seller/{token}/unfiled/{CONVERSATION}:100").status_code == 404
+    with pytest.raises(LookupError):
+        market.store.file_unmatched(f"{CONVERSATION}:100", later["id"])
+    assert len(market.store.unmatched_inbound()) == 1
+
+
+def test_ops_list_and_file_unmatched_replies_behind_the_cron_secret(tmp_path: Path, monkeypatch):
+    market, alice, bob = _unfiled_market(tmp_path)
+    assert market.api.get("/v1/internal/haraj-unmatched").status_code == 503
+    monkeypatch.setenv("CRON_SECRET", "s3cret")
+    assert market.api.get("/v1/internal/haraj-unmatched").status_code == 401
+    auth = {"Authorization": "Bearer s3cret"}
+    listed = market.api.get("/v1/internal/haraj-unmatched", headers=auth).json()
+    assert listed["count"] == 1
+    assert sorted(listed["replies"][0]["candidate_request_ids"]) == sorted([alice["id"], bob["id"]])
+    url = f"/v1/internal/haraj-unmatched/{CONVERSATION}:100/file"
+    assert market.api.post(url, headers=auth, json={"request_id": "nope"}).status_code == 404
+    filed = market.api.post(url, headers=auth, json={"request_id": bob["id"]})
+    assert filed.status_code == 200, filed.text
+    assert market.seen_by(market.bob, bob)[0] == ["الكامري 2015 موجودة بسعر 45000 ريال"]
+    assert market.seen_by(market.alice, alice) == ([], [])
+    assert market.api.get("/v1/internal/haraj-unmatched", headers=auth).json()["count"] == 0

@@ -3390,6 +3390,21 @@ async function openSellerPage(token) {
   if (state.view === "seller") render();
 }
 
+async function fileSellerReply(id) {
+  if (!id || state.sellerBusy) return;
+  state.sellerBusy = true;
+  state.sellerFormError = "";
+  render();
+  try {
+    await api(`/v1/seller/${encodeURIComponent(state.sellerToken)}/unfiled/${encodeURIComponent(id)}`, { method: "POST", skipAuth: true });
+    state.sellerSent = "filed";
+  } catch {
+    state.sellerFormError = "ما قدرنا نوصل رسالتك. جرّب مرة ثانية.";
+  }
+  state.sellerBusy = false;
+  await openSellerPage(state.sellerToken);
+}
+
 async function submitShareContact(form) {
   const phone = String(new FormData(form).get("phone") || "").trim();
   state.shareError = "";
@@ -4040,8 +4055,22 @@ function renderSeller() {
       ${bubbles ? "" : `<div class="fq-sys fq-sys-soft">اكتب سعرك تحت، أو اسأل العميل عن التفاصيل. العميل يقارن العروض ويختار، وإذا اختارك يكمل معك من هنا.</div>`}`;
 
   const sent = state.sellerSent
-    ? `<div class="fq-target" role="status">${ic("check-circle", 14)}<span>${state.sellerSent === "price" ? "وصل سعرك للعميل. نبلغك هنا إذا ردّ أو اختارك." : "وصلت رسالتك للعميل."}</span></div>`
+    ? `<div class="fq-target" role="status">${ic("check-circle", 14)}<span>${state.sellerSent === "price" ? "وصل سعرك للعميل. نبلغك هنا إذا ردّ أو اختارك." : state.sellerSent === "filed" ? "وصلت رسالتك من حراج للعميل." : "وصلت رسالتك للعميل."}</span></div>`
     : "";
+
+  // His own Haraj replies we could not tie to one request: his open requests belong to more
+  // than one customer, and a guess could show one customer a price meant for another. He knows.
+  const unfiled = (view.unfiled || [])
+    .map((item) => {
+      const files = item.media_count ? `<span class="fq-meta">${ic("paperclip", 12)} ${item.media_count === 1 ? "مرفق واحد" : `${item.media_count} مرفقات`}</span>` : "";
+      return `<div class="fq-card pad" role="group" aria-label="رسالتك في حراج">
+        <p class="fq-meta">وصلتنا رسالتك في حراج، وعندك أكثر من طلب مفتوح فما عرفنا تخص أي طلب.</p>
+        ${item.body ? `<p class="fq-lead" style="margin:8px 0"><bdi>«${esc(item.body).replace(/\n/g, "<br>")}»</bdi></p>` : ""}
+        ${files}
+        <button class="fq-btn r14" type="button" data-action="seller-file-reply" data-id="${esc(item.id)}" style="margin-top:10px" ${state.sellerBusy ? "disabled" : ""}>${ic("send", 16)} هي عن هذا الطلب — أوصلها للعميل</button>
+      </div>`;
+    })
+    .join("");
 
   const priceFields = open
     ? `<div class="fields">
@@ -4058,6 +4087,7 @@ function renderSeller() {
     ${brief}
     <section class="fq-chat" id="chat-wall">
       ${intro}
+      ${unfiled}
       ${bubbles}
       ${view.awarded_to_me ? sellerAwarded(view) : ""}
     </section>
@@ -5669,6 +5699,7 @@ document.addEventListener("click", (event) => {
     syncSellerForm(document.getElementById("seller-reply"));
     render();
   } else if (action === "seller-reload") openSellerPage(state.sellerToken);
+  else if (action === "seller-file-reply") fileSellerReply(target.dataset.id);
   else if (action === "edit-request") {
     state.intentError = false;
     state.intentProblem = "";

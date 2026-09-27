@@ -30,6 +30,7 @@ from farq.store import (
     _delivery_state,
     choose_thread,
     current_offer_rows,
+    filed_inbound,
     media_entry,
     invite_text,
     mark_cheapest,
@@ -44,6 +45,7 @@ from farq.store import (
     session_keys,
     settle_decision,
     token_digest,
+    unfiled_for,
     visible_to_seller,
 )
 
@@ -1409,7 +1411,29 @@ class PgStore:
             rows = conn.execute(
                 "select * from haraj_unmatched where %s::text is null or haraj_conversation_id = %s order by sent_at", (conversation_id, conversation_id)
             ).fetchall()
-        return [{**dict(row), "candidate_request_ids": list(row["candidate_request_ids"] or [])} for row in rows]
+        return [
+            {**dict(row), "candidate_request_ids": list(row["candidate_request_ids"] or []), "media": list(row["media"] or [])}
+            for row in rows
+        ]
+
+    def unfiled_for_seller(self, seller_id: str | None, request_id: str) -> list[dict]:
+        """See Store.unfiled_for_seller."""
+        return unfiled_for(self.unmatched_inbound(), seller_id, request_id)
+
+    def file_unmatched(self, haraj_message_id: str, request_id: str, media=None) -> tuple[dict, Message | None]:
+        """See Store.file_unmatched."""
+        row = next((item for item in self.unmatched_inbound() if item["haraj_message_id"] == haraj_message_id), None)
+        if row is None or request_id not in row["candidate_request_ids"]:
+            raise LookupError("unfiled reply not found")
+        with self._pool.connection() as conn:
+            threads = [item for item in self._inbound_candidates(conn, row["haraj_conversation_id"]) if item["request_id"] == request_id]
+        if not threads:
+            raise LookupError("unfiled reply not found")
+        thread, inbound = filed_inbound(row, threads, media)
+        message = self.record_inbound(thread, inbound)
+        with self._pool.connection() as conn:
+            conn.execute("delete from haraj_unmatched where haraj_message_id = %s", (haraj_message_id,))
+        return thread, message
 
     # -- limits: who may be asked, and how often ----------------------------------
 
