@@ -117,7 +117,9 @@ def test_security_headers_and_docs(tmp_path, monkeypatch):
         response = api.get(path)
         csp = response.headers["content-security-policy"]
         assert all(origin in csp for origin in ("frame-ancestors 'self'", "https://www.farq.sa", "https://farq.sa", "https://localhost"))
-        assert "https://cdn.moyasar.com" in csp and "https://fonts.googleapis.com" in csp
+        assert "https://cdn.moyasar.com" in csp
+        # The typeface is self-hosted now: Google Fonts is no longer an allowed origin.
+        assert "fonts.googleapis.com" not in csp and "fonts.gstatic.com" not in csp
         assert "x-frame-options" not in response.headers
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
