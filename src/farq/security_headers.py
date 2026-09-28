@@ -42,10 +42,10 @@ CSP = "; ".join(
     [
         "default-src 'self'",
         "script-src 'self' https://cdn.moyasar.com",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.moyasar.com",
-        # Farq's licensed Huwiya face is served once, from farq.sa (CORS *), so
-        # Taseer renders in the same typeface as restaurants and grocery.
-        "font-src 'self' data: https://fonts.gstatic.com https://www.farq.sa",
+        "style-src 'self' 'unsafe-inline' https://cdn.moyasar.com",
+        # Farq's typeface (Thmanyah Serif Display) is self-hosted under /fonts;
+        # farq.sa stays allowed for the Huwiya glyph fallback (CORS *).
+        "font-src 'self' data: https://www.farq.sa",
         "img-src 'self' data: blob: https:",
         "connect-src 'self' https://api.moyasar.com https://cdn.moyasar.com",
         "frame-src https://*.moyasar.com",
