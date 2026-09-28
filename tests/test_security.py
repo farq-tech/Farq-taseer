@@ -225,3 +225,25 @@ def test_the_embed_contract_farq_listens_for_does_not_drift():
     assert '"Idempotency-Key": `${state.sendKey}-${index}`' in app_js
     # Nothing may push the customer out of Farq's frame into a browser tab.
     assert "window.top.location" not in app_js
+
+
+def test_farq_pages_may_call_the_api_and_no_one_else(tmp_path, monkeypatch):
+    api, _ = make(tmp_path)
+    for origin in ("https://www.farq.sa", "https://farq.sa", "capacitor://localhost", "https://localhost"):
+        preflight = api.options(
+            "/v1/requests",
+            headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                     "Access-Control-Request-Headers": "authorization, content-type, idempotency-key"},
+        )
+        assert preflight.status_code == 200, origin
+        assert preflight.headers["access-control-allow-origin"] == origin
+        assert "access-control-allow-credentials" not in preflight.headers
+        assert api.get("/v1/cities", headers={"Origin": origin}).headers["access-control-allow-origin"] == origin
+    for origin in ("https://evil.example", "https://farq.sa.evil.example", "https://preview.vercel.app", "null"):
+        assert "access-control-allow-origin" not in api.get("/v1/cities", headers={"Origin": origin}).headers
+        preflight = api.options("/v1/requests", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
+        assert "access-control-allow-origin" not in preflight.headers
+    monkeypatch.setenv("FARQ_CORS_ORIGINS", "https://preview.farq.sa")
+    api, _ = make(tmp_path / "second")
+    assert api.get("/v1/cities", headers={"Origin": "https://preview.farq.sa"}).headers["access-control-allow-origin"] == "https://preview.farq.sa"
+    assert "access-control-allow-origin" not in api.get("/v1/cities", headers={"Origin": "https://www.farq.sa"}).headers
