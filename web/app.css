@@ -41,8 +41,8 @@
   --radius-control: var(--radius-md); --radius-card: var(--radius-lg); --radius-sheet: var(--radius-xl);
   --radius-button: var(--radius-xl); --radius-chip: var(--radius-full);
   --lh-tight: 1.25; --lh-snug: 1.375; --lh-normal: 1.5; --lh-relaxed: 1.625; --lh-arabic: 1.65;
-  /* Farq's one typeface (faces declared further down, next to --fq-font). */
-  --font-arabic: "Thmanyah Serif Display", "ITF Huwiya", "Noto Naskh Arabic", Tahoma, sans-serif;
+  /* ITF Huwiya Arabic is licensed and not bundled; Cairo stands in until its web files are added. */
+  --font-arabic: "ITF Huwiya Arabic", Cairo, "Noto Naskh Arabic", Tahoma, sans-serif;
   --shadow-soft: 0 10px 24px rgba(40, 45, 51, 0.06);
   --shadow-card: 0 14px 34px rgba(40, 45, 51, 0.07);
   --shadow-pop: 0 18px 40px rgba(40, 45, 51, 0.09);
@@ -1249,7 +1249,7 @@ button, .chat-row, .request-card, .vendor-body, .tab { -webkit-tap-highlight-col
   --fq-shadow-card: 0 12px 14px rgba(87, 81, 114, 0.03), 0 2px 4px rgba(87, 81, 114, 0.04);
   --fq-shadow-form: 0 8px 8px rgba(87, 81, 114, 0.08);
   --fq-shadow-sheet: 0 -8px 28px rgba(87, 81, 114, 0.14);
-  --fq-font: "Thmanyah Serif Display", "ITF Huwiya", "Noto Naskh Arabic", Tahoma, sans-serif;
+  --fq-font: "Cairo", "Noto Naskh Arabic", Tahoma, sans-serif;
 
   /* remap the older app aliases onto the Figma palette so legacy screens follow */
   --canvas: var(--fq-app-bg);
@@ -2311,21 +2311,15 @@ html.fq-embed .skip { display: none; }
 }
 
 
-/* One typeface with farq.sa: Thmanyah Serif Display, self-hosted under /fonts
-   (licensed; original files re-wrapped as WOFF2, never subset or edited - see
-   farq docs/adr/0007-thmanyah-typeface.md). Arabic, Latin and digits are all
-   in it. Each face covers the neighbouring weights (500 -> Regular, 600 -> Bold).
-   ITF Huwiya, served by farq.sa, stays behind it only for glyphs Thmanyah lacks. */
-@font-face { font-family: "Thmanyah Serif Display"; src: url("/fonts/thmanyah-serif-display/ThmanyahSerifDisplay-Light.woff2") format("woff2"); font-weight: 100 300; font-style: normal; font-display: swap; }
-@font-face { font-family: "Thmanyah Serif Display"; src: url("/fonts/thmanyah-serif-display/ThmanyahSerifDisplay-Regular.woff2") format("woff2"); font-weight: 400 500; font-style: normal; font-display: swap; }
-@font-face { font-family: "Thmanyah Serif Display"; src: url("/fonts/thmanyah-serif-display/ThmanyahSerifDisplay-Bold.woff2") format("woff2"); font-weight: 600 700; font-style: normal; font-display: swap; }
-@font-face { font-family: "Thmanyah Serif Display"; src: url("/fonts/thmanyah-serif-display/ThmanyahSerifDisplay-Black.woff2") format("woff2"); font-weight: 800 900; font-style: normal; font-display: swap; }
+/* One typeface with farq.sa: the licensed ITF Huwiya files, served by farq.sa
+   (Access-Control-Allow-Origin: *, CSP font-src allows https://www.farq.sa).
+   The files carry the full Latin set, so Arabic, English and digits all match. */
 @font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
 @font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: "ITF Huwiya"; src: url("https://www.farq.sa/fonts/itf-huwiya-arabic/itfHuwiyaArabic-Black.woff2") format("woff2"); font-weight: 900; font-style: normal; font-display: swap; }
 :root {
-  --fq-font: "Thmanyah Serif Display", "ITF Huwiya", "Noto Naskh Arabic", Tahoma, sans-serif;
+  --fq-font: "ITF Huwiya", Cairo, "Noto Naskh Arabic", Tahoma, sans-serif;
   --font-arabic: var(--fq-font);
 }
 

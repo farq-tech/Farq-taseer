@@ -1395,7 +1395,7 @@ def create_app(
         def static_file(path: Path) -> FileResponse:
             # The runtime's mimetypes table lacks webp; served as octet-stream, the
             # browser still drew it, but not with the type it deserves.
-            media = {".webp": "image/webp", ".woff2": "font/woff2"}.get(path.suffix)
+            media = "image/webp" if path.suffix == ".webp" else None
             if path.suffix in {".png", ".svg", ".ico", ".woff2", ".webp"}:
                 cache = "public, max-age=86400, s-maxage=31536000"
             else:
