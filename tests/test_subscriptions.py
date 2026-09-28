@@ -561,3 +561,17 @@ def test_checkout_with_an_idempotency_key_creates_one_pending_payment(tmp_path):
     assert store._connection.execute("select count(*) from payments where user_id = ?", (user_id,)).fetchone()[0] == 1
     # The same key for a different body is refused.
     assert api.post("/v1/subscriptions/checkout", headers=keyed, json={"plan": "other"}).status_code == 422
+
+
+def test_a_3ds_payment_can_return_to_farqs_own_plans_page_and_nowhere_else(tmp_path):
+    api, _ = client(tmp_path, FakeMoyasar())
+    headers = register(api)
+    plain = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN})
+    assert plain.json()["callback_url"].endswith("/subscribe/callback")
+    for allowed in ("https://www.farq.sa/taseer/plans/callback", "https://farq.sa/taseer/plans/callback"):
+        resp = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN, "return_to": allowed})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["callback_url"] == allowed
+    for refused in ("https://evil.example/taseer/plans/callback", "https://www.farq.sa/anything", "javascript:alert(1)"):
+        resp = api.post("/v1/subscriptions/checkout", headers=headers, json={"plan": PLAN, "return_to": refused})
+        assert resp.status_code == 422, refused

@@ -202,6 +202,8 @@ class PushSubscriptionBody(ApiModel):
 
 class CheckoutBody(ApiModel):
     plan: str
+    # Farq's plans page (farq.sa/taseer/plans/callback) or nothing for Taseer's own.
+    return_to: str | None = Field(default=None, max_length=200)
 
 
 class VerifyBody(ApiModel):
@@ -1270,6 +1272,7 @@ def create_app(
                 publishable_key=payments.moyasar_publishable_key if payments.payments_configured else None,
                 public_base_url=payments.public_base_url,
                 live=live_keys,
+                return_to=body.return_to,
             )
         except PaymentsUnavailable as exc:
             log.warning("checkout refused: %s", exc)

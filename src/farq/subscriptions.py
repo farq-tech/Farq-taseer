@@ -54,9 +54,28 @@ def get_status(store, user_id: str) -> dict:
     return {"status": status, "subscription": subscription}
 
 
-def start_checkout(store, *, user_id: str, plan_code: str, publishable_key: str | None, public_base_url: str, live: bool = False) -> CheckoutResult:
+# Where a 3-D Secure payment may come back to besides Taseer itself: Farq's own plans page,
+# which now hosts Taseer's customer side. Exact URLs only - an open redirect after a payment
+# is a phishing page's dream.
+FARQ_CALLBACKS = frozenset({
+    "https://www.farq.sa/taseer/plans/callback",
+    "https://farq.sa/taseer/plans/callback",
+})
+
+
+def callback_for(public_base_url: str, return_to: str | None) -> str:
+    """The page Moyasar sends a redirected (3-D Secure) payment back to."""
+    if return_to is None or return_to == "":
+        return f"{public_base_url.rstrip('/')}/subscribe/callback"
+    if return_to not in FARQ_CALLBACKS:
+        raise SubscriptionError("return_to is not an allowed callback")
+    return return_to
+
+
+def start_checkout(store, *, user_id: str, plan_code: str, publishable_key: str | None, public_base_url: str, live: bool = False, return_to: str | None = None) -> CheckoutResult:
     if not publishable_key:
         raise PaymentsUnavailable("payments are not configured yet (MOYASAR_PUBLISHABLE_KEY missing)")
+    callback_url = callback_for(public_base_url, return_to)
     plan = store.get_plan(plan_code)
     if plan is None or not plan["is_active"]:
         raise SubscriptionError("unknown or inactive plan")
@@ -70,7 +89,7 @@ def start_checkout(store, *, user_id: str, plan_code: str, publishable_key: str 
         publishable_key=publishable_key,
         amount=plan["price_amount"],
         currency=plan["currency"],
-        callback_url=f"{public_base_url.rstrip('/')}/subscribe/callback",
+        callback_url=callback_url,
         metadata=metadata,
     )
 
