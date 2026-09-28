@@ -2450,3 +2450,129 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [tabindex]
   .fq-sticky { padding-top: 12px; box-shadow: 0 16px 0 var(--fq-app-bg); }
   .fq-body { scroll-padding-bottom: calc(52px + 12px + 16px + var(--safe-bottom, 0px)); }
 }
+
+/* ---------- The searcher, 2026-09-28 ----------
+   The old man with the magnifying glass, alive while a search runs (app.js «The searcher»).
+   One pose, so every mood is transforms and opacity on four layers: .fig (the whole figure:
+   tilt, lean, nod), .body (breathing), .lens (an ellipse laid exactly over the glass in the
+   picture) and the bubbles/dust/sparks around him. Every animation is offset by
+   --ms-born or --ms-since, so the node can be moved between redraws without restarting.
+   Lens, measured on design/mascot/searcher-master.png (876 x 930): centre (225, 458),
+   semi-axes 105 x 72 px, major axis at 37.4deg; drawn a little inside the rim. */
+.fq-mascot { --ms-born: 0ms; --ms-since: 0ms; position: relative; display: block; width: 141px; height: 150px; flex: none; pointer-events: none; user-select: none; -webkit-user-select: none; }
+.fq-mascot.at-card { align-self: center; margin-top: 18px; }
+.fq-mascot .fig, .fq-mascot .body { position: absolute; inset: 0; }
+.fq-mascot .fig { transform-origin: 50% 96%; }
+.fq-mascot .body { transform-origin: 50% 100%; animation: fqm-breathe 3.6s ease-in-out var(--ms-born) infinite alternate; }
+.fq-mascot img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.fq-mascot .lens { position: absolute; left: 25.68%; top: 49.25%; width: 22.8%; height: 14.4%; border-radius: 50%; overflow: hidden; transform: translate(-50%, -50%) rotate(37.4deg); opacity: 0; transition: opacity 240ms ease; background: radial-gradient(ellipse at 40% 35%, rgba(255, 255, 255, 0.96), rgba(244, 243, 251, 0.9) 70%); }
+/* the glass is tilted; the tags inside it are read level, so they sit in a counter-rotated frame */
+.fq-mascot .level { position: absolute; left: 50%; top: 50%; width: 200%; height: 200%; transform: translate(-50%, -50%) rotate(-37.4deg); }
+.fq-mascot .strip { position: absolute; top: 50%; left: 0; display: flex; gap: 3px; direction: ltr; transform: translateY(-50%); }
+.fq-mascot .tag { flex: none; display: flex; align-items: center; gap: 2px; height: 10px; padding: 0 3px; border-radius: 3px; background: #fff; border: 1px solid var(--fq-light); box-shadow: 0 1px 1px rgba(87, 81, 114, 0.12); }
+.fq-mascot .tag i { display: block; width: 10px; height: 2px; border-radius: 1px; background: var(--fq-base); }
+.fq-mascot .tag i.dim { width: 6px; background: var(--fq-light); }
+.fq-mascot .tag.short i { width: 6px; }
+.fq-mascot .tag b { font: 800 6px/1 var(--fq-font); color: var(--fq-deep); white-space: nowrap; }
+.fq-mascot .glint { position: absolute; inset: -20% auto -20% 0; width: 30%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent); transform: translateX(-140%) skewX(-18deg); opacity: 0.9; }
+.fq-mascot .bubbles { position: absolute; left: 6%; top: 2%; width: 34%; height: 34%; }
+.fq-mascot .bubbles > * { position: absolute; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #fff; border: 1.5px solid var(--fq-base); color: var(--fq-deep); font: 800 12px/1 var(--fq-font); box-shadow: 0 2px 6px rgba(87, 81, 114, 0.14); opacity: 0; }
+.fq-mascot .bubbles i:nth-child(1) { left: 58%; top: 52%; }
+.fq-mascot .bubbles i:nth-child(2) { left: 18%; top: 34%; }
+.fq-mascot .bubbles i:nth-child(3) { left: 42%; top: 6%; }
+.fq-mascot .bubbles b { left: 0; top: 18%; height: 24px; padding: 0 8px; border-radius: 12px; font-size: 13px; white-space: nowrap; }
+.fq-mascot .dust, .fq-mascot .spark { position: absolute; left: 25.68%; top: 49.25%; width: 0; height: 0; }
+.fq-mascot .dust i { position: absolute; left: 0; top: 0; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: #c9b89a; opacity: 0; }
+.fq-mascot .spark i { position: absolute; left: 0; top: 0; width: 9px; height: 9px; margin: -4.5px; background: #3ecf9b; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); opacity: 0; }
+.fq-mascot .dust i:nth-child(1) { --dx: -16px; --dy: 22px; }
+.fq-mascot .dust i:nth-child(2) { --dx: -6px; --dy: 28px; }
+.fq-mascot .dust i:nth-child(3) { --dx: 8px; --dy: 26px; }
+.fq-mascot .dust i:nth-child(4) { --dx: -22px; --dy: 10px; }
+.fq-mascot .dust i:nth-child(5) { --dx: 14px; --dy: 16px; }
+.fq-mascot .dust i:nth-child(6) { --dx: -12px; --dy: -4px; }
+.fq-mascot .spark i:nth-child(1) { --dx: -26px; --dy: -20px; }
+.fq-mascot .spark i:nth-child(2) { --dx: 4px; --dy: -30px; }
+.fq-mascot .spark i:nth-child(3) { --dx: 26px; --dy: -14px; }
+.fq-mascot .spark i:nth-child(4) { --dx: -30px; --dy: 8px; }
+.fq-mascot .spark i:nth-child(5) { --dx: -12px; --dy: 28px; }
+.fq-mascot .spark i:nth-child(6) { --dx: 22px; --dy: 22px; }
+
+/* idle: breathing, a rare small tilt, a glint across the glass now and then */
+.fq-mascot[data-state="idle"] .fig { animation: fqm-idle-tilt 9s ease-in-out var(--ms-born) infinite; }
+.fq-mascot[data-state="idle"] .lens { opacity: 1; background: transparent; }
+.fq-mascot[data-state="idle"] .strip { display: none; }
+.fq-mascot[data-state="idle"] .glint { animation: fqm-glint 5s ease-in-out calc(var(--ms-born) + 1.2s) infinite; }
+
+/* understanding («نفهم طلبك»): head tilt, a chin scratch, question marks rising */
+.fq-mascot[data-state="understanding"] .fig { animation: fqm-ponder 2.4s ease-in-out var(--ms-since) infinite alternate; }
+.fq-mascot[data-state="understanding"] .bubbles i { animation: fqm-bubble 2.7s ease-out var(--ms-since) infinite; }
+.fq-mascot[data-state="understanding"] .bubbles i:nth-child(2) { animation-delay: calc(var(--ms-since) + 0.9s); }
+.fq-mascot[data-state="understanding"] .bubbles i:nth-child(3) { animation-delay: calc(var(--ms-since) + 1.8s); }
+
+/* searching («ندور على الخيارات المناسبة»): leaning side to side, reading tags through the glass */
+.fq-mascot[data-state="searching"] .fig { animation: fqm-scan 2.2s ease-in-out var(--ms-since) infinite alternate; }
+.fq-mascot[data-state="searching"] .lens,
+.fq-mascot[data-state="digging"] .lens { opacity: 1; }
+.fq-mascot[data-state="searching"] .strip { animation: fqm-strip 3.2s linear var(--ms-since) infinite; }
+.fq-mascot[data-state="searching"] .glint { animation: fqm-glint 2.4s ease-in-out calc(var(--ms-since) + 0.6s) infinite; }
+
+/* digging: nothing yet and still looking - a bigger puzzled tilt, glass closer, dust flying */
+.fq-mascot[data-state="digging"] .fig { transform-origin: 26% 50%; animation: fqm-dig 1.6s ease-in-out var(--ms-since) infinite alternate; }
+.fq-mascot[data-state="digging"] .strip { animation: fqm-strip 2s linear var(--ms-since) infinite; }
+.fq-mascot[data-state="digging"] .glint { animation: fqm-glint 1.8s ease-in-out var(--ms-since) infinite; }
+.fq-mascot[data-state="digging"] .dust i { animation: fqm-dust 1.2s ease-out var(--ms-since) infinite; }
+.fq-mascot[data-state="digging"] .dust i:nth-child(2n) { animation-delay: calc(var(--ms-since) + 0.4s); }
+.fq-mascot[data-state="digging"] .dust i:nth-child(3n) { animation-delay: calc(var(--ms-since) + 0.8s); }
+.fq-mascot[data-state="digging"] .bubbles b { animation: fqm-hmm 2.4s ease-in-out var(--ms-since) infinite both; }
+
+/* found: only on real results - a nod, the glass flashes, a mint burst, then he steps aside */
+.fq-mascot[data-state="found"] .fig { animation: fqm-nod 900ms var(--fq-spring, ease-out) var(--ms-since) both; }
+.fq-mascot[data-state="found"] .lens { opacity: 1; background: transparent; }
+.fq-mascot[data-state="found"] .strip { display: none; }
+.fq-mascot[data-state="found"] .glint { width: 100%; transform: none; background: radial-gradient(ellipse, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 70%); opacity: 0; animation: fqm-flash 700ms ease-out calc(var(--ms-since) + 150ms) both; }
+.fq-mascot[data-state="found"] .spark i { animation: fqm-spark 900ms ease-out calc(var(--ms-since) + 200ms) both; }
+.fq-mascot[data-state="found"] .spark i:nth-child(2n) { animation-delay: calc(var(--ms-since) + 280ms); }
+.fq-mascot[data-state="found"][data-leaving] { animation: fqm-leave 320ms ease-in both; }
+
+/* shrug: nothing found or the search failed - a small drop and tilt, neutral, then still */
+.fq-mascot[data-state="shrug"] .fig { animation: fqm-shrug 900ms ease-out var(--ms-since) both; }
+.fq-mascot[data-state="shrug"] .body { animation: none; }
+
+.fq-mascot[data-paused], .fq-mascot[data-paused] * { animation-play-state: paused !important; }
+
+/* where he stands: the progress card, beside the empty-state sign, and briefly over the results */
+.fq-mascot-empty { position: relative; width: 141px; height: 150px; margin-inline: auto; }
+.fq-mascot-empty .fq-blob { position: absolute; bottom: 0; inset-inline-end: -14px; width: 48px; height: 48px; margin: 0; border: 3px solid var(--fq-app-bg); }
+.fq-mascot-empty .fq-blob svg { width: 24px; height: 24px; }
+/* The dock takes no room (the tight body's 16 px gap is given back), so the list never moves. */
+.fq-mascot-dock { position: relative; height: 0; margin-bottom: -16px; z-index: 5; }
+.fq-mascot.at-dock { position: absolute; top: 40px; inset-inline-end: 0; width: 66px; height: 70px; filter: drop-shadow(0 6px 10px rgba(87, 81, 114, 0.18)); }
+.fq-mascot.at-dock .bubbles { display: none; }
+
+@keyframes fqm-breathe { from { transform: scale(1, 1); } to { transform: scale(1.012, 1.022); } }
+@keyframes fqm-idle-tilt { 0%, 78%, 100% { transform: none; } 84%, 92% { transform: rotate(-2.5deg); } }
+@keyframes fqm-ponder { from { transform: rotate(-3deg) translateX(-1px); } 50% { transform: rotate(-0.5deg) translateY(-1px); } to { transform: rotate(1.5deg) translateX(1px); } }
+@keyframes fqm-bubble { 0% { opacity: 0; transform: translateY(8px) scale(0.6); } 18% { opacity: 1; transform: translateY(0) scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px) scale(0.9); } }
+@keyframes fqm-scan { from { transform: translateX(-5px) rotate(-3.5deg); } to { transform: translateX(5px) rotate(2deg); } }
+@keyframes fqm-strip { from { transform: translate(0, -50%); } to { transform: translate(-50%, -50%); } }
+@keyframes fqm-glint { 0%, 55% { transform: translateX(-140%) skewX(-18deg); } 100% { transform: translateX(380%) skewX(-18deg); } }
+@keyframes fqm-dig { from { transform: scale(1.06) rotate(-7deg) translateY(1px); } to { transform: scale(1.1) rotate(-4deg) translate(-2px, -1px); } }
+@keyframes fqm-dust { 0% { opacity: 0; transform: translate(0, 0) scale(0.6); } 20% { opacity: 0.9; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.1); } }
+@keyframes fqm-hmm { 0%, 100% { opacity: 1; transform: translateY(0) rotate(-3deg); } 50% { opacity: 1; transform: translateY(-3px) rotate(2deg); } }
+@keyframes fqm-nod { 0% { transform: none; } 25% { transform: translateY(-7px) scale(1.04); } 50% { transform: translateY(2px) rotate(3deg); } 72% { transform: translateY(-2px) rotate(-1deg); } 100% { transform: none; } }
+@keyframes fqm-flash { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fqm-spark { 0% { opacity: 0; transform: translate(0, 0) scale(0.2) rotate(0); } 35% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(90deg); } }
+@keyframes fqm-leave { to { opacity: 0; transform: translateY(-6px) scale(0.55); } }
+@keyframes fqm-shrug { 0% { transform: none; } 35% { transform: translateY(5px) rotate(4deg); } 60% { transform: translateY(2px) rotate(-1.5deg); } 100% { transform: translateY(3px) rotate(2deg); } }
+
+/* Reduced motion: one still pose; the mood shows only as static marks, the steps say the rest. */
+@media (prefers-reduced-motion: reduce) {
+  .fq-mascot, .fq-mascot * { animation: none !important; transition: none !important; }
+  .fq-mascot[data-state="understanding"] .bubbles i:nth-child(1),
+  .fq-mascot[data-state="digging"] .bubbles b { opacity: 1; }
+  .fq-mascot[data-state="shrug"] .fig { transform: translateY(3px) rotate(2deg); }
+  .fq-mascot .glint, .fq-mascot .dust, .fq-mascot .spark { display: none; }
+}
+@media (min-width: 431px) {
+  .fq-mascot.at-card, .fq-mascot-empty, .fq-mascot-empty > .fq-mascot { width: 151px; height: 160px; }
+}

@@ -1353,6 +1353,7 @@ function renderSearching() {
   return `${fqHead({ title: "ماعليك فرق بيجيب الفرق", back: "back-understand" })}
   <section class="fq-body" aria-live="polite" aria-busy="true">
     <div class="fq-card pad" style="gap:14px">
+      ${mascotSlot(searchingMood(at), "at-card")}
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
         <span style="flex:1">${state.results.length ? `وصل ${suppliers(state.results.length)} حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
       ${state.slowSearch ? `<p class="fq-meta" role="status" style="margin:0">البحث ياخذ وقت أطول من العادة. لو ما رجع شيء خلال لحظات بنوقفه ونقول لك.</p>` : ""}
@@ -1372,6 +1373,134 @@ function renderSearching() {
     <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${card.repeat(3)}</div>
   </section>`;
 }
+
+// ---------------------------------------------------------------------------------------
+// The searcher: the old man with the magnifying glass, alive while a search runs. One pose,
+// so he is a puppet of transforms and overlays (web/app.css «the searcher»). His mood is
+// read from the same state that draws the steps beside him and never runs ahead of it:
+//   understanding  step 0, no intent back yet («نفهم طلبك»)
+//   searching      step 1, the intent is back and nothing has arrived («ندور على الخيارات»)
+//   digging        still step 1 after MASCOT_DIG_MS with nothing, or the search is slow
+//   found          real results are on the screen - once per search, then he steps aside
+//   shrug          the search ended with nothing, or failed; never a success face
+// The screen is redrawn whole on every streamed event, so the figure is one node kept for
+// the life of the page and moved into each fresh slot. Moving it restarts its CSS
+// animations; every animation is therefore offset by the time already spent in the mood
+// (--ms-born / --ms-since), so a redraw lands on the frame it left and nothing restarts.
+// The lens shows generic «ر.س» tags only: no numbers, no sellers - it is a picture of
+// reading, not a claim about prices.
+const MASCOT_DIG_MS = 4000;
+const MASCOT_FOUND_MS = 1800;
+const MASCOT_MOODS = ["idle", "understanding", "searching", "digging", "found", "shrug"];
+// ?mascot=<mood> holds a mood for design review, on a developer's own machine only.
+const MASCOT_FORCE = (() => {
+  try {
+    if (!["localhost", "127.0.0.1"].includes(location.hostname)) return "";
+    const mood = new URLSearchParams(location.search).get("mascot") || "";
+    return MASCOT_MOODS.includes(mood) ? mood : "";
+  } catch (_error) {
+    return "";
+  }
+})();
+const mascot = { el: null, born: 0, since: 0, watched: "", digFor: "", digAt: 0, digTimer: 0, foundFor: "", foundUntil: 0, foundTimer: 0 };
+
+function mascotSlot(mood, place) {
+  return `<span data-mascot="${esc(mood)}" data-place="${esc(place)}" aria-hidden="true"></span>`;
+}
+
+function searchingMood(step) {
+  if (MASCOT_FORCE) return MASCOT_FORCE;
+  mascot.watched = state.searchId || "";
+  if (step === 0) return "understanding";
+  if (mascot.digFor !== state.searchId) {
+    mascot.digFor = state.searchId;
+    mascot.digAt = Date.now() + MASCOT_DIG_MS;
+  }
+  return state.slowSearch || Date.now() >= mascot.digAt ? "digging" : "searching";
+}
+
+// The found beat plays only for a search this page watched, and only once real results exist.
+function mascotFound() {
+  if (MASCOT_FORCE || !state.results.length || !state.searchId || mascot.watched !== state.searchId) return false;
+  if (mascot.foundFor !== state.searchId) {
+    mascot.foundFor = state.searchId;
+    mascot.foundUntil = Date.now() + MASCOT_FOUND_MS;
+  }
+  return Date.now() < mascot.foundUntil;
+}
+
+function mascotNode() {
+  if (mascot.el) return mascot.el;
+  const chip = `<span class="tag"><i></i><b>ر.س</b></span><span class="tag short"><i></i><b>ر.س</b></span><span class="tag"><i></i><i class="dim"></i></span><span class="tag short"><i></i><b>ر.س</b></span>`;
+  const el = document.createElement("div");
+  el.className = "fq-mascot";
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML = `<div class="fig"><div class="body">
+      <img src="/assets/taseer/mascot/searcher.webp" srcset="/assets/taseer/mascot/searcher.webp 1x, /assets/taseer/mascot/searcher@2x.webp 2x" alt="" width="151" height="160" decoding="async" draggable="false">
+      <span class="lens"><span class="level"><span class="strip">${chip}${chip}</span></span><span class="glint"></span></span>
+      <span class="dust"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="spark"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    </div></div>
+    <span class="bubbles"><i>؟</i><i>…</i><i>؟</i><b>همم…</b></span>`;
+  mascot.el = el;
+  mascot.born = performance.now();
+  if (document.visibilityState === "hidden") el.dataset.paused = "";
+  return el;
+}
+
+function mascotClock() {
+  const now = performance.now();
+  mascot.el.style.setProperty("--ms-born", `${Math.round(mascot.born - now)}ms`);
+  mascot.el.style.setProperty("--ms-since", `${Math.round(mascot.since - now)}ms`);
+}
+
+function setMascotMood(mood) {
+  const el = mascot.el;
+  if (el.dataset.state !== mood) {
+    el.dataset.state = mood;
+    mascot.since = performance.now();
+  }
+  mascotClock();
+  clearTimeout(mascot.digTimer);
+  if (mood === "searching" && !MASCOT_FORCE) {
+    // «still digging» is the only thing time may say, and only while nothing has arrived
+    const id = state.searchId;
+    mascot.digTimer = setTimeout(() => {
+      if (el.isConnected && el.dataset.state === "searching" && state.searchId === id && state.searching && !state.results.length) setMascotMood("digging");
+    }, Math.max(0, mascot.digAt - Date.now()));
+  }
+  if (mood === "found" && mascot.foundTimer === 0 && !MASCOT_FORCE) {
+    const id = state.searchId;
+    mascot.foundTimer = setTimeout(() => {
+      if (state.searchId === id && el.dataset.state === "found") el.dataset.leaving = "";
+      mascot.foundTimer = setTimeout(() => {
+        mascot.foundTimer = 0;
+        if (el.dataset.state === "found") el.remove();
+        delete el.dataset.leaving;
+      }, 320);
+    }, Math.max(0, mascot.foundUntil - Date.now()));
+  }
+}
+
+// Called after every full render: the figure moves into the fresh slot, or goes with the old screen.
+function mountMascot(root) {
+  const slot = root.querySelector("[data-mascot]");
+  if (!slot) {
+    clearTimeout(mascot.digTimer);
+    return;
+  }
+  const el = mascotNode();
+  el.className = `fq-mascot ${slot.dataset.place || ""}`.trim();
+  if (el.dataset.state !== "found") delete el.dataset.leaving;
+  slot.replaceWith(el);
+  setMascotMood(slot.dataset.mascot || "idle");
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!mascot.el) return;
+  if (document.visibilityState === "hidden") mascot.el.dataset.paused = "";
+  else delete mascot.el.dataset.paused;
+});
 
 // A 0–100 ring with a caption, drawn beside a price or a rating (nodes 91:29, 91:53, 91:77).
 function scoreRing(percent, caption) {
@@ -1507,6 +1636,7 @@ function renderFlow() {
   const shown = visibleResults();
   return `${fqHead({ title: "نتائج البحث", back: "back-understand" })}
   <section class="fq-body tight">
+    ${!asking && mascotFound() ? `<div class="fq-mascot-dock">${mascotSlot("found", "at-dock")}</div>` : ""}
     ${asking ? renderQuestion() : ""}
     ${asking || !state.results.length ? "" : `<div class="fq-filters-row">${filtersRow(tabs, shown)}</div>`}
     ${state.notice && !showEmpty ? `<p class="fq-meta" role="status" aria-live="polite">${esc(state.notice)}${!live && !asking && state.results.length && state.searchState === "PARTIAL_RESULTS" ? ` <button class="fq-link" type="button" data-action="retry-search">ابحث مرة ثانية</button>` : ""}</p>` : ""}
@@ -1537,7 +1667,8 @@ function emptyState() {
   const status = state.searchState;
   const failed = ["INTERNAL_ERROR", "TIMEOUT", "LIVE_UNAVAILABLE", "PARTIAL_RESULTS", "RATE_LIMITED"].includes(status);
   const city = cityLabel(customerCity());
-  const blob = (glyph) => `<div class="fq-blob warn">${ic(glyph, 48)}</div>`;
+  // the searcher shrugs beside the sign; the words below say what happened, not his face
+  const blob = (glyph) => `<div class="fq-mascot-empty">${mascotSlot("shrug", "at-empty")}<div class="fq-blob warn">${ic(glyph, 48)}</div></div>`;
   if (failed) {
     return `<div class="fq-body center" style="padding:24px 0" role="alert">${blob("alert-triangle")}
       <div><h2 class="fq-h2">${esc(state.notice || finalNotice("INTERNAL_ERROR", 0))}</h2><p class="fq-lead">طلبك وبنودك محفوظة، ما يحتاج تكتبها من جديد.</p></div>
@@ -4281,6 +4412,7 @@ function render() {
   bindCounter(app);
   bindGrow(app);
   bindChat(app);
+  mountMascot(app);
   if (state.view === "flow" && state.seenCards) for (const result of state.results) state.seenCards.add(resultKey(result));
   if (focused) document.getElementById(focused)?.focus();
   // The business description re-renders while it is being typed in, so the caret goes back
