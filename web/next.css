@@ -1,0 +1,627 @@
+/* =====================================================================
+   FARQ design language (/next foundation v1) — ported to Taseer.
+   Source of truth: farq Frontend/src/next/tokens.css + ui/ui.css (React). Taseer is
+   vanilla JS, so the tokens are copied here as custom properties and Taseer's own markup
+   wears them. Loaded after app.css on purpose: it is the last word on colour, type, space,
+   radius, elevation and motion, and it never changes a flow or a state.
+
+   Principles carried over:
+   1. Numbers are the hero — prices and the difference are set as type (Latin tabular digits,
+      a quieter «ر.س»).
+   2. The gap device is the signature — best ▸ measured mint gap ▸ highest, drawn only for a
+      difference that is real (two or more offers in the same currency).
+   3. One primary motion per screen, ≤ 900 ms, no bounce; reduced motion shows the end state.
+   4. Honesty — no crown without a unique winner, a small gap is said calmly, a supplier's
+      stage is only what the thread records.
+   5. RTL-native: logical properties only.
+   ===================================================================== */
+
+:root {
+  /* ── Color roles ── */
+  --c-bg: #f6f7f6;
+  --c-surface: #ffffff;
+  --c-sunken: #eef1ef;
+  --c-fg-1: #0e2622;
+  --c-fg-2: #4a5f5a;
+  --c-fg-3: #7d8f8a;
+  --c-fg-inverse: #ffffff;
+  --c-line-1: #e3e8e6;
+  --c-line-2: #cfd8d5;
+  --c-brand: #043434;
+  --c-brand-2: #0a4a46;
+  --c-gap: #83f1b1; /* mint — the gap device, never a CTA fill */
+  --c-gap-ink: #0b5a3a;
+  --c-gap-soft: #e3fbee;
+  --c-win-fg: #0f8a4d; /* unique winner only */
+  --c-win-bg: #e8f6ee;
+  --c-warn-fg: #8a5a00;
+  --c-warn-bg: #fff6e0;
+  --c-danger-fg: #b3261e;
+  --c-danger-bg: #fdecea;
+  --c-focus: #83f1b1;
+
+  /* ── Sector atmosphere: taseer ── */
+  --c-sector-soft: #f4f3fb;
+  --c-sector-light: #e2def3;
+  --c-sector-base: #a79bdc;
+  --c-sector-deep: #575172;
+  --c-sector-edge: rgb(87 81 114 / 0.12);
+  --c-sector-wash: rgb(244 243 251 / 0.9);
+  --c-sector-shadow: 40 34 70;
+
+  /* ── Type (ITF Huwiya 400/500/700/900) ── */
+  --t-11: 11px;
+  --t-13: 13px;
+  --t-15: 15px;
+  --t-17: 17px;
+  --t-20: 20px;
+  --t-24: 24px;
+  --t-30: 30px;
+  --t-40: 40px;
+  --t-56: 56px;
+  --lh-ar: 1.6;
+  --lh-num: 1;
+
+  /* ── Space (4 px grid) ── */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+
+  /* ── Radius ── */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-full: 999px;
+
+  /* ── Motion ── near-critically damped, no overshoot */
+  --m-dur-fast: 140ms;
+  --m-dur-base: 220ms;
+  --m-dur-slow: 360ms;
+  --m-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --m-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --m-spring-dur: 520ms;
+
+  /* ── Elevation (tinted by the sector shadow) ── */
+  --e-1: 0 1px 2px rgb(var(--c-sector-shadow) / 0.06), 0 4px 12px -6px rgb(var(--c-sector-shadow) / 0.12);
+  --e-2: 0 2px 4px rgb(var(--c-sector-shadow) / 0.05), 0 18px 40px -20px rgb(var(--c-sector-shadow) / 0.35);
+
+  /* ── Taseer's own names, now reading the FARQ roles ── */
+  --fq-surface: var(--c-surface);
+  --fq-app-bg: var(--c-bg);
+  --fq-soft: var(--c-sector-soft);
+  --fq-light: var(--c-sector-light);
+  --fq-base: var(--c-sector-base);
+  --fq-deep: var(--c-sector-deep);
+  --fq-success: var(--c-brand);
+  --fq-text: var(--c-fg-1);
+  --fq-text-2: var(--c-fg-2);
+  --fq-muted: var(--c-fg-3);
+  --fq-line: var(--c-line-1);
+  --fq-r-small: var(--r-sm);
+  --fq-r-input: var(--r-md);
+  --fq-r-card: var(--r-lg);
+  --fq-r-sheet: var(--r-xl);
+  --fq-shadow-card: var(--e-1);
+  --fq-shadow-form: var(--e-1);
+  --fq-shadow-sheet: 0 -1px 0 rgb(var(--c-sector-shadow) / 0.04), 0 18px 40px -12px rgb(var(--c-sector-shadow) / 0.3);
+  --farq-diff-fg: var(--c-gap-ink);
+  --farq-diff-bg: var(--c-gap-soft);
+  --farq-diff-line: #b9f6d3;
+}
+
+body { background: var(--c-bg); color: var(--c-fg-1); -webkit-font-smoothing: antialiased; }
+.fq { background: var(--c-bg); }
+
+/* ── Numeric primitives ── */
+.nx-num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.01em;
+  unicode-bidi: isolate;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.22em;
+  white-space: nowrap;
+}
+.nx-cur { font-size: 0.46em; font-weight: 500; letter-spacing: 0; color: var(--c-fg-2); }
+
+/* Local design fixture: said on every screen, never mistaken for live. */
+.nx-fixture {
+  position: sticky; top: 0; z-index: 90;
+  padding: 4px 12px; text-align: center;
+  font-size: var(--t-11); font-weight: 700; letter-spacing: 0;
+  color: var(--c-warn-fg); background: var(--c-warn-bg);
+  border-bottom: 1px solid #f2dfae;
+}
+
+/* ── Chrome: one neutral row ── */
+.fq-head, .fq-head.deep, .fq-head.is-auth {
+  background: rgb(255 255 255 / 0.92);
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--c-line-1);
+  border-radius: 0;
+}
+.fq-head-accent { display: none; }
+.fq-head-row { min-height: 56px; padding: 8px 16px; }
+.fq-head-title { font-size: var(--t-17); font-weight: 700; color: var(--c-fg-1); }
+.fq-head-sub { font-size: var(--t-13); color: var(--c-fg-2); }
+.fq-head-mark { color: var(--c-brand); font-weight: 900; }
+.fq-ibtn, .fq-ibtn.light { width: 36px; height: 36px; border-radius: var(--r-full); background: var(--c-sunken); color: var(--c-fg-1); }
+.fq-embar {
+  min-height: 52px; padding: 6px 12px;
+  background: rgb(255 255 255 / 0.92);
+  border-bottom: 1px solid var(--c-line-1);
+}
+.fq-embar-back { border: 0; background: var(--c-sunken); color: var(--c-fg-1); box-shadow: none; }
+.fq-embar-title { font-size: var(--t-15); font-weight: 700; color: var(--c-fg-1); }
+.fq-embar-sub { font-size: var(--t-11); color: var(--c-fg-2); }
+
+/* ── Bottom navigation ── */
+.fq-nav {
+  background: rgb(255 255 255 / 0.94);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  border-top: 1px solid var(--c-line-1);
+  box-shadow: none;
+}
+.fq-nav-row { padding: 6px 8px; justify-content: space-around; }
+.fq-tab { gap: 2px; padding: 6px 0; font-size: var(--t-11); font-weight: 500; color: var(--c-fg-3); }
+.fq-tab svg { width: 22px; height: 22px; }
+.fq-tab.on { color: var(--c-brand); font-weight: 700; }
+.fq-tab-badge { background: var(--c-brand); }
+
+/* ── Body, type ── */
+.fq-body { padding: var(--s-4); gap: var(--s-4); }
+.fq-h1 { font-size: var(--t-24); font-weight: 900; line-height: 1.3; color: var(--c-fg-1); }
+.fq-h2 { font-size: var(--t-20); font-weight: 700; line-height: 1.4; color: var(--c-fg-1); }
+.fq-lead { font-size: var(--t-15); font-weight: 400; line-height: var(--lh-ar); color: var(--c-fg-2); }
+.fq-meta, .fq-small { color: var(--c-fg-2); }
+.fq-link { color: var(--c-brand); font-weight: 700; }
+
+/* ── Surfaces: hairline ledgers, not nested cards ── */
+.fq-card {
+  border: 1px solid var(--c-line-1);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-1);
+}
+.fq-card.pad { padding: var(--s-4); }
+.fq-line { background: var(--c-line-1); }
+
+/* ── Buttons: the brand carries the action; mint never fills a CTA ── */
+.fq-btn {
+  height: 48px; border-radius: var(--r-md);
+  background: var(--c-brand); color: var(--c-fg-inverse);
+  font-size: var(--t-15); font-weight: 700;
+  box-shadow: none;
+}
+.fq-btn.success { background: var(--c-brand); }
+.fq-btn.ghost { background: var(--c-surface); color: var(--c-fg-1); border: 1px solid var(--c-line-2); }
+.fq-btn.sm { height: 44px; border-radius: var(--r-md); }
+.fq-addbtn { background: var(--c-brand); border-radius: var(--r-full); font-size: var(--t-13); padding: 8px 14px; }
+.fq-sticky { background: linear-gradient(to top, var(--c-bg) 72%, rgb(246 247 246 / 0)); }
+@media (max-width: 430px) { .fq-sticky { box-shadow: 0 16px 0 var(--c-bg); } }
+
+/* ── Chips, pills, tags ── */
+.fq-chip {
+  height: 36px; padding-inline: var(--s-4); border-radius: var(--r-full);
+  border: 1px solid var(--c-line-1); background: var(--c-surface);
+  color: var(--c-fg-1); font-size: var(--t-13); font-weight: 500;
+}
+.fq-chip.on { background: var(--c-brand); border-color: var(--c-brand); color: var(--c-fg-inverse); }
+.fq-pill { border-color: var(--c-line-1); color: var(--c-fg-2); font-size: var(--t-13); }
+.fq-pill.on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+.fq-tag { border-radius: var(--r-full); padding: 2px 10px; font-size: var(--t-11); font-weight: 700; background: var(--c-sunken); color: var(--c-fg-2); }
+.fq-tag.ok { background: var(--c-win-bg); color: var(--c-win-fg); }
+.fq-tag.warn { background: var(--c-warn-bg); color: var(--c-warn-fg); }
+.fq-tag.danger { background: var(--c-danger-bg); color: var(--c-danger-fg); }
+.fq-tag.deep { background: var(--c-sector-soft); color: var(--c-sector-deep); }
+.fq-live { background: var(--c-surface); border-color: var(--c-line-1); color: var(--c-fg-1); font-weight: 500; }
+.fq-pulse::before, .fq-pulse::after { background: var(--c-win-fg); }
+.fq-unread { background: var(--c-brand); }
+
+/* ── Fields ── */
+.fq-inp { background: var(--c-surface); border: 1.5px solid var(--c-line-2); border-radius: var(--r-md); }
+.fq-inp:focus-within { border-color: var(--c-brand); }
+
+/* ── Sheets ── */
+.fq-scrim { background: rgb(14 38 34 / 0.32); }
+.fq-sheet { padding: 12px var(--s-5) calc(var(--s-5) + var(--safe-bottom, 0px)); gap: var(--s-4); }
+.fq-sheet h2 { font-size: var(--t-20); font-weight: 700; }
+.fq-grab { background: var(--c-line-2); }
+.fq-notice { background: var(--c-warn-bg); color: var(--c-warn-fg); border-radius: var(--r-md); font-size: var(--t-13); }
+.fq-awardcard .fq-price.won, .fq-price.won { color: var(--c-win-fg); font-variant-numeric: tabular-nums; }
+
+/* ── Empty / error states ── */
+.fq-blob { background: var(--c-sector-soft); color: var(--c-sector-deep); }
+.fq-blob.warn { background: var(--c-warn-bg); color: var(--c-warn-fg); }
+.fq-body.center .fq-h2 { margin-bottom: 6px; }
+.nx-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--s-3); padding: var(--s-10) var(--s-4) var(--s-6); }
+.nx-empty-mark { width: 64px; height: 64px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--c-sector-soft); color: var(--c-sector-deep); border: 1px solid var(--c-sector-light); }
+
+/* ── Skeletons (static under reduced motion) ── */
+.fq-skel { background: linear-gradient(90deg, var(--c-sunken) 0%, #f6f8f7 50%, var(--c-sunken) 100%) 0 0 / 200% 100%; animation: nx-shimmer 1.4s linear infinite; }
+@keyframes nx-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* ── Focus ── */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--c-brand); outline-offset: 2px; box-shadow: 0 0 0 5px var(--c-focus);
+}
+
+/* =====================================================================
+   M01 — Home: the request box in the first viewport
+   ===================================================================== */
+.fq-body.nx-home {
+  gap: 0;
+  padding-top: var(--s-2);
+  background: linear-gradient(180deg, var(--c-sector-soft) 0, var(--c-sector-soft) 420px, var(--c-bg) 760px);
+}
+html.fq-embed .fq-body.nx-home { padding-top: var(--s-4); }
+.nx-hero { position: relative; padding: var(--s-2) 0 var(--s-4); }
+.nx-hero-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-2); }
+.nx-eyebrow { margin: 0; font-size: var(--t-13); font-weight: 700; color: var(--c-sector-deep); }
+.nx-place {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 32px; padding-inline: 10px 12px; border-radius: var(--r-full);
+  border: 1px solid var(--c-sector-light); background: rgb(255 255 255 / 0.7);
+  color: var(--c-fg-1); font-size: var(--t-13); font-weight: 500;
+}
+.nx-place svg { color: var(--c-sector-deep); }
+.nx-h1 { margin: 0 0 6px; font-size: var(--t-30); font-weight: 900; line-height: 1.25; letter-spacing: -0.01em; color: var(--c-brand); max-width: 15ch; }
+.nx-accent { color: var(--c-sector-deep); }
+.nx-lede { margin: 0; font-size: var(--t-15); line-height: 1.55; color: var(--c-fg-2); max-width: 34ch; }
+/* the searcher waits beside the question, calm, one breath at a time */
+.fq-mascot.at-home { position: absolute; inset-inline-end: -8px; top: 46px; width: 80px; height: 85px; }
+.fq-mascot.at-home .bubbles { display: none; }
+.nx-hero .nx-h1, .nx-hero .nx-lede { position: relative; z-index: 1; }
+.nx-hero .nx-h1 { padding-inline-end: 72px; max-width: none; }
+.nx-hero .nx-lede { padding-inline-end: 64px; max-width: none; }
+
+/* The one input */
+.nx-ask {
+  display: flex; flex-direction: column; gap: var(--s-2);
+  background: var(--c-surface);
+  border: 1.5px solid var(--c-line-2);
+  border-radius: var(--r-lg);
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-3);
+  box-shadow: 0 1px 0 rgb(14 38 34 / 0.03), 0 8px 24px -12px rgb(4 52 52 / 0.18);
+  transition: border-color var(--m-dur-fast) var(--m-ease-out);
+}
+.nx-ask:focus-within { border-color: var(--c-brand); }
+.nx-ask textarea {
+  width: 100%; min-height: 56px; resize: none; border: 0; outline: none; background: transparent;
+  font: inherit; font-size: 16px; line-height: 1.55; color: var(--c-fg-1); padding: 2px 4px;
+}
+.nx-ask textarea::placeholder { color: var(--c-fg-3); }
+.nx-ask-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.nx-ask-hint { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-11); color: var(--c-fg-3); min-width: 0; }
+.nx-ask-hint svg { flex: none; }
+.nx-ask-go {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  height: 44px; padding-inline: var(--s-5) var(--s-4); border: 0; border-radius: var(--r-md);
+  background: var(--c-brand); color: var(--c-fg-inverse); font: inherit; font-size: var(--t-15); font-weight: 700;
+  transition: transform var(--m-dur-fast) var(--m-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.nx-ask-go:active { transform: scale(0.97); transition-duration: 0ms; }
+.nx-ask-alert { margin: 0; font-size: var(--t-13); color: var(--c-warn-fg); background: var(--c-warn-bg); border-radius: var(--r-sm); padding: 6px 10px; }
+
+/* Ideas: one rail under the input */
+.nx-ideas {
+  display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none;
+  margin: var(--s-3) calc(var(--s-4) * -1) 0; padding: 0 var(--s-4) 2px;
+  touch-action: pan-x pan-y;
+}
+.nx-ideas::-webkit-scrollbar { display: none; }
+.nx-idea {
+  flex: none; height: 36px; padding-inline: 14px; border-radius: var(--r-full);
+  border: 1px solid var(--c-line-1); background: var(--c-surface);
+  font: inherit; font-size: var(--t-13); font-weight: 500; color: var(--c-fg-1); white-space: nowrap;
+}
+.nx-idea:active { transform: scale(0.97); }
+
+/* How it works, in three words — the philosophy, not a tutorial */
+.nx-how {
+  list-style: none; margin: var(--s-5) 0 0; padding: var(--s-3);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2);
+  background: var(--c-surface); border: 1px solid var(--c-sector-edge); border-radius: var(--r-lg);
+  box-shadow: var(--e-1);
+}
+.nx-how li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--t-11); color: var(--c-fg-2); line-height: 1.35; }
+.nx-how li + li { border-inline-start: 1px solid var(--c-line-1); padding-inline-start: var(--s-2); }
+.nx-how b { display: block; font-size: var(--t-13); font-weight: 700; color: var(--c-fg-1); }
+.nx-how-n {
+  flex: none; width: 24px; height: 24px; border-radius: var(--r-full);
+  display: grid; place-items: center; font-size: var(--t-11); font-weight: 900;
+  background: var(--c-sector-soft); color: var(--c-sector-deep); border: 1px solid var(--c-sector-light);
+}
+.nx-how-n.is-gap { background: var(--c-gap-soft); color: var(--c-gap-ink); border-color: var(--c-gap); }
+
+/* Aisles — the 3D icons are the heroes of their tiles */
+.nx-block { padding: var(--s-6) 0 var(--s-4); }
+.nx-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+.nx-h2 { margin: 0; font-size: var(--t-20); font-weight: 700; line-height: 1.4; color: var(--c-fg-1); }
+.nx-h3 { margin: 0; font-size: var(--t-15); font-weight: 700; color: var(--c-fg-1); display: flex; align-items: baseline; gap: 8px; }
+.nx-link { background: none; border: 0; padding: 0; font: inherit; font-size: var(--t-13); font-weight: 700; color: var(--c-brand); }
+.nx-cats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-2); }
+.nx-cat {
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px;
+  min-height: 96px; padding: var(--s-2) 4px var(--s-2);
+  background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-sector-soft) 100%);
+  border: 1px solid var(--c-sector-edge); border-radius: var(--r-lg);
+  font: inherit; font-size: var(--t-11); font-weight: 700; line-height: 1.3; text-align: center; color: var(--c-fg-1);
+  transition: transform var(--m-dur-fast) var(--m-ease-out), border-color var(--m-dur-fast) var(--m-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.nx-cat:active { transform: scale(0.97); transition-duration: 0ms; }
+.nx-cat img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 6px 8px rgb(var(--c-sector-shadow) / 0.18)); }
+.nx-cat span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 2.6em; }
+.nx-cat.is-on { border-color: var(--c-sector-deep); box-shadow: inset 0 -2px 0 var(--c-sector-base); }
+
+/* =====================================================================
+   M04 — Searching: the searcher, the steps, skeletons shaped like the result
+   ===================================================================== */
+.nx-search-card { align-items: stretch; }
+.nx-search-q { margin: 0; text-align: center; font-size: var(--t-15); font-weight: 700; color: var(--c-fg-1); line-height: 1.5; }
+.fq-steps { gap: 10px; }
+.fq-step { font-size: var(--t-13); color: var(--c-fg-3); }
+.fq-step.done { color: var(--c-fg-1); font-weight: 500; }
+.fq-step .mark { width: 20px; height: 20px; border-width: 1.5px; border-color: var(--c-line-2); }
+.fq-step.done .mark { background: var(--c-brand); border-color: var(--c-brand); }
+.fq-step.now { color: var(--c-fg-1); font-weight: 700; }
+.fq-step.now .mark { border-color: var(--c-sector-deep); }
+.fq-step.now .mark::after { background: var(--c-sector-deep); }
+.nx-searching .fq-stagger .fq-card { box-shadow: none; }
+
+/* =====================================================================
+   C01 — the conversation: offers summary over the chat, supplier stages in the pills
+   ===================================================================== */
+.nx-offers-bar {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px var(--s-4) 12px;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-line-1);
+}
+.nx-bar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.nx-bar-count { font-size: var(--t-13); color: var(--c-fg-2); }
+.nx-bar-count b { color: var(--c-fg-1); font-weight: 700; }
+.nx-bar-go {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 32px; padding-inline: 12px 8px; border: 0; border-radius: var(--r-full);
+  background: var(--c-brand); color: #fff; font: inherit; font-size: var(--t-13); font-weight: 700;
+}
+.nx-mini-gap { display: flex; align-items: center; gap: var(--s-2); }
+.nx-mini-end { font-size: var(--t-17); font-weight: 700; color: var(--c-fg-1); }
+.nx-mini-end.is-min { color: var(--c-win-fg); }
+.nx-mini-diff, .nx-mini-one { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nx-mini-price { font-size: var(--t-20); font-weight: 700; color: var(--c-fg-1); }
+.nx-meta { font-size: var(--t-13); color: var(--c-fg-2); line-height: 1.5; }
+.nx-diff-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--t-13); font-weight: 700; color: var(--c-brand);
+  background: var(--c-gap-soft); box-shadow: inset -3px 0 0 var(--c-gap);
+  padding: 3px 10px; border-radius: var(--r-sm); white-space: nowrap;
+}
+.nx-diff-chip .nx-num { font-weight: 900; }
+.nx-diff-chip .nx-cur { color: var(--c-gap-ink); }
+
+/* the supplier pills say where each one stands (from the thread, never from the clock) */
+.fq-filters { background: var(--c-surface); border-bottom: 1px solid var(--c-line-1); padding: 8px var(--s-4); }
+.fq-fpill { height: 34px; border-radius: var(--r-full); border-color: var(--c-line-1); font-size: var(--t-13); }
+.fq-fpill.on { background: var(--c-brand); border-color: var(--c-brand); }
+.nx-spill-state { font-size: var(--t-11); font-weight: 700; color: var(--c-fg-3); padding-inline-start: 6px; border-inline-start: 1px solid var(--c-line-1); font-variant-numeric: tabular-nums; }
+.nx-spill[data-stage="offered"] .nx-spill-state { color: var(--c-fg-1); }
+.nx-spill[data-stage="negotiating"] .nx-spill-state { color: var(--c-sector-deep); }
+.nx-spill[data-stage="chosen"] .nx-spill-state { color: var(--c-win-fg); }
+.nx-spill[data-stage="failed"] .nx-spill-state { color: var(--c-danger-fg); }
+
+/* the chat itself: calm neutral wall, the customer in brand, prices as numbers */
+.fq-chat { background: var(--c-bg); }
+.fq-mine-bub { background: var(--c-brand); }
+.fq-mine-bub .fq-time { color: rgb(255 255 255 / 0.7); }
+.fq-bub { background: var(--c-surface); border: 1px solid var(--c-line-1); box-shadow: none; }
+.fq-offer { border-top-width: 0; border: 1px solid var(--c-line-1); border-radius: var(--r-md); background: var(--c-surface); box-shadow: none; }
+.fq-offer .amount { font-size: var(--t-24); font-weight: 700; color: var(--c-fg-1); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.fq-offer .low { background: var(--c-win-bg); color: var(--c-win-fg); border-radius: var(--r-full); padding: 2px 8px; font-size: var(--t-11); }
+.fq-sys { background: var(--c-sunken); color: var(--c-fg-2); font-weight: 500; }
+.fq-target { background: var(--c-sector-soft); color: var(--c-sector-deep); border-top-color: var(--c-line-1); }
+.fq-target button { color: var(--c-brand); font-weight: 700; }
+.fq-send { background: var(--c-brand); }
+.fq-inputg { background: var(--c-surface); border-color: var(--c-line-2); }
+.fq-composer { border-top-color: var(--c-line-1); }
+
+/* =====================================================================
+   O01 — Compare: the FARQ moment
+   ===================================================================== */
+.nx-compare { gap: var(--s-4); }
+.nx-ledger {
+  background: var(--c-surface);
+  border: 1px solid var(--c-line-1);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e-2);
+  overflow: hidden;
+}
+.nx-ledger-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); padding: var(--s-4) var(--s-4) 0; }
+.nx-kicker {
+  display: inline-flex; align-items: center; font-size: var(--t-11); font-weight: 700;
+  color: var(--c-sector-deep); background: var(--c-sector-soft); border: 1px solid var(--c-sector-light);
+  padding: 3px 10px; border-radius: var(--r-full); max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* the hero: «الفرق» as a number, the gap device under it */
+.nx-gap-hero { padding: var(--s-3) var(--s-4) var(--s-5); border-bottom: 1px solid var(--c-line-1); }
+.nx-gap-hero.is-quiet { padding-bottom: var(--s-4); }
+.nx-gap-label { margin: 0; font-size: var(--t-13); font-weight: 700; color: var(--c-fg-2); }
+.nx-gap-value { margin: 6px 0 14px; font-size: var(--t-56); font-weight: 900; line-height: 1; color: var(--c-brand); }
+.nx-gap-value .nx-num { gap: 0.18em; }
+.nx-gap-value .nx-cur { font-size: 0.34em; font-weight: 700; color: var(--c-brand); }
+.nx-quiet { margin: 6px 0 0; font-size: var(--t-15); font-weight: 500; line-height: 1.55; color: var(--c-fg-1); }
+.nx-gap-scale { display: flex; align-items: center; gap: var(--s-3); }
+.nx-gap-end { display: flex; flex-direction: column; gap: 2px; min-width: 56px; }
+.nx-gap-end .nx-num { font-size: var(--t-17); font-weight: 700; color: var(--c-fg-1); }
+.nx-gap-end.is-min .nx-num { color: var(--c-win-fg); }
+.nx-gap-end.is-max { align-items: flex-end; text-align: end; }
+.nx-gap-end small { font-size: var(--t-11); color: var(--c-fg-2); }
+.nx-gap-track { flex: 1; height: 14px; position: relative; border-inline: 2px solid var(--c-fg-1); }
+.nx-gap-track::before { content: ""; position: absolute; inset-inline: 0; top: 6px; height: 2px; background: var(--c-line-2); }
+.nx-gap-track.sm { height: 12px; }
+.nx-gap-track.sm::before { top: 5px; }
+.nx-gap-fill {
+  position: absolute; inset-inline: 0; top: 3px; height: 8px; border-radius: 2px; background: var(--c-gap);
+  transform-origin: right center;
+  transition: transform var(--m-spring-dur) var(--m-spring);
+}
+.nx-gap-track.sm .nx-gap-fill { top: 3px; height: 6px; }
+
+/* the rows: one ledger, hairlines between, the winner lit */
+.nx-rows { list-style: none; margin: 0; padding: 4px 0; }
+.nx-row {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center;
+  column-gap: var(--s-3); row-gap: 6px;
+  padding: 12px var(--s-4);
+  background: var(--c-surface);
+  transition: transform var(--m-spring-dur) var(--m-spring) calc(var(--rank, 0) * 30ms);
+}
+.nx-row + .nx-row { border-top: 1px solid var(--c-line-1); }
+.nx-row.is-win { background: var(--c-win-bg); z-index: 2; }
+.nx-row.is-chosen { background: var(--c-win-bg); }
+.nx-row .fq-av { width: 32px; height: 32px; font-size: var(--t-13); }
+.nx-row-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nx-row-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--t-15); font-weight: 700; line-height: 1.35; }
+.nx-row-name bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.nx-row-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: var(--t-11); color: var(--c-fg-3); line-height: 1.4; }
+.nx-row-price { font-size: var(--t-20); font-weight: 700; color: var(--c-fg-1); text-align: end; }
+.nx-row.is-win .nx-row-price { color: var(--c-win-fg); }
+.nx-crown {
+  flex: none; font-size: var(--t-11); font-weight: 700; color: #fff; background: var(--c-win-fg);
+  padding: 2px 8px; border-radius: var(--r-full); transition: opacity 200ms var(--m-ease-out) 160ms;
+}
+.nx-row-track {
+  grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; height: 12px; position: relative; background: inherit;
+}
+.nx-row-track::before { content: ""; position: absolute; inset-inline: 0; top: 5px; height: 2px; border-radius: 1px; background: var(--c-line-1); }
+.nx-delta-bar {
+  position: relative; width: var(--w, 4%); max-width: calc(100% - 64px); height: 8px; border-radius: 4px;
+  background: linear-gradient(270deg, var(--c-gap), #b9f6d3);
+  transform-origin: right center;
+  transition: transform var(--m-spring-dur) var(--m-spring) calc(320ms + var(--rank, 0) * 30ms);
+}
+.nx-delta {
+  position: relative; z-index: 1; padding-inline: 4px; background: inherit;
+  font-size: var(--t-13); font-weight: 700; color: var(--c-fg-2); font-variant-numeric: tabular-nums; direction: ltr;
+  transition: opacity 200ms var(--m-ease-out) 420ms;
+}
+.nx-row.is-win .nx-row-track { display: none; }
+.nx-row-said { grid-column: 2 / -1; margin: 0; font-size: var(--t-13); color: var(--c-fg-2); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+.nx-row-actions { grid-column: 2 / -1; display: flex; gap: var(--s-2); justify-content: space-between; align-items: center; margin-top: 2px; }
+.nx-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; padding-inline: var(--s-4); border-radius: var(--r-md); border: 0;
+  font: inherit; font-size: var(--t-13); font-weight: 700;
+  background: var(--c-sunken); color: var(--c-fg-1);
+  transition: transform var(--m-dur-fast) var(--m-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.nx-btn:active:not(:disabled) { transform: scale(0.97); transition-duration: 0ms; }
+.nx-btn.sm { height: 36px; padding-inline: 12px; }
+.nx-btn.primary { background: var(--c-brand); color: #fff; }
+.nx-btn.soft { background: var(--c-surface); border: 1px solid var(--c-line-2); }
+.nx-btn.ghost { background: transparent; color: var(--c-fg-2); }
+.nx-btn:disabled { background: var(--c-win-bg); color: var(--c-win-fg); }
+.nx-stage { font-weight: 700; color: var(--c-fg-2); }
+.nx-stage[data-stage="negotiating"] { color: var(--c-sector-deep); }
+.nx-stage[data-stage="chosen"] { color: var(--c-win-fg); }
+.nx-stage[data-stage="failed"] { color: var(--c-danger-fg); }
+.nx-stage[data-stage="asked"] { color: var(--c-warn-fg); }
+
+/* the moment's frames (app.js playMoments): natural order → verdict order.
+   No class = the final state, so no script, a redraw or reduced motion all land right. */
+.nx-ledger.is-natural .nx-row { transition: none; }
+.nx-ledger.is-natural .nx-gap-fill,
+.nx-ledger.is-natural .nx-delta-bar { transform: scaleX(0); transition: none; }
+.nx-ledger.is-natural .nx-delta,
+.nx-ledger.is-natural .nx-crown { opacity: 0; transition: none; }
+.nx-ledger.is-natural .nx-row.is-win { background: var(--c-surface); }
+.nx-ledger.is-natural .nx-row.is-win .nx-row-price { color: var(--c-fg-1); }
+.nx-ledger.is-natural .nx-gap-value,
+.nx-ledger.is-sorting:not(.is-counting) .nx-gap-value { opacity: 0; }
+.nx-ledger.is-counting .nx-gap-value { transition: opacity 120ms var(--m-ease-out); }
+.nx-ledger.is-sorting .nx-row.is-win { transition: transform var(--m-spring-dur) var(--m-spring), background-color 360ms var(--m-ease-out) 200ms; }
+.nx-ledger.is-sorting:not(.is-settled) .nx-row:not(.is-win) { animation: nx-follow 520ms var(--m-ease-out) both; }
+.nx-ledger.is-sorting .nx-gap-fill { transition-delay: 200ms; }
+@keyframes nx-follow { 0%, 30% { opacity: 0.4; } 100% { opacity: 1; } }
+
+/* who has not priced yet */
+.nx-waiting { display: flex; flex-direction: column; gap: var(--s-2); }
+.nx-waiting-list { list-style: none; margin: 0; padding: 0; background: var(--c-surface); border: 1px solid var(--c-line-1); border-radius: var(--r-lg); overflow: hidden; }
+.nx-waiting-list li + li { border-top: 1px solid var(--c-line-1); }
+.nx-waiting-row { width: 100%; display: flex; align-items: center; gap: var(--s-3); padding: 10px var(--s-4); background: none; border: 0; font: inherit; text-align: start; color: var(--c-fg-1); }
+.nx-waiting-row .fq-av { width: 28px; height: 28px; font-size: var(--t-11); }
+.nx-waiting-name { flex: 1; min-width: 0; font-size: var(--t-13); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-waiting-row .nx-stage { font-size: var(--t-11); }
+.nx-foot { margin: 0; font-size: var(--t-11); color: var(--c-fg-3); text-align: center; line-height: 1.5; padding-bottom: var(--s-4); }
+
+@media (prefers-reduced-motion: reduce) {
+  .nx-row, .nx-gap-fill, .nx-delta-bar, .nx-delta, .nx-crown, .nx-ask, .nx-ask-go, .nx-cat, .nx-btn { transition: none !important; }
+  .nx-row { animation: none !important; }
+  .fq-skel { animation: none; }
+}
+
+/* ── Entrance: calm rise and fade, no overshoot, one short stagger (was a 1.56 spring) ── */
+@keyframes nx-rise { from { transform: translateY(8px); opacity: 0; } }
+.fq[data-enter] .fq-head,
+.fq[data-enter] .fq-nav { animation: none; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *,
+.fq[data-enter] .fq-offers-bar,
+.fq[data-enter] .nx-offers-bar,
+.fq[data-enter] .fq-profile-banner,
+.fq[data-enter] .fq-filters,
+.fq[data-enter] .fq-stagger > *,
+.fq[data-enter] .fq-faceoff > * { animation: nx-rise 320ms var(--m-ease-out) both; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(1), .fq[data-enter] .fq-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(2), .fq[data-enter] .fq-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(3), .fq[data-enter] .fq-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(4), .fq[data-enter] .fq-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(5), .fq[data-enter] .fq-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.fq[data-enter] .fq-body:not(.fq-stagger) > *:nth-child(n + 6), .fq[data-enter] .fq-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+/* the comparison has one motion, the moment: nothing else rises there */
+.fq[data-enter] .nx-compare > * { animation: none; }
+.fq-in { animation: nx-rise 320ms var(--m-ease-out) both; }
+@media (prefers-reduced-motion: reduce) {
+  .fq[data-enter] * { animation: none !important; }
+}
+/* WebKit paints a stray tile when a drop-shadowed image rides a rising parent: the aisles
+   are already below the fold, so they simply arrive in place. */
+.fq[data-enter] .nx-home > .nx-block { animation: none; }
+
+/* ── Round-1 review fixes ── */
+/* the home box carries the old #composer id: speak with the same weight */
+#composer.nx-ask { padding: var(--s-3); gap: var(--s-2) !important; border-radius: var(--r-lg); box-shadow: 0 1px 0 rgb(14 38 34 / 0.03), 0 8px 24px -12px rgb(4 52 52 / 0.18); }
+#composer.nx-ask textarea { font-size: 16px !important; font-weight: 400; line-height: 1.55 !important; min-height: 52px; }
+/* the chat: the customer's tail and the send button in the brand; the field never clips */
+.fq-mine-bub.tail::before { background: var(--c-brand); }
+.fq-composer.wa .fq-send { background: var(--c-brand); }
+.fq-composer.wa .fq-send:disabled { background: var(--c-line-2); }
+.fq-composer.wa .fq-inputg textarea { min-height: 40px; }
+.fq-offer .amount .nx-cur { font-size: 0.5em; }
+/* the offers bar: two short rows — the count and the way to compare, then the gap itself */
+.nx-offers-bar { gap: 6px; padding: 8px var(--s-4) 10px; }
+.nx-mini-gap .nx-gap-track { height: 26px; }
+.nx-mini-gap .nx-gap-track::before { top: 12px; }
+.nx-mini-gap .nx-gap-track .nx-gap-fill { top: 9px; height: 8px; }
+.nx-diff-chip.on-track {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--c-surface), inset -3px 0 0 var(--c-gap); padding: 1px 8px; font-size: var(--t-11);
+}
+.nx-diff-chip.on-track .nx-num { font-size: var(--t-13); }
+.fq[data-enter] .nx-home > .nx-hero { animation: none; }
+.fq-place { color: var(--c-fg-1); font-weight: 500; }
+.fq-place svg { color: var(--c-sector-deep); }

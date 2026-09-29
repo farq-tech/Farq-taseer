@@ -112,6 +112,38 @@ function isFarqEmbed() {
 
 if (isFarqEmbed()) document.documentElement.classList.add("fq-embed");
 
+// A developer's own machine, or a phone on the same private network looking at it. Design
+// review switches (?mascot=, ?fixture=) work here and nowhere else: never on farq.sa, never
+// on a deployment.
+function devHost() {
+  const host = location.hostname;
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".local") ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
+}
+
+// ?fixture=offers — a LOCAL DESIGN FIXTURE for the offers, the comparison and the chat, which
+// have nothing to show offline. The thread in web/dev/fixture-thread.json was produced by
+// farq.store itself in a throwaway database (the real shape of a request with replies); its
+// supplier names and prices are invented. It never reaches the server: nothing is polled,
+// every write is refused on the device, and a ribbon on every screen says it is not live.
+//   &view=compare   open on the comparison     &arrive=1   replies land one by one
+//   &awarded=<id>   the request already has a chosen supplier
+const FIXTURE = (() => {
+  try {
+    if (!devHost()) return "";
+    return new URLSearchParams(location.search).get("fixture") === "offers" ? "offers" : "";
+  } catch (_error) {
+    return "";
+  }
+})();
+const fixture = { full: null, timer: 0 };
+
 // Inside Farq the customer has already signed in, to Farq. Taseer must not put a second
 // email-and-password door in front of him, so nothing here ever opens Taseer's own auth
 // screen while embedded: the parent is asked to open Farq's sign-in instead, and it decides
@@ -434,6 +466,14 @@ async function apiSend(path, options = {}) {
 }
 
 async function request(path, { method = "GET", json, form, skipAuth = false, quiet = false, signal, asSupplier = false, headers: extra } = {}) {
+  if (FIXTURE && (method !== "GET" || path.startsWith("/v1/requests"))) {
+    // The design fixture never talks to the server about requests: no send, no award, no poll.
+    if (method !== "GET") toast("عرض تجريبي محلي: ما أُرسل شيء لأي مورد.");
+    if (method === "GET" && path === `/v1/requests/${fixture.full?.id}`) return state.thread;
+    const error = new Error("fixture: offline");
+    error.status = 0;
+    throw error;
+  }
   const headers = { ...(extra || {}) };
   if (asSupplier) {
     if (state.supplierToken) headers.Authorization = `Bearer ${state.supplierToken}`;
@@ -1300,36 +1340,46 @@ function coarsePointer() {
 }
 const HOME_CHIPS = ["مقاول", "كهربائي بالساعة", "شقة إيجار سنوي بالملقا", "لاندكروزر 2025 لون ابيض", "تركيب مكيف", "تلفزيون سامسونج 65 بوصة"];
 function renderHome() {
-  const place = `<button class="fq-place" type="button" data-action="change-city">${ic("map-pin", 16)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
+  const place = `<button class="nx-place" type="button" data-action="change-city">${ic("map-pin", 14)}<span>${esc(cityLabel(state.city) || "اختر مدينتك")}</span></button>`;
   const picked = activeCategory();
   const chips = picked ? picked.examples : HOME_CHIPS;
   const hint = picked ? `مثلاً: ${picked.examples[0]}` : "مثلاً: أبي سباك يوم السبت وكهربائي يركب 3 أفياش";
-  return `${fqHead({ title: "فرق Farq", end: place })}
-  <section class="fq-body">
-    <div class="fq-hero">
-      <span class="halo" aria-hidden="true"></span>
-      <h1>وش تبي نسعّر لك؟</h1>
-      <p>قل لنا وش تحتاج، وفرق يجيب لك الفرق من عدة مصادر في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
+  // One screen, one job: the request box sits in the first viewport with its own «سعّر لي»,
+  // the ideas right under it, then the way Taseer works in three words, then the aisles.
+  return `${fqHead({ title: "فرق تسعير" })}
+  <section class="fq-body nx-home">
+    <div class="nx-hero">
+      <div class="nx-hero-top"><p class="nx-eyebrow">فرق تسعير</p>${place}</div>
+      <h1 class="nx-h1">وش تبي <span class="nx-accent">نسعّر لك؟</span></h1>
+      <p class="nx-lede">اكتب طلبك مرة وحدة. يوصل للموردين والمعلنين، يتنافسون عليه، وعروضهم تجيك في محادثة وحدة.</p>
+      ${mascotSlot("idle", "at-home")}
     </div>
-    <form class="fq-card pad" id="composer" style="gap:10px">
+    <form class="nx-ask" id="composer">
       <label class="sr" for="composer-query">وش تبي نسعّر لك؟</label>
-      <textarea id="composer-query" name="query" rows="2" placeholder="${esc(hint)}"
-        style="border:0;outline:none;resize:none;font:inherit;font-size:16px;line-height:30px;color:var(--fq-text);background:none;width:100%">${esc(state.query)}</textarea>
-      <span style="color:var(--fq-muted)">${ic("edit", 20)}</span>
-    </form>
-    <div>
-      <div class="fq-row" style="margin-bottom:12px">
-        <p class="fq-sec-title"><span>وش تبي تسعّر؟</span></p>
-        ${picked ? `<button class="fq-link" type="button" data-action="clear-category">كل التصنيفات</button>` : ""}
+      <textarea id="composer-query" name="query" rows="2" maxlength="${QUERY_MAX}" placeholder="${esc(hint)}">${esc(state.query)}</textarea>
+      <div class="nx-ask-foot">
+        <span class="nx-ask-hint">${ic("search", 14)}تشوف مين يقدر يخدمك قبل ما ترسل</span>
+        <button class="nx-ask-go" type="submit">سعّر لي${ic("forward", 18)}</button>
       </div>
-      <div class="fq-cats">${CATEGORIES.map((item) => `
-        <button class="fq-cat${state.category === item.code ? " on" : ""}" type="button" data-action="category" data-code="${esc(item.code)}" aria-pressed="${state.category === item.code}">
-          <img src="${categoryIcon(item.code)}" alt="" width="64" height="64" loading="lazy" decoding="async">
+      ${state.composerHint ? `<p class="nx-ask-alert" role="alert">${esc(state.composerHint)}</p>` : ""}
+    </form>
+    <div class="nx-ideas" role="list" aria-label="أفكار">${chips.map((idea) => `<button class="nx-idea" role="listitem" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
+    <ol class="nx-how" aria-label="كيف يشتغل">
+      <li><span class="nx-how-n">1</span><span><b>تطلب</b>بكلامك</span></li>
+      <li><span class="nx-how-n">2</span><span><b>يتنافسون</b>على طلبك</span></li>
+      <li><span class="nx-how-n is-gap">3</span><span><b>تشوف الفرق</b>وتختار</span></li>
+    </ol>
+    <div class="nx-block">
+      <div class="nx-block-head">
+        <h2 class="nx-h2">${picked ? esc(picked.name) : "وش تبي تسعّر؟"}</h2>
+        ${picked ? `<button class="nx-link" type="button" data-action="clear-category">كل التصنيفات</button>` : ""}
+      </div>
+      <div class="nx-cats">${CATEGORIES.map((item) => `
+        <button class="nx-cat${state.category === item.code ? " is-on" : ""}" type="button" data-action="category" data-code="${esc(item.code)}" aria-pressed="${state.category === item.code}">
+          <img src="${categoryIcon(item.code)}" srcset="${categoryIcon(item.code)} 1x, ${categoryIcon(item.code).replace(".webp", "@2x.webp")} 2x" alt="" width="52" height="52" loading="lazy" decoding="async">
           <span>${esc(item.name)}</span>
         </button>`).join("")}</div>
     </div>
-    <div class="fq-pills" style="gap:10px">${chips.map((idea) => `<button class="fq-chip" type="button" data-action="idea" data-query="${esc(idea)}">${esc(idea)}</button>`).join("")}</div>
-    <div class="fq-sticky"><button class="fq-btn breathe" type="submit" form="composer" style="border-radius:var(--fq-r-input)">ابدأ التسعير</button></div>
   </section>
   ${fqNav("home")}`;
 }
@@ -1351,8 +1401,9 @@ function renderSearching() {
     <span class="fq-skel" style="height:22px;width:35%;border-radius:8px"></span></div>`;
   // The way back stays open while the search runs: nobody is held on a spinner.
   return `${fqHead({ title: "ماعليك فرق بيجيب الفرق", back: "back-understand" })}
-  <section class="fq-body" aria-live="polite" aria-busy="true">
-    <div class="fq-card pad" style="gap:14px">
+  <section class="fq-body nx-searching" aria-live="polite" aria-busy="true">
+    <div class="fq-card pad nx-search-card" style="gap:14px">
+      ${state.originalText || state.query ? `<p class="nx-search-q"><bdi>«${esc(snippet(state.originalText || state.query, 60))}»</bdi></p>` : ""}
       ${mascotSlot(searchingMood(at), "at-card")}
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
         <span style="flex:1">${state.results.length ? `وصل ${suppliers(state.results.length)} حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
@@ -1395,7 +1446,7 @@ const MASCOT_MOODS = ["idle", "understanding", "searching", "digging", "found", 
 // ?mascot=<mood> holds a mood for design review, on a developer's own machine only.
 const MASCOT_FORCE = (() => {
   try {
-    if (!["localhost", "127.0.0.1"].includes(location.hostname)) return "";
+    if (!devHost()) return "";
     const mood = new URLSearchParams(location.search).get("mascot") || "";
     return MASCOT_MOODS.includes(mood) ? mood : "";
   } catch (_error) {
@@ -2231,7 +2282,7 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const won = thread.awarded_seller_id && thread.awarded_seller_id === message.seller_id;
   const offer = price != null
     ? `<div class="fq-offer" style="color:${tone.ink}">
-        <div class="head">${cheapest ? `<span class="low">الأقل حاليًا</span>` : "<span></span>"}<span class="amount">${esc(money(price))}</span></div>
+        <div class="head">${cheapest ? `<span class="low">الأقل حاليًا</span>` : "<span></span>"}<span class="amount">${amountHtml(price)}</span></div>
         ${body ? `<p class="fq-offer-note">${body}</p>` : ""}
       </div>
       <div class="fq-offer-foot"><span class="fq-time">${esc(chatTime(message.created_at))}
@@ -2292,63 +2343,240 @@ function currentOffers(thread) {
   return [...latest.values()];
 }
 
+// Where each supplier stands on this request, read only from what the thread records: the
+// request reached him (a delivery marked sent), he wrote back, he put a price down, a message
+// from the customer reached him after that price (the two are negotiating), or he was chosen.
+// Nothing is inferred from time passing, and a delivery that failed says so.
+const STAGES = {
+  asked: "بانتظار الإرسال",
+  failed: "ما وصله الطلب",
+  sent: "وصله الطلب",
+  replied: "ردّ بدون سعر",
+  offered: "قدّم سعر",
+  negotiating: "تفاوض",
+  chosen: "تم اختياره",
+};
+function supplierStage(thread, sellerId) {
+  if (thread.awarded_seller_id && thread.awarded_seller_id === sellerId) return "chosen";
+  const messages = thread.messages || [];
+  const reached = (item) => item.sender_role !== "seller" && (item.deliveries || []).some((d) => d.seller_id === sellerId && d.status === "sent");
+  const priced = messages.filter((item) => item.sender_role === "seller" && item.seller_id === sellerId && messagePrice(item) != null);
+  if (priced.length && currentOffers(thread).some((item) => item.seller_id === sellerId)) {
+    const at = priced[priced.length - 1].created_at || "";
+    return messages.some((item) => reached(item) && (item.created_at || "") > at) ? "negotiating" : "offered";
+  }
+  if (messages.some((item) => item.sender_role === "seller" && item.seller_id === sellerId)) return "replied";
+  if (messages.some(reached)) return "sent";
+  const failed = messages.some((item) => item.sender_role !== "seller" && (item.deliveries || []).some((d) => d.seller_id === sellerId && d.status === "failed"));
+  return failed ? "failed" : "asked";
+}
+
+// A number set as type: Latin grouped digits, the «ر.س» quieter beside it.
+function amountHtml(value, cls = "") {
+  const digits = new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 }).format(value);
+  return `<span class="nx-num ${cls}"><span class="v">${esc(digits)}</span><span class="nx-cur">ر.س</span></span>`;
+}
+
+// The offers of one item, ready for the moment: priced in SAR (a gap across currencies is not
+// a number anyone can use), the arrival order (the natural order the rows start in) and the
+// verdict order (cheapest first). A winner is named only when exactly one offer is cheapest.
+function offerLedger(thread, offers) {
+  const messages = thread.messages || [];
+  const arrival = (offer) => {
+    let at = -1;
+    messages.forEach((item, index) => {
+      if (item.sender_role === "seller" && item.seller_id === offer.seller_id && messagePrice(item) != null) at = index;
+    });
+    return at;
+  };
+  const rows = offers.map((offer) => ({ offer, natural: arrival(offer), measured: !offer.currency || offer.currency === "SAR" }));
+  rows.sort((a, b) => a.offer.total_price - b.offer.total_price || a.natural - b.natural);
+  const measured = rows.filter((row) => row.measured);
+  const min = measured.length ? measured[0].offer.total_price : null;
+  const max = measured.length ? measured[measured.length - 1].offer.total_price : null;
+  const lows = measured.filter((row) => row.offer.total_price === min);
+  const winner = measured.length > 1 && lows.length === 1 ? lows[0].offer.seller_id : "";
+  return { rows, min, max, span: min != null ? max - min : 0, winner, measuredCount: measured.length };
+}
+
+// O01_CompareOffers — the FARQ moment. The rows are drawn in the order the prices are
+// decided (cheapest first) so without motion the screen is already right; playMoments()
+// starts them in the order they arrived and lets them settle, the cheapest leading, while
+// each row's distance from the cheapest grows on one shared scale and «الفرق» counts up to
+// the real gap between the best and the highest offer. One moment per item.
 function renderCompare() {
   const thread = state.thread;
   if (!thread) return renderRequests();
-  const offers = currentOffers(thread).sort((a, b) => a.total_price - b.total_price);
-  const cheapest = offers[0]?.total_price ?? 0;
-  const dearest = offers[offers.length - 1]?.total_price ?? 0;
+  const offers = currentOffers(thread);
   const awarded = thread.awarded_seller_id;
   const chat = `<button class="fq-ibtn light" type="button" data-action="all-sellers" aria-label="المحادثة">${ic("message-circle", 20)}</button>`;
-  return `${fqHead({ title: "قارن العروض", sub: `${offersCount(offers.length)} · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat })}
-  <section class="fq-body tight fq-stagger fq-faceoff">
-    ${offers.length ? "" : `<div class="fq-body center"><div class="fq-blob warn">${ic("tag", 48)}</div><h2 class="fq-h2">ما وصلت عروض بأسعار بعد</h2><p class="fq-lead">أول ما يرسل مورد سعرًا يظهر هنا للمقارنة.</p></div>`}
-    ${offers
-      .map((offer, index) => {
-        const won = awarded && awarded === offer.seller_id;
-        const gap = offer.total_price - cheapest;
-        const peers = offers.filter((item) => (item.need || "") === (offer.need || ""));
-        const peerTop = peers.length > 1 ? Math.max(...peers.map((item) => item.total_price)) : 0;
-        const saving = peerTop > offer.total_price ? Math.round(((peerTop - offer.total_price) / peerTop) * 100) : 0;
-        const best = index === 0;
-        return `<article class="fq-cmp-card${best ? " best" : ""}">
-          ${best ? `<span class="fq-valuetag">أفضل قيمة</span>` : ""}
-          <div class="top">
-            <span style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">
-              <span class="amount">${esc(money(offer.total_price))}</span>
-              <span style="display:flex;align-items:center;gap:6px">
-                ${best
-                  ? offers.length > 1 ? `<span class="fq-delta">أوفر بـ ${esc(money(dearest - offer.total_price))}</span><span class="fq-tag deep">الأقل</span>` : ""
-                  : `<span class="fq-delta up">+${esc(money(gap))}</span>`}
-              </span>
-              ${saving ? scoreRing(saving, "وفّر") : ""}
-            </span>
-            <span style="display:flex;align-items:center;gap:8px;flex:1;justify-content:flex-end">
-              ${best ? `<span class="fq-best">أفضل سعر</span>` : ""}
-              ${won ? `<span class="fq-tag ok">الفائز</span>` : ""}
-              <span class="who"><bdi>${esc(sellerName(thread, offer.seller_id))}</bdi></span>
-            </span>
-          </div>
-          <hr class="fq-line">
-          <div class="fq-inc">
-            <span><span class="y">✓</span>${best ? "أقل عرض وصل" : `أغلى بـ ${esc(money(gap))} عن الأقل`}</span>
-            ${offer.delivery_included ? `<span><span class="y">✓</span>شامل التوصيل</span>` : ""}
-            ${offer.note ? `<span><span class="y">✓</span><bdi>${esc(snippet(offer.note, 42))}</bdi></span>` : ""}
-          </div>
-          <hr class="fq-line">
-          <div class="fq-row"><span class="fq-meta">${esc(ago(offer.created_at) ? `وصل ${ago(offer.created_at)}` : "")}</span>
-            <span class="fq-meta">${offer.currency && offer.currency !== "SAR" ? esc(offer.currency) : ""}</span></div>
-          <div class="fq-cmp-actions">
-            ${won
-              ? `<button class="fq-btn ghost" type="button" disabled>تمت الترسية</button>`
-              : `<button class="fq-btn success" type="button" data-action="pick-winner" data-seller="${esc(offer.seller_id)}" data-price="${esc(String(offer.total_price))}">اختيار هذا العرض</button>`}
-            <button class="fq-btn ghost" type="button" data-action="seller-filter" data-seller="${esc(offer.seller_id)}">مراسلته</button>
-          </div>
-        </article>`;
-      })
-      .join("")}
+  const recipients = thread.recipients || [];
+  const head = fqHead({ title: "قارن العروض", sub: `${offersCount(offers.length)} · ${thread.need || thread.original_text || ""}`, back: "back-thread", end: chat });
+  const needs = [...new Set(offers.map((item) => item.need || ""))];
+  const waiting = recipients.filter((item) => !offers.some((offer) => offer.seller_id === item.seller_id));
+  const waitingBlock = waiting.length
+    ? `<section class="nx-waiting" aria-label="ما سعّروا بعد">
+        <h2 class="nx-h3">ما سعّروا بعد <span class="nx-meta">${esc(suppliers(waiting.length))}</span></h2>
+        <ul class="nx-waiting-list">${waiting.map((item) => {
+          const stage = supplierStage(thread, item.seller_id);
+          const tone = sellerTone(thread, item.seller_id);
+          const name = sellerName(thread, item.seller_id);
+          return `<li><button class="nx-waiting-row" type="button" data-action="seller-filter" data-seller="${esc(item.seller_id)}">
+            <span class="fq-av" style="background:${tone.av};color:${tone.ink}">${initial(name)}</span>
+            <bdi class="nx-waiting-name">${esc(name)}</bdi>
+            <span class="nx-stage" data-stage="${stage}">${esc(STAGES[stage])}</span></button></li>`;
+        }).join("")}</ul>
+      </section>`
+    : "";
+  if (!offers.length) {
+    return `${head}
+    <section class="fq-body tight nx-compare">
+      <div class="nx-empty">
+        <div class="nx-empty-mark">${ic("tag", 32)}</div>
+        <h2 class="nx-h2">ما وصلت عروض بأسعار بعد</h2>
+        <p class="nx-lede">أول ما يرسل مورد سعرًا يظهر هنا، وتشوف الفرق بين العروض.</p>
+      </div>
+      ${waitingBlock}
+    </section>`;
+  }
+  const ledgers = needs.map((need) => {
+    const group = offers.filter((item) => (item.need || "") === need);
+    const book = offerLedger(thread, group);
+    const key = `${thread.id}|${need}|${group.map((item) => `${item.seller_id}:${item.total_price}`).sort().join(",")}`;
+    const priced = book.measuredCount;
+    let hero;
+    if (priced < 2) {
+      hero = `<div class="nx-gap-hero is-quiet">
+        <p class="nx-gap-label">${priced ? "عرض واحد حتى الآن" : "عروض بعملات مختلفة"}</p>
+        <p class="nx-quiet">${priced ? "ننتظر بقية الموردين. أول ما يوصل عرض ثاني نوريك الفرق بينهم." : "ما نقارن أسعار بعملات مختلفة."}</p>
+      </div>`;
+    } else if (book.span === 0) {
+      hero = `<div class="nx-gap-hero is-quiet">
+        <p class="nx-gap-label">${esc(offersCount(priced))} بنفس السعر</p>
+        <p class="nx-quiet">ما فيه فرق في السعر. قارن التفاصيل والتوصيل قبل تختار.</p>
+      </div>`;
+    } else {
+      const small = book.span / book.max < 0.05;
+      hero = `<div class="nx-gap-hero">
+        <p class="nx-gap-label">الفرق بين أفضل عرض وأعلى عرض</p>
+        <div class="nx-gap-value" aria-live="polite" data-gap="${book.span}">${amountHtml(book.span)}</div>
+        <div class="nx-gap-scale" aria-hidden="true">
+          <span class="nx-gap-end is-min">${amountHtml(book.min)}<small>أفضل عرض</small></span>
+          <span class="nx-gap-track"><span class="nx-gap-fill"></span></span>
+          <span class="nx-gap-end is-max">${amountHtml(book.max)}<small>أعلى عرض</small></span>
+        </div>
+        ${small ? `<p class="nx-quiet">الفرق بسيط بين العروض. قارن التفاصيل قبل تختار.</p>` : ""}
+      </div>`;
+    }
+    const rows = book.rows.map((row, rank) => {
+      const offer = row.offer;
+      const id = offer.seller_id;
+      const name = sellerName(thread, id);
+      const tone = sellerTone(thread, id);
+      const won = awarded && awarded === id;
+      const win = book.winner === id;
+      const stage = supplierStage(thread, id);
+      const delta = row.measured && book.min != null ? offer.total_price - book.min : 0;
+      const frac = book.span > 0 ? Math.min(1, delta / book.span) : 0;
+      const note = [
+        offer.delivery_included ? "شامل التوصيل" : offer.delivery_price ? `يشمل توصيل ${money(offer.delivery_price)}` : "",
+        !row.measured ? `بعملة ${offer.currency}` : "",
+      ].filter(Boolean).join(" · ");
+      const said = offer.note ? `<p class="nx-row-said"><bdi>«${esc(snippet(offer.note, 70))}»</bdi></p>` : "";
+      return `<li class="nx-row${win ? " is-win" : ""}${won ? " is-chosen" : ""}" data-natural="${row.natural}" data-rank="${rank}" style="--rank:${rank}">
+        <span class="fq-av" style="background:${tone.av};color:${tone.ink}">${initial(name)}</span>
+        <span class="nx-row-who">
+          <span class="nx-row-name"><bdi>${esc(name)}</bdi></span>
+          <span class="nx-row-note">${won ? `<span class="nx-crown is-chosen">تم اختياره</span>` : win ? `<span class="nx-crown">أفضل عرض</span>` : ""}${won ? "" : `<span class="nx-stage" data-stage="${stage}">${esc(STAGES[stage])}</span>`}${note ? `<span>${won ? "" : "· "}${esc(note)}</span>` : ""}</span>
+        </span>
+        <span class="nx-row-price">${amountHtml(offer.total_price)}</span>
+        ${row.measured && delta > 0
+          ? `<span class="nx-row-track" aria-label="أغلى بـ ${esc(money(delta))} من أفضل عرض"><span class="nx-delta-bar" style="--w:${Math.max(4, Math.round(frac * 100))}%"></span><span class="nx-delta">+${esc(new Intl.NumberFormat("ar-SA-u-nu-latn").format(delta))}</span></span>`
+          : ""}
+        ${said}
+        <span class="nx-row-actions">
+          <button class="nx-btn ghost sm" type="button" data-action="seller-filter" data-seller="${esc(id)}" aria-label="مراسلة ${esc(name)}">${ic("message-circle", 16)}مراسلة</button>
+          ${won
+            ? `<button class="nx-btn sm" type="button" disabled>تم اختياره</button>`
+            : `<button class="nx-btn ${win ? "primary" : "soft"} sm" type="button" data-action="pick-winner" data-seller="${esc(id)}" data-price="${esc(String(offer.total_price))}">اختر هذا العرض</button>`}
+        </span>
+      </li>`;
+    }).join("");
+    return `<article class="nx-ledger" data-moment="${esc(key)}">
+      ${needs.length > 1 || need ? `<header class="nx-ledger-head"><span class="nx-kicker"><bdi>${esc(need || thread.need || "")}</bdi></span><span class="nx-meta">${esc(offersCount(group.length))} من ${esc(suppliers(recipients.filter((item) => !need || !item.need || item.need === need).length))}</span></header>` : ""}
+      ${hero}
+      <ol class="nx-rows">${rows}</ol>
+    </article>`;
+  }).join("");
+  return `${head}
+  <section class="fq-body tight nx-compare">
+    ${ledgers}
+    ${waitingBlock}
+    <p class="nx-foot">الأسعار كما كتبها كل مورد في ردّه. اختيارك يقفل المنافسة على هذا البند.</p>
   </section>
   ${state.awardPick ? awardSheet(thread, state.awardPick) : ""}`;
+}
+
+// The moment itself (see renderCompare). Played once per item and set of prices: a redraw
+// that changes nothing (a sheet opening, a toast) lands on the settled screen, and a new
+// price plays it again, because that is what changed. Reduced motion: the final state.
+const playedMoments = new Set();
+function playMoments(root) {
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  for (const ledger of root.querySelectorAll("[data-moment]")) {
+    const key = ledger.dataset.moment;
+    const list = ledger.querySelector(".nx-rows");
+    const rows = [...list.children];
+    const value = ledger.querySelector("[data-gap]");
+    if (reduce || playedMoments.has(key)) {
+      ledger.classList.add("is-settled");
+      continue;
+    }
+    playedMoments.add(key);
+    // 1 · the rows as they arrived, bars closed, no winner named, the gap not yet claimed
+    ledger.classList.add("is-natural");
+    const natural = [...rows].sort((a, b) => Number(a.dataset.natural) - Number(b.dataset.natural));
+    for (const row of natural) list.appendChild(row);
+    const before = new Map(rows.map((row) => [row, row.getBoundingClientRect().top]));
+    setTimeout(() => {
+      if (!ledger.isConnected) return;
+      // 2 · into the verdict order: each row travels from where it stood (FLIP), cheapest first
+      for (const row of rows) list.appendChild(row);
+      for (const row of rows) {
+        const dy = before.get(row) - row.getBoundingClientRect().top;
+        row.style.transition = "none";
+        row.style.transform = dy ? `translateY(${dy}px)` : "";
+      }
+      void list.offsetHeight;
+      for (const row of rows) {
+        row.style.transition = "";
+        row.style.transform = "";
+      }
+      ledger.classList.remove("is-natural");
+      ledger.classList.add("is-sorting");
+      // 3 · «الفرق» counts up to the real gap; it is hidden until the count starts, so a 0
+      // is never on screen as a claim
+      if (value) {
+        const target = Number(value.dataset.gap) || 0;
+        const digits = value.querySelector(".v");
+        const format = new Intl.NumberFormat("ar-SA-u-nu-latn", { maximumFractionDigits: 0 });
+        setTimeout(() => {
+          if (!digits?.isConnected) return;
+          const start = performance.now();
+          const tick = (now) => {
+            const t = Math.min(1, (now - start) / 460);
+            const eased = 1 - (1 - t) ** 4;
+            digits.textContent = format.format(Math.round(target * eased));
+            if (t < 1 && digits.isConnected) requestAnimationFrame(tick);
+          };
+          digits.textContent = format.format(0);
+          ledger.classList.add("is-counting");
+          requestAnimationFrame(tick);
+        }, 240);
+      }
+      setTimeout(() => ledger.classList.add("is-settled"), 760);
+    }, 160);
+  }
 }
 
 // A01_AwardConfirmation — node 37:243.
@@ -2436,20 +2664,27 @@ function shareContactCard(thread, who) {
 function offersBar(thread, offers) {
   if (!offers.length) return "";
   // (the bar sits above the group conversation — TSR-077: comparing is one visible tap away)
-  const sorted = [...offers].sort((a, b) => a.total_price - b.total_price);
-  const low = sorted[0].total_price;
-  const high = sorted[sorted.length - 1].total_price;
-  const top = sorted.slice(0, 3);
-  return `<div class="fq-offers-bar">
-    <div class="fq-row">
-      <button class="fq-pill on" type="button" data-action="open-compare">قارن العروض</button>
-      <span class="fq-small"><b>${esc(offersCount(sorted.length))}</b>${sorted.length > 1 ? ` <span class="fq-meta">· من ${esc(money(low))} إلى ${esc(money(high))}</span>` : ""}</span>
-    </div>
-    ${top
-      .map((offer, index) => `<div class="mini"><span>${esc(money(offer.total_price))}</span>
-        <span style="display:flex;align-items:center;gap:6px"><bdi>${esc(sellerName(thread, offer.seller_id))}</bdi>${index === 0 ? `<span class="fq-tag deep">الأقل</span>` : ""}</span></div>`)
-      .join("")}
-    ${sorted.length > 3 ? `<button class="fq-link" type="button" data-action="open-compare">عرض جميع العروض (${formatCount(sorted.length)})</button>` : ""}
+  // One item: the gap device between the best and the highest offer, as the comparison draws
+  // it. Several items: a gap across different items means nothing, so it reads the count.
+  const needs = new Set(offers.map((item) => item.need || ""));
+  const book = needs.size === 1 ? offerLedger(thread, offers) : null;
+  const go = `<button class="nx-bar-go" type="button" data-action="open-compare">قارن العروض${ic("forward", 16)}</button>`;
+  let body;
+  if (book && book.measuredCount > 1 && book.span > 0) {
+    body = `<div class="nx-mini-gap" role="img" aria-label="أفضل عرض ${esc(money(book.min))}، أعلى عرض ${esc(money(book.max))}، الفرق بينهم ${esc(money(book.span))}">
+        <span class="nx-mini-end is-min">${amountHtml(book.min)}</span>
+        <span class="nx-gap-track sm"><span class="nx-gap-fill"></span><span class="nx-diff-chip on-track">الفرق ${amountHtml(book.span)}</span></span>
+        <span class="nx-mini-end">${amountHtml(book.max)}</span>
+      </div>`;
+  } else if (book && book.measuredCount === 1) {
+    body = `<p class="nx-mini-one">${amountHtml(book.min, "nx-mini-price")}<span class="nx-meta">أول عرض · ننتظر البقية عشان نوريك الفرق</span></p>`;
+  } else {
+    const low = Math.min(...offers.map((item) => item.total_price));
+    body = `<p class="nx-mini-one"><span class="nx-meta">أقل عرض</span>${amountHtml(low, "nx-mini-price")}<span class="nx-meta">· ${esc(plural(needs.size, ["بند واحد", "بندين", "بنود", "بند"]))}</span></p>`;
+  }
+  return `<div class="nx-offers-bar">
+    <div class="nx-bar-head"><span class="nx-bar-count"><b>${esc(offersCount(offers.length))}</b> من ${esc(suppliers((thread.recipients || []).length))}</span>${go}</div>
+    ${body}
   </div>`;
 }
 
@@ -2588,8 +2823,11 @@ function renderThread() {
         ${recipients
           .map((item) => {
             const tone = sellerTone(thread, item.seller_id);
-            return `<button class="fq-fpill" type="button" data-action="seller-filter" data-seller="${esc(item.seller_id)}">
-              <span class="dot" style="background:${tone.ink}"></span><bdi>${esc(sellerName(thread, item.seller_id))}</bdi></button>`;
+            const stage = supplierStage(thread, item.seller_id);
+            const price = allOffers.find((offer) => offer.seller_id === item.seller_id)?.total_price;
+            return `<button class="fq-fpill nx-spill" type="button" data-action="seller-filter" data-seller="${esc(item.seller_id)}" data-stage="${stage}">
+              <span class="dot" style="background:${tone.ink}"></span><bdi>${esc(sellerName(thread, item.seller_id))}</bdi>
+              <span class="nx-spill-state">${price != null && stage !== "negotiating" ? esc(new Intl.NumberFormat("ar-SA-u-nu-latn").format(price)) : esc(STAGES[stage])}</span></button>`;
           })
           .join("")}
       </div>`
@@ -3231,6 +3469,8 @@ const ROUTE_OF = {
 };
 
 function syncUrl() {
+  // the design fixture keeps its own address, so a reload lands on it again
+  if (FIXTURE) return;
   const make = ROUTE_OF[state.view];
   const replace = state.replaceUrl;
   state.replaceUrl = false;
@@ -4396,7 +4636,8 @@ function render() {
   // A streaming search re-renders the list many times; that is not an arrival.
   const arriving = state.view !== lastView && !(state.view === "flow" && state.results.length);
   const banner = state.token && !SUPPLIER_VIEWS.has(state.view) && state.view !== "verify" ? verifyBanner() : "";
-  app.innerHTML = shell(`${banner}${view()}${state.pushAsk && state.view !== "sent" ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
+  const ribbon = FIXTURE ? `<div class="nx-fixture" role="note">عرض تجريبي محلي · الأسماء والأسعار غير حقيقية</div>` : "";
+  app.innerHTML = shell(`${ribbon}${banner}${view()}${state.pushAsk && state.view !== "sent" ? pushPrompt() : ""}${state.toast ? `<div class="fq-toast" role="status">${esc(state.toast)}</div>` : ""}`);
   document.body.classList.toggle("fq-web", window.innerWidth >= 900);
   document.body.classList.toggle("fq-auth", state.view === "auth");
   // the choreographed entrance belongs to the screen, not to every render of it
@@ -4413,6 +4654,7 @@ function render() {
   bindGrow(app);
   bindChat(app);
   mountMascot(app);
+  playMoments(app);
   if (state.view === "flow" && state.seenCards) for (const result of state.results) state.seenCards.add(resultKey(result));
   if (focused) document.getElementById(focused)?.focus();
   // The business description re-renders while it is being typed in, so the caret goes back
@@ -4432,7 +4674,7 @@ function render() {
   manageSheetFocus();
   syncUrl();
   scheduleDraftSave();
-  if (state.view === "thread" && state.thread?.id) {
+  if (state.view === "thread" && state.thread?.id && !state.thread.fixture) {
     // A reply is most likely soon after the conversation opens or a message goes out, so the
     // first two minutes poll every 4s; after that every 12s, and never while the tab is hidden
     // (it refreshes on return). Three quarters fewer calls on an idle conversation.
@@ -6309,6 +6551,58 @@ const publicPage =
 // Inside Farq's frame the address is always "/" (the frame is reloaded from its src), so the
 // screen a reload lands on comes from the journey's draft: a review with ticks, results, or
 // the items he was checking.
+// The design fixture (see FIXTURE): its times are moved to just now, so «منذ» reads as a
+// live conversation would, and with &arrive=1 the replies land one at a time through the
+// same path a poll takes (announceArrivals, then a redraw).
+function fixtureUpTo(data, count) {
+  const messages = data.messages.slice(0, count);
+  const priced = new Set(messages.filter((item) => item.sender_role === "seller" && messagePrice(item) != null).map((item) => item.seller_id));
+  return { ...data, messages, offers: data.offers.filter((item) => priced.has(item.seller_id)) };
+}
+
+async function bootFixture() {
+  let data;
+  try {
+    data = await fetch("/dev/fixture-thread.json", { cache: "no-store" }).then((response) => response.json());
+  } catch (_error) {
+    state.view = "home";
+    render();
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  const last = Math.max(...data.messages.map((item) => Date.parse(item.created_at)));
+  const shift = Date.now() - 4 * 60_000 - last;
+  const at = (iso) => (iso ? new Date(Date.parse(iso) + shift).toISOString() : iso);
+  data.created_at = at(data.created_at);
+  data.messages.forEach((item, index) => {
+    // spread the replies over a few minutes, the way they arrive
+    item.created_at = new Date(Date.now() - (data.messages.length - index) * 70_000).toISOString();
+    for (const delivery of item.deliveries || []) delivery.sent_at = delivery.sent_at ? item.created_at : delivery.sent_at;
+  });
+  if (params.get("awarded")) data.awarded_seller_id = params.get("awarded");
+  data.fixture = true;
+  fixture.full = data;
+  state.token = "";
+  state.thread = params.get("arrive") === "1" ? fixtureUpTo(data, 1) : data;
+  state.view = params.get("view") === "compare" ? "compare" : "thread";
+  state.stickChat = true;
+  render();
+  if (params.get("arrive") !== "1") return;
+  let count = 1;
+  const step = () => {
+    if (count >= data.messages.length) return;
+    count += 1;
+    const before = state.thread;
+    const after = fixtureUpTo(data, count);
+    announceArrivals(before, after);
+    state.thread = after;
+    state.stickChat = true;
+    render();
+    fixture.timer = setTimeout(step, 1600);
+  };
+  fixture.timer = setTimeout(step, 1400);
+}
+
 function draftView() {
   if (state.selected.size) return "review";
   if (state.results.length || state.searchState) return "flow";
@@ -6353,7 +6647,9 @@ function bootSignedIn() {
   } else applyRoute(bootPath, { pop: true });
 }
 
-if (publicPage) {
+if (FIXTURE) {
+  bootFixture();
+} else if (publicPage) {
   applyRoute(bootPath, { pop: true });
 } else if (state.token) {
   // A stored session that mirrors a Farq sign-in must not outlive it: standalone, the

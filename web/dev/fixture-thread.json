@@ -1,0 +1,291 @@
+{
+ "id": "fixture-railing",
+ "owner_user_id": "fixture",
+ "original_text": "أبغى درابزين ستانلس للدرج، تقريباً ٦ متر، في الرياض",
+ "need": "درابزين ستانلس",
+ "notes": null,
+ "city": "الرياض",
+ "attributes": {},
+ "recipients": [
+  {
+   "seller_id": "f-seller-1",
+   "seller_name": "ورشة النخيل للستانلس",
+   "ad_id": "175733613",
+   "need": "درابزين ستانلس",
+   "reply_token": null,
+   "send_status": "sent",
+   "listing_url": null
+  },
+  {
+   "seller_id": "f-seller-2",
+   "seller_name": "مؤسسة الربيع للحدادة",
+   "ad_id": "110545459",
+   "need": "درابزين ستانلس",
+   "reply_token": null,
+   "send_status": "sent",
+   "listing_url": null
+  },
+  {
+   "seller_id": "f-seller-3",
+   "seller_name": "درابزين الرائد",
+   "ad_id": "135809246",
+   "need": "درابزين ستانلس",
+   "reply_token": null,
+   "send_status": "sent",
+   "listing_url": null
+  },
+  {
+   "seller_id": "f-seller-4",
+   "seller_name": "ستانلس النهضة",
+   "ad_id": "178194144",
+   "need": "درابزين ستانلس",
+   "reply_token": null,
+   "send_status": "sent",
+   "listing_url": null
+  },
+  {
+   "seller_id": "f-seller-5",
+   "seller_name": "زجاج وستانلس قرطبة",
+   "ad_id": "175850317",
+   "need": "درابزين ستانلس",
+   "reply_token": null,
+   "send_status": "sent",
+   "listing_url": null
+  }
+ ],
+ "attachments": [],
+ "messages": [
+  {
+   "id": "d1687bc9a08a4c7384dd25ca57cb8958",
+   "request_id": "fixture-railing",
+   "sender_role": "user",
+   "seller_id": null,
+   "need": "درابزين ستانلس",
+   "reply_to": null,
+   "direction": "customer_to_seller",
+   "scope": "all_sellers",
+   "haraj_conversation_id": null,
+   "body": "طلب عرض سعر\nدرابزين ستانلس\nالمدينة: الرياض",
+   "offer": null,
+   "attachment_ids": [],
+   "created_at": "2026-09-29T06:01:10.771439+00:00",
+   "delivery_state": "sent",
+   "deliveries": [
+    {
+     "seller_id": "f-seller-1",
+     "status": "sent",
+     "sent_at": "2026-09-29T06:01:10.771439+00:00"
+    },
+    {
+     "seller_id": "f-seller-2",
+     "status": "sent",
+     "sent_at": "2026-09-29T06:01:10.771439+00:00"
+    },
+    {
+     "seller_id": "f-seller-3",
+     "status": "sent",
+     "sent_at": "2026-09-29T06:01:10.771439+00:00"
+    },
+    {
+     "seller_id": "f-seller-4",
+     "status": "sent",
+     "sent_at": "2026-09-29T06:01:10.771439+00:00"
+    },
+    {
+     "seller_id": "f-seller-5",
+     "status": "sent",
+     "sent_at": "2026-09-29T06:01:10.771439+00:00"
+    }
+   ],
+   "media": []
+  },
+  {
+   "id": "d2d41d37ff3d499daa3218c6d953d4ec",
+   "request_id": "fixture-railing",
+   "sender_role": "seller",
+   "seller_id": "f-seller-2",
+   "need": "درابزين ستانلس",
+   "reply_to": null,
+   "direction": "seller_to_customer",
+   "scope": null,
+   "haraj_conversation_id": null,
+   "body": "هلا والله، المتر ب ٤٠٠ شامل التركيب. الإجمالي ٢٤٠٠",
+   "offer": {
+    "amount": 2400.0,
+    "currency": "SAR",
+    "note": null,
+    "provider_name": null,
+    "phone": null,
+    "seller_id": null,
+    "base_price": null,
+    "delivery_included": null,
+    "delivery_price": null,
+    "total_price": null,
+    "need": null,
+    "cheapest": false
+   },
+   "attachment_ids": [],
+   "created_at": "2026-09-29T06:01:10.773984+00:00",
+   "delivery_state": null,
+   "deliveries": [],
+   "media": []
+  },
+  {
+   "id": "b11a0d73cb0a4cae9a88f9597fd603f4",
+   "request_id": "fixture-railing",
+   "sender_role": "seller",
+   "seller_id": "f-seller-1",
+   "need": "درابزين ستانلس",
+   "reply_to": null,
+   "direction": "seller_to_customer",
+   "scope": null,
+   "haraj_conversation_id": null,
+   "body": "ستانلس 304 تايواني ضد الصدأ، ٦ متر مع التركيب ١٩٥٠ ريال",
+   "offer": {
+    "amount": 1950.0,
+    "currency": "SAR",
+    "note": null,
+    "provider_name": null,
+    "phone": null,
+    "seller_id": null,
+    "base_price": null,
+    "delivery_included": null,
+    "delivery_price": null,
+    "total_price": null,
+    "need": null,
+    "cheapest": false
+   },
+   "attachment_ids": [],
+   "created_at": "2026-09-29T06:01:10.798824+00:00",
+   "delivery_state": null,
+   "deliveries": [],
+   "media": []
+  },
+  {
+   "id": "8670bd7a1ec24d528566eb70e082060b",
+   "request_id": "fixture-railing",
+   "sender_role": "seller",
+   "seller_id": "f-seller-4",
+   "need": "درابزين ستانلس",
+   "reply_to": null,
+   "direction": "seller_to_customer",
+   "scope": null,
+   "haraj_conversation_id": null,
+   "body": "نقدر نركب يوم السبت. السعر ٢٨٥٠ مع التوصيل",
+   "offer": {
+    "amount": 2850.0,
+    "currency": "SAR",
+    "note": null,
+    "provider_name": null,
+    "phone": null,
+    "seller_id": null,
+    "base_price": null,
+    "delivery_included": null,
+    "delivery_price": null,
+    "total_price": null,
+    "need": null,
+    "cheapest": false
+   },
+   "attachment_ids": [],
+   "created_at": "2026-09-29T06:01:10.829604+00:00",
+   "delivery_state": null,
+   "deliveries": [],
+   "media": []
+  },
+  {
+   "id": "3b31792c539d430992c96a40db0c956f",
+   "request_id": "fixture-railing",
+   "sender_role": "seller",
+   "seller_id": "f-seller-3",
+   "need": "درابزين ستانلس",
+   "reply_to": null,
+   "direction": "seller_to_customer",
+   "scope": null,
+   "haraj_conversation_id": null,
+   "body": "ممكن صورة للدرج؟",
+   "offer": null,
+   "attachment_ids": [],
+   "created_at": "2026-09-29T06:01:10.858818+00:00",
+   "delivery_state": null,
+   "deliveries": [],
+   "media": []
+  },
+  {
+   "id": "e34f5868117341d98434139ee9b76002",
+   "request_id": "fixture-railing",
+   "sender_role": "user",
+   "seller_id": "f-seller-1",
+   "need": "درابزين ستانلس",
+   "reply_to": null,
+   "direction": "customer_to_seller",
+   "scope": "single_seller",
+   "haraj_conversation_id": null,
+   "body": "ممكن تنزل شوي لو ركّبت الأسبوع الجاي؟",
+   "offer": null,
+   "attachment_ids": [],
+   "created_at": "2026-09-29T06:01:10.889548+00:00",
+   "delivery_state": "sent",
+   "deliveries": [
+    {
+     "seller_id": "f-seller-1",
+     "status": "sent",
+     "sent_at": "2026-09-29T06:01:10.889548+00:00"
+    }
+   ],
+   "media": []
+  }
+ ],
+ "offers": [
+  {
+   "amount": 1950.0,
+   "currency": "SAR",
+   "note": "ستانلس 304 تايواني ضد الصدأ، ٦ متر مع التركيب ١٩٥٠ ريال",
+   "provider_name": "ورشة النخيل للستانلس",
+   "phone": null,
+   "seller_id": "f-seller-1",
+   "base_price": 1950.0,
+   "delivery_included": true,
+   "delivery_price": 0.0,
+   "total_price": 1950.0,
+   "need": "درابزين ستانلس",
+   "cheapest": true
+  },
+  {
+   "amount": 2400.0,
+   "currency": "SAR",
+   "note": "هلا والله، المتر ب ٤٠٠ شامل التركيب. الإجمالي ٢٤٠٠",
+   "provider_name": "مؤسسة الربيع للحدادة",
+   "phone": null,
+   "seller_id": "f-seller-2",
+   "base_price": 2400.0,
+   "delivery_included": true,
+   "delivery_price": 0.0,
+   "total_price": 2400.0,
+   "need": "درابزين ستانلس",
+   "cheapest": false
+  },
+  {
+   "amount": 2850.0,
+   "currency": "SAR",
+   "note": "نقدر نركب يوم السبت. السعر ٢٨٥٠ مع التوصيل",
+   "provider_name": "ستانلس النهضة",
+   "phone": null,
+   "seller_id": "f-seller-4",
+   "base_price": 2700.0,
+   "delivery_included": false,
+   "delivery_price": 150.0,
+   "total_price": 2850.0,
+   "need": "درابزين ستانلس",
+   "cheapest": false
+  }
+ ],
+ "reply_token": null,
+ "awarded_seller_id": null,
+ "awarded_at": null,
+ "contact_shared": false,
+ "last_synced_at": null,
+ "ref_code": "T-105060",
+ "created_at": "2026-09-29T06:01:10.771259+00:00",
+ "fixture": true,
+ "_note": "LOCAL DESIGN FIXTURE - generated by farq.store in a throwaway DB. Supplier names and prices are invented for layout review; never shown outside localhost ?fixture=."
+}
