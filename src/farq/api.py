@@ -310,7 +310,11 @@ def create_app(
         CORSMiddleware,
         allow_origins=cors_origins(),
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+        # Any request header: Farq's pages carry tracing headers (Sentry's sentry-trace and
+        # baggage on every *.farq.sa call, Datadog's traceparent) besides Authorization,
+        # Content-Type and Idempotency-Key, and a preflight refusing one of them fails the whole
+        # call. What admits a caller is the exact-origin list and the absence of credentials.
+        allow_headers=["*"],
         allow_credentials=False,
         max_age=600,
     )

@@ -247,3 +247,22 @@ def test_farq_pages_may_call_the_api_and_no_one_else(tmp_path, monkeypatch):
     api, _ = make(tmp_path / "second")
     assert api.get("/v1/cities", headers={"Origin": "https://preview.farq.sa"}).headers["access-control-allow-origin"] == "https://preview.farq.sa"
     assert "access-control-allow-origin" not in api.get("/v1/cities", headers={"Origin": "https://www.farq.sa"}).headers
+
+
+def test_a_preflight_with_farqs_tracing_headers_is_answered(tmp_path):
+    """Sentry adds sentry-trace and baggage to every Farq call to *.farq.sa; a preflight
+    that refused them broke every request from farq.sa in production."""
+    api, _ = make(tmp_path)
+    preflight = api.options(
+        "/v1/intent",
+        headers={"Origin": "https://www.farq.sa", "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type,sentry-trace,baggage,traceparent,tracestate"},
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == "https://www.farq.sa"
+    refused = api.options(
+        "/v1/intent",
+        headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type,sentry-trace"},
+    )
+    assert "access-control-allow-origin" not in refused.headers
