@@ -33,6 +33,26 @@ DEFAULT_FRAME_ANCESTORS = (
 )
 
 
+# Who may call the API from a browser. Farq's own pages talk to Taseer directly (the
+# customer side lives inside Farq, not in a frame), from the site and from the app's
+# Capacitor shell. Exact origins only, never a wildcard, and no cookies: every call carries
+# its own Bearer session, so a page on any other origin gets nothing it can read.
+# FARQ_CORS_ORIGINS (space separated) replaces the list without a code change.
+DEFAULT_CORS_ORIGINS = (
+    "https://farq.sa",
+    "https://www.farq.sa",
+    "https://localhost",
+    "capacitor://localhost",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
+
+
+def cors_origins() -> list[str]:
+    value = (os.environ.get("FARQ_CORS_ORIGINS") or "").split()
+    return value or list(DEFAULT_CORS_ORIGINS)
+
+
 def frame_ancestors() -> str:
     value = (os.environ.get("FARQ_FRAME_ANCESTORS") or "").strip()
     return value or DEFAULT_FRAME_ANCESTORS

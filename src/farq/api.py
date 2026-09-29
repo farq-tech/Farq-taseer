@@ -17,6 +17,7 @@ from pathlib import Path
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,7 +42,7 @@ from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
 from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
 from farq.ratelimit import SlidingWindow, client_ip
-from farq.security_headers import SecurityHeadersMiddleware
+from farq.security_headers import SecurityHeadersMiddleware, cors_origins
 from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids, seller_key
 from farq.subscriptions import PaymentsUnavailable, SubscriptionError
 
@@ -201,6 +202,8 @@ class PushSubscriptionBody(ApiModel):
 
 class CheckoutBody(ApiModel):
     plan: str
+    # Farq's plans page (farq.sa/taseer/plans/callback) or nothing for Taseer's own.
+    return_to: str | None = Field(default=None, max_length=200)
 
 
 class VerifyBody(ApiModel):
@@ -302,6 +305,15 @@ def create_app(
     )
     app.add_middleware(IdempotencyMiddleware, store=store)
     app.add_middleware(SecurityHeadersMiddleware)
+    # Added last so it runs first: a preflight is answered before anything else looks at it.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins(),
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+        allow_credentials=False,
+        max_age=600,
+    )
     limits = limits or Limits()
     payments = payments or PaymentsConfig()
     # Farq's central credit ledger (api.farq.sa) - the only authority on credits.
@@ -1260,6 +1272,7 @@ def create_app(
                 publishable_key=payments.moyasar_publishable_key if payments.payments_configured else None,
                 public_base_url=payments.public_base_url,
                 live=live_keys,
+                return_to=body.return_to,
             )
         except PaymentsUnavailable as exc:
             log.warning("checkout refused: %s", exc)
