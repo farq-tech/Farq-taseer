@@ -128,7 +128,8 @@ function devHost() {
 }
 
 // ?fixture=offers — a LOCAL DESIGN FIXTURE for the offers, the comparison and the chat, which
-// have nothing to show offline. The thread in web/dev/fixture-thread.json was produced by
+// have nothing to show offline. The thread (data/dev/fixture-thread.json, served only by a local
+// server to a local caller: /dev/fixture-thread.json in farq.api) was produced by
 // farq.store itself in a throwaway database (the real shape of a request with replies); its
 // supplier names and prices are invented. It never reaches the server: nothing is polled,
 // every write is refused on the device, and a ribbon on every screen says it is not live.
@@ -2482,23 +2483,33 @@ function renderCompare() {
         offer.delivery_included ? "شامل التوصيل" : offer.delivery_price ? `يشمل توصيل ${money(offer.delivery_price)}` : "",
         !row.measured ? `بعملة ${offer.currency}` : "",
       ].filter(Boolean).join(" · ");
-      const said = offer.note ? `<p class="nx-row-said"><bdi>«${esc(snippet(offer.note, 70))}»</bdi></p>` : "";
-      return `<li class="nx-row${win ? " is-win" : ""}${won ? " is-chosen" : ""}" data-natural="${row.natural}" data-rank="${rank}" style="--rank:${rank}">
+      const said = note || offer.note
+        ? `<p class="nx-row-said">${note ? `<b>${esc(note)}</b>` : ""}${note && offer.note ? " · " : ""}${offer.note ? `<bdi>«${esc(snippet(offer.note, 90))}»</bdi>` : ""}</p>`
+        : "";
+      // Two lines per offer: who, where he stands and his price; then how far above the
+      // best offer he is (or the crown). His own words follow on one cut line. The best
+      // offer carries its actions; any other row opens on a tap to show them.
+      const lead = book.winner ? win : rank === 0;
+      const open = lead || state.cmpOpen === `${need}|${id}`;
+      return `<li class="nx-row${win ? " is-win" : ""}${won ? " is-chosen" : ""}${open ? " is-open" : ""}${lead ? " is-lead" : ""}" data-natural="${row.natural}" data-rank="${rank}" style="--rank:${rank}">
+        ${lead ? "" : `<button class="nx-row-hit" type="button" data-action="cmp-row" data-key="${esc(`${need}|${id}`)}" aria-expanded="${open}" aria-label="${esc(`عرض ${name}: ${money(offer.total_price)}`)}"></button>`}
         <span class="fq-av" style="background:${tone.av};color:${tone.ink}">${initial(name)}</span>
         <span class="nx-row-who">
-          <span class="nx-row-name"><bdi>${esc(name)}</bdi></span>
-          <span class="nx-row-note">${won ? `<span class="nx-crown is-chosen">تم اختياره</span>` : win ? `<span class="nx-crown">أفضل عرض</span>` : ""}${won ? "" : `<span class="nx-stage" data-stage="${stage}">${esc(STAGES[stage])}</span>`}${note ? `<span>${won ? "" : "· "}${esc(note)}</span>` : ""}</span>
+          <span class="nx-row-name"><bdi>${esc(name)}</bdi>${won ? "" : `<span class="nx-stage" data-stage="${stage}">${esc(STAGES[stage])}</span>`}</span>
         </span>
         <span class="nx-row-price">${amountHtml(offer.total_price)}</span>
-        ${row.measured && delta > 0
-          ? `<span class="nx-row-track" aria-label="أغلى بـ ${esc(money(delta))} من أفضل عرض"><span class="nx-delta-bar" style="--w:${Math.max(4, Math.round(frac * 100))}%"></span><span class="nx-delta">+${esc(new Intl.NumberFormat("ar-SA-u-nu-latn").format(delta))}</span></span>`
-          : ""}
+        <span class="nx-row-line">
+          ${won ? `<span class="nx-crown is-chosen">تم اختياره</span>` : win ? `<span class="nx-crown">أفضل عرض</span>` : ""}
+          ${row.measured && delta > 0
+            ? `<span class="nx-row-track" aria-label="أغلى بـ ${esc(money(delta))} من أفضل عرض"><span class="nx-delta-bar" style="--w:${Math.max(4, Math.round(frac * 100))}%"></span><span class="nx-delta">+${esc(new Intl.NumberFormat("ar-SA-u-nu-latn").format(delta))}</span></span>`
+            : ""}
+        </span>
         ${said}
         <span class="nx-row-actions">
           <button class="nx-btn ghost sm" type="button" data-action="seller-filter" data-seller="${esc(id)}" aria-label="مراسلة ${esc(name)}">${ic("message-circle", 16)}مراسلة</button>
           ${won
             ? `<button class="nx-btn sm" type="button" disabled>تم اختياره</button>`
-            : `<button class="nx-btn ${win ? "primary" : "soft"} sm" type="button" data-action="pick-winner" data-seller="${esc(id)}" data-price="${esc(String(offer.total_price))}">اختر هذا العرض</button>`}
+            : `<button class="nx-btn ${lead ? "primary" : "soft"} sm" type="button" data-action="pick-winner" data-seller="${esc(id)}" data-price="${esc(String(offer.total_price))}">اختر هذا العرض</button>`}
         </span>
       </li>`;
     }).join("");
@@ -6238,6 +6249,19 @@ document.addEventListener("click", (event) => {
       history.replaceState({}, "", "/");
     } catch (_error) {}
     requireSignIn();
+  } else if (action === "cmp-row") {
+    // Opening a row is only a view of it: no redraw, so the list stays where the thumb left
+    // it; the choice is remembered for the next redraw. One row open at a time.
+    const key = target.dataset.key || "";
+    const row = target.closest(".nx-row");
+    const opening = !row.classList.contains("is-open");
+    document.querySelectorAll(".nx-row.is-open:not(.is-lead)").forEach((item) => {
+      item.classList.remove("is-open");
+      item.querySelector(".nx-row-hit")?.setAttribute("aria-expanded", "false");
+    });
+    row.classList.toggle("is-open", opening);
+    target.setAttribute("aria-expanded", String(opening));
+    state.cmpOpen = opening ? key : "";
   } else if (action === "open-compare") {
     state.view = "compare";
     state.awardPick = null;
@@ -6563,7 +6587,9 @@ function fixtureUpTo(data, count) {
 async function bootFixture() {
   let data;
   try {
-    data = await fetch("/dev/fixture-thread.json", { cache: "no-store" }).then((response) => response.json());
+    const response = await fetch("/dev/fixture-thread.json", { cache: "no-store" });
+    if (!response.ok) throw new Error("no fixture here");
+    data = await response.json();
   } catch (_error) {
     state.view = "home";
     render();

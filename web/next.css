@@ -92,6 +92,11 @@
   --e-1: 0 1px 2px rgb(var(--c-sector-shadow) / 0.06), 0 4px 12px -6px rgb(var(--c-sector-shadow) / 0.12);
   --e-2: 0 2px 4px rgb(var(--c-sector-shadow) / 0.05), 0 18px 40px -20px rgb(var(--c-sector-shadow) / 0.35);
 
+  /* ── One typeface: ITF Huwiya (served by farq.sa). No Cairo; only the system face covers
+     the moment before Huwiya arrives. ── */
+  --fq-font: "ITF Huwiya", system-ui, -apple-system, sans-serif;
+  --font-arabic: var(--fq-font);
+
   /* ── Taseer's own names, now reading the FARQ roles ── */
   --fq-surface: var(--c-surface);
   --fq-app-bg: var(--c-bg);
@@ -361,7 +366,14 @@ html.fq-embed .fq-body.nx-home { padding-top: var(--s-4); }
   -webkit-tap-highlight-color: transparent;
 }
 .nx-cat:active { transform: scale(0.97); transition-duration: 0ms; }
-.nx-cat img { width: 52px; height: 52px; object-fit: contain; filter: drop-shadow(0 6px 8px rgb(var(--c-sector-shadow) / 0.18)); }
+.nx-cat img { width: 52px; height: 52px; object-fit: contain; }
+/* The icon's shadow is painted, not filtered: a CSS filter on an image inside the scrolling
+   body gets its own composited layer in WebKit, and on first paint WebKit left an
+   unpainted (black) tile of it at the corner of the scroller. A soft ellipse under the icon
+   reads the same and composites nothing. */
+.nx-cat { position: relative; }
+.nx-cat::before { content: ""; position: absolute; inset-inline: 0; margin-inline: auto; top: 58px; width: 40px; height: 8px; border-radius: 50%; background: radial-gradient(closest-side, rgb(var(--c-sector-shadow) / 0.22), rgb(var(--c-sector-shadow) / 0)); pointer-events: none; }
+.nx-cat img, .nx-cat span { position: relative; }
 .nx-cat span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 2.6em; }
 .nx-cat.is-on { border-color: var(--c-sector-deep); box-shadow: inset 0 -2px 0 var(--c-sector-base); }
 
@@ -598,9 +610,6 @@ html.fq-embed .fq-body.nx-home { padding-top: var(--s-4); }
 @media (prefers-reduced-motion: reduce) {
   .fq[data-enter] * { animation: none !important; }
 }
-/* WebKit paints a stray tile when a drop-shadowed image rides a rising parent: the aisles
-   are already below the fold, so they simply arrive in place. */
-.fq[data-enter] .nx-home > .nx-block { animation: none; }
 
 /* ── Round-1 review fixes ── */
 /* the home box carries the old #composer id: speak with the same weight */
@@ -625,3 +634,39 @@ html.fq-embed .fq-body.nx-home { padding-top: var(--s-4); }
 .fq[data-enter] .nx-home > .nx-hero { animation: none; }
 .fq-place { color: var(--c-fg-1); font-weight: 500; }
 .fq-place svg { color: var(--c-sector-deep); }
+
+/* the docked searcher: same reason as the aisle icons — a painted ground shadow, no filter */
+.fq-mascot.at-dock { filter: none; }
+.fq-mascot.at-dock::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: -2px; height: 8px; border-radius: 50%; background: radial-gradient(closest-side, rgb(87 81 114 / 0.22), rgb(87 81 114 / 0)); }
+
+/* ── Compare rows, compact (round 2): two lines + one cut line of his words ──
+   avatar | name · stage | price
+          | crown or the gap bar to the best offer
+          | «his words» (one line)
+   Actions live only on the best offer; any other row opens on a tap. */
+.nx-row { padding: 10px var(--s-4); row-gap: 4px; column-gap: 10px; grid-template-columns: 28px minmax(0, 1fr) auto; }
+.nx-row .fq-av { width: 28px; height: 28px; font-size: var(--t-11); align-self: start; margin-top: 2px; }
+.nx-row-name { gap: 6px; font-size: var(--t-15); }
+.nx-row-name .nx-stage { flex: none; font-size: var(--t-11); font-weight: 700; padding: 1px 7px; border-radius: var(--r-full); background: var(--c-sunken); }
+.nx-row-name .nx-stage[data-stage="negotiating"] { background: var(--c-sector-soft); }
+.nx-row-price { font-size: var(--t-17); }
+.nx-row-line { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-height: 16px; background: inherit; }
+.nx-row-line .nx-row-track { flex: 1; grid-column: auto; }
+.nx-row-line .nx-crown { padding: 1px 8px; }
+.nx-row-said { grid-column: 2 / -1; font-size: var(--t-11); line-height: 1.5; color: var(--c-fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; -webkit-line-clamp: unset; }
+.nx-row-said b { font-weight: 700; color: var(--c-fg-2); }
+.nx-row.is-win .nx-row-track { display: flex; }
+.nx-row-actions { display: none; margin-top: 4px; }
+.nx-row.is-open .nx-row-actions { display: flex; animation: nx-rise 220ms var(--m-ease-out) both; }
+.nx-row-hit { position: absolute; inset: 0; z-index: 0; border: 0; padding: 0; margin: 0; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.nx-row-hit:active { background: rgb(14 38 34 / 0.03); }
+.nx-row > :not(.nx-row-hit) { position: relative; z-index: 1; pointer-events: none; }
+.nx-row > .nx-row-actions { pointer-events: auto; }
+.nx-row.is-lead > * { pointer-events: auto; }
+.nx-row:not(.is-lead)::after {
+  content: ""; position: absolute; inset-inline-start: 5px; top: 22px; width: 6px; height: 6px;
+  border-right: 1.5px solid var(--c-fg-3); border-bottom: 1.5px solid var(--c-fg-3);
+  transform: rotate(45deg); transition: transform var(--m-dur-base) var(--m-ease-out); pointer-events: none;
+}
+.nx-row.is-open:not(.is-lead)::after { transform: translateY(3px) rotate(-135deg); }
+@media (prefers-reduced-motion: reduce) { .nx-row.is-open .nx-row-actions { animation: none; } }

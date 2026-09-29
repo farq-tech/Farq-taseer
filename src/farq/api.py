@@ -46,6 +46,18 @@ from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search
 from farq.subscriptions import PaymentsUnavailable, SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+DEV_FIXTURE = Path(__file__).resolve().parents[2] / "data" / "dev" / "fixture-thread.json"
+
+
+def _private_peer(host: str) -> bool:
+    """Loopback or a private-network address: a developer's machine or a phone beside it."""
+    import ipaddress
+
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host == "localhost"
+    return address.is_loopback or address.is_private
 log = logging.getLogger("farq.api")
 
 # Search input limits: one request fans out to Haraj once per item, so both are capped.
@@ -1386,6 +1398,17 @@ def create_app(
     def api_not_found(rest: str) -> JSONResponse:
         del rest
         return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    # The design fixture for the offers screens (web/app.js «?fixture=offers»). It lives in
+    # data/dev, outside web/, so it is never a static file of a deployment, and it is handed
+    # out only by a server that is not on Vercel to a caller on this machine or its private
+    # network (the socket peer, not a forwarded header). Everywhere else it does not exist.
+    @app.get("/dev/fixture-thread.json", include_in_schema=False)
+    def dev_fixture(request: Request) -> Response:
+        peer = request.client.host if request.client else ""
+        if os.environ.get("VERCEL") or not _private_peer(peer) or not DEV_FIXTURE.is_file():
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        return FileResponse(DEV_FIXTURE, media_type="application/json", headers={"Cache-Control": "no-store"})
 
     if WEB_DIR.is_dir():
 
