@@ -159,6 +159,31 @@ def test_security_on_postgres(name, tmp_path, monkeypatch, pg_store):
     _run_any(security_tests, name, tmp_path, monkeypatch, pg_store)
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_offer_counts_and_range_in_one_currency",
+        "test_a_later_offer_from_the_same_supplier_replaces_his_earlier_one",
+        "test_mixed_currencies_withhold_the_range",
+        "test_compared_needs_two_priced_offers_and_is_kept_once",
+        "test_open_count_is_requests_not_awarded",
+        "test_award_notice_is_sent_only_once_haraj_took_the_message",
+        "test_award_notice_stays_queued_without_a_channel_and_reports_failure",
+        "test_reply_notification_is_queued_then_recorded",
+        "test_reply_notification_records_a_push_that_a_device_took_and_never_repeats",
+    ],
+)
+def test_basket_summary_on_postgres(name, tmp_path, monkeypatch, pg_store):
+    """The basket fields, the «قارنت» signal, the award notice and the reply notifications on PgStore
+    (needs supabase/migrations/20260930120000_taseer_basket_offer_summary.sql)."""
+    import tests.test_basket_summary as basket_tests
+
+    monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
+    for key in ("TASEER_REPLY_NOTIFICATIONS", "BILLING_S2S_SECRET", "VAPID_PRIVATE_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    _run_any(basket_tests, name, tmp_path, monkeypatch, pg_store)
+
+
 def test_sessions_and_idempotency_on_postgres(tmp_path, pg_store, monkeypatch):
     monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
     """Digest-only sessions, legacy raw tokens, expiry and Idempotency-Key replay on PgStore."""

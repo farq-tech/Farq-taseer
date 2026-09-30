@@ -229,4 +229,8 @@ class RequestRecord(ContractModel):
     last_synced_at: str | None = None
     # «رقم الطلب» written into every message sent to a seller, so his replies are filed here.
     ref_code: str | None = None
+    # When the customer first saw two or more priced offers side by side (POST /compared).
+    compared_at: str | None = None
+    # Whether the awarded supplier was told: state queued | sent | failed | not_requested | unknown.
+    award_notice: dict[str, Any] | None = None
     created_at: str
