@@ -182,8 +182,11 @@ def test_award_notice_is_sent_only_once_haraj_took_the_message(tmp_path):
         clock.sleep(60)
         poll_once(store, haraj, budget_seconds=600, sleep=clock.sleep, clock=clock)
     assert any(seller == "11" and "تم اختيار عرضك" in body for _conv, seller, body in haraj.sent)
-    after = listed(api, headers, request_id)["award_notice"]
+    summary = listed(api, headers, request_id)
+    after = summary["award_notice"]
     assert after["state"] == "sent" and after["channel"] == "haraj" and after["sent_at"]
+    assert summary["awarded_seller_name"] == "ورشة النخيل"
+    assert summary["awarded_offer"]["amount"] == 1950 and summary["awarded_offer"]["currency"] == "SAR"
     assert api.get(f"/v1/requests/{request_id}", headers=headers).json()["award_notice"]["state"] == "sent"
 
 

@@ -480,6 +480,14 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
     preview = " ".join((last["body"] or "").split()) if last is not None else ""
     replies = max(len(replied), len(offers))
     latest_amount = None if latest_offer is None else float(latest_offer["offer_amount"])
+    awarded_name = None
+    awarded_offer = None
+    if awarded:
+        key = seller_key(awarded)
+        awarded_name = next((item.seller_name for item in recipients if seller_key(item.seller_id) == key), None)
+        chosen = next((item for item in offers if item.seller_id and seller_key(item.seller_id) == key and item.total_price is not None), None)
+        if chosen is not None:
+            awarded_offer = {"amount": float(chosen.total_price), "currency": (chosen.currency or "SAR").upper(), "delivery_included": chosen.delivery_included}
     return {
         "id": row["id"],
         "original_text": row["original_text"],
@@ -502,6 +510,8 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
         "needs": need_cards,
         "awarded_seller_id": awarded,
+        "awarded_seller_name": awarded_name,
+        "awarded_offer": awarded_offer,
         "open": not awarded,
         "compared_at": _stamp(_field(row, "compared_at")),
         "award_notice": award_notice(row, award_deliveries),
