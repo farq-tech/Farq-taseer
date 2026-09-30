@@ -49,6 +49,16 @@ def make(tmp_path: Path, **limits):
 def subscribe(store, plan: str = "starter"):
     """Activate a real subscription for the newest account, the way a settled payment does.
     Entitlement now comes from the plan row, so a stubbed is_subscribed is not enough."""
+    if hasattr(store, "_pool"):  # PgStore: same row, written through its own pool
+        now = datetime.now(timezone.utc)
+        with store._pool.connection() as conn:
+            user_id = conn.execute("select id from users order by created_at desc limit 1").fetchone()["id"]
+            conn.execute(
+                "insert into subscriptions (user_id, plan, status, starts_at, expires_at, period_anchor, created_at, updated_at)"
+                " values (%s, %s, 'active', %s, %s, %s, %s, %s)",
+                (user_id, plan, now, now + timedelta(days=30), now, now, now),
+            )
+        return user_id
     user_id = store._connection.execute("select id from users order by created_at desc limit 1").fetchone()["id"]
     now = datetime.now(timezone.utc)
     store._connection.execute(

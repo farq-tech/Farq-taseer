@@ -28,6 +28,9 @@ from farq.store import (
     SINGLE_SELLER,
     AwardConflict,
     _delivery_state,
+    award_notice,
+    customer_notification_view,
+    offer_summary,
     choose_thread,
     current_offer_rows,
     media_entry,
@@ -469,6 +472,7 @@ class PgStore:
             ]
             messages = self._messages(conn, request_id)
             offers = self._offers(conn, request_id)
+            notice = award_notice(row, self._award_deliveries(conn, [row.get("award_message_id")]).get(row.get("award_message_id")))
         return RequestRecord(
             id=row["id"],
             owner_user_id=row["owner_user_id"],
@@ -487,6 +491,8 @@ class PgStore:
             contact_shared=bool(row.get("contact_shared_at")),
             last_synced_at=_iso(row["last_synced_at"]),
             ref_code=row.get("ref_code"),
+            compared_at=_iso(row.get("compared_at")),
+            award_notice=notice,
             created_at=_iso(row["created_at"]),
         )
 
@@ -571,10 +577,14 @@ class PgStore:
                 item["created_at"]
                 for item in conn.execute("select r.created_at from request_recipients rr join requests r on r.id = rr.request_id where rr.send_status = 'queued'")
             ]
+            award_deliveries = self._award_deliveries(conn, [row.get("award_message_id") for row in rows])
             items = []
             for row in rows:
                 parts = by_request[row["id"]]
-                summary = request_summary(row, [_recipient(item) for item in parts["recipients"]], self._offers_from_rows(parts["offers"]), parts["messages"])
+                summary = request_summary(
+                    row, [_recipient(item) for item in parts["recipients"]], self._offers_from_rows(parts["offers"]), parts["messages"],
+                    award_deliveries.get(row.get("award_message_id")),
+                )
                 if summary.get("queued_count"):
                     # Everyone's suppliers still waiting ahead of this request in the one queue.
                     summary["queue_ahead"] = sum(1 for moment in queued_at if moment < row["created_at"])
@@ -1619,9 +1629,92 @@ class PgStore:
             ).rowcount
             if not changed:
                 raise AwardConflict("request already awarded to another supplier")
+            conn.execute("update requests set award_notify = %s where id = %s", (bool(notify), request_id))
         if not notify:
             return None
-        return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
+        message = self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
+        with self._pool.connection() as conn:
+            conn.execute("update requests set award_message_id = %s where id = %s", (message.id, request_id))
+        return message
+
+    def record_compared(self, request_id: str, owner_user_id: str) -> str | None:
+        """See Store.record_compared."""
+        with self._pool.connection() as conn:
+            row = conn.execute("select compared_at from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone()
+            if row is None:
+                return None
+            if row["compared_at"] is not None:
+                return _iso(row["compared_at"])
+            if offer_summary(self._offers(conn, request_id))["priced_offer_count"] < 2:
+                raise ValueError("fewer than two priced offers")
+            conn.execute("update requests set compared_at = now() where id = %s and compared_at is null", (request_id,))
+            return _iso(conn.execute("select compared_at from requests where id = %s", (request_id,)).fetchone()["compared_at"])
+
+    def open_request_count(self, owner_user_id: str) -> int:
+        with self._pool.connection() as conn:
+            return int(conn.execute(
+                "select count(*) as count from requests where owner_user_id = %s and awarded_seller_id is null", (owner_user_id,)
+            ).fetchone()["count"])
+
+    def _award_deliveries(self, conn, message_ids) -> dict[str, list[dict]]:
+        ids = [item for item in message_ids if item]
+        found: dict[str, list[dict]] = {}
+        if not ids:
+            return found
+        for item in conn.execute(
+            "select message_id, seller_id, delivery_status, sent_at from message_deliveries where message_id = any(%s) order by created_at", (ids,)
+        ):
+            found.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": _iso(item["sent_at"])})
+        return found
+
+    # -- customer notifications (a supplier replied) --------------------------
+
+    def request_owner(self, request_id: str) -> str | None:
+        with self._pool.connection() as conn:
+            row = conn.execute("select owner_user_id from requests where id = %s", (request_id,)).fetchone()
+        return None if row is None else row["owner_user_id"]
+
+    def enqueue_customer_notification(self, *, user_id: str, event: str, dedupe_key: str, title: str, body: str | None,
+                                      url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
+        notification_id = uuid4().hex
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "insert into customer_notifications (id, user_id, request_id, seller_id, event, dedupe_key, title, body, url)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s) on conflict do nothing returning id, created_at",
+                (notification_id, user_id, request_id, seller_id, event, dedupe_key, title, body, url),
+            ).fetchone()
+        return None if row is None else {"id": row["id"], "created_at": _iso(row["created_at"])}
+
+    def finish_customer_notification(self, notification_id: str, state: str, delivered: dict) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(
+                "update customer_notifications set delivery_state = %s, delivered = %s,"
+                " sent_at = case when %s = 'sent' then now() else sent_at end where id = %s",
+                (state, Jsonb(delivered), state, notification_id),
+            )
+
+    def customer_notifications(self, user_id: str, limit: int = 50) -> dict:
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select * from customer_notifications where user_id = %s order by created_at desc limit %s", (user_id, limit)
+            ).fetchall()
+            unread = conn.execute(
+                "select count(*) as count from customer_notifications where user_id = %s and read_at is null", (user_id,)
+            ).fetchone()["count"]
+        return {"notifications": [customer_notification_view(row) for row in rows], "unread": int(unread)}
+
+    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None) -> int:
+        with self._pool.connection() as conn:
+            if notification_id:
+                done = conn.execute(
+                    "update customer_notifications set read_at = now() where user_id = %s and id = %s and read_at is null returning id",
+                    (user_id, notification_id),
+                ).fetchall()
+            else:
+                done = conn.execute(
+                    "update customer_notifications set read_at = now() where user_id = %s and read_at is null returning id", (user_id,)
+                ).fetchall()
+        return len(done)
 
     def mark_read(self, request_id: str, owner_user_id: str) -> None:
         with self._pool.connection() as conn:

@@ -361,8 +361,96 @@ def seller_key(seller_id: str) -> str:
     return author_id(seller_id) or str(seller_id).strip()
 
 
-def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer], messages) -> dict:
-    awarded = row["awarded_seller_id"] if "awarded_seller_id" in (row.keys() if hasattr(row, "keys") else row) else None
+def _field(row, name):
+    keys = row.keys() if hasattr(row, "keys") else row
+    return row[name] if name in keys else None
+
+
+def offer_summary(offers: list[Offer]) -> dict:
+    """What the request list may say about its offers without opening the thread.
+
+    Only the current, priced offers count. The lowest and highest are given only when
+    they are comparable: one item and one currency. Several items (a bed and a door are
+    not two prices for one thing) or two currencies withhold them, and say why. The
+    lowest is "unique" only when two or more priced offers exist and exactly one of them
+    is at the bottom - a tie names no one. ``delivery_basis_mixed`` is true when the
+    offers do not agree on whether delivery is inside the price."""
+    priced = [item for item in offers if item.total_price is not None]
+    summary = {
+        "priced_offer_count": len(priced),
+        "lowest_offer": None,
+        "highest_offer": None,
+        "offer_currency": None,
+        "lowest_offer_unique": False,
+        "offer_range_withheld": None,
+        "delivery_basis_mixed": len({item.delivery_included for item in priced}) > 1,
+    }
+    if not priced:
+        return summary
+    currencies = {(item.currency or "SAR").upper() for item in priced}
+    needs = {item.need or "" for item in priced}
+    if len(currencies) > 1:
+        summary["offer_range_withheld"] = "mixed_currency"
+        return summary
+    if len(needs) > 1:
+        summary["offer_range_withheld"] = "multiple_items"
+        return summary
+    totals = [float(item.total_price) for item in priced]
+    lowest = min(totals)
+    summary.update(
+        lowest_offer=lowest,
+        highest_offer=max(totals),
+        offer_currency=next(iter(currencies)),
+        lowest_offer_unique=len(totals) >= 2 and sum(1 for value in totals if abs(value - lowest) < 0.005) == 1,
+    )
+    return summary
+
+
+def award_notice(row, deliveries: list[dict] | None) -> dict | None:
+    """Whether the awarded supplier has been told, from the award message's own deliveries.
+
+    ``sent`` means a channel took it (Haraj accepted the message, or it landed in the
+    supplier's in-app inbox); it is not a read receipt. Before this was recorded (awards
+    made before the column existed) the answer is ``unknown``, never a guess."""
+    if not _field(row, "awarded_seller_id"):
+        return None
+    requested = _field(row, "award_notify")
+    if requested is None:
+        return {"state": "unknown", "channel": None, "sent_at": None}
+    if not requested:
+        return {"state": "not_requested", "channel": None, "sent_at": None}
+    rows = deliveries or []
+    done = [item for item in rows if item["status"] in ("sent", "in_app")]
+    if done:
+        first = done[0]
+        return {"state": "sent", "channel": "in_app" if first["status"] == "in_app" else "haraj", "sent_at": _stamp(first.get("sent_at"))}
+    if not rows or any(item["status"] in ("queued", "sending") for item in rows):
+        return {"state": "queued", "channel": None, "sent_at": None}
+    return {"state": "failed", "channel": None, "sent_at": None}
+
+
+def customer_notification_view(row) -> dict:
+    keys = row.keys()
+    delivered = row["delivered_json"] if "delivered_json" in keys else row["delivered"]
+    if isinstance(delivered, str):
+        delivered = json.loads(delivered or "{}")
+    return {
+        "id": row["id"],
+        "event": row["event"],
+        "title": row["title"],
+        "body": row["body"],
+        "url": row["url"],
+        "request_id": row["request_id"],
+        "delivery_state": row["delivery_state"],
+        "delivered": delivered or {},
+        "read": row["read_at"] is not None,
+        "sent_at": _stamp(row["sent_at"]),
+        "created_at": _stamp(row["created_at"]),
+    }
+
+
+def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer], messages, award_deliveries: list[dict] | None = None) -> dict:
+    awarded = _field(row, "awarded_seller_id")
     recipient_count = len(recipients)
     read_at = _moment(row["customer_read_at"]) if "customer_read_at" in row.keys() else None
     unread = sum(
@@ -392,6 +480,14 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
     preview = " ".join((last["body"] or "").split()) if last is not None else ""
     replies = max(len(replied), len(offers))
     latest_amount = None if latest_offer is None else float(latest_offer["offer_amount"])
+    awarded_name = None
+    awarded_offer = None
+    if awarded:
+        key = seller_key(awarded)
+        awarded_name = next((item.seller_name for item in recipients if seller_key(item.seller_id) == key), None)
+        chosen = next((item for item in offers if item.seller_id and seller_key(item.seller_id) == key and item.total_price is not None), None)
+        if chosen is not None:
+            awarded_offer = {"amount": float(chosen.total_price), "currency": (chosen.currency or "SAR").upper(), "delivery_included": chosen.delivery_included}
     return {
         "id": row["id"],
         "original_text": row["original_text"],
@@ -414,6 +510,12 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "latest_offer_currency": None if latest_offer is None else latest_offer["offer_currency"],
         "needs": need_cards,
         "awarded_seller_id": awarded,
+        "awarded_seller_name": awarded_name,
+        "awarded_offer": awarded_offer,
+        "open": not awarded,
+        "compared_at": _stamp(_field(row, "compared_at")),
+        "award_notice": award_notice(row, award_deliveries),
+        **offer_summary(offers),
     }
 
 
@@ -713,6 +815,33 @@ class Store:
         self._ensure_column("users", "email_verified_at", "text")
         self._ensure_column("users", "farq_user_id", "text")
         self._connection.execute("create unique index if not exists users_farq_user_id_key on users (farq_user_id) where farq_user_id is not null")
+        # The basket's request card: «قارنت» only on a real signal, and whether the awarded
+        # supplier was actually told. See supabase/migrations/20260930120000_*.
+        self._ensure_column("requests", "compared_at", "text")
+        self._ensure_column("requests", "award_notify", "integer")
+        self._ensure_column("requests", "award_message_id", "text")
+        self._connection.executescript(
+            """
+            create table if not exists customer_notifications (
+              id text primary key,
+              user_id text not null,
+              request_id text,
+              seller_id text,
+              event text not null,
+              dedupe_key text not null,
+              title text not null,
+              body text,
+              url text,
+              delivery_state text not null default 'queued',
+              delivered_json text not null default '{}',
+              read_at text,
+              sent_at text,
+              created_at text not null
+            );
+            create unique index if not exists customer_notifications_once on customer_notifications (user_id, dedupe_key);
+            create index if not exists customer_notifications_user on customer_notifications (user_id, created_at);
+            """
+        )
         self._connection.commit()
         self._connection.executescript(
             """
@@ -1182,6 +1311,8 @@ class Store:
             contact_shared=bool(self._col(row, "contact_shared_at")),
             last_synced_at=row["last_synced_at"] if "last_synced_at" in row.keys() else None,
             ref_code=self._col(row, "ref_code"),
+            compared_at=self._col(row, "compared_at"),
+            award_notice=award_notice(row, self._award_deliveries([self._col(row, "award_message_id")]).get(self._col(row, "award_message_id"))),
             created_at=row["created_at"],
         )
 
@@ -2101,10 +2232,14 @@ class Store:
             item["created_at"]
             for item in self._connection.execute("select r.created_at from request_recipients rr join requests r on r.id = rr.request_id where rr.send_status = 'queued'")
         ]
+        award_deliveries = self._award_deliveries([self._col(row, "award_message_id") for row in rows])
         items = []
         for row in rows:
             parts = by_request[row["id"]]
-            summary = request_summary(row, [self._recipient_from_row(item) for item in parts["recipients"]], self._offers_from_rows(parts["offers"]), parts["messages"])
+            summary = request_summary(
+                row, [self._recipient_from_row(item) for item in parts["recipients"]], self._offers_from_rows(parts["offers"]), parts["messages"],
+                award_deliveries.get(self._col(row, "award_message_id")),
+            )
             if summary.get("queued_count"):
                 summary["queue_ahead"] = sum(1 for moment in queued_at if moment < row["created_at"])
             items.append(summary)
@@ -2295,13 +2430,96 @@ class Store:
         self._connection.commit()
         if not changed:
             raise AwardConflict("request already awarded to another supplier")
+        self._connection.execute("update requests set award_notify = ? where id = ?", (1 if notify else 0, request_id))
+        self._connection.commit()
         if not notify:
             return None
-        return self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
+        message = self.route_customer_message(request_id, owner_user_id, self.AWARD_TEXT, seller_id=seller_id)
+        self._connection.execute("update requests set award_message_id = ? where id = ?", (message.id, request_id))
+        self._connection.commit()
+        return message
 
     def mark_read(self, request_id: str, owner_user_id: str) -> None:
         self._connection.execute("update requests set customer_read_at = ? where id = ? and owner_user_id = ?", (_now(), request_id, owner_user_id))
         self._connection.commit()
+
+    def record_compared(self, request_id: str, owner_user_id: str) -> str | None:
+        """The customer saw two or more priced offers side by side. Kept once (the first
+        time); returns when, or None when the request is not his. Raises ValueError when
+        there is nothing to compare yet, so a stray call cannot light «قارنت»."""
+        row = self._connection.execute("select compared_at from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone()
+        if row is None:
+            return None
+        if row["compared_at"]:
+            return row["compared_at"]
+        if offer_summary(self._offers_for_request(request_id))["priced_offer_count"] < 2:
+            raise ValueError("fewer than two priced offers")
+        self._connection.execute("update requests set compared_at = ? where id = ? and compared_at is null", (_now(), request_id))
+        self._connection.commit()
+        return self._connection.execute("select compared_at from requests where id = ?", (request_id,)).fetchone()["compared_at"]
+
+    def open_request_count(self, owner_user_id: str) -> int:
+        """Requests still waiting for the customer's choice (not awarded)."""
+        return int(self._connection.execute(
+            "select count(*) as count from requests where owner_user_id = ? and awarded_seller_id is null", (owner_user_id,)
+        ).fetchone()["count"])
+
+    def _award_deliveries(self, message_ids) -> dict[str, list[dict]]:
+        ids = [item for item in message_ids if item]
+        found: dict[str, list[dict]] = {}
+        if not ids:
+            return found
+        marks = ", ".join("?" for _ in ids)
+        for item in self._connection.execute(
+            f"select message_id, seller_id, delivery_status, sent_at from message_deliveries where message_id in ({marks}) order by created_at", ids
+        ):
+            found.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": item["sent_at"]})
+        return found
+
+    # -- customer notifications (a supplier replied) --------------------------
+
+    def request_owner(self, request_id: str) -> str | None:
+        row = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
+        return None if row is None else row["owner_user_id"]
+
+    def enqueue_customer_notification(self, *, user_id: str, event: str, dedupe_key: str, title: str, body: str | None,
+                                      url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
+        """The in-app row, written before any push is tried. None when this event was already queued."""
+        notification_id = uuid4().hex
+        created = _now()
+        cursor = self._connection.execute(
+            "insert or ignore into customer_notifications (id, user_id, request_id, seller_id, event, dedupe_key, title, body, url, delivery_state, created_at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)",
+            (notification_id, user_id, request_id, seller_id, event, dedupe_key, title, body, url, created),
+        )
+        self._connection.commit()
+        return None if cursor.rowcount == 0 else {"id": notification_id, "created_at": created}
+
+    def finish_customer_notification(self, notification_id: str, state: str, delivered: dict) -> None:
+        self._connection.execute(
+            "update customer_notifications set delivery_state = ?, delivered_json = ?, sent_at = case when ? = 'sent' then ? else sent_at end where id = ?",
+            (state, json.dumps(delivered, ensure_ascii=False), state, _now(), notification_id),
+        )
+        self._connection.commit()
+
+    def customer_notifications(self, user_id: str, limit: int = 50) -> dict:
+        rows = self._connection.execute(
+            "select * from customer_notifications where user_id = ? order by created_at desc limit ?", (user_id, limit)
+        ).fetchall()
+        unread = self._connection.execute(
+            "select count(*) as count from customer_notifications where user_id = ? and read_at is null", (user_id,)
+        ).fetchone()["count"]
+        return {"notifications": [customer_notification_view(row) for row in rows], "unread": int(unread)}
+
+    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None) -> int:
+        if notification_id:
+            cursor = self._connection.execute(
+                "update customer_notifications set read_at = ? where user_id = ? and id = ? and read_at is null", (_now(), user_id, notification_id)
+            )
+        else:
+            cursor = self._connection.execute("update customer_notifications set read_at = ? where user_id = ? and read_at is null", (_now(), user_id))
+        self._connection.commit()
+        return cursor.rowcount
 
     def recipient_name(self, request_id: str, seller_id: str | None) -> str | None:
         row = self._connection.execute("select seller_name from request_recipients where request_id = ? and seller_id = ?", (request_id, seller_id)).fetchone()

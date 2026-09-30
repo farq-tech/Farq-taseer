@@ -921,7 +921,38 @@ def create_app(
 
     @app.get("/v1/requests")
     def list_requests(user_id: str = Depends(current_user)) -> dict:
-        return {"requests": store.list_requests(user_id)}
+        requests = store.list_requests(user_id)
+        return {"requests": requests, "open_count": sum(1 for item in requests if item.get("open"))}
+
+    # Declared before /v1/requests/{request_id} so "open-count" is never read as an id.
+    @app.get("/v1/requests/open-count")
+    def open_request_count(user_id: str = Depends(current_user)) -> dict:
+        """The basket badge: requests still waiting for the customer's choice. A count, never money."""
+        return {"open_count": store.open_request_count(user_id)}
+
+    @app.post("/v1/requests/{request_id}/compared")
+    def request_compared(request_id: str, user_id: str = Depends(current_user)) -> dict:
+        """The client saw two or more priced offers side by side. The only thing that lights
+        «قارنت»; kept once, refused (409) while there is nothing to compare."""
+        try:
+            stamp = store.record_compared(request_id, user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if stamp is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        return {"compared_at": stamp}
+
+    @app.get("/v1/notifications")
+    def customer_inbox(user_id: str = Depends(current_user)) -> dict:
+        """Supplier-reply notifications. ``enabled`` is false while the server setting is off:
+        the client then shows nothing rather than an inbox that is empty for no reason."""
+        if not push.reply_notifications_enabled():
+            return {"enabled": False, "notifications": [], "unread": 0}
+        return {"enabled": True, **store.customer_notifications(user_id)}
+
+    @app.post("/v1/notifications/read")
+    def customer_inbox_read(body: NotificationReadBody, user_id: str = Depends(current_user)) -> dict:
+        return {"marked": store.mark_customer_notifications_read(user_id, body.id)}
 
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
@@ -1184,7 +1215,9 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         store.track_supplier("awarded", body.seller_id, request_id=request_id)
-        background.add_task(notify.notify_sellers, store, [body.seller_id], "awarded", request_id=request_id)
+        # The customer decides whether the winner hears it from us (notify=false: he tells him himself).
+        if body.notify:
+            background.add_task(notify.notify_sellers, store, [body.seller_id], "awarded", request_id=request_id)
         others = [item.seller_id for item in record.recipients if seller_key(item.seller_id) != seller_key(body.seller_id)]
         if others:
             background.add_task(notify.notify_sellers, store, others, "request_cancelled", request_id=request_id)
@@ -1233,7 +1266,7 @@ def create_app(
         if offer is not None:
             store.track_supplier("quote_submitted", created.seller_id or body.seller_id,
                                  request_id=created.request_id, need=created.need)
-        background.add_task(push.notify_reply, store, created.request_id, created.seller_id, created.body)
+        background.add_task(push.notify_reply, store, created.request_id, created.seller_id, created.body, message_id=created.id)
         return created.model_dump(mode="json")
 
     @app.get("/v1/seller/{token}/attachments/{attachment_id}")

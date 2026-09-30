@@ -223,10 +223,11 @@ def sync_replies(
                 continue
             if item.media:
                 item = replace(item, media=keep_media(store, thread["request_id"], item.media))
-            if store.record_inbound(thread, item) is not None:
+            recorded = store.record_inbound(thread, item)
+            if recorded is not None:
                 received += 1
                 synced.add(thread["request_id"])
-                notify_reply(store, thread["request_id"], thread["seller_id"], item.body or media_label(item.media))
+                notify_reply(store, thread["request_id"], thread["seller_id"], item.body or media_label(item.media), message_id=recorded.id)
         store.conversation_checked(conversation, now=clock(), high_water=highest)
         synced.update(item["request_id"] for item in threads)
     for request_id in synced:
