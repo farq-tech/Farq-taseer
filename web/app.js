@@ -3516,7 +3516,7 @@ function syncSellerForm(form) {
   const included = data.get("delivery_included") === "on";
   const amount = numberText(data.get("offer_amount"));
   const delivery = numberText(data.get("delivery_price"));
-  state.sellerDraft = { body: String(data.get("body") || ""), amount, included, delivery };
+  state.sellerDraft = { body: String(data.get("body") || ""), amount, included, delivery, condition: String(data.get("condition") || "") };
   const wrap = form.querySelector("#seller-delivery-wrap");
   if (wrap) wrap.hidden = included;
   const total = form.querySelector("#seller-total");
@@ -3535,6 +3535,7 @@ async function submitSellerReply(form) {
   const deliveryText = numberText(data.get("delivery_price"));
   const amount = amountText ? Number(amountText) : null;
   const included = data.get("delivery_included") === "on";
+  const condition = ["new", "used"].includes(data.get("condition")) ? data.get("condition") : "";
   const deliveryPrice = !included && deliveryText ? Number(deliveryText) : null;
   state.sellerFormError = "";
   let focus = "";
@@ -3550,7 +3551,7 @@ async function submitSellerReply(form) {
   }
   if (state.sellerFormError) {
     state.sellerSent = false;
-    state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
+    state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText, condition };
     render();
     document.getElementById(focus)?.focus();
     return;
@@ -3560,6 +3561,8 @@ async function submitSellerReply(form) {
     json.offer_amount = amount;
     json.delivery_included = included;
     if (deliveryPrice != null) json.delivery_price = deliveryPrice;
+    // Sent only when he chose one; left out, the customer sees the condition as not stated.
+    if (condition) json.condition = condition;
   }
   state.sellerBusy = true;
   render();
@@ -3575,7 +3578,7 @@ async function submitSellerReply(form) {
   } catch (error) {
     state.sellerBusy = false;
     state.sellerSent = false;
-    state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText };
+    state.sellerDraft = { body, amount: amountText, included, delivery: deliveryText, condition };
     const reason = typeof error?.detail === "string" ? error.detail : error?.detail?.message;
     state.sellerFormError = error?.status === 404 ? "هذا الطلب ما عاد متاح." : error?.status === 409 || /award/i.test(reason || "") ? "اختار العميل عرضاً آخر لهذا الطلب، فما عاد يستقبل أسعاراً." : error?.status === 422 ? "تأكد من السعر والرسالة وجرّب مرة ثانية." : "ما وصل ردّك. تأكد من الاتصال وجرّب مرة ثانية.";
     render();
@@ -3971,7 +3974,7 @@ function renderSeller() {
     </section>`;
   }
 
-  const draft = state.sellerDraft || { body: "", amount: "", included: true, delivery: "" };
+  const draft = state.sellerDraft || { body: "", amount: "", included: true, delivery: "", condition: "" };
   const open = Boolean(state.sellerPriceOpen);
   // The invite already reached him in Haraj; repeating it here is noise.
   const messages = (view.messages || [])
@@ -4049,6 +4052,12 @@ function renderSeller() {
         <div class="fq-inp fq-inp-money"><input id="seller-amount" name="offer_amount" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="مثلاً 350" value="${esc(draft.amount)}" dir="ltr"><span class="fq-unit">ر.س</span></div>
         <label class="fq-check"><input type="checkbox" name="delivery_included" ${draft.included ? "checked" : ""}><span>السعر شامل التوصيل</span></label>
         <div class="fq-inp fq-inp-money" id="seller-delivery-wrap" ${draft.included ? "hidden" : ""}><input id="seller-delivery" name="delivery_price" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="سعر التوصيل، مثلاً 50" value="${esc(draft.delivery)}" dir="ltr"><span class="fq-unit">ر.س</span></div>
+        <label class="fq-lbl" for="seller-condition">حالة المنتج (اختياري)</label>
+        <div class="fq-inp"><select id="seller-condition" name="condition">
+          <option value="" ${draft.condition ? "" : "selected"}>بدون تحديد</option>
+          <option value="new" ${draft.condition === "new" ? "selected" : ""}>جديد</option>
+          <option value="used" ${draft.condition === "used" ? "selected" : ""}>مستعمل</option>
+        </select></div>
         <p class="fq-meta fq-total" id="seller-total" ${sellerTotalLine(draft.amount, draft.included, draft.delivery) ? "" : "hidden"}>${esc(sellerTotalLine(draft.amount, draft.included, draft.delivery))}</p>
         <button class="fq-btn r14" type="submit" ${state.sellerBusy ? "disabled" : ""}>${state.sellerBusy ? `<span class="fq-arc" style="width:18px;height:18px"></span>` : `${ic("send", 16)} ${mine != null ? "إرسال السعر الجديد" : "إرسال السعر للعميل"}`}</button>
       </div>`

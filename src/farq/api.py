@@ -13,6 +13,7 @@ import time
 import re
 from urllib.parse import quote
 from pathlib import Path
+from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -183,11 +184,28 @@ class SellerReplyBody(ApiModel):
     phone: str | None = None
     delivery_included: bool | None = None
     delivery_price: float | None = Field(default=None, ge=0, le=MAX_OFFER, allow_inf_nan=False)
+    condition: Literal["new", "used"] | None = None
 
 
 class AwardBody(ApiModel):
     seller_id: str
     notify: bool = True
+
+
+class CounterBody(ApiModel):
+    seller_id: str
+    amount: float = Field(gt=0, le=MAX_OFFER, allow_inf_nan=False)
+    need: str | None = None
+
+
+class OutcomeBody(ApiModel):
+    outcome: Literal["completed", "not_completed"]
+    paid_total: float | None = Field(default=None, gt=0, le=MAX_OFFER, allow_inf_nan=False)
+
+
+class RatingBody(ApiModel):
+    rating: int = Field(ge=1, le=5)
+    note: str | None = Field(default=None, max_length=500)
 
 
 class PushKeys(ApiModel):
@@ -1224,6 +1242,47 @@ def create_app(
         background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return store.get_request(request_id, user_id).model_dump(mode="json")
 
+    @app.post("/v1/requests/{request_id}/counter")
+    def counter(request_id: str, body: CounterBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        # A counter-offer is a message to one supplier: same limits, same queue, same spacing.
+        try:
+            check_new_message(store, limits, user_id)
+        except LimitExceeded as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+        try:
+            created = store.counter_offer(request_id, user_id, body.seller_id, body.amount, need=body.need)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
+        except ValueError as exc:
+            status = 409 if str(exc) in ("request already awarded", "counter already sent for this offer") else 422
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        background.add_task(
+            notify.notify_sellers, store, [body.seller_id], "buyer_reply",
+            request_id=request_id, need=created.need, body=created.body[:140],
+        )
+        return store.get_request(request_id, user_id).model_dump(mode="json")
+
+    @app.post("/v1/requests/{request_id}/outcome")
+    def outcome(request_id: str, body: OutcomeBody, user_id: str = Depends(current_user)) -> dict:
+        try:
+            store.record_outcome(request_id, user_id, body.outcome, body.paid_total)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return store.get_request(request_id, user_id).model_dump(mode="json")
+
+    @app.post("/v1/requests/{request_id}/rating")
+    def rating(request_id: str, body: RatingBody, user_id: str = Depends(current_user)) -> dict:
+        try:
+            store.rate_deal(request_id, user_id, body.rating, body.note)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="request not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return store.get_request(request_id, user_id).model_dump(mode="json")
+
     @app.get("/v1/push/key")
     def push_key() -> dict:
         return {"public_key": push.public_key()}
@@ -1257,6 +1316,7 @@ def create_app(
                 delivery_included=True if body.delivery_included is None else body.delivery_included,
                 delivery_price=body.delivery_price or 0,
                 total_price=None,
+                condition=body.condition,
             )
         try:
             created = store.add_seller_reply(token, body.seller_id, body.body, offer)
