@@ -178,6 +178,10 @@ class Offer(ContractModel):
     total_price: float | None = None
     need: str | None = None
     cheapest: bool = False
+    # «جديد» / «مستعمل», only when the supplier chose it on his offer form; a price read
+    # from a free chat reply leaves it unknown rather than guessing from his words.
+    condition: str | None = None
+    created_at: str | None = None
 
 
 class Message(ContractModel):
@@ -233,4 +237,10 @@ class RequestRecord(ContractModel):
     compared_at: str | None = None
     # Whether the awarded supplier was told: state queued | sent | failed | not_requested | unknown.
     award_notice: dict[str, Any] | None = None
+    # What happened after the award, as the customer told us: outcome completed |
+    # not_completed, the total he actually paid, and his rating of the supplier.
+    deal: dict[str, Any] | None = None
+    # The customer's counter-offers, one per supplier offer; answered once the supplier
+    # prices again after it.
+    counters: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str

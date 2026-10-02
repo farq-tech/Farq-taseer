@@ -104,6 +104,21 @@ def test_attribution_and_limits_on_postgres(module, name, tmp_path, monkeypatch,
     _run(importlib.import_module(f"tests.{module}"), name, tmp_path, monkeypatch, pg_store)
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_offer_condition_comes_only_from_the_form",
+        "test_counter_offer_is_one_fixed_message_to_one_supplier",
+        "test_deal_outcome_and_rating_follow_the_award",
+    ],
+)
+def test_deal_lifecycle_on_postgres(name, tmp_path, monkeypatch, pg_store):
+    import tests.test_deal_lifecycle as deal_tests
+
+    monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
+    _run(deal_tests, name, tmp_path, monkeypatch, pg_store)
+
+
 @pytest.mark.parametrize("name", ["test_sends_are_spaced_and_a_refusal_stops_the_batch", "test_an_uncertain_post_is_failed_not_retried", "test_send_slots_are_shared_by_every_instance"])
 def test_worker_on_postgres(name, tmp_path, monkeypatch, pg_store):
     import tests.test_haraj_chat as chat_tests

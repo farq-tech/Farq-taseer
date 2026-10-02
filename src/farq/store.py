@@ -146,6 +146,80 @@ def _delivery_state(deliveries: list[dict]) -> str:
     return "partial" if "sent" in statuses else "failed"
 
 
+OFFER_CONDITIONS = ("new", "used")
+DEAL_OUTCOMES = ("completed", "not_completed")
+
+
+def counter_text(amount: float) -> str:
+    """The one sentence a counter-offer sends. Fixed, so every supplier is asked the same way."""
+    # Whole riyals as they are, halalas to two places; never the exponent form of «g».
+    figure = format(float(amount), ".2f").rstrip("0").rstrip(".")
+    return f"عرضي {figure} ريال شاملاً التوصيل. هل يناسبك؟"
+
+
+def deal_view(row) -> dict | None:
+    """The request's deal block, or None while the customer has not said how it ended."""
+    outcome = _field(row, "deal_outcome")
+    if not outcome:
+        return None
+    paid = _field(row, "deal_paid_total")
+    return {
+        "outcome": outcome,
+        "at": _stamp(_field(row, "deal_outcome_at")),
+        "paid_total": None if paid is None else float(paid),
+        "rating": _field(row, "deal_rating"),
+        "rating_note": _field(row, "deal_rating_note"),
+        "rated_at": _stamp(_field(row, "deal_rated_at")),
+    }
+
+
+def counter_views(rows, offer_rows) -> list[dict]:
+    """Counter-offers oldest first. One is answered when the supplier's current offer on
+    that item is newer than it."""
+    latest: dict[tuple[str, str], object] = {}
+    for item in offer_rows:
+        key = (item["seller_id"], item["need"] or "")
+        moment = _moment(item["created_at"])
+        if moment is not None and (key not in latest or moment > latest[key]):
+            latest[key] = moment
+    views = []
+    for row in rows:
+        sent = _moment(row["created_at"])
+        newest = latest.get((row["seller_id"], row["need"] or ""))
+        views.append({
+            "seller_id": row["seller_id"],
+            "need": row["need"],
+            "amount": float(row["amount"]),
+            "against_total": float(row["against_total"]),
+            "message_id": row["message_id"],
+            "created_at": _stamp(row["created_at"]),
+            "answered": bool(newest is not None and sent is not None and newest > sent),
+        })
+    return views
+
+
+def counter_target(offer_rows, counter_rows, seller_id: str, need: str | None, amount: float):
+    """The supplier's current offer a counter answers. Raises ValueError when there is
+    nothing to counter, the amount is not below it, or it was already countered."""
+    mine = [row for row in current_offer_rows(offer_rows) if row["seller_id"] == seller_id and row["total_price"] is not None]
+    if need is not None:
+        mine = [row for row in mine if (row["need"] or "") == need]
+    if not mine:
+        raise ValueError("no priced offer from this supplier")
+    if len(mine) > 1:
+        raise ValueError("need required")
+    target = mine[0]
+    if not amount < float(target["total_price"]):
+        raise ValueError("counter must be below the current offer")
+    priced_at = _moment(target["created_at"])
+    for row in counter_rows:
+        if row["seller_id"] == seller_id and (row["need"] or "") == (target["need"] or ""):
+            sent = _moment(row["created_at"])
+            if priced_at is None or sent is None or sent >= priced_at:
+                raise ValueError("counter already sent for this offer")
+    return target
+
+
 class AwardConflict(Exception):
     """The request is already awarded to another supplier."""
 
@@ -287,6 +361,7 @@ def priced_offer(offer: Offer, body: str, seller_name: str, need: str | None) ->
         delivery_price=delivery,
         total_price=total,
         need=offer.need or need,
+        condition=offer.condition if offer.condition in OFFER_CONDITIONS else None,
     )
 
 
@@ -515,6 +590,7 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "open": not awarded,
         "compared_at": _stamp(_field(row, "compared_at")),
         "award_notice": award_notice(row, award_deliveries),
+        "deal_outcome": _field(row, "deal_outcome"),
         **offer_summary(offers),
     }
 
@@ -818,6 +894,27 @@ class Store:
         # The basket's request card: «قارنت» only on a real signal, and whether the awarded
         # supplier was actually told. See supabase/migrations/20260930120000_*.
         self._ensure_column("requests", "compared_at", "text")
+        self._ensure_column("offers", "condition", "text")
+        self._ensure_column("requests", "deal_outcome", "text")
+        self._ensure_column("requests", "deal_outcome_at", "text")
+        self._ensure_column("requests", "deal_paid_total", "real")
+        self._ensure_column("requests", "deal_rating", "integer")
+        self._ensure_column("requests", "deal_rating_note", "text")
+        self._ensure_column("requests", "deal_rated_at", "text")
+        self._connection.execute(
+            """
+            create table if not exists counter_offers (
+              id text primary key,
+              request_id text not null,
+              seller_id text not null,
+              need text,
+              amount real not null,
+              against_total real not null,
+              message_id text,
+              created_at text not null
+            )
+            """
+        )
         self._ensure_column("requests", "award_notify", "integer")
         self._ensure_column("requests", "award_message_id", "text")
         self._connection.executescript(
@@ -1313,8 +1410,16 @@ class Store:
             ref_code=self._col(row, "ref_code"),
             compared_at=self._col(row, "compared_at"),
             award_notice=award_notice(row, self._award_deliveries([self._col(row, "award_message_id")]).get(self._col(row, "award_message_id"))),
+            deal=deal_view(row),
+            counters=counter_views(self._counter_rows(request_id), self._offer_rows(request_id)),
             created_at=row["created_at"],
         )
+
+    def _offer_rows(self, request_id: str) -> list:
+        return self._connection.execute("select * from offers where request_id = ? order by created_at desc", (request_id,)).fetchall()
+
+    def _counter_rows(self, request_id: str) -> list:
+        return self._connection.execute("select * from counter_offers where request_id = ? order by created_at", (request_id,)).fetchall()
 
     def _messages_for_request(self, request_id: str) -> list[Message]:
         deliveries: dict[str, list[dict]] = {}
@@ -2181,7 +2286,9 @@ class Store:
                     price,
                     "SAR",
                     inbound.body,
-                    _now(),
+                    # When he sent it, not when we fetched it: a price written before a
+                    # counter-offer must not read as his answer to it.
+                    inbound.sent_at or _now(),
                 ),
             )
         message = self.add_message(
@@ -2289,6 +2396,8 @@ class Store:
                 delivery_price=item["delivery_price"],
                 total_price=item["total_price"],
                 need=item["need"],
+                condition=self._col(item, "condition"),
+                created_at=item["created_at"],
             )
             offers.append(offer)
         return mark_cheapest(offers)
@@ -2325,6 +2434,7 @@ class Store:
                 "delivery_price": item["delivery_price"],
                 "total_price": item["total_price"],
                 "currency": item["currency"] or "SAR",
+                "condition": self._col(item, "condition"),
                 "created_at": item["created_at"],
             }
             for item in current_offer_rows(
@@ -2383,7 +2493,7 @@ class Store:
                 "delete from offers where request_id = ? and seller_id = ? and coalesce(need, '') = ?", (row["id"], seller_id, offer.need or "")
             )
             self._connection.execute(
-                "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, condition, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     uuid4().hex,
                     row["id"],
@@ -2397,6 +2507,7 @@ class Store:
                     offer.total_price,
                     offer.currency,
                     offer.note,
+                    offer.condition,
                     _now(),
                 ),
             )
@@ -2438,6 +2549,60 @@ class Store:
         self._connection.execute("update requests set award_message_id = ? where id = ?", (message.id, request_id))
         self._connection.commit()
         return message
+
+    def counter_offer(self, request_id: str, owner_user_id: str, seller_id: str, amount: float, need: str | None = None) -> Message:
+        """The customer asks one supplier for a lower total, in one fixed sentence, through the
+        same queue as any message. One counter per supplier offer; closed once awarded."""
+        row = self._connection.execute("select awarded_seller_id from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone()
+        if row is None:
+            raise LookupError("request not found")
+        if row["awarded_seller_id"] is not None:
+            raise ValueError("request already awarded")
+        target = counter_target(self._offer_rows(request_id), self._counter_rows(request_id), seller_id, need, amount)
+        message = self.route_customer_message(request_id, owner_user_id, counter_text(amount), need=target["need"], seller_id=seller_id)
+        self._connection.execute(
+            "insert into counter_offers (id, request_id, seller_id, need, amount, against_total, message_id, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (uuid4().hex, request_id, seller_id, target["need"], amount, target["total_price"], message.id, _now()),
+        )
+        self._connection.commit()
+        return message
+
+    def record_outcome(self, request_id: str, owner_user_id: str, outcome: str, paid_total: float | None = None) -> None:
+        """Whether the awarded deal really happened, as the customer says. He may correct it
+        until he has rated the supplier."""
+        if outcome not in DEAL_OUTCOMES:
+            raise ValueError("unknown outcome")
+        row = self._connection.execute("select awarded_seller_id, deal_rated_at from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone()
+        if row is None:
+            raise LookupError("request not found")
+        if row["awarded_seller_id"] is None:
+            raise ValueError("request not awarded")
+        if row["deal_rated_at"] is not None:
+            raise ValueError("deal already rated")
+        changed = self._connection.execute(
+            "update requests set deal_outcome = ?, deal_outcome_at = ?, deal_paid_total = ? where id = ? and deal_rated_at is null",
+            (outcome, _now(), paid_total if outcome == "completed" else None, request_id),
+        ).rowcount
+        self._connection.commit()
+        if not changed:
+            raise ValueError("deal already rated")
+
+    def rate_deal(self, request_id: str, owner_user_id: str, rating: int, note: str | None = None) -> None:
+        """One rating of the awarded supplier, only for a deal the customer says was completed."""
+        row = self._connection.execute("select deal_outcome, deal_rated_at from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone()
+        if row is None:
+            raise LookupError("request not found")
+        if row["deal_outcome"] != "completed":
+            raise ValueError("deal not completed")
+        if row["deal_rated_at"] is not None:
+            raise ValueError("deal already rated")
+        changed = self._connection.execute(
+            "update requests set deal_rating = ?, deal_rating_note = ?, deal_rated_at = ? where id = ? and deal_outcome = 'completed' and deal_rated_at is null",
+            (int(rating), (note or "").strip() or None, _now(), request_id),
+        ).rowcount
+        self._connection.commit()
+        if not changed:
+            raise ValueError("deal already rated")
 
     def mark_read(self, request_id: str, owner_user_id: str) -> None:
         self._connection.execute("update requests set customer_read_at = ? where id = ? and owner_user_id = ?", (_now(), request_id, owner_user_id))

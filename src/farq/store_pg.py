@@ -25,8 +25,13 @@ from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_reference
 from farq.store import (
+    DEAL_OUTCOMES,
     SINGLE_SELLER,
     AwardConflict,
+    counter_target,
+    counter_text,
+    counter_views,
+    deal_view,
     _delivery_state,
     award_notice,
     customer_notification_view,
@@ -472,6 +477,7 @@ class PgStore:
             ]
             messages = self._messages(conn, request_id)
             offers = self._offers(conn, request_id)
+            counters = counter_views(self._counter_rows(conn, request_id), self._offer_rows(conn, request_id))
             notice = award_notice(row, self._award_deliveries(conn, [row.get("award_message_id")]).get(row.get("award_message_id")))
         return RequestRecord(
             id=row["id"],
@@ -493,8 +499,16 @@ class PgStore:
             ref_code=row.get("ref_code"),
             compared_at=_iso(row.get("compared_at")),
             award_notice=notice,
+            deal=deal_view(row),
+            counters=counters,
             created_at=_iso(row["created_at"]),
         )
+
+    def _offer_rows(self, conn, request_id: str) -> list:
+        return conn.execute("select * from offers where request_id = %s order by created_at desc", (request_id,)).fetchall()
+
+    def _counter_rows(self, conn, request_id: str) -> list:
+        return conn.execute("select * from counter_offers where request_id = %s order by created_at", (request_id,)).fetchall()
 
     def _messages(self, conn, request_id: str) -> list[Message]:
         deliveries: dict[str, list[dict]] = {}
@@ -549,6 +563,8 @@ class PgStore:
                     delivery_price=_num(item["delivery_price"]),
                     total_price=_num(item["total_price"]),
                     need=item["need"],
+                    condition=item.get("condition"),
+                    created_at=_iso(item["created_at"]),
                 )
                 for item in rows
             ]
@@ -635,6 +651,7 @@ class PgStore:
                     "delivery_price": _num(item["delivery_price"]),
                     "total_price": _num(item["total_price"]),
                     "currency": item["currency"] or "SAR",
+                    "condition": item.get("condition"),
                     "created_at": _iso(item["created_at"]),
                 }
                 for item in current_offer_rows(
@@ -692,10 +709,10 @@ class PgStore:
                 # One current offer per supplier per item: a revised price replaces the earlier one.
                 conn.execute("delete from offers where request_id = %s and seller_id = %s and coalesce(need, '') = %s", (row["id"], seller_id, offer.need or ""))
                 conn.execute(
-                    "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
-                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    "insert into offers (id, request_id, seller_id, need, provider_name, phone, base_price, delivery_included, delivery_price, total_price, currency, message, condition, created_at)"
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (uuid4().hex, row["id"], seller_id, offer.need, offer.provider_name, offer.phone, offer.base_price, offer.delivery_included,
-                     offer.delivery_price, offer.total_price, offer.currency, offer.note, _now()),
+                     offer.delivery_price, offer.total_price, offer.currency, offer.note, offer.condition, _now()),
                 )
             text = body.strip() or ("عرض سعر" if offer is None else f"الإجمالي: {offer.total_price:g} ر.س")
             need = (offer.need if offer is not None else None) or matched["need"] or row["need"]
@@ -1583,8 +1600,11 @@ class PgStore:
                 conn.execute("delete from offers where request_id = %s and seller_id = %s and coalesce(need, '') = %s", (request_id, seller_id, need or ""))
                 conn.execute(
                     "insert into offers (id, request_id, seller_id, need, provider_name, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
-                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SAR', %s, now())",
-                    (uuid4().hex, request_id, seller_id, need, offer.provider_name, quote.base, quote.delivery_included, quote.delivery_price, price, inbound.body),
+                    # Stamped when he sent it, not when we fetched it: a price written before
+                    # a counter-offer must not read as his answer to it.
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SAR', %s, coalesce(%s::timestamptz, now()))",
+                    (uuid4().hex, request_id, seller_id, need, offer.provider_name, quote.base, quote.delivery_included, quote.delivery_price, price, inbound.body,
+                     inbound.sent_at or None),
                 )
             message = self._insert_message(
                 conn,
@@ -1636,6 +1656,62 @@ class PgStore:
         with self._pool.connection() as conn:
             conn.execute("update requests set award_message_id = %s where id = %s", (message.id, request_id))
         return message
+
+    def counter_offer(self, request_id: str, owner_user_id: str, seller_id: str, amount: float, need: str | None = None) -> Message:
+        """See Store.counter_offer."""
+        # One transaction holding the request row: an award or a second counter arriving at
+        # the same moment waits, then sees this one.
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select awarded_seller_id from requests where id = %s and owner_user_id = %s for update", (request_id, owner_user_id)
+            ).fetchone()
+            if row is None:
+                raise LookupError("request not found")
+            if row["awarded_seller_id"] is not None:
+                raise ValueError("request already awarded")
+            target = counter_target(self._offer_rows(conn, request_id), self._counter_rows(conn, request_id), seller_id, need, amount)
+            queued = self._enqueue(conn, request_id, counter_text(amount), target["need"], seller_id, None, owner_user_id)
+            conn.execute(
+                "insert into counter_offers (id, request_id, seller_id, need, amount, against_total, message_id, created_at) values (%s, %s, %s, %s, %s, %s, %s, now())",
+                (uuid4().hex, request_id, seller_id, target["need"], amount, target["total_price"], queued.id),
+            )
+            return next(item for item in self._messages(conn, request_id) if item.id == queued.id)
+
+    def record_outcome(self, request_id: str, owner_user_id: str, outcome: str, paid_total: float | None = None) -> None:
+        """See Store.record_outcome."""
+        if outcome not in DEAL_OUTCOMES:
+            raise ValueError("unknown outcome")
+        with self._pool.connection() as conn:
+            row = conn.execute("select awarded_seller_id, deal_rated_at from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone()
+            if row is None:
+                raise LookupError("request not found")
+            if row["awarded_seller_id"] is None:
+                raise ValueError("request not awarded")
+            if row["deal_rated_at"] is not None:
+                raise ValueError("deal already rated")
+            changed = conn.execute(
+                "update requests set deal_outcome = %s, deal_outcome_at = now(), deal_paid_total = %s where id = %s and deal_rated_at is null",
+                (outcome, paid_total if outcome == "completed" else None, request_id),
+            ).rowcount
+            if not changed:
+                raise ValueError("deal already rated")
+
+    def rate_deal(self, request_id: str, owner_user_id: str, rating: int, note: str | None = None) -> None:
+        """See Store.rate_deal."""
+        with self._pool.connection() as conn:
+            row = conn.execute("select deal_outcome, deal_rated_at from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone()
+            if row is None:
+                raise LookupError("request not found")
+            if row["deal_outcome"] != "completed":
+                raise ValueError("deal not completed")
+            if row["deal_rated_at"] is not None:
+                raise ValueError("deal already rated")
+            changed = conn.execute(
+                "update requests set deal_rating = %s, deal_rating_note = %s, deal_rated_at = now() where id = %s and deal_outcome = 'completed' and deal_rated_at is null",
+                (int(rating), (note or "").strip() or None, request_id),
+            ).rowcount
+            if not changed:
+                raise ValueError("deal already rated")
 
     def record_compared(self, request_id: str, owner_user_id: str) -> str | None:
         """See Store.record_compared."""
