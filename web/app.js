@@ -3056,9 +3056,7 @@ function renderSubscribe() {
             : near
               ? `<button class="fq-btn amber-chip r14" type="button" disabled>تجربتك نشطة</button>`
               : `<button class="fq-btn mint r14" type="button" disabled>تجربتك مفعلة</button>`}
-          ${paymentsOff()
-            ? `<p class="fq-small" style="text-align:center;margin-top:12px">الاشتراك غير متاح حالياً</p>`
-            : `<p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>`}
+          <p class="fq-small" style="text-align:center;margin-top:12px">${paymentsOff() ? "الاشتراك غير متاح حالياً ·" : "تحتاج أكثر؟"} <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>
         </div>`}
   </section>
   ${fqNav("account")}`;
@@ -6006,6 +6004,16 @@ document.addEventListener("click", (event) => {
     state.subView = "my-plan";
     loadSubscribe().catch(() => {});
   } else if (action === "show-plans") {
+    // Inside Farq one account has one set of plans (restaurants, grocery and Taseer):
+    // Farq shows its own page. Standalone, and at /plans for reviewers, ours stays.
+    if (isFarqEmbed()) {
+      try {
+        window.parent.postMessage({ source: "taseer", type: "farq-open-plans" }, "*");
+        return;
+      } catch (_error) {
+        /* no parent to ask: fall through to our own plans */
+      }
+    }
     state.subView = "plans";
     state.view = "subscribe";
     render();
