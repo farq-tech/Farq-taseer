@@ -139,3 +139,9 @@ def test_deal_outcome_and_rating_follow_the_award(tmp_path: Path):
     assert api.post(f"/v1/requests/{request_id}/outcome", headers=headers, json={"outcome": "not_completed"}).status_code == 409
     # Another customer cannot touch it.
     assert api.post(f"/v1/requests/{request_id}/outcome", headers=signed_in(api), json={"outcome": "completed"}).status_code == 404
+
+
+def test_counter_text_never_uses_exponent_form():
+    assert "1234567 ريال" in counter_text(1234567)
+    assert "1300 ريال" in counter_text(1300.0)
+    assert "1299.5 ريال" in counter_text(1299.5)

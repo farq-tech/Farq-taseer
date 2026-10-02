@@ -152,7 +152,9 @@ DEAL_OUTCOMES = ("completed", "not_completed")
 
 def counter_text(amount: float) -> str:
     """The one sentence a counter-offer sends. Fixed, so every supplier is asked the same way."""
-    return f"عرضي {amount:g} ريال شاملاً التوصيل. هل يناسبك؟"
+    # Whole riyals as they are, halalas to two places; never the exponent form of «g».
+    figure = format(float(amount), ".2f").rstrip("0").rstrip(".")
+    return f"عرضي {figure} ريال شاملاً التوصيل. هل يناسبك؟"
 
 
 def deal_view(row) -> dict | None:
@@ -2284,7 +2286,9 @@ class Store:
                     price,
                     "SAR",
                     inbound.body,
-                    _now(),
+                    # When he sent it, not when we fetched it: a price written before a
+                    # counter-offer must not read as his answer to it.
+                    inbound.sent_at or _now(),
                 ),
             )
         message = self.add_message(
@@ -2575,11 +2579,13 @@ class Store:
             raise ValueError("request not awarded")
         if row["deal_rated_at"] is not None:
             raise ValueError("deal already rated")
-        self._connection.execute(
-            "update requests set deal_outcome = ?, deal_outcome_at = ?, deal_paid_total = ? where id = ?",
+        changed = self._connection.execute(
+            "update requests set deal_outcome = ?, deal_outcome_at = ?, deal_paid_total = ? where id = ? and deal_rated_at is null",
             (outcome, _now(), paid_total if outcome == "completed" else None, request_id),
-        )
+        ).rowcount
         self._connection.commit()
+        if not changed:
+            raise ValueError("deal already rated")
 
     def rate_deal(self, request_id: str, owner_user_id: str, rating: int, note: str | None = None) -> None:
         """One rating of the awarded supplier, only for a deal the customer says was completed."""
@@ -2590,11 +2596,13 @@ class Store:
             raise ValueError("deal not completed")
         if row["deal_rated_at"] is not None:
             raise ValueError("deal already rated")
-        self._connection.execute(
-            "update requests set deal_rating = ?, deal_rating_note = ?, deal_rated_at = ? where id = ?",
+        changed = self._connection.execute(
+            "update requests set deal_rating = ?, deal_rating_note = ?, deal_rated_at = ? where id = ? and deal_outcome = 'completed' and deal_rated_at is null",
             (int(rating), (note or "").strip() or None, _now(), request_id),
-        )
+        ).rowcount
         self._connection.commit()
+        if not changed:
+            raise ValueError("deal already rated")
 
     def mark_read(self, request_id: str, owner_user_id: str) -> None:
         self._connection.execute("update requests set customer_read_at = ? where id = ? and owner_user_id = ?", (_now(), request_id, owner_user_id))

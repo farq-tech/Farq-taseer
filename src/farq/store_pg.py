@@ -1600,8 +1600,11 @@ class PgStore:
                 conn.execute("delete from offers where request_id = %s and seller_id = %s and coalesce(need, '') = %s", (request_id, seller_id, need or ""))
                 conn.execute(
                     "insert into offers (id, request_id, seller_id, need, provider_name, base_price, delivery_included, delivery_price, total_price, currency, message, created_at)"
-                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SAR', %s, now())",
-                    (uuid4().hex, request_id, seller_id, need, offer.provider_name, quote.base, quote.delivery_included, quote.delivery_price, price, inbound.body),
+                    # Stamped when he sent it, not when we fetched it: a price written before
+                    # a counter-offer must not read as his answer to it.
+                    " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SAR', %s, coalesce(%s::timestamptz, now()))",
+                    (uuid4().hex, request_id, seller_id, need, offer.provider_name, quote.base, quote.delivery_included, quote.delivery_price, price, inbound.body,
+                     inbound.sent_at or None),
                 )
             message = self._insert_message(
                 conn,
@@ -1656,20 +1659,23 @@ class PgStore:
 
     def counter_offer(self, request_id: str, owner_user_id: str, seller_id: str, amount: float, need: str | None = None) -> Message:
         """See Store.counter_offer."""
+        # One transaction holding the request row: an award or a second counter arriving at
+        # the same moment waits, then sees this one.
         with self._pool.connection() as conn:
-            row = conn.execute("select awarded_seller_id from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone()
+            row = conn.execute(
+                "select awarded_seller_id from requests where id = %s and owner_user_id = %s for update", (request_id, owner_user_id)
+            ).fetchone()
             if row is None:
                 raise LookupError("request not found")
             if row["awarded_seller_id"] is not None:
                 raise ValueError("request already awarded")
             target = counter_target(self._offer_rows(conn, request_id), self._counter_rows(conn, request_id), seller_id, need, amount)
-        message = self.route_customer_message(request_id, owner_user_id, counter_text(amount), need=target["need"], seller_id=seller_id)
-        with self._pool.connection() as conn:
+            queued = self._enqueue(conn, request_id, counter_text(amount), target["need"], seller_id, None, owner_user_id)
             conn.execute(
                 "insert into counter_offers (id, request_id, seller_id, need, amount, against_total, message_id, created_at) values (%s, %s, %s, %s, %s, %s, %s, now())",
-                (uuid4().hex, request_id, seller_id, target["need"], amount, target["total_price"], message.id),
+                (uuid4().hex, request_id, seller_id, target["need"], amount, target["total_price"], queued.id),
             )
-        return message
+            return next(item for item in self._messages(conn, request_id) if item.id == queued.id)
 
     def record_outcome(self, request_id: str, owner_user_id: str, outcome: str, paid_total: float | None = None) -> None:
         """See Store.record_outcome."""
@@ -1683,10 +1689,12 @@ class PgStore:
                 raise ValueError("request not awarded")
             if row["deal_rated_at"] is not None:
                 raise ValueError("deal already rated")
-            conn.execute(
-                "update requests set deal_outcome = %s, deal_outcome_at = now(), deal_paid_total = %s where id = %s",
+            changed = conn.execute(
+                "update requests set deal_outcome = %s, deal_outcome_at = now(), deal_paid_total = %s where id = %s and deal_rated_at is null",
                 (outcome, paid_total if outcome == "completed" else None, request_id),
-            )
+            ).rowcount
+            if not changed:
+                raise ValueError("deal already rated")
 
     def rate_deal(self, request_id: str, owner_user_id: str, rating: int, note: str | None = None) -> None:
         """See Store.rate_deal."""
@@ -1698,10 +1706,12 @@ class PgStore:
                 raise ValueError("deal not completed")
             if row["deal_rated_at"] is not None:
                 raise ValueError("deal already rated")
-            conn.execute(
-                "update requests set deal_rating = %s, deal_rating_note = %s, deal_rated_at = now() where id = %s",
+            changed = conn.execute(
+                "update requests set deal_rating = %s, deal_rating_note = %s, deal_rated_at = now() where id = %s and deal_outcome = 'completed' and deal_rated_at is null",
                 (int(rating), (note or "").strip() or None, request_id),
-            )
+            ).rowcount
+            if not changed:
+                raise ValueError("deal already rated")
 
     def record_compared(self, request_id: str, owner_user_id: str) -> str | None:
         """See Store.record_compared."""
