@@ -21,6 +21,7 @@ import re
 IDEMPOTENT_POSTS = (
     re.compile(r"^/v1/requests$"),
     re.compile(r"^/v1/requests/[^/]+/messages$"),
+    re.compile(r"^/v1/requests/[^/]+/counter$"),
     re.compile(r"^/v1/subscriptions/checkout$"),
 )
 MAX_KEY_LENGTH = 128
