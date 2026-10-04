@@ -586,11 +586,16 @@ class _AccountCache:
 
 class HarajAccounts:
     """Taseer's Haraj channel across its accounts: every send from the one sending account,
-    each read from the account its conversation lives on."""
+    each read from the account its conversation lives on.
 
-    def __init__(self, sender: HarajChatClient | None, readers: dict[str, HarajChatClient]):
+    ``send_mode`` is "open" (the queue drains, capped), "canary" (only the one queued delivery
+    named by ``canary`` may go, once: see worker.dispatch_pending) or "closed"."""
+
+    def __init__(self, sender: HarajChatClient | None, readers: dict[str, HarajChatClient], send_mode: str = "open", canary: str | None = None):
         self.sender = sender
         self.readers = dict(readers)
+        self._mode = send_mode
+        self.canary = (canary or "").strip() or None
 
     @property
     def send_account_id(self) -> str | None:
@@ -600,8 +605,14 @@ class HarajAccounts:
     def can_send(self) -> bool:
         return self.send_account_id is not None
 
-    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
+    @property
+    def send_mode(self) -> str:
         if not self.can_send:
+            return "closed"
+        return self._mode
+
+    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
+        if self.send_mode == "closed" or (self.send_mode == "canary" and self.canary is None):
             raise HarajChatUnavailable("NOT_SENT_CONFIGURATION_REQUIRED")
         # A conversation on another account is never written to: the sender opens its own.
         if conversation_id and conversation_account(conversation_id, seller_id) != self.sender.user_id:
@@ -633,7 +644,9 @@ def chat_from_env(env: dict | None = None, cache: TokenCache | None = None) -> H
 
     HARAJ_SEND_ENABLED=1 lets the Taseer account (HARAJ_TASEER_*) send; the old shared
     account (HARAJ_USER_ID, HARAJ_USERNAME ...) never sends from Taseer. HARAJ_INBOX_ENABLED=1
-    reads replies on both."""
+    reads replies on both. Until HARAJ_TASEER_SEND_ENABLED=1 the Taseer account is in canary
+    mode: it sends nothing but the one delivery HARAJ_TASEER_CANARY_DELIVERY names
+    (a delivery id, or ``<request ref>:<seller id>``), once; everything else stays queued."""
     env = os.environ if env is None else env
     send = env.get("HARAJ_SEND_ENABLED") == "1"
     inbox = env.get("HARAJ_INBOX_ENABLED") == "1"
@@ -656,7 +669,8 @@ def chat_from_env(env: dict | None = None, cache: TokenCache | None = None) -> H
             sender = client
     if sender is None and not (inbox and clients):
         return NotConnectedChat()
-    return HarajAccounts(sender if send else None, clients if inbox else {})
+    mode = "open" if env.get("HARAJ_TASEER_SEND_ENABLED") == "1" else "canary"
+    return HarajAccounts(sender if send else None, clients if inbox else {}, send_mode=mode, canary=env.get("HARAJ_TASEER_CANARY_DELIVERY"))
 
 
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬٫", "01234567890123456789,.")

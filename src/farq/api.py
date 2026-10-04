@@ -972,9 +972,15 @@ def create_app(
             raise HTTPException(status_code=502, detail="image source failed") from exc
         return Response(content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
 
+    def send_held() -> bool:
+        """Haraj sending is held (not connected, or the sending account is still in canary
+        mode): queued messages are said to be not sent yet, never given a delivery time."""
+        return getattr(chat, "send_mode", "closed" if isinstance(chat, NotConnectedChat) else "open") != "open"
+
     @app.get("/v1/requests")
     def list_requests(user_id: str = Depends(current_user)) -> dict:
-        requests = store.list_requests(user_id)
+        held = send_held()
+        requests = [{**item, "send_held": held} if item.get("queued_count") else item for item in store.list_requests(user_id)]
         return {"requests": requests, "open_count": sum(1 for item in requests if item.get("open"))}
 
     # Declared before /v1/requests/{request_id} so "open-count" is never read as an id.
@@ -1245,7 +1251,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found")
         # Opening the conversation reads it.
         store.mark_read(request_id, user_id)
-        return record.model_dump(mode="json")
+        return {**record.model_dump(mode="json"), "send_held": send_held()}
 
     @app.get("/v1/seller/{token}")
     def seller_request(token: str, authorization: str | None = Header(default=None)) -> dict:
@@ -1513,6 +1519,7 @@ def create_app(
 
     def _watch_queue() -> dict:
         health = store.queue_health()
+        health["send_mode"] = getattr(chat, "send_mode", "closed" if isinstance(chat, NotConnectedChat) else "open")
         breached = health["drain_minutes"] >= QUEUE_ALERT_MINUTES or health["send_paused"]
         health["alert"] = breached
         if breached:

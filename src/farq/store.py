@@ -2127,7 +2127,19 @@ class Store:
         row = self._connection.execute("select * from files where id = ?", (file_id,)).fetchone()
         return None if row is None else {**dict(row), "data": bytes(row["data"])}
 
-    def claim_deliveries(self, limit: int = 50) -> list[dict]:
+    def queued_delivery_for(self, ref_code: str, seller_id: str) -> str | None:
+        """The oldest still-queued delivery of request ``ref_code`` to that Haraj seller."""
+        author = str(seller_id).rsplit(":", 1)[-1]
+        row = self._connection.execute(
+            "select d.id from message_deliveries d join requests q on q.id = d.request_id"
+            " where q.ref_code = ? and d.delivery_status = 'queued' and (d.seller_id = ? or d.seller_id = ?)"
+            " order by d.created_at limit 1",
+            (ref_code, author, f"haraj:seller:{author}"),
+        ).fetchone()
+        return row["id"] if row else None
+
+    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None) -> list[dict]:
+        """The oldest queued deliveries, marked sending; only that one when ``delivery_id`` is given."""
         rows = self._connection.execute(
             """
             select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id,
@@ -2136,11 +2148,11 @@ class Store:
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
             join requests q on q.id = d.request_id
-            where d.delivery_status = 'queued'
+            where d.delivery_status = 'queued' and (? is null or d.id = ?)
             order by d.created_at
             limit ?
             """,
-            (limit,),
+            (delivery_id, delivery_id, limit),
         ).fetchall()
         claimed = []
         for row in rows:

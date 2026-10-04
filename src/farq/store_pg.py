@@ -1316,18 +1316,32 @@ class PgStore:
             row = conn.execute("select * from files where id = %s", (file_id,)).fetchone()
         return None if row is None else {**dict(row), "data": bytes(row["data"])}
 
-    def claim_deliveries(self, limit: int = 50) -> list[dict]:
+    def queued_delivery_for(self, ref_code: str, seller_id: str) -> str | None:
+        """The oldest still-queued delivery of request ``ref_code`` to that Haraj seller."""
+        author = str(seller_id).rsplit(":", 1)[-1]
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select d.id from message_deliveries d join requests q on q.id = d.request_id"
+                " where q.ref_code = %s and d.delivery_status = 'queued' and d.seller_id in (%s, %s)"
+                " order by d.created_at limit 1",
+                (ref_code, author, f"haraj:seller:{author}"),
+            ).fetchone()
+        return row["id"] if row else None
+
+    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None) -> list[dict]:
+        """The oldest queued deliveries, marked sending; only that one when ``delivery_id`` is given."""
         # SKIP LOCKED: two instances never claim the same delivery.
         with self._pool.connection() as conn:
             rows = conn.execute(
                 """
                 update message_deliveries d set delivery_status = 'sending', attempts = d.attempts + 1, last_attempt_at = now()
                 where d.id in (
-                  select id from message_deliveries where delivery_status = 'queued' order by created_at limit %s for update skip locked
+                  select id from message_deliveries where delivery_status = 'queued' and (%s::text is null or id = %s)
+                  order by created_at limit %s for update skip locked
                 )
                 returning d.id, d.request_id, d.seller_id, d.need, d.message_id, d.created_at
                 """,
-                (limit,),
+                (delivery_id, delivery_id, limit),
             ).fetchall()
             claimed = []
             for row in sorted(rows, key=lambda item: item["created_at"]):
