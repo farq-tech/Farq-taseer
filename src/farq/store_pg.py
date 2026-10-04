@@ -1629,7 +1629,7 @@ class PgStore:
             conn.execute(advance, (inbound.seq, request_id, seller_id, thread["need"]))
         return message
 
-    AWARD_TEXT = "تم اختيار عرضك. سنتواصل معك لإكمال التفاصيل."
+    AWARD_TEXT = "تم اختيار عرضك. بنتواصل معك لإكمال التفاصيل."
 
     def award(self, request_id: str, owner_user_id: str, seller_id: str, notify: bool = True) -> Message | None:
         with self._pool.connection() as conn:

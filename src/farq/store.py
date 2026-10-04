@@ -131,7 +131,7 @@ def invite_text(item: str, city: str | None) -> str:
             "السلام عليكم عزيزي البائع",
             "لدينا مشتري يطلب توفير:",
             line,
-            "في حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك",
+            "إذا كانت متوفرة، افتح الرابط التالي وقدّم عرضك",
             QUOTE_LINK,
         ]
     )
@@ -2521,7 +2521,7 @@ class Store:
         self._connection.commit()
         return message
 
-    AWARD_TEXT = "تم اختيار عرضك. سنتواصل معك لإكمال التفاصيل."
+    AWARD_TEXT = "تم اختيار عرضك. بنتواصل معك لإكمال التفاصيل."
 
     def award(self, request_id: str, owner_user_id: str, seller_id: str, notify: bool = True) -> Message | None:
         """The customer picks the winning offer. The supplier hears it from us only if the customer says so."""
