@@ -293,7 +293,15 @@ def _explicit_condition(text: str) -> str | None:
     return None
 
 
-def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tuple[bool, list[str]]:
+# The rules a near match may fail. Everything else - a deleted or sold listing, another
+# city, another model or size, a wanted-ad, a price outside the asked range - still rejects.
+SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:")
+
+
+def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed: bool = False) -> tuple[bool, list[str]]:
+    """relaxed=True is the near-match pass, run only when the strict pass kept nothing: the
+    head word may sit anywhere in the listing, title-only groups may be met in the body,
+    and of two or more word groups one may be missing."""
     if ad is not None and ad.listing_state == "deleted":
         return False, ["deleted_ad"]
     if intent.location_sensitivity.value == "required" and isinstance(intent.location_city.value, str):
@@ -398,7 +406,7 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             if words and any(_word_is(words[0], word) for word in _ACCESSORY_LEAD) and not _group_hit(words[0], head):
                 return False, ["accessory_not_device"]
             lead = " ".join(words[:6])
-            if not _group_hit(lead, head) and not (seller is not None and _group_hit(seller.name, head)):
+            if not relaxed and not _group_hit(lead, head) and not (seller is not None and _group_hit(seller.name, head)):
                 return False, ["head_not_in_title_lead"]
             # «مكتب مع كرسي», «طاولة مكتب كمبيوتر مع كرسي قيمنق»: what comes before «مع» is
             # for sale; what comes after it is thrown in.
@@ -433,7 +441,7 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             return False, ["no_trade_signal"]
     if intent.subcategory.value == "glazing" and title and has_word(title, _GLAZING_NOT):
         return False, ["not_glazing_work"]
-    if ad is not None and title and intent.title_groups:
+    if ad is not None and title and intent.title_groups and not relaxed:
         for group in intent.title_groups:
             if not _title_has_group(title, seller, group):
                 return False, [f"title_missing:{'|'.join(group)}"]
@@ -456,6 +464,8 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None) -> tupl
             continue
         matched.append(hit)
     needed = intent.eligibility_min or len(intent.eligibility_groups)
+    if relaxed and len(intent.eligibility_groups) >= 2:
+        needed = max(1, needed - 1)
     if missing and len(matched) < needed:
         return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched

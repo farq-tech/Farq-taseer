@@ -139,6 +139,9 @@ SAUDI_MOBILE = re.compile(r"^(?:\+9665|009665|05)\d{8}$")
 
 class SearchBody(ApiModel):
     query: str
+    # The app labels near matches («قريبة من طلبك»). Only a client that says so gets them,
+    # so an older app never shows a near match as if it were one.
+    near: bool = False
 
 
 class RecipientBody(ApiModel):
@@ -762,12 +765,12 @@ def create_app(
     # sentence it shows, so the tap on «ابحث» usually finds it ready.
     SEARCH_CACHE_SECONDS = 600
 
-    def _search_key(query: str) -> str:
-        return "search:" + hashlib.sha256(normalize(query).encode()).hexdigest()[:40]
+    def _search_key(query: str, near: bool = False) -> str:
+        return ("search-near:" if near else "search:") + hashlib.sha256(normalize(query).encode()).hexdigest()[:40]
 
-    def _cached_search(query: str):
+    def _cached_search(query: str, near: bool = False):
         try:
-            raw = store.get_value(_search_key(query))
+            raw = store.get_value(_search_key(query, near))
             if not raw:
                 return None
             kept = json.loads(raw)
@@ -780,11 +783,11 @@ def create_app(
             return None
         return response
 
-    def _keep_search(query: str, response) -> None:
+    def _keep_search(query: str, response, near: bool = False) -> None:
         if response.state.value not in ("RESULTS", "NO_QUALIFIED_RESULTS", "LIVE_EMPTY", "LOCAL_EMPTY"):
             return
         try:
-            store.set_value(_search_key(query), json.dumps({"at": time.time(), "response": response.model_dump(mode="json")}, ensure_ascii=False))
+            store.set_value(_search_key(query, near), json.dumps({"at": time.time(), "response": response.model_dump(mode="json")}, ensure_ascii=False))
         except Exception:  # noqa: BLE001
             log.warning("search cache write failed", exc_info=True)
 
@@ -808,20 +811,20 @@ def create_app(
     warming: dict[str, Warm] = {}
     warming_lock = threading.Lock()
 
-    def _warm_search(query: str) -> None:
-        key = _search_key(query)
+    def _warm_search(query: str, near: bool = False) -> None:
+        key = _search_key(query, near)
         with warming_lock:
             if key in warming:
                 return
             warm = warming[key] = Warm()
         try:
-            if _cached_search(query) is None:
-                for event in iter_search(query, corpus, live_client, config):
+            if _cached_search(query, near) is None:
+                for event in iter_search(query, corpus, live_client, config, near=near):
                     with warm.cond:
                         warm.events.append(event)
                         warm.cond.notify_all()
                     if event["type"] == "done":
-                        _keep_search(query, event["response"])
+                        _keep_search(query, event["response"], near)
         except Exception:  # noqa: BLE001 - warming is best effort
             log.warning("search warm failed", exc_info=True)
         finally:
@@ -831,9 +834,9 @@ def create_app(
                 warm.done.set()
                 warm.cond.notify_all()
 
-    def _warming_for(query: str):
+    def _warming_for(query: str, near: bool = False):
         with warming_lock:
-            return warming.get(_search_key(query))
+            return warming.get(_search_key(query, near))
 
     def _follow_warm(warm, timeout: float = 40.0):
         """Every event of the warm-up, those already produced and those still to come."""
@@ -851,34 +854,34 @@ def create_app(
             if warm.done.is_set() and len(warm.events) <= seen:
                 return
 
-    def _cached_or_warming(query: str):
-        kept = _cached_search(query)
+    def _cached_or_warming(query: str, near: bool = False):
+        kept = _cached_search(query, near)
         if kept is not None:
             return kept
-        warm = _warming_for(query)
+        warm = _warming_for(query, near)
         if warm is not None and warm.done.wait(25):
-            return _cached_search(query)
+            return _cached_search(query, near)
         return None
 
     @app.post("/v1/search/warm")
     def search_warm(body: SearchBody, request: Request, background: BackgroundTasks) -> dict:
         guard_search(request, body.query, search_limiter)
-        hit = _cached_search(body.query) is not None
+        hit = _cached_search(body.query, body.near) is not None
         if not hit:
-            background.add_task(_warm_search, body.query)
+            background.add_task(_warm_search, body.query, body.near)
         return {"warming": not hit, "ready": hit}
 
     @app.post("/v1/search")
     def search(body: SearchBody, request: Request, authorization: str | None = Header(default=None)) -> dict:
         guard_search(request, body.query, search_limiter)
         user_id = _user_from_header(authorization)
-        kept = _cached_or_warming(body.query)
+        kept = _cached_or_warming(body.query, body.near)
         if kept is not None:
             return _serve_cached(kept, body.query, user_id).model_dump(mode="json")
-        response, trace = run_search(body.query, corpus, live_client, config)
+        response, trace = run_search(body.query, corpus, live_client, config, near=body.near)
         store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
         _remember_sellers(response.trace_id, user_id, _response_results(response))
-        _keep_search(body.query, response)
+        _keep_search(body.query, response, body.near)
         return response.model_dump(mode="json")
 
     @app.post("/v1/search/stream")
@@ -887,7 +890,7 @@ def create_app(
         user_id = _user_from_header(authorization)
 
         def generate():
-            kept = _cached_or_warming(body.query)
+            kept = _cached_or_warming(body.query, body.near)
             if kept is not None:
                 response = _serve_cached(kept, body.query, user_id)
                 yield json.dumps(_public_event({"type": "intent", "trace_id": response.trace_id, "intent": response.intent, "intents": [group.intent for group in response.groups] or None, "clarification_question": response.clarification_question}), ensure_ascii=False) + "\n"
@@ -895,8 +898,8 @@ def create_app(
                 payload["type"] = "done"
                 yield json.dumps(payload, ensure_ascii=False) + "\n"
                 return
-            warm = _warming_for(body.query)
-            source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, live_client, config)
+            warm = _warming_for(body.query, body.near)
+            source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, live_client, config, near=body.near)
             for event in source:
                 if event["type"] == "results":
                     # The app lets customers pick from a batch before the search ends.
@@ -906,7 +909,7 @@ def create_app(
                     store.record_journey(response.trace_id, user_id, body.query, response.state.value, event["trace"])
                     _remember_sellers(response.trace_id, user_id, _response_results(response))
                     if warm is None:
-                        _keep_search(body.query, response)
+                        _keep_search(body.query, response, body.near)
                 yield json.dumps(_public_event(event), ensure_ascii=False) + "\n"
 
         return StreamingResponse(generate(), media_type="application/x-ndjson")

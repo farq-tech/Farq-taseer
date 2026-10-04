@@ -33,6 +33,7 @@ from farq.store import (
     counter_views,
     deal_view,
     _delivery_state,
+    with_delivery,
     award_notice,
     customer_notification_view,
     offer_summary,
@@ -476,6 +477,7 @@ class PgStore:
                 for item in conn.execute("select * from attachments where request_id = %s", (request_id,))
             ]
             messages = self._messages(conn, request_id)
+            recipients = with_delivery(recipients, messages)
             offers = self._offers(conn, request_id)
             counters = counter_views(self._counter_rows(conn, request_id), self._offer_rows(conn, request_id))
             notice = award_notice(row, self._award_deliveries(conn, [row.get("award_message_id")]).get(row.get("award_message_id")))
@@ -2108,7 +2110,7 @@ def _recipient(item) -> RequestRecipient:
         ad_id=item["ad_id"],
         need=item.get("need"),
         reply_token=item.get("reply_token"),
-        send_status=item.get("send_status") or "sent",
+        send_status=item.get("send_status") or "unknown",
         listing_url=item.get("listing_url"),
     )
 
