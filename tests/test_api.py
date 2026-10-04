@@ -341,26 +341,29 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     ).json()
     request_id = created["id"]
     url = f"/v1/requests/{request_id}/messages"
-    # The request goes out at once to one seller; the rest wait their 20 seconds.
+    # The request goes out at once to one seller; the rest wait their turn (45-90 s apart).
     assert len(haraj.sent) == 1
     run()
     tokens = {item["seller_id"]: item["reply_token"] for item in created["recipients"]}
     # Every message to a seller ends with the request's reference, which files his replies here.
     tagged = lambda text: f"{text}\nرقم الطلب: {created['ref_code']}"
 
-    def invite(item, seller):
-        return tagged(
-            "السلام عليكم عزيزي البائع\nلدينا مشتري يطلب توفير:\n"
-            f"{item} في الرياض\nإذا كانت متوفرة، افتح الرابط التالي وقدّم عرضك\n"
-            f"https://taseer.farq.sa/s/{tokens[seller]}"
-        )
+    def invite(item, seller, body):
+        # The invite (outreach.render_invite): an opener, the item and city, a link line, his own
+        # quote link, then the reference. The wording of the opener and the two lead-ins varies
+        # between sellers; no listing title is known here, so none is named.
+        lines = body.split("\n")
+        assert len(lines) == 5, body
+        assert lines[0] in ("السلام عليكم", "هلا والله", "حياك الله", "السلام عليكم ورحمة الله")
+        assert lines[1].endswith(f": {item} في الرياض")
+        assert lines[3] == f"https://taseer.farq.sa/s/{tokens[seller]}"
+        assert body == tagged("\n".join(lines[:4]))
+        return True
 
-    # Farq's fixed invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
-    assert sorted((seller, body) for _conv, seller, body in haraj.sent) == [
-        ("11", invite("سباك", "11")),
-        ("12", invite("سباك", "12")),
-        ("21", invite("كهربائي", "21")),
-    ]
+    # The invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
+    sent = sorted((seller, body) for _conv, seller, body in haraj.sent)
+    assert [seller for seller, _body in sent] == ["11", "12", "21"]
+    assert invite("سباك", "11", sent[0][1]) and invite("سباك", "12", sent[1][1]) and invite("كهربائي", "21", sent[2][1])
     assert len(set(tokens.values())) == 3
     assert {item["send_status"] for item in api.get(f"/v1/requests/{request_id}", headers=headers).json()["recipients"]} == {"sent"}
 

@@ -23,6 +23,7 @@ from psycopg_pool import ConnectionPool
 
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
+from farq import outreach
 from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_reference
 from farq.store import (
     _ANSWERED_SQL,
@@ -343,8 +344,8 @@ class PgStore:
                 (request_id, owner_user_id, original_text, need, notes, city_name, Jsonb(attributes), first_token, _now(), ref_code),
             )
             conn.cursor().executemany(
-                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url)"
-                " values (%s, %s, %s, %s, %s, %s, 'queued', %s)",
+                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url, ad_title)"
+                " values (%s, %s, %s, %s, %s, %s, 'queued', %s, %s)",
                 [
                     (
                         request_id,
@@ -354,6 +355,7 @@ class PgStore:
                         item.need or need,
                         item.reply_token or (first_token if index == 0 else secrets.token_urlsafe(16)),
                         item.listing_url,
+                        item.ad_title,
                     )
                     for index, item in enumerate(recipients)
                 ],
@@ -857,8 +859,8 @@ class PgStore:
             "queued": queued,
             "sending": int(row["sending"] or 0),
             "oldest_queued_seconds": round(oldest),
-            # Three sends a minute is the whole platform, so the backlog is a clock.
-            "drain_minutes": round(queued / 3, 1),
+            # The send pace (spacing plus average jitter) is the whole platform, so the backlog is a clock.
+            "drain_minutes": round(queued * (outreach.send_spacing_seconds() + outreach.send_jitter_seconds() / 2) / 60, 1),
             "send_paused": bool(paused and paused["value"] and float(paused["value"]) > _epoch_now()),
             "in_app_share_30d": None if not total else round(in_app / total, 4),
         }
@@ -1328,14 +1330,17 @@ class PgStore:
             for row in sorted(rows, key=lambda item: item["created_at"]):
                 detail = conn.execute(
                     """
-                    select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id,
+                    select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id, t.haraj_account_id,
                       (select r.reply_token from request_recipients r where r.request_id = %s and r.seller_id = %s
                        order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token,
+                      (select r.ad_title from request_recipients r where r.request_id = %s and r.seller_id = %s
+                       order by coalesce(r.need, '') = %s desc, r.id limit 1) as ad_title,
                       (select q.ref_code from requests q where q.id = t.request_id) as ref_code
                     from messages m join haraj_threads t on t.request_id = %s and t.seller_id = %s and t.need = %s
                     where m.id = %s
                     """,
-                    (row["request_id"], row["seller_id"], row["need"], row["request_id"], row["seller_id"], row["need"], row["message_id"]),
+                    (row["request_id"], row["seller_id"], row["need"], row["request_id"], row["seller_id"], row["need"],
+                     row["request_id"], row["seller_id"], row["need"], row["message_id"]),
                 ).fetchone()
                 claimed.append({"id": row["id"], "request_id": row["request_id"], "seller_id": row["seller_id"], "need": row["need"], **(detail or {})})
             return claimed
@@ -1348,13 +1353,15 @@ class PgStore:
             key = (row["request_id"], row["seller_id"], row["need"])
             if sent is not None:
                 conn.execute(
-                    "update message_deliveries set delivery_status = 'sent', haraj_message_id = %s, sent_at = now(), error = null where id = %s",
-                    (sent.haraj_message_id, delivery_id),
+                    "update message_deliveries set delivery_status = 'sent', haraj_message_id = %s, sent_at = now(), error = null, haraj_account_id = %s where id = %s",
+                    (sent.haraj_message_id, sent.account_id, delivery_id),
                 )
                 # Replies are read from our first message on: older history in the conversation is not imported.
+                # A conversation that moved to another account starts its read position afresh.
                 conn.execute(
-                    "update haraj_threads set haraj_conversation_id = %s, high_water = coalesce(high_water, %s) where request_id = %s and seller_id = %s and need = %s",
-                    (sent.haraj_conversation_id, sent.seq, *key),
+                    "update haraj_threads set high_water = case when coalesce(haraj_conversation_id, '') = %s then coalesce(high_water, %s) else %s end,"
+                    " haraj_conversation_id = %s, haraj_account_id = coalesce(%s, haraj_account_id) where request_id = %s and seller_id = %s and need = %s",
+                    (sent.haraj_conversation_id, sent.seq, sent.seq, sent.haraj_conversation_id, sent.account_id, *key),
                 )
                 # A fresh message makes its conversation due now, whatever back-off it was on.
                 conn.execute(
@@ -1485,6 +1492,43 @@ class PgStore:
                 " on conflict (trace_id, seller_id) do update set user_id = coalesce(search_sellers.user_id, excluded.user_id)",
                 rows,
             )
+
+    def record_search_listings(self, trace_id: str, user_id: str | None, rows: list[dict]) -> None:
+        """What each search proved about the listings it showed (outreach.listing_evidence)."""
+        values = [
+            (trace_id, user_id, seller_key(row["seller_id"]), row["ad_id"], row.get("ad_title"), row.get("ad_city"), row.get("posted_at") or None,
+             row.get("listing_state"), row.get("match") or "exact", bool(row.get("title_match")), row.get("need"))
+            for row in rows
+        ]
+        if not values:
+            return
+        with self._pool.connection() as conn:
+            conn.cursor().executemany(
+                "insert into search_listings (trace_id, user_id, seller_id, ad_id, ad_title, ad_city, posted_at, listing_state, match, title_match, need)"
+                " values (%s, %s, %s, %s, %s, %s, %s::timestamptz, %s, %s, %s, %s)"
+                " on conflict (trace_id, seller_id, ad_id) do update set user_id = coalesce(search_listings.user_id, excluded.user_id)",
+                values,
+            )
+
+    def searched_listings(self, user_id: str, trace_id: str | None, since: str) -> list[dict]:
+        """Listings this user's searches showed since then (and an anonymous search he names)."""
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select * from search_listings where (user_id = %s and created_at >= %s::timestamptz)"
+                " or (trace_id = %s and (user_id is null or user_id = %s)) order by created_at",
+                (user_id, since, trace_id, user_id),
+            ).fetchall()
+        return [{**dict(row), "posted_at": _iso(row["posted_at"])} for row in rows]
+
+    def haraj_sends_since(self, account_id: str | None, since_epoch: float) -> int:
+        """Messages Haraj accepted from this account (any account when None) since then."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select count(*) as count from message_deliveries where delivery_status = 'sent' and haraj_message_id is not null"
+                " and sent_at >= to_timestamp(%s) and (%s::text is null or haraj_account_id = %s)",
+                (since_epoch, account_id, account_id),
+            ).fetchone()
+        return int(row["count"])
 
     def searched_sellers(self, user_id: str, trace_id: str | None, since: str) -> set[str]:
         """Sellers this user's searches showed since then, and those of an anonymous search he names."""
@@ -2145,6 +2189,7 @@ def _recipient(item) -> RequestRecipient:
         reply_token=item.get("reply_token"),
         send_status=item.get("send_status") or "unknown",
         listing_url=item.get("listing_url"),
+        ad_title=item.get("ad_title"),
     )
 
 

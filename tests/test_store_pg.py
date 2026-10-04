@@ -88,7 +88,7 @@ def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
     [
         ("test_reply_attribution", "test_every_message_to_a_seller_carries_its_request_reference"),
         ("test_reply_attribution", "test_a_reply_quoting_the_reference_reaches_that_buyer_only"),
-        ("test_reply_attribution", "test_without_a_reference_a_reply_is_never_guessed_across_buyers"),
+        ("test_reply_attribution", "test_two_references_from_two_buyers_are_still_kept_unmatched"),
         ("test_reply_attribution", "test_one_open_request_in_the_conversation_keeps_the_old_rule"),
         ("test_reply_attribution", "test_a_reply_written_before_the_second_buyer_asked_goes_to_the_first"),
         ("test_limits", "test_recipients_must_come_from_the_customers_own_search"),
@@ -123,7 +123,7 @@ def test_deal_lifecycle_on_postgres(name, tmp_path, monkeypatch, pg_store):
 def test_worker_on_postgres(name, tmp_path, monkeypatch, pg_store):
     import tests.test_haraj_chat as chat_tests
 
-    _run(chat_tests, name, tmp_path, monkeypatch, pg_store)
+    _run_any(chat_tests, name, tmp_path, monkeypatch, pg_store)
 
 
 def _run_any(module, name, tmp_path, monkeypatch, make):
@@ -233,3 +233,45 @@ def test_sessions_and_idempotency_on_postgres(tmp_path, pg_store, monkeypatch):
     with psycopg.connect(URL, autocommit=True) as conn:
         conn.execute("update taseer.sessions set created_at = now() - interval '31 days'")
     assert api.get("/v1/auth/me", headers=headers).status_code == 401
+
+
+def test_unreferenced_reply_routing_on_postgres(tmp_path, monkeypatch, pg_store, caplog):
+    import tests.test_reply_attribution as attribution
+
+    monkeypatch.setattr(attribution, "Store", pg_store)
+    attribution.test_without_a_reference_a_reply_goes_to_the_latest_request_he_was_sent(tmp_path, caplog)
+
+
+def test_outreach_columns_on_postgres(pg_store):
+    """search_listings, request_recipients.ad_title and the per-account send receipts
+    (supabase/migrations/20261004120000_taseer_haraj_account_split.sql)."""
+    import time
+    from datetime import datetime, timedelta, timezone
+
+    from farq.contracts import RequestRecipient
+    from farq.haraj_chat import SentMessage
+
+    store = pg_store()
+    owner = store.start_guest()["user_id"]
+    posted = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    store.record_search_listings("trace-1", owner, [
+        {"seller_id": "haraj:seller:501", "ad_id": "9001", "ad_title": "بركس للبيع", "ad_city": "الرياض", "posted_at": posted,
+         "listing_state": "active", "match": "exact", "title_match": True, "need": "بركسات"},
+        {"seller_id": "502", "ad_id": "9002", "ad_title": "مطبخ", "ad_city": "الرياض", "posted_at": None,
+         "listing_state": "active", "match": "near", "title_match": False, "need": "بركسات"},
+    ])
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    found = {row["ad_id"]: row for row in store.searched_listings(owner, None, since)}
+    assert found["9001"]["seller_id"] == "501" and found["9001"]["title_match"] is True and found["9001"]["ad_title"] == "بركس للبيع"
+    assert found["9002"]["match"] == "near" and found["9002"]["title_match"] is False
+
+    store.create_request(owner, "بركسات", "بركسات", None, "الرياض", {}, [RequestRecipient(seller_id="501", seller_name="ابو فهد", ad_id="9001", ad_title="بركس للبيع")])
+    claimed = store.claim_deliveries(limit=5)
+    assert [item["ad_title"] for item in claimed] == ["بركس للبيع"]
+    store.finish_delivery(claimed[0]["id"], sent=SentMessage("p2p26038924_501", "p2p26038924_501:3", 3, account_id="26038924"))
+    assert store.haraj_sends_since("26038924", time.time() - 86400) == 1
+    assert store.haraj_sends_since("13935624", time.time() - 86400) == 0
+    assert store.haraj_sends_since(None, time.time() - 86400) == 1
+    with store._pool.connection() as conn:
+        thread = conn.execute("select haraj_conversation_id, haraj_account_id, high_water from haraj_threads").fetchone()
+    assert (thread["haraj_conversation_id"], thread["haraj_account_id"], thread["high_water"]) == ("p2p26038924_501", "26038924", 3)

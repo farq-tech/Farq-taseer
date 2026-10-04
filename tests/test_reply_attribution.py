@@ -1,5 +1,6 @@
 """TSR-002: one Haraj account means one conversation per seller, shared by every buyer who asked him.
-A reply is filed by the request reference it quotes; without one it is never guessed across buyers."""
+A reply is filed by the request reference it quotes; without one it goes to the latest request we
+had sent him before he wrote (owner rule 2026-10-04), and that inference is logged."""
 
 import time
 from pathlib import Path
@@ -77,26 +78,38 @@ def test_a_reply_quoting_the_reference_reaches_that_buyer_only(tmp_path: Path):
     assert market.store.unmatched_inbound() == []
 
 
-def test_without_a_reference_a_reply_is_never_guessed_across_buyers(tmp_path: Path):
+def test_without_a_reference_a_reply_goes_to_the_latest_request_he_was_sent(tmp_path: Path, caplog):
+    """Owner rule (2026-10-04): a seller answers the last message he got. An unreferenced reply
+    across buyers is filed under the newest request we had sent him before he wrote, and logged."""
     market = Market(tmp_path)
     alice = market.ask(market.alice, "كامري 2015")
     bob = market.ask(market.bob, "لاندكروزر")
     market.run()
-    market.reply(100, "الكامري 2015 موجودة بسعر 45000 ريال، رقمي 0555555555")
-    assert market.run() == (0, 0)
+    market.reply(100, "هلا")
+    with caplog.at_level("WARNING", logger="farq.worker"):
+        assert market.run() == (0, 1)
+    assert market.seen_by(market.bob, bob) == (["هلا"], [])
     assert market.seen_by(market.alice, alice) == ([], [])
-    assert market.seen_by(market.bob, bob) == ([], [])
+    assert market.store.unmatched_inbound() == []
+    assert any("latest_send_across_buyers" in record.getMessage() and bob["id"] in record.getMessage() for record in caplog.records)
+    # Read once: the next sync does not file it twice.
+    assert market.run() == (0, 0)
+    # A later reply that quotes Alice's reference still reaches Alice.
+    market.reply(101, f"{alice['ref_code']} الكامري موجودة 45 ألف")
+    assert market.run() == (0, 1)
+    assert market.seen_by(market.alice, alice) == ([f"{alice['ref_code']} الكامري موجودة 45 ألف"], [45000.0])
+
+
+def test_two_references_from_two_buyers_are_still_kept_unmatched(tmp_path: Path):
+    market = Market(tmp_path)
+    alice = market.ask(market.alice, "كامري 2015")
+    bob = market.ask(market.bob, "لاندكروزر")
+    market.run()
+    market.reply(100, f"{alice['ref_code']} و {bob['ref_code']} متوفرة")
+    assert market.run() == (0, 0)
     kept = market.store.unmatched_inbound(CONVERSATION)
     assert [(item["haraj_message_id"], item["seller_id"]) for item in kept] == [(f"{CONVERSATION}:100", "77")]
     assert sorted(kept[0]["candidate_request_ids"]) == sorted([alice["id"], bob["id"]])
-    # Read once: the next sync neither files it nor keeps it twice.
-    assert market.run() == (0, 0)
-    assert len(market.store.unmatched_inbound()) == 1
-    # A later reply that quotes Bob's reference still reaches Bob.
-    market.reply(101, f"{bob['ref_code']} اللاندكروزر متوفر 180 ألف")
-    assert market.run() == (0, 1)
-    assert market.seen_by(market.bob, bob) == ([f"{bob['ref_code']} اللاندكروزر متوفر 180 ألف"], [180000.0])
-    assert market.seen_by(market.alice, alice) == ([], [])
 
 
 def test_one_open_request_in_the_conversation_keeps_the_old_rule(tmp_path: Path):
@@ -145,11 +158,15 @@ def test_choose_thread_rules():
     bob = _row("b", "bob", "T-222222", ["2026-09-01T11:00:00+00:00"])
     alice_second = _row("a2", "alice", "T-333333", ["2026-09-01T12:00:00+00:00"])
     at = "2026-09-01T13:00:00+00:00"
-    assert choose_thread([alice, bob], "السعر 500 ريال", at) is None
+    # Across buyers, no reference: the latest request sent to him before he wrote, marked as inferred.
+    inferred = choose_thread([alice, bob], "السعر 500 ريال", at)
+    assert inferred["request_id"] == "b" and inferred["routed_by"] == "latest_send_across_buyers"
+    # ...but never one he had not been sent yet.
+    assert choose_thread([_row("a", "alice", "T-111111", []), _row("b", "bob", "T-222222", [])], "تمام", at) is None
     assert choose_thread([alice, bob], "رقم الطلب: T-111111 السعر 500 ريال", at)["request_id"] == "a"
     assert choose_thread([alice, bob], "رقم الطلب ٢٢٢٢٢٢", at)["request_id"] == "b"
-    # A reference for a request that is not in this conversation proves nothing.
-    assert choose_thread([alice, bob], "T-999999", at) is None
+    # A reference for a request that is not in this conversation proves nothing: as if none.
+    assert choose_thread([alice, bob], "T-999999", at)["routed_by"] == "latest_send_across_buyers"
     # Two references from two buyers: still unknown.
     assert choose_thread([alice, bob], "T-111111 و T-222222", at) is None
     # Requests from one buyer: the latest one sent to him, as before.

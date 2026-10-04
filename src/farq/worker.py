@@ -1,9 +1,11 @@
 """Haraj router and sync.
 
 Outgoing: queued deliveries from the item conversation go to each seller's Haraj
-conversation, one at a time, at least 20 seconds apart. A refusal (401, 402, 403,
-429, 451) stops sending for 30 minutes. A message whose POST may have reached
-Haraj is never sent again. Incoming: seller replies are read from those
+conversation from Taseer's sending account, one at a time, at least
+HARAJ_SEND_SPACING_SECONDS (45) plus a random 0-HARAJ_SEND_JITTER_SECONDS (45) apart,
+and at most HARAJ_DAILY_SEND_CAP (60) in any 24 hours from that account: the queue
+waits, it is never blasted. A refusal (401, 402, 403, 429, 451) stops sending for
+30 minutes. A message whose POST may have reached Haraj is never sent again. Incoming: seller replies are read from those
 conversations only, at least 2 seconds apart, with 15 minutes of quiet after a
 refusal. Pacing and pauses live in the store, so every instance (and every
 serverless invocation) sees them.
@@ -13,25 +15,27 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import threading
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
+from farq.outreach import daily_send_cap, render_invite, send_jitter_seconds, send_spacing_seconds
 from farq.push import notify_reply
 from farq.store import QUOTE_LINK
 from farq.haraj_chat import (
     READ_PAUSE_SECONDS,
     READ_SPACING_SECONDS,
     SEND_PAUSE_SECONDS,
-    SEND_SPACING_SECONDS,
     HarajChat,
     HarajChatUnavailable,
     HarajNotSent,
     HarajRefused,
     HarajSendUncertain,
     NotConnectedChat,
+    conversation_account,
     with_reference,
 )
 
@@ -69,8 +73,10 @@ def dispatch_pending(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.time,
 ) -> int:
-    if isinstance(chat, NotConnectedChat):
+    if isinstance(chat, NotConnectedChat) or not getattr(chat, "can_send", True):
         return 0
+    account = getattr(chat, "send_account_id", None)
+    cap = daily_send_cap()
     sent = 0
     with _lock:
         deadline = clock() + budget_seconds
@@ -78,19 +84,25 @@ def dispatch_pending(
             now = clock()
             if _paused(store, "send_paused_until", now):
                 break
+            # A day's sends from this account are capped; the rest wait in the queue.
+            if store.haraj_sends_since(account, now - 86400) >= cap:
+                log.warning("haraj daily send cap reached for account %s (%s in 24h); queue waits", account or "-", cap)
+                break
             # One booking in the database paces every instance and every cron run together.
-            slot = store.reserve_send_slot(SEND_SPACING_SECONDS, now, deadline)
+            spacing = send_spacing_seconds() + random.uniform(0, max(0.0, send_jitter_seconds()))
+            slot = store.reserve_send_slot(spacing, now, deadline)
             if slot is None:
                 break
             claimed = store.claim_deliveries(limit=1)
             if not claimed:
-                store.release_send_slot(slot, SEND_SPACING_SECONDS)
+                store.release_send_slot(slot, spacing)
                 break
             item = claimed[0]
-            body = item["body"]
+            # The invite names this seller's own listing, in wording that differs between sellers.
+            body = render_invite(item["body"], item.get("ad_title"), seed=item["id"])
             if QUOTE_LINK in body:
                 if not item.get("reply_token"):
-                    store.release_send_slot(slot, SEND_SPACING_SECONDS)
+                    store.release_send_slot(slot, spacing)
                     store.finish_delivery(item["id"], error="NO_QUOTE_LINK", retry=False)
                     continue
                 body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
@@ -103,17 +115,22 @@ def dispatch_pending(
                     attachments.append(
                         {"content_type": stored["content_type"], "data": stored["data"], "name": stored["filename"], "width": stored["width"], "height": stored["height"]}
                     )
+            conversation = item["haraj_conversation_id"]
+            # A conversation opened by another account (the old shared one) is not written to:
+            # the sending account opens its own with the seller.
+            if conversation and account and conversation_account(conversation, item["seller_id"]) != account:
+                conversation = None
             sleep(max(0.0, slot - clock()))
             try:
                 result = chat.send(
-                    conversation_id=item["haraj_conversation_id"],
+                    conversation_id=conversation,
                     seller_id=item["seller_id"],
                     ad_id=item["ad_id"],
                     body=body,
                     attachments=attachments,
                 )
             except HarajChatUnavailable as exc:
-                store.release_send_slot(slot, SEND_SPACING_SECONDS)
+                store.release_send_slot(slot, spacing)
                 store.finish_delivery(item["id"], error=exc.code, retry=True)
                 break
             except HarajRefused as exc:
@@ -261,10 +278,14 @@ def sync_replies(
                 continue
             thread = store.thread_for_inbound(conversation, item.sent_at, item.body)
             if thread is None:
-                # No reference and open requests from several buyers: a guess could show one buyer another's reply.
                 candidates = store.record_unmatched_inbound(conversation, seller_id, item)
                 log.warning("haraj reply %s in %s matches no single request (candidates: %s); kept unmatched", item.haraj_message_id, conversation, ", ".join(candidates))
                 continue
+            if thread.get("routed_by"):
+                log.warning(
+                    "haraj reply %s in %s quotes no reference; filed under request %s (%s)",
+                    item.haraj_message_id, conversation, thread["request_id"], thread["routed_by"],
+                )
             if item.media:
                 item = replace(item, media=keep_media(store, thread["request_id"], item.media))
             recorded = store.record_inbound(thread, item)

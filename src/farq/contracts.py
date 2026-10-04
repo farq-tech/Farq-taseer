@@ -216,6 +216,8 @@ class RequestRecipient(ContractModel):
     seller_id: str
     seller_name: str
     ad_id: str | None = None
+    # The title of the seller's listing the invite names (from the search that showed it).
+    ad_title: str | None = None
     need: str | None = None
     reply_token: str | None = None
     # queued | sending | sent | failed | unknown. «sent» means a channel accepted the
