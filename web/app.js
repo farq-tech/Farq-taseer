@@ -2077,7 +2077,7 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const quoted = message.reply_to ? byId.get(message.reply_to) : null;
   const time = `<span class="fq-time">${esc(chatTime(message.created_at))}${mine ? deliveryTick(message) : ""}</span>`;
   const quote = quoted
-    ? `<div class="fq-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#575172"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
+    ? `<div class="fq-quote" style="--who:${quoted.sender_role === "seller" ? sellerColor(thread, quoted.seller_id) : "#3E573B"}"><strong>${esc(quoted.sender_role === "seller" ? sellerName(thread, quoted.seller_id) : "أنت")}</strong><span>${esc(snippet(quoted.body, 70))}</span></div>`
     : "";
   if (mine) {
     const some = message.scope === "some_sellers" ? (message.deliveries || []).map((item) => sellerName(thread, item.seller_id)).join("، ") : "";
