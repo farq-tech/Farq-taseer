@@ -7,8 +7,13 @@ pulled back by the sync worker.
 The transport is the one Farq Construction uses (farq repo:
 api/lib/construction/haraj-session.js, haraj-invite.js, haraj-chat.js,
 haraj-inbox.js; docs/construction/HARAJ_DISPATCH_AND_QUOTE_TOTALS.md), ported
-as-is. Taseer sends from its own Haraj account: the same environment variable
-names, with Taseer's own values on Taseer's server. Farq's token is never used.
+as-is.
+
+Accounts (2026-10-04). Taseer sends only from its own Haraj account, set as
+HARAJ_TASEER_USER_ID / _USERNAME / _PASSWORD / _REFRESH_TOKEN. The older account
+(HARAJ_USER_ID and the unprefixed HARAJ_* settings) is shared with Farq
+Construction: Taseer keeps reading the conversations it already has there, and
+never sends from it again. Each account keeps its tokens under its own cache key.
 
 The seller's address is the Haraj author id only (``haraj:seller:19676360`` ->
 ``19676360``). No phone number is looked up, and ``postContact`` is never used.
@@ -144,18 +149,26 @@ class HarajSession:
     ``cache`` (the server-side store) rather than logging in on every cold start.
     """
 
-    def __init__(self, env: dict | None = None, http: httpx.Client | None = None, cache: TokenCache | None = None, now: Callable[[], float] = time.time):
+    def __init__(
+        self,
+        env: dict | None = None,
+        http: httpx.Client | None = None,
+        cache: TokenCache | None = None,
+        now: Callable[[], float] = time.time,
+        prefix: str = "HARAJ_",
+    ):
         env = os.environ if env is None else env
         self._env = env
+        self._prefix = prefix
         self._http = http or httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False)
         self._cache = cache
         self._now = now
         self._lock = threading.Lock()
-        self.username = str(env.get("HARAJ_USERNAME") or "").strip()
-        self._password = str(env.get("HARAJ_PASSWORD") or "")
+        self.username = str(env.get(f"{prefix}USERNAME") or "").strip()
+        self._password = str(env.get(f"{prefix}PASSWORD") or "")
         self.can_login = bool(self.username and self._password)
-        self._refresh = re.sub(r"^Bearer\s+", "", str(env.get("HARAJ_REFRESH_TOKEN") or ""), flags=re.I).strip()
-        static = re.sub(r"^Bearer\s+", "", str(env.get("HARAJ_TOKEN") or ""), flags=re.I).strip()
+        self._refresh = re.sub(r"^Bearer\s+", "", str(env.get(f"{prefix}REFRESH_TOKEN") or ""), flags=re.I).strip()
+        static = re.sub(r"^Bearer\s+", "", str(env.get(f"{prefix}TOKEN") or ""), flags=re.I).strip()
         self.configured = bool(self._refresh or self.can_login or static)
         self.renewable = bool(self._refresh or self.can_login)
         self._current: tuple[str, float] | None = None
@@ -188,8 +201,9 @@ class HarajSession:
     def _login(self) -> str:
         # Haraj refuses password login from its web endpoint («يجب استعادة الرقم السري»)
         # but accepts it the way its iOS app sends it.
-        app_url = str(self._env.get("HARAJ_APP_LOGIN_URL") or "").strip()
-        app_agent = str(self._env.get("HARAJ_APP_USER_AGENT") or "").strip()
+        # The app's login request is the same for every account; an account may still carry its own.
+        app_url = str(self._env.get(f"{self._prefix}APP_LOGIN_URL") or self._env.get("HARAJ_APP_LOGIN_URL") or "").strip()
+        app_agent = str(self._env.get(f"{self._prefix}APP_USER_AGENT") or self._env.get("HARAJ_APP_USER_AGENT") or "").strip()
         url = app_url if APP_LOGIN_URL.match(app_url) else GRAPHQL_LOGIN
         headers = {"content-type": "application/json"}
         if url != GRAPHQL_LOGIN and app_agent:
@@ -534,26 +548,103 @@ def _timestamp(value) -> str:
 
 
 class _Prefixed:
-    def __init__(self, cache: TokenCache, prefix: str):
-        self._cache, self._prefix = cache, prefix
+    """One account's slice of the shared store. ``legacy`` is read (never written) as a fallback,
+    so the older account keeps the tokens it cached before keys carried an account id."""
+
+    def __init__(self, cache: TokenCache, prefix: str, legacy: str | None = None):
+        self._cache, self._prefix, self._legacy = cache, prefix, legacy
 
     def get_value(self, key: str) -> str | None:
-        return self._cache.get_value(self._prefix + key)
+        value = self._cache.get_value(self._prefix + key)
+        if value is None and self._legacy is not None:
+            value = self._cache.get_value(self._legacy + key)
+        return value
 
     def set_value(self, key: str, value: str | None) -> None:
         self._cache.set_value(self._prefix + key, value)
 
 
+TASEER_PREFIX = "HARAJ_TASEER_"
+LEGACY_PREFIX = "HARAJ_"
+_ACCOUNT_ID = re.compile(r"[1-9]\d*")
+
+
+def conversation_account(conversation_id: str | None, accounts) -> str | None:
+    """Which of our accounts a Haraj conversation (``p2p<a>_<b>``) belongs to, or None."""
+    match = re.fullmatch(r"p2p(\d+)_(\d+)", str(conversation_id or ""))
+    if not match:
+        return None
+    for account in accounts:
+        if account and account in match.groups():
+            return account
+    return None
+
+
+class AccountChat:
+    """Taseer's Haraj channel across accounts: one account sends, every configured account reads.
+
+    send_mode: "open" sends whatever is queued; "canary" sends only the one delivery the owner
+    approved (see worker.CANARY_KEY); "closed" sends nothing. A message whose thread lives on
+    another account opens a fresh conversation from the sending account."""
+
+    def __init__(self, sender: HarajChatClient | None, readers: dict[str, HarajChatClient], send_mode: str = "closed"):
+        self.sender = sender
+        self.readers = dict(readers)
+        self.send_account_id = sender.user_id if sender is not None else None
+        self.send_mode = send_mode if sender is not None and sender.send_enabled else "closed"
+
+    def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
+        if self.sender is None or self.send_mode == "closed":
+            raise HarajChatUnavailable("NOT_SENT_CONFIGURATION_REQUIRED")
+        if conversation_id and conversation_account(conversation_id, [self.send_account_id]) is None:
+            conversation_id = None
+        return self.sender.send(conversation_id=conversation_id, seller_id=seller_id, ad_id=ad_id, body=body, attachments=attachments)
+
+    def fetch(self, *, conversation_id: str, seller_id: str, after_seq: int) -> list[InboundMessage]:
+        account = conversation_account(conversation_id, list(self.readers))
+        if account is None:
+            raise HarajChatUnavailable("ACCOUNT_UNAVAILABLE")
+        return self.readers[account].fetch(conversation_id=conversation_id, seller_id=seller_id, after_seq=after_seq)
+
+
+def _client(env: dict, prefix: str, user_id: str, cache: TokenCache | None, legacy_cache: bool, send: bool, inbox: bool) -> HarajChatClient | None:
+    if not _ACCOUNT_ID.fullmatch(user_id):
+        return None
+    scoped = None
+    if cache is not None:
+        scoped = _Prefixed(cache, f"session:{user_id}:", legacy="session:" if legacy_cache else None)
+    session = HarajSession(env, cache=scoped, prefix=prefix)
+    if not session.configured:
+        return None
+    return HarajChatClient(session, user_id, send_enabled=send, inbox_enabled=inbox)
+
+
 def chat_from_env(env: dict | None = None, cache: TokenCache | None = None) -> HarajChat:
-    """Taseer's own account from its own server settings, or a channel that sends nothing."""
+    """Taseer's Haraj accounts from its own server settings, or a channel that sends nothing.
+
+    HARAJ_SEND_ENABLED / HARAJ_INBOX_ENABLED stay the master switches. Sending goes out from
+    the HARAJ_TASEER_* account only, and only once HARAJ_TASEER_SEND_ENABLED=1; until then the
+    worker may send just a single owner-approved canary. The older HARAJ_* account is read only."""
     env = os.environ if env is None else env
     send = env.get("HARAJ_SEND_ENABLED") == "1"
     inbox = env.get("HARAJ_INBOX_ENABLED") == "1"
-    user_id = str(env.get("HARAJ_USER_ID") or env.get("HARAJ_FARQ_USER_ID") or "").strip()
-    session = HarajSession(env, cache=None if cache is None else _Prefixed(cache, "session:"))
-    if not (send or inbox) or not session.configured or not re.fullmatch(r"[1-9]\d*", user_id):
+    if not (send or inbox):
         return NotConnectedChat()
-    return HarajChatClient(session, user_id, send_enabled=send, inbox_enabled=inbox)
+    taseer_id = str(env.get(f"{TASEER_PREFIX}USER_ID") or "").strip()
+    legacy_id = str(env.get("HARAJ_USER_ID") or env.get("HARAJ_FARQ_USER_ID") or "").strip()
+    sender = _client(env, TASEER_PREFIX, taseer_id, cache, legacy_cache=False, send=send, inbox=inbox)
+    readers: dict[str, HarajChatClient] = {}
+    if sender is not None:
+        readers[sender.user_id] = sender
+    if legacy_id and legacy_id != taseer_id:
+        # The shared account: read the conversations Taseer already has there, never send.
+        legacy = _client(env, LEGACY_PREFIX, legacy_id, cache, legacy_cache=True, send=False, inbox=inbox)
+        if legacy is not None:
+            readers[legacy.user_id] = legacy
+    if sender is None and not readers:
+        return NotConnectedChat()
+    mode = "open" if env.get(f"{TASEER_PREFIX}SEND_ENABLED") == "1" else "canary"
+    return AccountChat(sender, readers, send_mode=mode)
 
 
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬٫", "01234567890123456789,.")

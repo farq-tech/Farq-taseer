@@ -14,6 +14,8 @@ Every table in the taseer schema is emptied between tests.
 """
 
 import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -233,3 +235,76 @@ def test_sessions_and_idempotency_on_postgres(tmp_path, pg_store, monkeypatch):
     with psycopg.connect(URL, autocommit=True) as conn:
         conn.execute("update taseer.sessions set created_at = now() - interval '31 days'")
     assert api.get("/v1/auth/me", headers=headers).status_code == 401
+
+
+# -- 2026-10-04: own Haraj account, caps, listing-matched invites, routed replies --------------
+
+
+def _pg(store, sql, *args):
+    with store._pool.connection() as conn:
+        found = conn.execute(sql, args)
+        return [dict(row) for row in found.fetchall()] if found.description else []
+
+
+def test_account_split_caps_and_canary_on_postgres(tmp_path, pg_store):
+    from farq.contracts import RequestRecipient
+    from farq.outreach import Outreach
+    from farq.worker import CANARY_KEY, dispatch_pending
+    from tests.test_outreach import NEW, OLD, Clock, two_accounts
+
+    store = pg_store(upload_dir=tmp_path / "uploads")
+    owner = store.start_guest()["user_id"]
+    recipients = [RequestRecipient(seller_id=s, seller_name="x", ad_id=f"a{s}", listing_title=f"بركس {s}") for s in ("501", "502", "503")]
+    request_id = store.create_request(owner, "بركسات", "بركسات", None, "الرياض", {}, recipients)
+    _pg(store, "update taseer.haraj_threads set haraj_conversation_id = %s, high_water = 1790950549551, checked_at = now() where seller_id = '501'", f"p2p{OLD}_501")
+
+    chat, new, _old = two_accounts(mode="canary")
+    clock = Clock(at=time.time())
+    rules = Outreach(min_spacing=45, jitter=0, daily_invites=2)
+    assert dispatch_pending(store, chat, budget_seconds=600, sleep=clock.sleep, clock=clock, outreach=rules) == 0
+    store.set_value(CANARY_KEY, _pg(store, "select id from taseer.message_deliveries where seller_id = '501'")[0]["id"])
+    assert dispatch_pending(store, chat, budget_seconds=600, sleep=clock.sleep, clock=clock, outreach=rules) == 1
+    assert store.get_value(CANARY_KEY) is None
+    assert new.sent[0][0] is None and "«بركس 501»" in new.sent[0][2]
+    thread = _pg(store, "select * from taseer.haraj_threads where seller_id = '501'")[0]
+    assert (thread["haraj_conversation_id"], thread["haraj_account_id"], thread["high_water"], thread["checked_at"]) == (f"p2p{NEW}_501", NEW, 1, None)
+
+    chat.send_mode = "open"
+    assert dispatch_pending(store, chat, budget_seconds=600, sleep=clock.sleep, clock=clock, outreach=rules) == 1  # cap of 2 reached
+    since = datetime.fromtimestamp(clock.now - 86400, tz=timezone.utc).isoformat()
+    assert store.account_invites_since(NEW, since) == 2
+    assert {row["seller_id"]: row["delivery_status"] for row in _pg(store, "select seller_id, delivery_status from taseer.message_deliveries")} == {
+        "501": "sent", "502": "sent", "503": "queued"}
+    assert [row["haraj_account_id"] for row in _pg(store, "select haraj_account_id from taseer.message_deliveries where delivery_status = 'sent'")] == [NEW, NEW]
+    view = store.seller_view(_pg(store, "select reply_token from taseer.request_recipients where seller_id = '502'")[0]["reply_token"])
+    assert "«بركس 502»" in view["messages"][0]["body"]
+    assert request_id
+
+
+def test_search_listings_and_routed_replies_on_postgres(tmp_path, pg_store):
+    from farq.contracts import RequestRecipient
+    from farq.haraj_chat import InboundMessage
+    from farq.limits import Limits, qualify_recipients
+
+    store = pg_store(upload_dir=tmp_path / "uploads")
+    owner = store.start_guest()["user_id"]
+    store.record_search_listings("t1", owner, [
+        {"seller_id": "11", "ad_id": "a11", "title": "بركس 3x4 مستخدم نظيف", "category_tags": [], "city": "الرياض", "posted_at": "2026-10-03T08:00:00+00:00", "match": "exact"},
+        {"seller_id": "12", "ad_id": "a12", "title": "غرفة نوم", "category_tags": [], "city": "الرياض", "posted_at": None, "match": "exact"},
+    ])
+    picked = [RequestRecipient(seller_id=s, seller_name="x", need="بركسات") for s in ("11", "12", "13")]
+    kept, dropped = qualify_recipients(store, Limits(require_email_verification="off"), owner, picked, "بركسات", "الرياض", "t1")
+    assert [(item.seller_id, item.listing_title, item.ad_id) for item in kept] == [("11", "بركس 3x4 مستخدم نظيف", "a11")]
+    assert sorted(item.seller_id for item, _why in dropped) == ["12", "13"]
+
+    # Two buyers wrote to seller 77 on one conversation; his «هلا» goes to the latest one.
+    other = store.start_guest()["user_id"]
+    first = store.create_request(owner, "x", "طلب أول", None, "الرياض", {}, [RequestRecipient(seller_id="77", seller_name="x")])
+    second = store.create_request(other, "y", "طلب ثاني", None, "الرياض", {}, [RequestRecipient(seller_id="77", seller_name="x")])
+    _pg(store, "update taseer.haraj_threads set haraj_conversation_id = 'p2p26038924_77'")
+    _pg(store, "update taseer.message_deliveries set delivery_status = 'sent', sent_at = now() - interval '2 hours' where request_id = %s", first)
+    _pg(store, "update taseer.message_deliveries set delivery_status = 'sent', sent_at = now() - interval '1 hour' where request_id = %s", second)
+    thread = store.thread_for_inbound("p2p26038924_77", datetime.now(timezone.utc).isoformat(), "هلا")
+    assert thread["request_id"] == second and thread["routed_by"] == "latest_sent"
+    recorded = store.record_inbound(thread, InboundMessage("p2p26038924_77:5", "هلا", "2026-10-04T12:00:00+00:00", 5))
+    assert recorded is not None and recorded.request_id == second

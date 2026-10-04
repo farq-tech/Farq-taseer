@@ -441,8 +441,8 @@ def test_the_backlog_is_reported_as_the_time_it_takes_to_drain(tmp_path: Path):
     customer = signed_in(api)
     ask(api, customer, [str(7000 + n) for n in range(6)], need="سباك")
     health = store.queue_health()
-    # Six unregistered suppliers, three sends a minute for the whole platform.
+    # Six unregistered suppliers, one send a minute on average (45 s + up to 30 s of jitter).
     assert health["queued"] == 6
-    assert health["drain_minutes"] == 2.0
+    assert health["drain_minutes"] == 6.0
     assert health["send_paused"] is False
     assert health["in_app_share_30d"] == 0.0

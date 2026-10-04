@@ -117,14 +117,17 @@ def test_trial_caps_sellers_per_item_and_subscribers_have_a_ceiling(tmp_path: Pa
     assert refused.status_code == 403
     assert refused.json()["detail"] == {"code": "TOO_MANY_SELLERS", "message": "يمكن إرسال الطلب إلى 6 موردين كحد أقصى لكل بند في التجربة المجانية.", "limit": 6}
     assert ask(api, headers, seven[:6]).status_code == 200
-    # Six per item: two items of six each are fine.
+    # Per item, and never more than eight sellers on one request (2026-10-04): two items of four are fine.
     two_items = {
         "original_text": "سباك وكهربائي",
         "city": "الرياض",
-        "recipients": [{"seller_id": str(2000 + n), "seller_name": "م", "need": "سباك"} for n in range(6)]
-        + [{"seller_id": str(3000 + n), "seller_name": "م", "need": "كهربائي"} for n in range(6)],
+        "recipients": [{"seller_id": str(2000 + n), "seller_name": "م", "need": "سباك"} for n in range(4)]
+        + [{"seller_id": str(3000 + n), "seller_name": "م", "need": "كهربائي"} for n in range(4)],
     }
     assert api.post("/v1/requests", headers=headers, json=two_items).status_code == 200
+    two_items["recipients"] += [{"seller_id": "3999", "seller_name": "م", "need": "كهربائي"}]
+    too_many = api.post("/v1/requests", headers=headers, json=two_items)
+    assert (too_many.status_code, too_many.json()["detail"]["code"], too_many.json()["detail"]["limit"]) == (403, "TOO_MANY_SELLERS", 8)
     # 'large' allows eight per item; 'starter' stays at six like the trial.
     subscribe(store, "large")
     assert ask(api, headers, seven).status_code == 200
@@ -253,6 +256,7 @@ def test_returning_the_allowance_moves_the_meter_and_keeps_the_history(tmp_path:
     user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
     for index in range(3):
         store.record_search_sellers(f"t{index}", user_id, ["11"])
+        store.record_search_listings(f"t{index}", user_id, [{"seller_id": "11", "ad_id": f"a{index}", "title": f"بند {index} للبيع"}])
         assert ask(api, headers, ["11"], need=f"بند {index}", trace_id=f"t{index}").status_code == 200
 
     limits = Limits()
@@ -279,5 +283,5 @@ def test_an_open_account_is_not_a_subscriber_and_is_not_on_the_trial(tmp_path: P
     open_account = entitlement(store, limits, user_id)
     assert open_account.plan_code == OPEN_ACCOUNT
     assert open_account.items_left > limits.trial_items * 100
-    # The ceiling that protects the shared Haraj account is not lifted with it.
-    assert open_account.sellers_per_item == limits.max_sellers_per_item
+    # The ceilings that protect the Haraj account are not lifted with it.
+    assert open_account.sellers_per_item == min(limits.max_sellers_per_item, limits.max_invites_per_request) == 8

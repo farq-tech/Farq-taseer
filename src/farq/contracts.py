@@ -223,6 +223,8 @@ class RequestRecipient(ContractModel):
     # not delivered and not read. A row with no recorded outcome is «unknown», never «sent».
     send_status: str = "unknown"
     listing_url: str | None = None
+    # The title of the seller's own listing the invite named (from the search that showed it).
+    listing_title: str | None = None
     # When and by which channel (haraj | in_app) the request was accepted, from the
     # deliveries themselves. Null until then.
     sent_at: str | None = None

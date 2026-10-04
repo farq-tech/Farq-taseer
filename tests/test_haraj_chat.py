@@ -9,6 +9,7 @@ import pytest
 
 from farq.haraj_chat import (
     GRAPHQL_LOGIN,
+    AccountChat,
     HarajChatClient,
     HarajChatUnavailable,
     HarajRefused,
@@ -20,6 +21,7 @@ from farq.haraj_chat import (
     author_id,
     chat_from_env,
 )
+from farq.outreach import Outreach
 from farq.store import Store
 from farq.worker import dispatch_pending
 
@@ -193,8 +195,12 @@ def test_nothing_is_sent_without_the_server_switches():
     assert isinstance(chat_from_env({}), NotConnectedChat)
     assert isinstance(chat_from_env({**ENV, "HARAJ_USER_ID": "7"}), NotConnectedChat)
     assert isinstance(chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1"}), NotConnectedChat)  # no account id
-    assert isinstance(chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_USER_ID": "7"}), HarajChatClient)
-    assert isinstance(chat_from_env({"HARAJ_TOKEN": "t", "HARAJ_SEND_ENABLED": "1", "HARAJ_FARQ_USER_ID": "7"}), HarajChatClient)
+    # The shared HARAJ_* account is read only since 2026-10-04: it never sends again.
+    legacy = chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_INBOX_ENABLED": "1", "HARAJ_USER_ID": "7"})
+    assert isinstance(legacy, AccountChat) and legacy.send_account_id is None and legacy.send_mode == "closed"
+    assert list(legacy.readers) == ["7"] and not legacy.readers["7"].send_enabled
+    static = chat_from_env({"HARAJ_TOKEN": "t", "HARAJ_SEND_ENABLED": "1", "HARAJ_INBOX_ENABLED": "1", "HARAJ_FARQ_USER_ID": "7"})
+    assert isinstance(static, AccountChat) and static.send_mode == "closed"
 
 
 class ScriptedChat:
@@ -242,7 +248,7 @@ def test_sends_are_spaced_and_a_refusal_stops_the_batch(tmp_path: Path):
 
     ok = SentMessage("p2p7_100", "p2p7_100:1", 1)
     chat = ScriptedChat([ok, HarajRefused(429)])
-    assert dispatch_pending(store, chat, budget_seconds=600, sleep=sleep, clock=lambda: now[0]) == 1
+    assert dispatch_pending(store, chat, budget_seconds=600, sleep=sleep, clock=lambda: now[0], outreach=Outreach(min_spacing=20, jitter=0)) == 1
     assert slept == [0, 20]
     assert statuses(store) == [("sent", None), ("queued", "REFUSED_429"), ("queued", None)]
     # Paused for 30 minutes: nothing goes out, not even the untouched third seller.

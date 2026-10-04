@@ -3978,7 +3978,7 @@ function renderSeller() {
   // The invite already reached him in Haraj; repeating it here is noise.
   const messages = (view.messages || [])
     .filter((item) => item.body || item.offer)
-    .filter((item) => !(item.sender_role !== "seller" && /^\s*السلام عليكم عزيزي البائع/.test(item.body || "")));
+    .filter((item) => !(item.sender_role !== "seller" && (item.invite || /^\s*السلام عليكم عزيزي البائع/.test(item.body || ""))));
 
   // What he is asked for, in one glance: the item, the city, and any pictures the customer
   // attached. The customer's own notes are not his to see (seller_view keeps them back).

@@ -1,5 +1,6 @@
 """TSR-002: one Haraj account means one conversation per seller, shared by every buyer who asked him.
-A reply is filed by the request reference it quotes; without one it is never guessed across buyers."""
+A reply is filed by the request reference it quotes. Without one it goes to the latest request we
+wrote to that seller about, across buyers too (owner rule, 2026-10-04)."""
 
 import time
 from pathlib import Path
@@ -77,26 +78,27 @@ def test_a_reply_quoting_the_reference_reaches_that_buyer_only(tmp_path: Path):
     assert market.store.unmatched_inbound() == []
 
 
-def test_without_a_reference_a_reply_is_never_guessed_across_buyers(tmp_path: Path):
+def test_without_a_reference_a_reply_goes_to_the_latest_request_he_was_sent(tmp_path: Path):
     market = Market(tmp_path)
     alice = market.ask(market.alice, "كامري 2015")
     bob = market.ask(market.bob, "لاندكروزر")
     market.run()
-    market.reply(100, "الكامري 2015 موجودة بسعر 45000 ريال، رقمي 0555555555")
-    assert market.run() == (0, 0)
-    assert market.seen_by(market.alice, alice) == ([], [])
-    assert market.seen_by(market.bob, bob) == ([], [])
-    kept = market.store.unmatched_inbound(CONVERSATION)
-    assert [(item["haraj_message_id"], item["seller_id"]) for item in kept] == [(f"{CONVERSATION}:100", "77")]
-    assert sorted(kept[0]["candidate_request_ids"]) == sorted([alice["id"], bob["id"]])
-    # Read once: the next sync neither files it nor keeps it twice.
-    assert market.run() == (0, 0)
-    assert len(market.store.unmatched_inbound()) == 1
-    # A later reply that quotes Bob's reference still reaches Bob.
-    market.reply(101, f"{bob['ref_code']} اللاندكروزر متوفر 180 ألف")
+    # Bob's request reached him last: an unreferenced «هلا» answers that one.
+    market.reply(100, "هلا")
     assert market.run() == (0, 1)
-    assert market.seen_by(market.bob, bob) == ([f"{bob['ref_code']} اللاندكروزر متوفر 180 ألف"], [180000.0])
+    assert market.seen_by(market.bob, bob) == (["هلا"], [])
     assert market.seen_by(market.alice, alice) == ([], [])
+    assert market.store.unmatched_inbound() == []
+    # Read once: the next sync does not file it twice.
+    assert market.run() == (0, 0)
+    # A reply that quotes Alice's reference still reaches Alice.
+    market.reply(101, f"{alice['ref_code']} الكامري موجودة 45000 ريال")
+    assert market.run() == (0, 1)
+    assert market.seen_by(market.alice, alice) == ([f"{alice['ref_code']} الكامري موجودة 45000 ريال"], [45000.0])
+    # One that names a request that is not his conversation's is kept aside, not guessed.
+    market.reply(102, "بخصوص T-999999 متوفر")
+    assert market.run() == (0, 0)
+    assert [item["haraj_message_id"] for item in market.store.unmatched_inbound(CONVERSATION)] == [f"{CONVERSATION}:102"]
 
 
 def test_one_open_request_in_the_conversation_keeps_the_old_rule(tmp_path: Path):
@@ -145,7 +147,9 @@ def test_choose_thread_rules():
     bob = _row("b", "bob", "T-222222", ["2026-09-01T11:00:00+00:00"])
     alice_second = _row("a2", "alice", "T-333333", ["2026-09-01T12:00:00+00:00"])
     at = "2026-09-01T13:00:00+00:00"
-    assert choose_thread([alice, bob], "السعر 500 ريال", at) is None
+    # No reference: the latest request sent to him, across buyers, marked as routed.
+    routed = choose_thread([alice, bob], "السعر 500 ريال", at)
+    assert (routed["request_id"], routed["routed_by"]) == ("b", "latest_sent")
     assert choose_thread([alice, bob], "رقم الطلب: T-111111 السعر 500 ريال", at)["request_id"] == "a"
     assert choose_thread([alice, bob], "رقم الطلب ٢٢٢٢٢٢", at)["request_id"] == "b"
     # A reference for a request that is not in this conversation proves nothing.

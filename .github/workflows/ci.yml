@@ -1,0 +1,44 @@
+name: ci
+
+# Every test, on SQLite and on a throwaway Postgres built from supabase/migrations.
+# Nothing here reaches Haraj: the one live search test is marked `integration` and skipped.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: pg
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      FARQ_TEST_DATABASE_URL: postgresql://postgres:pg@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Supabase roles the migrations grant to
+        run: |
+          psql "$FARQ_TEST_DATABASE_URL" -c "create role anon" -c "create role authenticated" -c "create role service_role" || true
+          psql "$FARQ_TEST_DATABASE_URL" -c "alter role postgres set search_path = taseer, public"
+      - name: Migration rolls back and re-applies
+        run: |
+          for f in supabase/migrations/*.sql; do psql "$FARQ_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"; done
+          psql "$FARQ_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/rollbacks/20261004120000_taseer_own_haraj_account.down.sql
+          psql "$FARQ_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f supabase/migrations/20261004120000_taseer_own_haraj_account.sql
+      - name: Tests
+        run: python -m pytest -q -m "not integration"

@@ -41,10 +41,10 @@ from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
-from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
+from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement, qualify_recipients
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware, cors_origins
-from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids, seller_key
+from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_listings, search_seller_ids, seller_key
 from farq.subscriptions import PaymentsUnavailable, SubscriptionError
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
@@ -753,8 +753,14 @@ def create_app(
         return None
 
     def _remember_sellers(trace_id: str, user_id: str | None, results) -> None:
-        # A quote request may only go to sellers a search showed (TSR-014).
+        # A quote request may only go to sellers a search showed (TSR-014), and a Haraj invite
+        # only for a listing of theirs the search showed (farq.limits.qualify_recipients).
+        results = list(results)
         store.record_search_sellers(trace_id, user_id, sorted(search_seller_ids(results)))
+        try:
+            store.record_search_listings(trace_id, user_id, search_listings(results))
+        except Exception:  # noqa: BLE001 - the search itself must not fail on this
+            log.warning("search listings were not recorded for %s", trace_id, exc_info=True)
 
     def _response_results(response) -> list:
         return [*response.results, *(result for group in response.groups for result in group.results)]
@@ -977,10 +983,25 @@ def create_app(
 
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        # Only sellers whose own listing, shown to this customer, names the item are invited; the
+        # listing's title is what the invite quotes. The app's own say on a title is not taken.
+        picked = [
+            RequestRecipient(seller_id=item.seller_id, seller_name=item.seller_name, ad_id=item.ad_id, need=item.need, listing_url=item.listing_url)
+            for item in body.recipients
+        ]
         try:
-            check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
+            check_new_request(store, limits, user_id, picked, body.need, body.trace_id)
         except LimitExceeded as exc:
             raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+        recipients, dropped = qualify_recipients(store, limits, user_id, picked, body.need, body.city, body.trace_id)
+        for item, why in dropped:
+            log.info("request by %s: seller %s not invited for %r (%s)", user_id, item.seller_id, item.need or body.need, why)
+        if picked and not recipients:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "NO_MATCHING_LISTING",
+                        "message": "ما لقينا عند الموردين المختارين إعلان يطابق طلبك. اختر موردين إعلاناتهم عن نفس الغرض.", "limit": None},
+            )
         # With the ledger on, the debit against Farq's CENTRAL billing ledger here IS the
         # item-allowance gate (check_new_request above still holds the other caps: sellers
         # per item, daily contacts, daily requests, recipients-from-search). The id is made
@@ -991,7 +1012,7 @@ def create_app(
         ledger_active = limits.ledger_enabled and not (
             getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
         )
-        needs = list(dict.fromkeys(item.need or body.need or "" for item in body.recipients))
+        needs = list(dict.fromkeys(item.need or body.need or "" for item in recipients))
         item_keys = [f"item:{request_id}:{item_need or ''}" for item_need in needs]
 
         farq_uid = store.farq_user_id(user_id) if ledger_active else None
@@ -1050,16 +1071,7 @@ def create_app(
                 body.notes,
                 body.city,
                 body.attributes,
-                [
-                    RequestRecipient(
-                        seller_id=item.seller_id,
-                        seller_name=item.seller_name,
-                        ad_id=item.ad_id,
-                        need=item.need,
-                        listing_url=item.listing_url,
-                    )
-                    for item in body.recipients
-                ],
+                recipients,
                 request_id=request_id,
             )
         except ValueError as exc:
@@ -1074,7 +1086,7 @@ def create_app(
         # Registered suppliers are told here, in the app, because nothing will be sent to
         # them through Haraj. The rest are reached by the worker, as before.
         background.add_task(
-            notify.notify_sellers, store, [item.seller_id for item in body.recipients],
+            notify.notify_sellers, store, [item.seller_id for item in recipients],
             "request_new", request_id=request_id, need=body.need,
         )
         record = store.get_request(request_id, user_id)
@@ -1448,7 +1460,7 @@ def create_app(
     def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
         # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
         require_cron(authorization)
-        # One run a minute: up to three sends 20 s apart, then read replies.
+        # One run a minute: at most a send or two (farq.outreach spacing and jitter), then read replies.
         started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
         received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
@@ -1461,6 +1473,10 @@ def create_app(
 
     def _watch_queue() -> dict:
         health = store.queue_health()
+        # "canary": the sending account waits for the owner's approved first send, so a queue
+        # that does not move is held on purpose, not stuck. "closed": nothing may send.
+        health["send_mode"] = getattr(chat, "send_mode", "open")
+        health["send_account"] = getattr(chat, "send_account_id", None)
         breached = health["drain_minutes"] >= QUEUE_ALERT_MINUTES or health["send_paused"]
         health["alert"] = breached
         if breached:
@@ -1474,7 +1490,7 @@ def create_app(
                     where,
                     "تنبيه: طابور إرسال فرق",
                     f"في الطابور {health['queued']} رسالة، وتحتاج نحو {health['drain_minutes']} دقيقة للإرسال."
-                    f" الإرسال موقوف: {health['send_paused']}."
+                    f" الإرسال موقوف: {health['send_paused']}. وضع الإرسال: {health['send_mode']}."
                     f" نسبة التسليم داخل التطبيق آخر 30 يوم: {health['in_app_share_30d']}.",
                 )
         return health

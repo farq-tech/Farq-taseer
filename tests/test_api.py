@@ -10,7 +10,8 @@ from farq.config import SearchConfig
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 from farq.live_haraj import LiveBatch, QueryFetch
-from farq.store import Store
+from farq.outreach import invite_seed, personal_invite
+from farq.store import QUOTE_LINK, Store, invite_text
 from farq.worker import poll_once
 
 
@@ -349,13 +350,14 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     tagged = lambda text: f"{text}\nرقم الطلب: {created['ref_code']}"
 
     def invite(item, seller):
+        # The opener and wording vary per seller (farq.outreach); the item, the city, his own
+        # quote link and the request reference do not.
         return tagged(
-            "السلام عليكم عزيزي البائع\nلدينا مشتري يطلب توفير:\n"
-            f"{item} في الرياض\nإذا كانت متوفرة، افتح الرابط التالي وقدّم عرضك\n"
-            f"https://taseer.farq.sa/s/{tokens[seller]}"
+            personal_invite(invite_text(item, "الرياض"), title=None, seed=invite_seed(request_id, seller))
+            .replace(QUOTE_LINK, f"https://taseer.farq.sa/s/{tokens[seller]}")
         )
 
-    # Farq's fixed invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
+    # The invite, each seller with his own quote link; the customer still sees «طلب عرض سعر».
     assert sorted((seller, body) for _conv, seller, body in haraj.sent) == [
         ("11", invite("سباك", "11")),
         ("12", invite("سباك", "12")),

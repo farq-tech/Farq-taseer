@@ -41,6 +41,12 @@ class Limits:
     daily_requests: int = field(default_factory=lambda: _env_int("FARQ_DAILY_REQUEST_LIMIT", 30))
     daily_messages: int = field(default_factory=lambda: _env_int("FARQ_DAILY_MESSAGE_LIMIT", 200))
     recipients_from_search: bool = field(default_factory=lambda: _env_bool("FARQ_RECIPIENTS_FROM_SEARCH", True))
+    # 2026-10-04 (owner-approved): never more than this many sellers on one request, whatever the
+    # plan, because Haraj reads twenty identical messages from one account as bulk messaging.
+    max_invites_per_request: int = field(default_factory=lambda: max(1, _env_int("FARQ_MAX_INVITES_PER_REQUEST", 8)))
+    # A Haraj seller is invited only for a listing of his, shown to this customer, that names the
+    # item (farq.outreach.listing_matches). Applies with recipients_from_search.
+    require_listing_match: bool = field(default_factory=lambda: _env_bool("FARQ_REQUIRE_LISTING_MATCH", True))
     search_memory_days: int = field(default_factory=lambda: _env_int("FARQ_SEARCH_MEMORY_DAYS", 7))
     # "auto" means: require it exactly when a verification email can be sent. Demanding a
     # confirmation nobody can receive would lock out every customer, so the gate follows
@@ -172,7 +178,7 @@ def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlemen
             plan_code=OPEN_ACCOUNT,
             plan_name="حساب مفتوح",
             items=OPEN_ALLOWANCE,
-            sellers_per_item=limits.max_sellers_per_item,
+            sellers_per_item=min(limits.max_sellers_per_item, limits.max_invites_per_request),
             daily_contacts=OPEN_ALLOWANCE,
             period_start=None,
             items_used=store.count_items(user_id, _trial_since(store, user_id)),
@@ -195,7 +201,7 @@ def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlemen
             plan_code=None,
             plan_name="التجربة المجانية",
             items=limits.trial_items,
-            sellers_per_item=limits.trial_sellers_per_item,
+            sellers_per_item=min(limits.trial_sellers_per_item, limits.max_invites_per_request),
             daily_contacts=limits.trial_daily_contacts,
             period_start=None,
             # Since the account's own reset mark, not since it was created, so returning a
@@ -213,7 +219,7 @@ def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlemen
         plan_code=subscription["plan"],
         plan_name=plan.get("name_ar") or subscription["plan"],
         items=int(plan.get("monthly_items") or limits.trial_items),
-        sellers_per_item=min(sellers, limits.max_sellers_per_item),
+        sellers_per_item=min(sellers, limits.max_sellers_per_item, limits.max_invites_per_request),
         daily_contacts=int(plan.get("daily_contacts") or limits.trial_daily_contacts),
         period_start=period_start,
         items_used=store.count_items(user_id, period_start),
@@ -266,6 +272,10 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
             message = f"انتهت التجربة المجانية ({allowance.items} بنود). اشترك لإرسال طلبات جديدة."
         raise LimitExceeded(402, "ITEM_ALLOWANCE_EXHAUSTED", message, allowance.items)
 
+    if len({seller_key(item.seller_id) for item in recipients}) > limits.max_invites_per_request:
+        message = f"يمكن إرسال الطلب إلى {limits.max_invites_per_request} موردين كحد أقصى في الطلب الواحد."
+        raise LimitExceeded(403, "TOO_MANY_SELLERS", message, limits.max_invites_per_request)
+
     if any(len(sellers) > allowance.sellers_per_item for sellers in per_item.values()):
         suffix = "." if allowance.subscribed else " في التجربة المجانية."
         message = f"يمكن إرسال الطلب إلى {allowance.sellers_per_item} موردين كحد أقصى لكل بند" + suffix
@@ -290,3 +300,52 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
 def check_new_message(store, limits: Limits, user_id: str) -> None:
     if store.count_customer_messages(user_id, _since(days=1)) >= limits.daily_messages:
         raise LimitExceeded(429, "DAILY_MESSAGE_LIMIT", f"وصلت للحد اليومي للرسائل ({limits.daily_messages} رسالة). حاول مرة ثانية بكرة.", limits.daily_messages)
+
+
+def qualify_recipients(store, limits: Limits, user_id: str, recipients, default_need: str | None, city: str | None, trace_id: str | None = None, now=None):
+    """The recipients Taseer may invite, each with the title of his own listing that it names.
+
+    Returns (kept, dropped). A Haraj seller is kept only for a listing of his that a search showed
+    this customer, that passed eligibility (not a «near» match), and whose title or category names
+    the requested item. Of several such listings, the one the recipient was picked from wins, then
+    one in the request's city, then the most recently posted. A registered supplier (reached in his
+    own app, not through Haraj) is kept as he is. Nothing is invented: no listing, no invite.
+    ``dropped`` is [(recipient, reason)] for the log."""
+    from farq.outreach import Outreach, listing_matches, preference
+
+    recipients = list(recipients)
+    if not (limits.recipients_from_search and limits.require_listing_match):
+        return recipients, []
+    allow_near = Outreach().allow_near
+    registered = set()
+    finder = getattr(store, "suppliers_for_sellers", None)
+    if finder is not None:
+        registered = {seller_key(row.get("haraj_seller_id")) for row in finder([item.seller_id for item in recipients]) if row.get("haraj_seller_id")}
+    shown: dict[str, list[dict]] = {}
+    for listing in store.searched_listings(user_id, trace_id, _since(days=limits.search_memory_days)):
+        shown.setdefault(seller_key(listing["seller_id"]), []).append(listing)
+    kept, dropped = [], []
+    for item in recipients:
+        key = seller_key(item.seller_id)
+        if key in registered:
+            kept.append(item)
+            continue
+        need = item.need or default_need
+        candidates = [
+            listing for listing in shown.get(key, [])
+            if (allow_near or listing.get("match", "exact") == "exact") and listing_matches(need, listing.get("title"), listing.get("category_tags"))
+        ]
+        if not candidates:
+            dropped.append((item, "no_matching_listing" if shown.get(key) else "no_listing"))
+            continue
+        picked = [listing for listing in candidates if item.ad_id and str(listing.get("ad_id")) == str(item.ad_id)]
+        best = picked[0] if picked else sorted(candidates, key=lambda listing: preference(listing, city, now))[0]
+        update = {"listing_title": best["title"], "ad_id": item.ad_id or best["ad_id"]}
+        kept.append(item.model_copy(update=update) if hasattr(item, "model_copy") else _with(item, update))
+    return kept, dropped
+
+
+def _with(item, update: dict):
+    for name, value in update.items():
+        setattr(item, name, value)
+    return item
