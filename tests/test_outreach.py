@@ -267,8 +267,27 @@ def test_a_follow_up_on_an_old_account_thread_opens_a_conversation_on_the_new_on
     assert dispatch_pending(store, chat, budget_seconds=600, sleep=lambda s: None, clock=time.time) == 1
     conversation, seller, body = chat.sent[0]
     assert conversation is None and seller == "17035483" and body.startswith("كم آخر سعر؟")
-    thread = store._connection.execute("select haraj_conversation_id, haraj_account_id, high_water from haraj_threads").fetchone()
+    thread = store._connection.execute("select haraj_conversation_id, haraj_account_id, high_water, legacy_conversation_id, legacy_high_water from haraj_threads").fetchone()
     assert (thread["haraj_conversation_id"], thread["haraj_account_id"], thread["high_water"]) == (f"p2p{NEW}_17035483", NEW, 1)
+    # The old conversation is kept, with its own read position, and is still read.
+    assert (thread["legacy_conversation_id"], thread["legacy_high_water"]) == (old_topic, 40)
+
+    class BothInboxes(AccountChat):
+        def fetch(self, *, conversation_id, seller_id, after_seq):
+            replies = {
+                old_topic: [InboundMessage(f"{old_topic}:41", "متوفر عندي 1200 ريال", NOW.isoformat(), 41)],
+                f"p2p{NEW}_17035483": [InboundMessage(f"p2p{NEW}_17035483:2", "تمام", NOW.isoformat(), 2)],
+            }[conversation_id]
+            assert after_seq == (40 if conversation_id == old_topic else 1), (conversation_id, after_seq)
+            return [item for item in replies if item.seq > after_seq]
+
+    read = [row["haraj_conversation_id"] for row in store.threads_to_sync(now=time.time() + 3600)]
+    assert sorted(read) == sorted([old_topic, f"p2p{NEW}_17035483"])
+    assert sync_replies(store, BothInboxes(), sleep=lambda s: None, clock=lambda: time.time() + 3600) == 2
+    bodies = sorted(row["body"] for row in store._connection.execute("select body from messages where sender_role = 'seller' and request_id = ?", (request_id,)))
+    assert bodies == ["تمام", "متوفر عندي 1200 ريال"]
+    after = store._connection.execute("select high_water, legacy_high_water from haraj_threads").fetchone()
+    assert (after["high_water"], after["legacy_high_water"]) == (2, 41)
 
 
 def test_an_account_that_cannot_send_leaves_the_queue_untouched(tmp_path: Path):
@@ -360,6 +379,25 @@ def test_only_sellers_whose_own_listing_matches_are_invited():
         "2": "near_match", "3": "listing_not_matching", "4": "generic_account",
         "5": "generic_account", "7": "no_listing",
     }
+
+
+def test_a_sellers_listing_for_another_item_never_stands_in():
+    listings = [listing("9", "x1", "مكيف سبليت", need="مكيف"), listing("9", "y1", "ثلاجة", match="near", need="ثلاجة")]
+    picked = [pick("9", "معرض التبريد", "y1", "ثلاجة"), pick("9", "معرض التبريد", None, "مكيف")]
+    selection = select_recipients(picked, listings, "الرياض", None, Targeting(max_invites=8, require_listing_match=True), NOW)
+    assert [(item.need, item.ad_id) for item in selection.kept] == [("مكيف", "x1")]
+    assert selection.skipped == [{"seller_id": "9", "seller_name": "معرض التبريد", "need": "ثلاجة", "reason": "near_match"}]
+
+
+def test_a_generic_account_is_judged_by_the_name_the_search_showed():
+    row = {**listing("4", "a4", "بركس 3x4 مستخدم نظيف", days=60), "seller_name": "anonymous4haraj"}
+    renamed = pick("4", "مؤسسة البركسات الحديثة", "a4")  # the request body may say anything
+    selection = select_recipients([renamed], [row], "الرياض", "بركسات", Targeting(max_invites=8, require_listing_match=True), NOW)
+    assert selection.kept == [] and selection.skipped[0]["reason"] == "generic_account"
+    # A kept seller carries the recorded name, not the one sent in.
+    shop = {**listing("1", "a1", "بركس للبيع"), "seller_name": "ابو عبدالرحمن للبركسات"}
+    kept = select_recipients([pick("1", "x", "a1")], [shop], "الرياض", "بركسات", Targeting(max_invites=8, require_listing_match=True), NOW).kept
+    assert kept[0].seller_name == "ابو عبدالرحمن للبركسات"
 
 
 def test_one_invite_per_seller_and_at_most_eight_the_best_first():

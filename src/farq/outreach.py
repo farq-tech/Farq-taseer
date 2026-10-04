@@ -26,8 +26,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from farq.config import _env_bool, _env_int
-from farq.eligibility import _group_hit
-from farq.text import normalize
+from farq.cities import known_city
+from farq.eligibility import _group_hit, contains_term
+from farq.text import normalize, tokens
 
 # -- targeting ------------------------------------------------------------------------
 
@@ -101,6 +102,20 @@ def _moment(value) -> datetime | None:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def _item_words(need: str | None) -> list[str]:
+    """The words that name an item, without city names: «بركسات الرياض» -> [«بركسات»]."""
+    return [word for word in tokens((need or "").replace(":", " ")) if len(word) >= 3 and known_city(word) is None]
+
+
+def same_item(listing_need: str | None, need: str | None) -> bool:
+    """Whether a listing recorded for one search need can stand for a request item. A listing
+    with no recorded need, or a request item with no words, is not told apart."""
+    asked, recorded = _item_words(need), _item_words(listing_need)
+    if not asked or not recorded:
+        return True
+    return any(contains_term(" ".join(recorded), word) or contains_term(" ".join(asked), other) for word in asked for other in recorded)
+
+
 def _key(seller_id: str) -> str:
     from farq.store import seller_key
 
@@ -129,12 +144,13 @@ def select_recipients(recipients, listings: list[dict], city: str | None, defaul
     def usable(row: dict | None) -> bool:
         return row is not None and row.get("match", "exact") == "exact" and bool(row.get("title_match")) and row.get("listing_state") not in ("deleted", "stale")
 
-    def evidence_for(item) -> dict | None:
+    def evidence_for(item, need: str) -> dict | None:
         key = _key(item.seller_id)
         named = by_ad.get((key, str(item.ad_id))) if item.ad_id else None
         if usable(named):
             return named
-        others = [row for row in by_seller.get(key, []) if usable(row)]
+        # Another of his listings stands in only for the same item, never for another item of the request.
+        others = [row for row in by_seller.get(key, []) if usable(row) and same_item(row.get("need"), need)]
         if not others:
             return named
         return max(others, key=lambda row: _moment(row.get("posted_at")) or datetime.min.replace(tzinfo=timezone.utc))
@@ -143,12 +159,14 @@ def select_recipients(recipients, listings: list[dict], city: str | None, defaul
     candidates: dict[tuple[str, str], tuple[tuple, object, dict | None]] = {}
     for item in recipients:
         need = item.need or default_need or ""
-        evidence = evidence_for(item)
+        evidence = evidence_for(item, need)
         reason = None
         posted = _moment(evidence.get("posted_at")) if evidence else None
         recent = posted is not None and (now - posted).days <= config.recent_days
         in_city = bool(evidence and city and evidence.get("ad_city") == city)
-        generic = generic_account(item.seller_name)
+        # The account name the search recorded, not the one the request body carries.
+        recorded_name = evidence.get("seller_name") if evidence else None
+        generic = generic_account(recorded_name if recorded_name is not None else item.seller_name)
         if config.require_listing_match:
             if evidence is None:
                 reason = "no_listing"
@@ -165,7 +183,10 @@ def select_recipients(recipients, listings: list[dict], city: str | None, defaul
             continue
         rank = (in_city, recent, not generic, (posted or datetime.min.replace(tzinfo=timezone.utc)).timestamp())
         if evidence is not None:
-            item = item.model_copy(update={"ad_id": str(evidence["ad_id"]), "ad_title": evidence.get("ad_title")})
+            update = {"ad_id": str(evidence["ad_id"]), "ad_title": evidence.get("ad_title")}
+            if recorded_name:
+                update["seller_name"] = recorded_name
+            item = item.model_copy(update=update)
         slot = (_key(item.seller_id), need)
         if slot in candidates:
             # One invite per seller per item, whichever of his ads were picked.

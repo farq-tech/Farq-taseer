@@ -466,6 +466,35 @@ def _sync_health(never_read, overdue, oldest_wait, answered_newest_first) -> dic
     }
 
 
+# A thread lives on one conversation; after Taseer moved to its own sending account, a thread the
+# old shared account had opened keeps that conversation as legacy_conversation_id, still read.
+# Every conversation of every thread, one row each, with that conversation's own read position.
+THREAD_CONVERSATIONS = (
+    "select request_id, seller_id, need, ad_id, haraj_conversation_id, high_water, checked_at, retry_at, failure_code, last_fetched_at"
+    " from haraj_threads where haraj_conversation_id is not null"
+    " union all select request_id, seller_id, need, ad_id, legacy_conversation_id, legacy_high_water, checked_at, retry_at, failure_code, last_fetched_at"
+    " from haraj_threads where legacy_conversation_id is not null"
+)
+# After a send: the thread takes the sending conversation; one it leaves is kept as legacy (read on).
+# Params: new conversation x3, seq x2, new conversation, account id, request_id, seller_id, need.
+_MOVE_THREAD = (
+    "update haraj_threads set"
+    " legacy_conversation_id = case when haraj_conversation_id is not null and haraj_conversation_id <> %s then haraj_conversation_id else legacy_conversation_id end,"
+    " legacy_high_water = case when haraj_conversation_id is not null and haraj_conversation_id <> %s then high_water else legacy_high_water end,"
+    " high_water = case when coalesce(haraj_conversation_id, '') = %s then coalesce(high_water, %s) else %s end,"
+    " haraj_conversation_id = %s, haraj_account_id = coalesce(%s, haraj_account_id)"
+    " where request_id = %s and seller_id = %s and need = %s"
+)
+# A reply read: the read position of the conversation it came from moves on.
+# Params: conversation, seq, conversation, seq, request_id, seller_id, need.
+_ADVANCE_THREAD = (
+    "update haraj_threads set"
+    " high_water = case when haraj_conversation_id = %s then greatest(coalesce(high_water, 0), %s) else high_water end,"
+    " legacy_high_water = case when legacy_conversation_id = %s then greatest(coalesce(legacy_high_water, 0), %s) else legacy_high_water end"
+    " where request_id = %s and seller_id = %s and need = %s"
+)
+
+
 def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | None:
     """The thread a seller's Haraj reply belongs to, or None when that cannot be known.
 
@@ -893,6 +922,8 @@ class Store:
         self._ensure_column("message_deliveries", "last_attempt_at", "text")
         self._ensure_column("message_deliveries", "haraj_account_id", "text")
         self._ensure_column("haraj_threads", "haraj_account_id", "text")
+        self._ensure_column("haraj_threads", "legacy_conversation_id", "text")
+        self._ensure_column("haraj_threads", "legacy_high_water", "integer")
         self._ensure_column("request_recipients", "need", "text")
         self._ensure_column("request_recipients", "reply_token", "text")
         self._ensure_column("request_recipients", "send_status", "text")
@@ -1092,6 +1123,7 @@ class Store:
             create index if not exists search_listings_user on search_listings (user_id, created_at);
             """
         )
+        self._ensure_column("search_listings", "seller_name", "text")
         self._connection.commit()
         self._seed_plans()
 
@@ -2140,9 +2172,8 @@ class Store:
             # Replies are read from our first message on: older history in the conversation is not imported.
             # A conversation that moved to another account starts its read position afresh.
             self._connection.execute(
-                "update haraj_threads set high_water = case when coalesce(haraj_conversation_id, '') = ? then coalesce(high_water, ?) else ? end,"
-                " haraj_conversation_id = ?, haraj_account_id = coalesce(?, haraj_account_id) where request_id = ? and seller_id = ? and need = ?",
-                (sent.haraj_conversation_id, sent.seq, sent.seq, sent.haraj_conversation_id, sent.account_id, *key),
+                _MOVE_THREAD.replace("%s", "?"),
+                (sent.haraj_conversation_id, sent.haraj_conversation_id, sent.haraj_conversation_id, sent.seq, sent.seq, sent.haraj_conversation_id, sent.account_id, *key),
             )
             # A fresh message makes its conversation due now, whatever back-off it was on.
             self._connection.execute(
@@ -2171,13 +2202,14 @@ class Store:
         the worker can space the next read of the whole conversation (see worker.poll_interval)."""
         stamp = datetime.fromtimestamp(now, tz=timezone.utc).isoformat() if now is not None else _now()
         rows = self._connection.execute(
-            "with due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
-            " from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?)"
+            f"with threads as ({THREAD_CONVERSATIONS}),"
+            " due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
+            " from threads where (retry_at is null or retry_at <= ?)"
             " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit ?)"
             " select t.*, r.created_at as request_created_at, r.deal_outcome,"
             " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
             " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
-            " join haraj_threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
+            " join threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
             " order by due.read_before, due.due_at, due.haraj_conversation_id",
             (stamp, limit),
         ).fetchall()
@@ -2211,16 +2243,17 @@ class Store:
     def _inbound_candidates(self, conversation_id: str) -> list[dict]:
         rows = self._connection.execute(
             "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at"
-            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ?",
-            (conversation_id,),
+            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ? or t.legacy_conversation_id = ?",
+            (conversation_id, conversation_id),
         ).fetchall()
         candidates = []
         for row in rows:
+            row = {**dict(row), "haraj_conversation_id": conversation_id}
             sends = self._connection.execute(
                 "select sent_at from message_deliveries where request_id = ? and seller_id = ? and need = ? and delivery_status = 'sent' and sent_at is not null",
                 (row["request_id"], row["seller_id"], row["need"]),
             ).fetchall()
-            candidates.append({**dict(row), "sends": [item["sent_at"] for item in sends]})
+            candidates.append({**row, "sends": [item["sent_at"] for item in sends]})
         return candidates
 
     def thread_for_inbound(self, conversation_id: str, sent_at: str, body: str = "") -> dict | None:
@@ -2272,11 +2305,11 @@ class Store:
         with self._db_lock:
             for row in rows:
                 self._connection.execute(
-                    "insert into search_listings (trace_id, user_id, seller_id, ad_id, ad_title, ad_city, posted_at, listing_state, match, title_match, need, created_at)"
-                    " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "insert into search_listings (trace_id, user_id, seller_id, ad_id, ad_title, ad_city, posted_at, listing_state, match, title_match, need, created_at, seller_name)"
+                    " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     " on conflict (trace_id, seller_id, ad_id) do update set user_id = coalesce(search_listings.user_id, excluded.user_id)",
                     (trace_id, user_id, seller_key(row["seller_id"]), row["ad_id"], row.get("ad_title"), row.get("ad_city"), row.get("posted_at"),
-                     row.get("listing_state"), row.get("match") or "exact", 1 if row.get("title_match") else 0, row.get("need"), created),
+                     row.get("listing_state"), row.get("match") or "exact", 1 if row.get("title_match") else 0, row.get("need"), created, row.get("seller_name")),
                 )
             self._connection.commit()
 
@@ -2369,8 +2402,12 @@ class Store:
     def conversation_checked(self, conversation_id: str, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int | None = None) -> None:
         moment = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
         self._connection.execute(
-            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ?, high_water = max(coalesce(high_water, 0), ?) where haraj_conversation_id = ?",
-            (moment.isoformat(), (moment + timedelta(seconds=retry_seconds)).isoformat(), failure_code, high_water or 0, conversation_id),
+            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ?,"
+            " high_water = case when haraj_conversation_id = ? then max(coalesce(high_water, 0), ?) else high_water end,"
+            " legacy_high_water = case when legacy_conversation_id = ? then max(coalesce(legacy_high_water, 0), ?) else legacy_high_water end"
+            " where haraj_conversation_id = ? or legacy_conversation_id = ?",
+            (moment.isoformat(), (moment + timedelta(seconds=retry_seconds)).isoformat(), failure_code,
+             conversation_id, high_water or 0, conversation_id, high_water or 0, conversation_id, conversation_id),
         )
         self._connection.commit()
 
@@ -2420,8 +2457,8 @@ class Store:
         """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
         if self._connection.execute("select 1 from messages where haraj_message_id = ?", (inbound.haraj_message_id,)).fetchone():
             self._connection.execute(
-                "update haraj_threads set high_water = max(coalesce(high_water, 0), ?) where request_id = ? and seller_id = ? and need = ?",
-                (inbound.seq, thread["request_id"], thread["seller_id"], thread["need"]),
+                _ADVANCE_THREAD.replace("%s", "?").replace("greatest(", "max("),
+                (thread["haraj_conversation_id"], inbound.seq, thread["haraj_conversation_id"], inbound.seq, thread["request_id"], thread["seller_id"], thread["need"]),
             )
             self._connection.commit()
             return None
@@ -2494,8 +2531,11 @@ class Store:
             (uuid4().hex, owner["owner_user_id"], request_id, "seller_reply", message.created_at),
         )
         self._connection.execute(
-            "update haraj_threads set last_fetched_at = ?, high_water = max(coalesce(high_water, 0), ?) where request_id = ? and seller_id = ? and need = ?",
-            (_now(), inbound.seq, request_id, seller_id, thread["need"]),
+            "update haraj_threads set last_fetched_at = ? where request_id = ? and seller_id = ? and need = ?", (_now(), request_id, seller_id, thread["need"])
+        )
+        self._connection.execute(
+            _ADVANCE_THREAD.replace("%s", "?").replace("greatest(", "max("),
+            (thread["haraj_conversation_id"], inbound.seq, thread["haraj_conversation_id"], inbound.seq, request_id, seller_id, thread["need"]),
         )
         self._connection.commit()
         return message
