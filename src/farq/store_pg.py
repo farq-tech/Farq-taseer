@@ -23,9 +23,13 @@ from psycopg_pool import ConnectionPool
 
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
+from farq import outreach
 from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_reference
 from farq.store import (
     _ANSWERED_SQL,
+    _ADVANCE_THREAD,
+    _MOVE_THREAD,
+    THREAD_CONVERSATIONS,
     _answered_window,
     _sync_health,
     DEAL_OUTCOMES,
@@ -343,8 +347,8 @@ class PgStore:
                 (request_id, owner_user_id, original_text, need, notes, city_name, Jsonb(attributes), first_token, _now(), ref_code),
             )
             conn.cursor().executemany(
-                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url)"
-                " values (%s, %s, %s, %s, %s, %s, 'queued', %s)",
+                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url, ad_title)"
+                " values (%s, %s, %s, %s, %s, %s, 'queued', %s, %s)",
                 [
                     (
                         request_id,
@@ -354,6 +358,7 @@ class PgStore:
                         item.need or need,
                         item.reply_token or (first_token if index == 0 else secrets.token_urlsafe(16)),
                         item.listing_url,
+                        item.ad_title,
                     )
                     for index, item in enumerate(recipients)
                 ],
@@ -857,8 +862,8 @@ class PgStore:
             "queued": queued,
             "sending": int(row["sending"] or 0),
             "oldest_queued_seconds": round(oldest),
-            # Three sends a minute is the whole platform, so the backlog is a clock.
-            "drain_minutes": round(queued / 3, 1),
+            # The send pace (spacing plus average jitter) is the whole platform, so the backlog is a clock.
+            "drain_minutes": round(queued * (outreach.send_spacing_seconds() + outreach.send_jitter_seconds() / 2) / 60, 1),
             "send_paused": bool(paused and paused["value"] and float(paused["value"]) > _epoch_now()),
             "in_app_share_30d": None if not total else round(in_app / total, 4),
         }
@@ -1311,31 +1316,48 @@ class PgStore:
             row = conn.execute("select * from files where id = %s", (file_id,)).fetchone()
         return None if row is None else {**dict(row), "data": bytes(row["data"])}
 
-    def claim_deliveries(self, limit: int = 50) -> list[dict]:
+    def queued_delivery_for(self, ref_code: str, seller_id: str) -> str | None:
+        """The oldest still-queued delivery of request ``ref_code`` to that Haraj seller."""
+        author = str(seller_id).rsplit(":", 1)[-1]
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select d.id from message_deliveries d join requests q on q.id = d.request_id"
+                " where q.ref_code = %s and d.delivery_status = 'queued' and d.seller_id in (%s, %s)"
+                " order by d.created_at limit 1",
+                (ref_code, author, f"haraj:seller:{author}"),
+            ).fetchone()
+        return row["id"] if row else None
+
+    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None) -> list[dict]:
+        """The oldest queued deliveries, marked sending; only that one when ``delivery_id`` is given."""
         # SKIP LOCKED: two instances never claim the same delivery.
         with self._pool.connection() as conn:
             rows = conn.execute(
                 """
                 update message_deliveries d set delivery_status = 'sending', attempts = d.attempts + 1, last_attempt_at = now()
                 where d.id in (
-                  select id from message_deliveries where delivery_status = 'queued' order by created_at limit %s for update skip locked
+                  select id from message_deliveries where delivery_status = 'queued' and (%s::text is null or id = %s)
+                  order by created_at limit %s for update skip locked
                 )
                 returning d.id, d.request_id, d.seller_id, d.need, d.message_id, d.created_at
                 """,
-                (limit,),
+                (delivery_id, delivery_id, limit),
             ).fetchall()
             claimed = []
             for row in sorted(rows, key=lambda item: item["created_at"]):
                 detail = conn.execute(
                     """
-                    select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id,
+                    select coalesce(m.haraj_text, m.body) as body, m.media, t.ad_id, t.haraj_conversation_id, t.haraj_account_id,
                       (select r.reply_token from request_recipients r where r.request_id = %s and r.seller_id = %s
                        order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token,
+                      (select r.ad_title from request_recipients r where r.request_id = %s and r.seller_id = %s
+                       order by coalesce(r.need, '') = %s desc, r.id limit 1) as ad_title,
                       (select q.ref_code from requests q where q.id = t.request_id) as ref_code
                     from messages m join haraj_threads t on t.request_id = %s and t.seller_id = %s and t.need = %s
                     where m.id = %s
                     """,
-                    (row["request_id"], row["seller_id"], row["need"], row["request_id"], row["seller_id"], row["need"], row["message_id"]),
+                    (row["request_id"], row["seller_id"], row["need"], row["request_id"], row["seller_id"], row["need"],
+                     row["request_id"], row["seller_id"], row["need"], row["message_id"]),
                 ).fetchone()
                 claimed.append({"id": row["id"], "request_id": row["request_id"], "seller_id": row["seller_id"], "need": row["need"], **(detail or {})})
             return claimed
@@ -1348,13 +1370,14 @@ class PgStore:
             key = (row["request_id"], row["seller_id"], row["need"])
             if sent is not None:
                 conn.execute(
-                    "update message_deliveries set delivery_status = 'sent', haraj_message_id = %s, sent_at = now(), error = null where id = %s",
-                    (sent.haraj_message_id, delivery_id),
+                    "update message_deliveries set delivery_status = 'sent', haraj_message_id = %s, sent_at = now(), error = null, haraj_account_id = %s where id = %s",
+                    (sent.haraj_message_id, sent.account_id, delivery_id),
                 )
                 # Replies are read from our first message on: older history in the conversation is not imported.
+                # A conversation that moved to another account starts its read position afresh.
                 conn.execute(
-                    "update haraj_threads set haraj_conversation_id = %s, high_water = coalesce(high_water, %s) where request_id = %s and seller_id = %s and need = %s",
-                    (sent.haraj_conversation_id, sent.seq, *key),
+                    _MOVE_THREAD,
+                    (sent.haraj_conversation_id, sent.haraj_conversation_id, sent.haraj_conversation_id, sent.seq, sent.seq, sent.haraj_conversation_id, sent.account_id, *key),
                 )
                 # A fresh message makes its conversation due now, whatever back-off it was on.
                 conn.execute(
@@ -1383,13 +1406,14 @@ class PgStore:
         the worker can space the next read of the whole conversation (see worker.poll_interval)."""
         with self._pool.connection() as conn:
             rows = conn.execute(
-                "with due as (select haraj_conversation_id, bool_and(checked_at is not null) as read_before, min(retry_at) as due_at"
-                " from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
+                f"with threads as ({THREAD_CONVERSATIONS}),"
+                " due as (select haraj_conversation_id, bool_and(checked_at is not null) as read_before, min(retry_at) as due_at"
+                " from threads where (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
                 " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit %s)"
                 " select t.*, r.created_at as request_created_at, r.deal_outcome,"
                 " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
                 " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
-                " join haraj_threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
+                " join threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
                 " order by due.read_before, due.due_at, due.haraj_conversation_id",
                 (now, limit),
             ).fetchall()
@@ -1444,10 +1468,10 @@ class PgStore:
             "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at,"
             " coalesce((select array_agg(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
             " and d.need = t.need and d.delivery_status = 'sent' and d.sent_at is not null), '{}') as sends"
-            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s",
-            (conversation_id,),
+            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s or t.legacy_conversation_id = %s",
+            (conversation_id, conversation_id),
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "haraj_conversation_id": conversation_id} for row in rows]
 
     def thread_for_inbound(self, conversation_id: str, sent_at: str, body: str = "") -> dict | None:
         """The request a seller's reply belongs to (see store.choose_thread); None when it cannot be told apart."""
@@ -1485,6 +1509,43 @@ class PgStore:
                 " on conflict (trace_id, seller_id) do update set user_id = coalesce(search_sellers.user_id, excluded.user_id)",
                 rows,
             )
+
+    def record_search_listings(self, trace_id: str, user_id: str | None, rows: list[dict]) -> None:
+        """What each search proved about the listings it showed (outreach.listing_evidence)."""
+        values = [
+            (trace_id, user_id, seller_key(row["seller_id"]), row["ad_id"], row.get("ad_title"), row.get("ad_city"), row.get("posted_at") or None,
+             row.get("listing_state"), row.get("match") or "exact", bool(row.get("title_match")), row.get("need"), row.get("seller_name"))
+            for row in rows
+        ]
+        if not values:
+            return
+        with self._pool.connection() as conn:
+            conn.cursor().executemany(
+                "insert into search_listings (trace_id, user_id, seller_id, ad_id, ad_title, ad_city, posted_at, listing_state, match, title_match, need, seller_name)"
+                " values (%s, %s, %s, %s, %s, %s, %s::timestamptz, %s, %s, %s, %s, %s)"
+                " on conflict (trace_id, seller_id, ad_id) do update set user_id = coalesce(search_listings.user_id, excluded.user_id)",
+                values,
+            )
+
+    def searched_listings(self, user_id: str, trace_id: str | None, since: str) -> list[dict]:
+        """Listings this user's searches showed since then (and an anonymous search he names)."""
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "select * from search_listings where (user_id = %s and created_at >= %s::timestamptz)"
+                " or (trace_id = %s and (user_id is null or user_id = %s)) order by created_at",
+                (user_id, since, trace_id, user_id),
+            ).fetchall()
+        return [{**dict(row), "posted_at": _iso(row["posted_at"])} for row in rows]
+
+    def haraj_sends_since(self, account_id: str | None, since_epoch: float) -> int:
+        """Messages Haraj accepted from this account (any account when None) since then."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select count(*) as count from message_deliveries where delivery_status = 'sent' and haraj_message_id is not null"
+                " and sent_at >= to_timestamp(%s) and (%s::text is null or haraj_account_id = %s)",
+                (since_epoch, account_id, account_id),
+            ).fetchone()
+        return int(row["count"])
 
     def searched_sellers(self, user_id: str, trace_id: str | None, since: str) -> set[str]:
         """Sellers this user's searches showed since then, and those of an anonymous search he names."""
@@ -1564,8 +1625,11 @@ class PgStore:
         with self._pool.connection() as conn:
             conn.execute(
                 "update haraj_threads set checked_at = coalesce(to_timestamp(%s), now()), retry_at = coalesce(to_timestamp(%s), now()) + make_interval(secs => %s),"
-                " failure_code = %s, high_water = greatest(coalesce(high_water, 0), %s) where haraj_conversation_id = %s",
-                (now, now, retry_seconds, failure_code, high_water or 0, conversation_id),
+                " failure_code = %s,"
+                " high_water = case when haraj_conversation_id = %s then greatest(coalesce(high_water, 0), %s) else high_water end,"
+                " legacy_high_water = case when legacy_conversation_id = %s then greatest(coalesce(legacy_high_water, 0), %s) else legacy_high_water end"
+                " where haraj_conversation_id = %s or legacy_conversation_id = %s",
+                (now, now, retry_seconds, failure_code, conversation_id, high_water or 0, conversation_id, high_water or 0, conversation_id, conversation_id),
             )
 
     def has_haraj_message(self, haraj_message_id: str) -> bool:
@@ -1600,12 +1664,10 @@ class PgStore:
         """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
         request_id, seller_id, need = thread["request_id"], thread["seller_id"], thread["need"] or None
         with self._pool.connection() as conn:
-            advance = (
-                "update haraj_threads set last_fetched_at = now(), high_water = greatest(coalesce(high_water, 0), %s)"
-                " where request_id = %s and seller_id = %s and need = %s"
-            )
+            conversation = thread["haraj_conversation_id"]
+            advance_args = (conversation, inbound.seq, conversation, inbound.seq, request_id, seller_id, thread["need"])
             if conn.execute("select 1 from messages where haraj_message_id = %s", (inbound.haraj_message_id,)).fetchone():
-                conn.execute(advance, (inbound.seq, request_id, seller_id, thread["need"]))
+                conn.execute(_ADVANCE_THREAD, advance_args)
                 return None
             recipient = conn.execute(
                 "select * from request_recipients where request_id = %s and seller_id = %s order by coalesce(need, '') = %s desc, id limit 1",
@@ -1661,7 +1723,8 @@ class PgStore:
                 "insert into notifications (id, user_id, request_id, kind, created_at) values (%s, %s, %s, %s, %s)",
                 (uuid4().hex, owner["owner_user_id"], request_id, "seller_reply", message.created_at),
             )
-            conn.execute(advance, (inbound.seq, request_id, seller_id, thread["need"]))
+            conn.execute("update haraj_threads set last_fetched_at = now() where request_id = %s and seller_id = %s and need = %s", (request_id, seller_id, thread["need"]))
+            conn.execute(_ADVANCE_THREAD, advance_args)
         return message
 
     AWARD_TEXT = "تم اختيار عرضك. بنتواصل معك لإكمال التفاصيل."
@@ -2145,6 +2208,7 @@ def _recipient(item) -> RequestRecipient:
         reply_token=item.get("reply_token"),
         send_status=item.get("send_status") or "unknown",
         listing_url=item.get("listing_url"),
+        ad_title=item.get("ad_title"),
     )
 
 

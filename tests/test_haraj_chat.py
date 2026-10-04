@@ -9,6 +9,7 @@ import pytest
 
 from farq.haraj_chat import (
     GRAPHQL_LOGIN,
+    HarajAccounts,
     HarajChatClient,
     HarajChatUnavailable,
     HarajRefused,
@@ -115,7 +116,7 @@ def test_send_opens_the_topic_then_posts_with_a_fresh_socket_session():
     haraj = FakeHaraj()
     client, sockets = make_client(haraj)
     sent = client.send(conversation_id=None, seller_id="haraj:seller:19676360", ad_id="1", body="السلام عليكم")
-    assert sent == SentMessage("p2p7_19676360", "p2p7_19676360:41", 41)
+    assert sent == SentMessage("p2p7_19676360", "p2p7_19676360:41", 41, account_id="7")
     topic, message = [call for call in haraj.calls if "/chat/" in str(call.url)]
     assert json.loads(topic.content) == {"type": "p2p", "with_id": 19676360}
     assert topic.headers["authorization"] == "Bearer token-1"
@@ -189,12 +190,26 @@ def test_fetch_refuses_topics_and_answers_that_are_not_ours():
     assert found[0].body == "رسالة غير نصية"
 
 
+TASEER_ENV = {
+    "HARAJ_TASEER_USERNAME": "taseer-own",
+    "HARAJ_TASEER_PASSWORD": "secret2",
+    "HARAJ_APP_LOGIN_URL": APP_URL,
+    "HARAJ_APP_USER_AGENT": "Haraj/7.8.1 iOS",
+}
+
+
 def test_nothing_is_sent_without_the_server_switches():
     assert isinstance(chat_from_env({}), NotConnectedChat)
-    assert isinstance(chat_from_env({**ENV, "HARAJ_USER_ID": "7"}), NotConnectedChat)
-    assert isinstance(chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1"}), NotConnectedChat)  # no account id
-    assert isinstance(chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_USER_ID": "7"}), HarajChatClient)
-    assert isinstance(chat_from_env({"HARAJ_TOKEN": "t", "HARAJ_SEND_ENABLED": "1", "HARAJ_FARQ_USER_ID": "7"}), HarajChatClient)
+    assert isinstance(chat_from_env({**TASEER_ENV, "HARAJ_TASEER_USER_ID": "8"}), NotConnectedChat)
+    assert isinstance(chat_from_env({**TASEER_ENV, "HARAJ_SEND_ENABLED": "1"}), NotConnectedChat)  # no account id
+    chat = chat_from_env({**TASEER_ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_TASEER_USER_ID": "8"})
+    assert isinstance(chat, HarajAccounts) and chat.send_account_id == "8"
+    # The old shared account never sends from Taseer: configured alone, nothing is sent.
+    assert isinstance(chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_USER_ID": "7"}), NotConnectedChat)
+    assert isinstance(chat_from_env({"HARAJ_TOKEN": "t", "HARAJ_SEND_ENABLED": "1", "HARAJ_FARQ_USER_ID": "7"}), NotConnectedChat)
+    # With the inbox on, it is still read.
+    reading = chat_from_env({**ENV, "HARAJ_INBOX_ENABLED": "1", "HARAJ_SEND_ENABLED": "1", "HARAJ_USER_ID": "7"})
+    assert isinstance(reading, HarajAccounts) and not reading.can_send and set(reading.readers) == {"7"}
 
 
 class ScriptedChat:
@@ -230,7 +245,9 @@ def statuses(store) -> list[tuple[str, str | None]]:
     return [(row["delivery_status"], row["error"]) for row in rows]
 
 
-def test_sends_are_spaced_and_a_refusal_stops_the_batch(tmp_path: Path):
+def test_sends_are_spaced_and_a_refusal_stops_the_batch(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HARAJ_SEND_SPACING_SECONDS", "20")
+    monkeypatch.setenv("HARAJ_SEND_JITTER_SECONDS", "0")
     store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
     request_with(store, 3)
     now = [1000.0]

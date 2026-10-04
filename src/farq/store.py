@@ -16,6 +16,7 @@ from uuid import uuid4
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 from farq.haraj_chat import InboundMessage, SentMessage, author_id, extract_quote, find_references, new_reference
+from farq import outreach
 
 ALL_SELLERS = "all_sellers"
 SINGLE_SELLER = "single_seller"
@@ -124,18 +125,10 @@ QUOTE_LINK = "{quote_link}"
 
 
 def invite_text(item: str, city: str | None) -> str:
-    """Farq's fixed invite: the item only, no quantities, prices, notes or buyer number.
-    The link is each seller's own quote page, filled in when the message is sent."""
-    line = f"{item.strip()} في {city}" if city else item.strip()
-    return "\n".join(
-        [
-            "السلام عليكم عزيزي البائع",
-            "لدينا مشتري يطلب توفير:",
-            line,
-            "إذا كانت متوفرة، افتح الرابط التالي وقدّم عرضك",
-            QUOTE_LINK,
-        ]
-    )
+    """The invite: the item and the city only, no quantities, prices, notes or buyer number.
+    The opener (naming the seller's own listing) and the link (his own quote page) are
+    filled in when the message is sent; see outreach.render_invite."""
+    return outreach.invite_text(item, city, QUOTE_LINK)
 
 
 def with_delivery(recipients: list[RequestRecipient], messages: list[Message]) -> list[RequestRecipient]:
@@ -289,7 +282,7 @@ def seller_message(message: Message, seller_id: str | None, sent_text: str | Non
     return {
         "id": message.id,
         "sender_role": message.sender_role,
-        "body": message.body if sent_text is None else sent_text.replace(QUOTE_LINK, "").strip(),
+        "body": message.body if sent_text is None else outreach.render_invite(sent_text, None, seed=message.id).replace(QUOTE_LINK, "").strip(),
         "created_at": message.created_at,
         "media": message.media,
         "offer": message.offer.model_dump(mode="json") if own and message.offer is not None else None,
@@ -473,14 +466,45 @@ def _sync_health(never_read, overdue, oldest_wait, answered_newest_first) -> dic
     }
 
 
+# A thread lives on one conversation; after Taseer moved to its own sending account, a thread the
+# old shared account had opened keeps that conversation as legacy_conversation_id, still read.
+# Every conversation of every thread, one row each, with that conversation's own read position.
+THREAD_CONVERSATIONS = (
+    "select request_id, seller_id, need, ad_id, haraj_conversation_id, high_water, checked_at, retry_at, failure_code, last_fetched_at"
+    " from haraj_threads where haraj_conversation_id is not null"
+    " union all select request_id, seller_id, need, ad_id, legacy_conversation_id, legacy_high_water, checked_at, retry_at, failure_code, last_fetched_at"
+    " from haraj_threads where legacy_conversation_id is not null"
+)
+# After a send: the thread takes the sending conversation; one it leaves is kept as legacy (read on).
+# Params: new conversation x3, seq x2, new conversation, account id, request_id, seller_id, need.
+_MOVE_THREAD = (
+    "update haraj_threads set"
+    " legacy_conversation_id = case when haraj_conversation_id is not null and haraj_conversation_id <> %s then haraj_conversation_id else legacy_conversation_id end,"
+    " legacy_high_water = case when haraj_conversation_id is not null and haraj_conversation_id <> %s then high_water else legacy_high_water end,"
+    " high_water = case when coalesce(haraj_conversation_id, '') = %s then coalesce(high_water, %s) else %s end,"
+    " haraj_conversation_id = %s, haraj_account_id = coalesce(%s, haraj_account_id)"
+    " where request_id = %s and seller_id = %s and need = %s"
+)
+# A reply read: the read position of the conversation it came from moves on.
+# Params: conversation, seq, conversation, seq, request_id, seller_id, need.
+_ADVANCE_THREAD = (
+    "update haraj_threads set"
+    " high_water = case when haraj_conversation_id = %s then greatest(coalesce(high_water, 0), %s) else high_water end,"
+    " legacy_high_water = case when legacy_conversation_id = %s then greatest(coalesce(legacy_high_water, 0), %s) else legacy_high_water end"
+    " where request_id = %s and seller_id = %s and need = %s"
+)
+
+
 def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | None:
     """The thread a seller's Haraj reply belongs to, or None when that cannot be known.
 
-    Taseer writes from one Haraj account, so a seller has one conversation with us shared by
-    every buyer who asked him. A reply quoting a request's reference goes to that request.
-    Otherwise it goes to the latest request we had sent him something for before he wrote
-    (Farq's rule), but only while the open requests in that conversation belong to one buyer:
-    across buyers a guess would show one buyer the reply, phone number and price meant for another.
+    A seller has one conversation with each Taseer account, shared by every buyer who asked
+    him. A reply quoting a request's reference goes to that request. Otherwise it goes to the
+    latest request we had sent him something for before he wrote: a seller answers the last
+    message he received. Across buyers (owner-approved 2026-10-04, after a «هلا» answering the
+    newest invite sat unmatched) the returned row carries ``routed_by`` so the worker logs the
+    inference. Two references, or none of the candidates sent before he wrote across buyers,
+    still return None.
     Each candidate is a haraj_threads row plus owner_user_id, ref_code, awarded_seller_id,
     request_created_at, and sends (when our messages on that thread were sent)."""
     if not candidates:
@@ -504,10 +528,13 @@ def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | Non
     if quoted:
         return latest(quoted) if len({row["request_id"] for row in quoted}) == 1 else None
     # Only requests he had heard about from us when he wrote, and not those already awarded to someone else.
-    heard = [row for row in candidates if last_send(row) is not None] or candidates
+    sent_before = [row for row in candidates if last_send(row) is not None]
+    heard = sent_before or candidates
     open_rows = [row for row in heard if row.get("awarded_seller_id") in (None, "", row["seller_id"])] or heard
     if len({row["owner_user_id"] for row in open_rows}) > 1:
-        return None
+        if not sent_before:
+            return None
+        return {**latest(open_rows), "routed_by": "latest_send_across_buyers"}
     return latest(open_rows)
 
 
@@ -893,9 +920,14 @@ class Store:
         self._ensure_column("haraj_threads", "retry_at", "text")
         self._ensure_column("haraj_threads", "failure_code", "text")
         self._ensure_column("message_deliveries", "last_attempt_at", "text")
+        self._ensure_column("message_deliveries", "haraj_account_id", "text")
+        self._ensure_column("haraj_threads", "haraj_account_id", "text")
+        self._ensure_column("haraj_threads", "legacy_conversation_id", "text")
+        self._ensure_column("haraj_threads", "legacy_high_water", "integer")
         self._ensure_column("request_recipients", "need", "text")
         self._ensure_column("request_recipients", "reply_token", "text")
         self._ensure_column("request_recipients", "send_status", "text")
+        self._ensure_column("request_recipients", "ad_title", "text")
         self._ensure_column("request_recipients", "listing_url", "text")
         self._connection.execute(
             """
@@ -1073,8 +1105,25 @@ class Store:
               primary key (trace_id, seller_id)
             );
             create index if not exists search_sellers_user on search_sellers (user_id, created_at);
+            create table if not exists search_listings (
+              trace_id text not null,
+              user_id text,
+              seller_id text not null,
+              ad_id text not null,
+              ad_title text,
+              ad_city text,
+              posted_at text,
+              listing_state text,
+              match text not null default 'exact',
+              title_match integer not null default 0,
+              need text,
+              created_at text not null,
+              primary key (trace_id, seller_id, ad_id)
+            );
+            create index if not exists search_listings_user on search_listings (user_id, created_at);
             """
         )
+        self._ensure_column("search_listings", "seller_name", "text")
         self._connection.commit()
         self._seed_plans()
 
@@ -1362,7 +1411,7 @@ class Store:
         for index, item in enumerate(recipients):
             token = item.reply_token or (first_token if index == 0 else secrets.token_urlsafe(16))
             self._connection.execute(
-                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                "insert into request_recipients (request_id, seller_id, seller_name, ad_id, need, reply_token, send_status, listing_url, ad_title) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     request_id,
                     item.seller_id,
@@ -1372,6 +1421,7 @@ class Store:
                     token,
                     "queued",
                     item.listing_url,
+                    item.ad_title,
                 ),
             )
         # The quote request is the first message on each item, routed to every seller on that item.
@@ -1649,7 +1699,7 @@ class Store:
             "queued": queued,
             "sending": int(row["sending"] or 0),
             "oldest_queued_seconds": round(oldest),
-            "drain_minutes": round(queued / 3, 1),
+            "drain_minutes": round(queued * (outreach.send_spacing_seconds() + outreach.send_jitter_seconds() / 2) / 60, 1),
             "send_paused": bool(paused and float(paused) > datetime.now(timezone.utc).timestamp()),
             "in_app_share_30d": None if not total else round(in_app / total, 4),
         }
@@ -2077,29 +2127,47 @@ class Store:
         row = self._connection.execute("select * from files where id = ?", (file_id,)).fetchone()
         return None if row is None else {**dict(row), "data": bytes(row["data"])}
 
-    def claim_deliveries(self, limit: int = 50) -> list[dict]:
+    def queued_delivery_for(self, ref_code: str, seller_id: str) -> str | None:
+        """The oldest still-queued delivery of request ``ref_code`` to that Haraj seller."""
+        author = str(seller_id).rsplit(":", 1)[-1]
+        row = self._connection.execute(
+            "select d.id from message_deliveries d join requests q on q.id = d.request_id"
+            " where q.ref_code = ? and d.delivery_status = 'queued' and (d.seller_id = ? or d.seller_id = ?)"
+            " order by d.created_at limit 1",
+            (ref_code, author, f"haraj:seller:{author}"),
+        ).fetchone()
+        return row["id"] if row else None
+
+    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None) -> list[dict]:
+        """The oldest queued deliveries, marked sending; only that one when ``delivery_id`` is given."""
         rows = self._connection.execute(
             """
-            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id, q.ref_code
+            select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id,
+                   t.haraj_account_id, q.ref_code
             from message_deliveries d
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
             join requests q on q.id = d.request_id
-            where d.delivery_status = 'queued'
+            where d.delivery_status = 'queued' and (? is null or d.id = ?)
             order by d.created_at
             limit ?
             """,
-            (limit,),
+            (delivery_id, delivery_id, limit),
         ).fetchall()
         claimed = []
         for row in rows:
             self._connection.execute("update message_deliveries set delivery_status = 'sending', attempts = attempts + 1, last_attempt_at = ? where id = ?", (_now(), row["id"]))
             # Looked up per row: SQLite 3.45 cannot resolve d.need inside a correlated subquery's order by.
             token = self._connection.execute(
-                "select reply_token from request_recipients where request_id = ? and seller_id = ? order by coalesce(need, '') = ? desc limit 1",
+                "select reply_token, ad_title from request_recipients where request_id = ? and seller_id = ? order by coalesce(need, '') = ? desc limit 1",
                 (row["request_id"], row["seller_id"], row["need"]),
             ).fetchone()
-            claimed.append({**dict(row), "reply_token": token["reply_token"] if token else None, "media": json.loads(row["media"]) if row["media"] else []})
+            claimed.append({
+                **dict(row),
+                "reply_token": token["reply_token"] if token else None,
+                "ad_title": token["ad_title"] if token else None,
+                "media": json.loads(row["media"]) if row["media"] else [],
+            })
         self._connection.commit()
         return claimed
 
@@ -2110,13 +2178,14 @@ class Store:
         key = (row["request_id"], row["seller_id"], row["need"])
         if sent is not None:
             self._connection.execute(
-                "update message_deliveries set delivery_status = 'sent', haraj_message_id = ?, sent_at = ?, error = null where id = ?",
-                (sent.haraj_message_id, _now(), delivery_id),
+                "update message_deliveries set delivery_status = 'sent', haraj_message_id = ?, sent_at = ?, error = null, haraj_account_id = ? where id = ?",
+                (sent.haraj_message_id, _now(), sent.account_id, delivery_id),
             )
             # Replies are read from our first message on: older history in the conversation is not imported.
+            # A conversation that moved to another account starts its read position afresh.
             self._connection.execute(
-                "update haraj_threads set haraj_conversation_id = ?, high_water = coalesce(high_water, ?) where request_id = ? and seller_id = ? and need = ?",
-                (sent.haraj_conversation_id, sent.seq, *key),
+                _MOVE_THREAD.replace("%s", "?"),
+                (sent.haraj_conversation_id, sent.haraj_conversation_id, sent.haraj_conversation_id, sent.seq, sent.seq, sent.haraj_conversation_id, sent.account_id, *key),
             )
             # A fresh message makes its conversation due now, whatever back-off it was on.
             self._connection.execute(
@@ -2145,13 +2214,14 @@ class Store:
         the worker can space the next read of the whole conversation (see worker.poll_interval)."""
         stamp = datetime.fromtimestamp(now, tz=timezone.utc).isoformat() if now is not None else _now()
         rows = self._connection.execute(
-            "with due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
-            " from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?)"
+            f"with threads as ({THREAD_CONVERSATIONS}),"
+            " due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
+            " from threads where (retry_at is null or retry_at <= ?)"
             " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit ?)"
             " select t.*, r.created_at as request_created_at, r.deal_outcome,"
             " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
             " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
-            " join haraj_threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
+            " join threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
             " order by due.read_before, due.due_at, due.haraj_conversation_id",
             (stamp, limit),
         ).fetchall()
@@ -2185,16 +2255,17 @@ class Store:
     def _inbound_candidates(self, conversation_id: str) -> list[dict]:
         rows = self._connection.execute(
             "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at"
-            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ?",
-            (conversation_id,),
+            " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ? or t.legacy_conversation_id = ?",
+            (conversation_id, conversation_id),
         ).fetchall()
         candidates = []
         for row in rows:
+            row = {**dict(row), "haraj_conversation_id": conversation_id}
             sends = self._connection.execute(
                 "select sent_at from message_deliveries where request_id = ? and seller_id = ? and need = ? and delivery_status = 'sent' and sent_at is not null",
                 (row["request_id"], row["seller_id"], row["need"]),
             ).fetchall()
-            candidates.append({**dict(row), "sends": [item["sent_at"] for item in sends]})
+            candidates.append({**row, "sends": [item["sent_at"] for item in sends]})
         return candidates
 
     def thread_for_inbound(self, conversation_id: str, sent_at: str, body: str = "") -> dict | None:
@@ -2239,6 +2310,39 @@ class Store:
                     (trace_id, user_id, seller_id, created),
                 )
             self._connection.commit()
+
+    def record_search_listings(self, trace_id: str, user_id: str | None, rows: list[dict]) -> None:
+        """What each search proved about the listings it showed (outreach.listing_evidence)."""
+        created = _now()
+        with self._db_lock:
+            for row in rows:
+                self._connection.execute(
+                    "insert into search_listings (trace_id, user_id, seller_id, ad_id, ad_title, ad_city, posted_at, listing_state, match, title_match, need, created_at, seller_name)"
+                    " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " on conflict (trace_id, seller_id, ad_id) do update set user_id = coalesce(search_listings.user_id, excluded.user_id)",
+                    (trace_id, user_id, seller_key(row["seller_id"]), row["ad_id"], row.get("ad_title"), row.get("ad_city"), row.get("posted_at"),
+                     row.get("listing_state"), row.get("match") or "exact", 1 if row.get("title_match") else 0, row.get("need"), created, row.get("seller_name")),
+                )
+            self._connection.commit()
+
+    def searched_listings(self, user_id: str, trace_id: str | None, since: str) -> list[dict]:
+        """Listings this user's searches showed since then (and an anonymous search he names)."""
+        rows = self._connection.execute(
+            "select * from search_listings where (user_id = ? and julianday(created_at) >= julianday(?))"
+            " or (trace_id = ? and (user_id is null or user_id = ?)) order by created_at",
+            (user_id, since, trace_id, user_id),
+        ).fetchall()
+        return [{**dict(row), "title_match": bool(row["title_match"])} for row in rows]
+
+    def haraj_sends_since(self, account_id: str | None, since_epoch: float) -> int:
+        """Messages Haraj accepted from this account (any account when None) since then."""
+        since = datetime.fromtimestamp(since_epoch, tz=timezone.utc).isoformat()
+        row = self._connection.execute(
+            "select count(*) as count from message_deliveries where delivery_status = 'sent' and haraj_message_id is not null"
+            " and julianday(sent_at) >= julianday(?) and (? is null or haraj_account_id = ?)",
+            (since, account_id, account_id),
+        ).fetchone()
+        return int(row["count"])
 
     def searched_sellers(self, user_id: str, trace_id: str | None, since: str) -> set[str]:
         """Sellers this user's searches showed since then, and those of an anonymous search he names."""
@@ -2310,8 +2414,12 @@ class Store:
     def conversation_checked(self, conversation_id: str, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int | None = None) -> None:
         moment = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
         self._connection.execute(
-            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ?, high_water = max(coalesce(high_water, 0), ?) where haraj_conversation_id = ?",
-            (moment.isoformat(), (moment + timedelta(seconds=retry_seconds)).isoformat(), failure_code, high_water or 0, conversation_id),
+            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ?,"
+            " high_water = case when haraj_conversation_id = ? then max(coalesce(high_water, 0), ?) else high_water end,"
+            " legacy_high_water = case when legacy_conversation_id = ? then max(coalesce(legacy_high_water, 0), ?) else legacy_high_water end"
+            " where haraj_conversation_id = ? or legacy_conversation_id = ?",
+            (moment.isoformat(), (moment + timedelta(seconds=retry_seconds)).isoformat(), failure_code,
+             conversation_id, high_water or 0, conversation_id, high_water or 0, conversation_id, conversation_id),
         )
         self._connection.commit()
 
@@ -2361,8 +2469,8 @@ class Store:
         """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
         if self._connection.execute("select 1 from messages where haraj_message_id = ?", (inbound.haraj_message_id,)).fetchone():
             self._connection.execute(
-                "update haraj_threads set high_water = max(coalesce(high_water, 0), ?) where request_id = ? and seller_id = ? and need = ?",
-                (inbound.seq, thread["request_id"], thread["seller_id"], thread["need"]),
+                _ADVANCE_THREAD.replace("%s", "?").replace("greatest(", "max("),
+                (thread["haraj_conversation_id"], inbound.seq, thread["haraj_conversation_id"], inbound.seq, thread["request_id"], thread["seller_id"], thread["need"]),
             )
             self._connection.commit()
             return None
@@ -2435,8 +2543,11 @@ class Store:
             (uuid4().hex, owner["owner_user_id"], request_id, "seller_reply", message.created_at),
         )
         self._connection.execute(
-            "update haraj_threads set last_fetched_at = ?, high_water = max(coalesce(high_water, 0), ?) where request_id = ? and seller_id = ? and need = ?",
-            (_now(), inbound.seq, request_id, seller_id, thread["need"]),
+            "update haraj_threads set last_fetched_at = ? where request_id = ? and seller_id = ? and need = ?", (_now(), request_id, seller_id, thread["need"])
+        )
+        self._connection.execute(
+            _ADVANCE_THREAD.replace("%s", "?").replace("greatest(", "max("),
+            (thread["haraj_conversation_id"], inbound.seq, thread["haraj_conversation_id"], inbound.seq, request_id, seller_id, thread["need"]),
         )
         self._connection.commit()
         return message
@@ -2498,6 +2609,7 @@ class Store:
             reply_token=self._col(item, "reply_token"),
             send_status=self._col(item, "send_status", "unknown") or "unknown",
             listing_url=self._col(item, "listing_url"),
+            ad_title=self._col(item, "ad_title"),
         )
 
     def _offers_for_request(self, request_id: str) -> list[Offer]:

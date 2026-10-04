@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timedelta, timezone
 import json
 from uuid import uuid4
 import logging
@@ -24,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from farq import push, subscriptions
 from farq.billing import Billing, BillingUnavailable
-from farq.cities import city_choices
+from farq.cities import city_choices, known_city
 from farq.config import PaymentsConfig, SearchConfig
 from farq import farq_auth
 from farq.contracts import Offer, RequestRecipient, SearchResponse, SearchResult
@@ -41,6 +42,7 @@ from farq.live_haraj import HarajLiveClient
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
+from farq.outreach import Targeting, listing_evidence, select_recipients
 from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware, cors_origins
@@ -315,6 +317,7 @@ def create_app(
     expose_docs: bool | None = None,
     farq_verifier=None,
     billing: Billing | None = None,
+    targeting: Targeting | None = None,
 ) -> FastAPI:
     docs = _docs_enabled() if expose_docs is None else expose_docs
     app = FastAPI(
@@ -752,9 +755,26 @@ def create_app(
             return store.user_for_token(authorization.removeprefix("Bearer ").strip())
         return None
 
-    def _remember_sellers(trace_id: str, user_id: str | None, results) -> None:
+    def _remember_sellers(trace_id: str, user_id: str | None, results, intent=None) -> None:
         # A quote request may only go to sellers a search showed (TSR-014).
         store.record_search_sellers(trace_id, user_id, sorted(search_seller_ids(results)))
+        if intent is not None:
+            _remember_listings(trace_id, user_id, [(intent, results)])
+
+    def _remember_listings(trace_id: str, user_id: str | None, pairs) -> None:
+        # ...and only to sellers whose own listing matched the item (outreach.select_recipients).
+        rows = [row for intent, results in pairs for row in listing_evidence(intent, results)]
+        if not rows:
+            return
+        try:
+            store.record_search_listings(trace_id, user_id, rows)
+        except Exception:  # noqa: BLE001 - a lost record withholds invites, it never adds any
+            log.warning("search listing evidence not recorded for %s", trace_id, exc_info=True)
+
+    def _response_pairs(response) -> list:
+        if response.groups:
+            return [(group.intent, group.results) for group in response.groups]
+        return [(response.intent, response.results)]
 
     def _response_results(response) -> list:
         return [*response.results, *(result for group in response.groups for result in group.results)]
@@ -796,6 +816,7 @@ def create_app(
         response = response.model_copy(update={"trace_id": trace_id})
         store.record_journey(trace_id, user_id, query, response.state.value, [{"stage": "cache"}])
         _remember_sellers(trace_id, user_id, _response_results(response))
+        _remember_listings(trace_id, user_id, _response_pairs(response))
         return response
 
     # A warm-up in flight on this instance keeps every event it has produced so far. A search
@@ -881,6 +902,7 @@ def create_app(
         response, trace = run_search(body.query, corpus, live_client, config, near=body.near)
         store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
         _remember_sellers(response.trace_id, user_id, _response_results(response))
+        _remember_listings(response.trace_id, user_id, _response_pairs(response))
         _keep_search(body.query, response, body.near)
         return response.model_dump(mode="json")
 
@@ -900,14 +922,24 @@ def create_app(
                 return
             warm = _warming_for(body.query, body.near)
             source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, live_client, config, near=body.near)
+            intents: dict = {}
             for event in source:
+                if event["type"] == "intent":
+                    for item in event.get("intents") or [event.get("intent")]:
+                        if item is not None:
+                            intents.setdefault(item.need, item)
                 if event["type"] == "results":
                     # The app lets customers pick from a batch before the search ends.
-                    _remember_sellers(event["trace_id"], user_id, event["results"])
+                    if event.get("groups"):
+                        _remember_sellers(event["trace_id"], user_id, event["results"])
+                        _remember_listings(event["trace_id"], user_id, [(group.intent, group.results) for group in event["groups"]])
+                    else:
+                        _remember_sellers(event["trace_id"], user_id, event["results"], intents.get(event.get("need")))
                 if event["type"] == "done":
                     response = event["response"]
                     store.record_journey(response.trace_id, user_id, body.query, response.state.value, event["trace"])
                     _remember_sellers(response.trace_id, user_id, _response_results(response))
+                    _remember_listings(response.trace_id, user_id, _response_pairs(response))
                     if warm is None:
                         _keep_search(body.query, response, body.near)
                 yield json.dumps(_public_event(event), ensure_ascii=False) + "\n"
@@ -940,9 +972,15 @@ def create_app(
             raise HTTPException(status_code=502, detail="image source failed") from exc
         return Response(content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
 
+    def send_held() -> bool:
+        """Haraj sending is held (not connected, or the sending account is still in canary
+        mode): queued messages are said to be not sent yet, never given a delivery time."""
+        return getattr(chat, "send_mode", "closed" if isinstance(chat, NotConnectedChat) else "open") != "open"
+
     @app.get("/v1/requests")
     def list_requests(user_id: str = Depends(current_user)) -> dict:
-        requests = store.list_requests(user_id)
+        held = send_held()
+        requests = [{**item, "send_held": held} if item.get("queued_count") else item for item in store.list_requests(user_id)]
         return {"requests": requests, "open_count": sum(1 for item in requests if item.get("open"))}
 
     # Declared before /v1/requests/{request_id} so "open-count" is never read as an id.
@@ -981,6 +1019,35 @@ def create_app(
             check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
         except LimitExceeded as exc:
             raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+        # Only sellers whose own listing matches the item, once each, the best first, at most
+        # targeting.max_invites per request (outreach.select_recipients). The rest are named
+        # back in skipped_recipients, never silently written to.
+        since = (datetime.now(timezone.utc) - timedelta(days=limits.search_memory_days)).isoformat()
+        reader = getattr(store, "searched_listings", None)
+        selection = select_recipients(
+            [
+                RequestRecipient(seller_id=item.seller_id, seller_name=item.seller_name, ad_id=item.ad_id, need=item.need, listing_url=item.listing_url)
+                for item in body.recipients
+            ],
+            reader(user_id, body.trace_id, since) if reader else [],
+            known_city(body.city),
+            body.need,
+            targeting,
+        )
+        if selection.skipped:
+            log.info("request targeting kept %s, skipped %s: %s", len(selection.kept), len(selection.skipped),
+                     ", ".join(f"{item['seller_id']}={item['reason']}" for item in selection.skipped))
+        if not selection.kept:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "NO_MATCHING_LISTINGS",
+                    "message": "ما لقينا بين الموردين المختارين إعلاناً يطابق طلبك. اختر من نتائج البحث موردين إعلاناتهم عن نفس الغرض.",
+                    "limit": None,
+                    "skipped": selection.skipped,
+                },
+            )
+        recipients = selection.kept
         # With the ledger on, the debit against Farq's CENTRAL billing ledger here IS the
         # item-allowance gate (check_new_request above still holds the other caps: sellers
         # per item, daily contacts, daily requests, recipients-from-search). The id is made
@@ -991,7 +1058,7 @@ def create_app(
         ledger_active = limits.ledger_enabled and not (
             getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
         )
-        needs = list(dict.fromkeys(item.need or body.need or "" for item in body.recipients))
+        needs = list(dict.fromkeys(item.need or body.need or "" for item in recipients))
         item_keys = [f"item:{request_id}:{item_need or ''}" for item_need in needs]
 
         farq_uid = store.farq_user_id(user_id) if ledger_active else None
@@ -1050,16 +1117,7 @@ def create_app(
                 body.notes,
                 body.city,
                 body.attributes,
-                [
-                    RequestRecipient(
-                        seller_id=item.seller_id,
-                        seller_name=item.seller_name,
-                        ad_id=item.ad_id,
-                        need=item.need,
-                        listing_url=item.listing_url,
-                    )
-                    for item in body.recipients
-                ],
+                recipients,
                 request_id=request_id,
             )
         except ValueError as exc:
@@ -1074,11 +1132,11 @@ def create_app(
         # Registered suppliers are told here, in the app, because nothing will be sent to
         # them through Haraj. The rest are reached by the worker, as before.
         background.add_task(
-            notify.notify_sellers, store, [item.seller_id for item in body.recipients],
+            notify.notify_sellers, store, [item.seller_id for item in recipients],
             "request_new", request_id=request_id, need=body.need,
         )
         record = store.get_request(request_id, user_id)
-        return record.model_dump(mode="json")
+        return {**record.model_dump(mode="json"), "skipped_recipients": selection.skipped}
 
     async def read_upload(file: UploadFile) -> tuple[str, bytes]:
         data = await file.read()
@@ -1193,7 +1251,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found")
         # Opening the conversation reads it.
         store.mark_read(request_id, user_id)
-        return record.model_dump(mode="json")
+        return {**record.model_dump(mode="json"), "send_held": send_held()}
 
     @app.get("/v1/seller/{token}")
     def seller_request(token: str, authorization: str | None = Header(default=None)) -> dict:
@@ -1448,7 +1506,7 @@ def create_app(
     def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
         # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
         require_cron(authorization)
-        # One run a minute: up to three sends 20 s apart, then read replies.
+        # One run a minute: at most one send (sends are 45-90 s apart, 60 a day), then read replies.
         started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
         received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
@@ -1461,6 +1519,7 @@ def create_app(
 
     def _watch_queue() -> dict:
         health = store.queue_health()
+        health["send_mode"] = getattr(chat, "send_mode", "closed" if isinstance(chat, NotConnectedChat) else "open")
         breached = health["drain_minutes"] >= QUEUE_ALERT_MINUTES or health["send_paused"]
         health["alert"] = breached
         if breached:

@@ -1903,6 +1903,8 @@ function renderRequests() {
         const eta = queued ? Math.max(1, Math.ceil(((item.queue_ahead || 0) + queued) * 20 / 60)) : 0;
         const live = item.awarded_seller_id
           ? ""
+          : queued && !item.replied_count && item.send_held
+            ? `<div class="fq-live wide"><span>لم يُرسل بعد إلى ${esc(suppliers(queued))} · باقٍ في طابور الإرسال</span></div>`
           : queued && !item.replied_count
             ? `<div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span><span>في طابور الإرسال إلى ${esc(suppliers(queued))} · يوصلهم خلال ${eta === 1 ? "دقيقة تقريبًا" : `~${formatCount(eta)} دقائق`}</span></div>`
             : waiting
@@ -2047,6 +2049,8 @@ function deliveryProgress(message) {
   const sent = deliveries.filter((item) => item.status === "sent").length;
   const waiting = deliveries.filter((item) => item.status === "queued" || item.status === "sending").length;
   if (!deliveries.length || !waiting) return "";
+  // Sending is held on the server: still queued, and no promise of when.
+  if (state.thread?.send_held) return sent ? `وصلت لـ ${formatCount(sent)} من ${formatCount(deliveries.length)} · الباقي لم يُرسل بعد` : "لم يُرسل بعد";
   if (deliveries.length === 1) return "يُرسل الآن…";
   return `وصلت لـ ${formatCount(sent)} من ${formatCount(deliveries.length)} · الباقي خلال ${formatCount(Math.max(1, Math.ceil((waiting * 20) / 60)))} د`;
 }
