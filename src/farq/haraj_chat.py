@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 import secrets
@@ -27,6 +28,8 @@ from dataclasses import dataclass
 from typing import Callable, Protocol
 
 import httpx
+
+log = logging.getLogger("farq.haraj_chat")
 
 CHAT_ENDPOINT = "https://api-chat.haraj.com.sa"
 CHAT_SOCKET = "wss://api-chat.haraj.com.sa/chat/ws"
@@ -445,6 +448,8 @@ class HarajChatClient:
         url = f"{CHAT_ENDPOINT}/chat/users/{self.user_id}/topics/{conversation_id}/messages"
         found: dict[int, InboundMessage] = {}
         cursor: str | None = None
+        scanned = from_seller = 0
+        newest_seller = None
         for page in range(max_pages):
             if page:
                 sleep(READ_SPACING_SECONDS)
@@ -468,6 +473,10 @@ class HarajChatClient:
                 if not seq_text.isdigit():
                     raise HarajChatUnavailable("INVALID_SEQUENCE")
                 seq = int(seq_text)
+                scanned += 1
+                if str(item.get("from_id")) == author:
+                    from_seller += 1
+                    newest_seller = max(newest_seller or 0, seq)
                 if seq <= after_seq:
                     reached = True
                     continue
@@ -480,6 +489,11 @@ class HarajChatClient:
                 break
             if not isinstance(cursor, str) or len(cursor) > 2000:
                 raise HarajChatUnavailable("INVALID_CURSOR")
+        # One line per read: proves a conversation was read and whether the seller wrote at all.
+        log.info(
+            "haraj read %s: %s messages scanned, %s from seller (newest seq %s), %s new after seq %s",
+            conversation_id, scanned, from_seller, newest_seller, len(found), after_seq,
+        )
         return [found[seq] for seq in sorted(found)]
 
 

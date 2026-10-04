@@ -16,6 +16,7 @@ import os
 import threading
 import time
 from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Callable
 
 from farq.push import notify_reply
@@ -170,6 +171,44 @@ def _download(url: str) -> bytes | None:
         return bytes(data)
 
 
+# How soon a conversation is read again after a clean read. A request's sellers answer within
+# hours, so a young request is read every run; an old one still gets a late reply within the hour.
+FRESH_READ_SECONDS = 30
+WEEK_READ_SECONDS = 10 * 60
+OLD_READ_SECONDS = 60 * 60
+
+
+def _age_seconds(created_at, now: float) -> float | None:
+    if created_at is None:
+        return None
+    if isinstance(created_at, str):
+        try:
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return now - created_at.timestamp()
+
+
+def poll_interval(threads: list[dict], now: float) -> int:
+    """Seconds until a conversation is due again, from its youngest request still being decided.
+
+    A conversation is shared by every request we sent that seller, so the youngest open one sets
+    the pace. Closed deals and old requests back off instead of crowding out new ones."""
+    open_ages = [_age_seconds(item.get("request_created_at"), now) for item in threads if not item.get("deal_outcome")]
+    if not open_ages:
+        return OLD_READ_SECONDS
+    if any(age is None for age in open_ages):
+        return FRESH_READ_SECONDS
+    youngest = min(open_ages)
+    if youngest < 3 * 86400:
+        return FRESH_READ_SECONDS
+    if youngest < 14 * 86400:
+        return WEEK_READ_SECONDS
+    return OLD_READ_SECONDS
+
+
 def sync_replies(
     store,
     chat: HarajChat,
@@ -228,7 +267,7 @@ def sync_replies(
                 received += 1
                 synced.add(thread["request_id"])
                 notify_reply(store, thread["request_id"], thread["seller_id"], item.body or media_label(item.media), message_id=recorded.id)
-        store.conversation_checked(conversation, now=clock(), high_water=highest)
+        store.conversation_checked(conversation, retry_seconds=poll_interval(threads, clock()), now=clock(), high_water=highest)
         synced.update(item["request_id"] for item in threads)
     for request_id in synced:
         store.mark_synced(request_id)

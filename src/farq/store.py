@@ -427,6 +427,52 @@ def _utc(value):
     return moment
 
 
+# -- Reply sync health ---------------------------------------------------------------------------
+# A request whose sellers neither reply on Haraj, open their quote link nor price it is "silent".
+# One silent request is normal; several in a row means sellers are not seeing our messages (or we
+# are not seeing their answers), which must never pass as an empty inbox.
+SILENT_STREAK_ALERT = 3
+_ANSWERED_SQL = (
+    "select d.request_id, min(d.sent_at) as first_sent,"
+    " (exists (select 1 from messages m where m.request_id = d.request_id and m.sender_role = 'seller')"
+    " or exists (select 1 from offers o where o.request_id = d.request_id)"
+    " or exists (select 1 from supplier_funnel f where f.request_id = d.request_id and f.step in ('opened', 'quote_submitted'))) as answered"
+    " from message_deliveries d where d.delivery_status = 'sent' and d.sent_at is not null"
+    " group by d.request_id having count(distinct d.seller_id) >= 3 and min(d.sent_at) > ? and min(d.sent_at) < ?"
+    " order by first_sent desc limit 20"
+)
+
+
+def _answered_window(now: float | None = None) -> tuple[datetime, datetime]:
+    """Requests sent between 30 days and 24 hours ago: old enough that a seller had time to answer."""
+    at = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
+    return at - timedelta(days=30), at - timedelta(hours=24)
+
+
+def _sync_health(never_read, overdue, oldest_wait, answered_newest_first) -> dict:
+    streak = 0
+    for answered in answered_newest_first:
+        if answered:
+            break
+        streak += 1
+    never_read, overdue = int(never_read or 0), int(overdue or 0)
+    reasons = []
+    if never_read:
+        reasons.append(f"{never_read} conversation(s) sent over 1h ago have never been read")
+    if overdue:
+        reasons.append(f"{overdue} conversation(s) are over 1h past their next read")
+    if streak >= SILENT_STREAK_ALERT:
+        reasons.append(f"the last {streak} requests got no reply, link open or offer from any seller in 24h")
+    return {
+        "never_read_1h": never_read,
+        "overdue_1h": overdue,
+        "oldest_wait_seconds": max(0, round(float(oldest_wait or 0))),
+        "silent_streak": streak,
+        "alert": bool(reasons),
+        "reasons": reasons,
+    }
+
+
 def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | None:
     """The thread a seller's Haraj reply belongs to, or None when that cannot be known.
 
@@ -2090,12 +2136,37 @@ class Store:
     # --- Sync: Haraj -> item conversation ---------------------------------------------------------
 
     def threads_to_sync(self, limit: int = 200, now: float | None = None) -> list[dict]:
+        """Every thread of each due conversation: never-read conversations first, then the longest
+        overdue, at most `limit` conversations. Each row carries its request's age and outcome so
+        the worker can space the next read of the whole conversation (see worker.poll_interval)."""
         stamp = datetime.fromtimestamp(now, tz=timezone.utc).isoformat() if now is not None else _now()
         rows = self._connection.execute(
-            "select * from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?) order by checked_at is not null, checked_at limit ?",
+            "with due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
+            " from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?)"
+            " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit ?)"
+            " select t.*, r.created_at as request_created_at, r.deal_outcome from due"
+            " join haraj_threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
+            " order by due.read_before, due.due_at, due.haraj_conversation_id",
             (stamp, limit),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def reply_sync_health(self, now: float | None = None) -> dict:
+        """Whether every Haraj conversation we wrote to is being read, and whether sellers answer at all."""
+        at = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
+        hour_ago = (at - timedelta(hours=1)).isoformat()
+        rows = self._connection.execute(
+            "select t.checked_at, t.retry_at, (select min(d.sent_at) from message_deliveries d where d.request_id = t.request_id"
+            " and d.seller_id = t.seller_id and d.need = t.need and d.delivery_status = 'sent') as first_sent"
+            " from haraj_threads t where t.haraj_conversation_id is not null"
+        ).fetchall()
+        never_read = sum(1 for r in rows if r["checked_at"] is None and r["first_sent"] and r["first_sent"] < hour_ago)
+        overdue = sum(1 for r in rows if r["checked_at"] is not None and r["retry_at"] and r["retry_at"] < hour_ago)
+        waits = [r["first_sent"] if r["checked_at"] is None else r["retry_at"] for r in rows]
+        waits = [w for w in waits if w]
+        oldest = (at - datetime.fromisoformat(min(waits))).total_seconds() if waits else 0
+        recent = self._connection.execute(_ANSWERED_SQL, tuple(t.isoformat() for t in _answered_window(now))).fetchall()
+        return _sync_health(never_read, overdue, oldest, [bool(r["answered"]) for r in recent])
 
     def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None) -> None:
         now = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)

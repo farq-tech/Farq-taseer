@@ -25,6 +25,9 @@ from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_reference
 from farq.store import (
+    _ANSWERED_SQL,
+    _answered_window,
+    _sync_health,
     DEAL_OUTCOMES,
     SINGLE_SELLER,
     AwardConflict,
@@ -1371,13 +1374,37 @@ class PgStore:
     # -- sync: Haraj -> item conversation ---------------------------------------
 
     def threads_to_sync(self, limit: int = 200, now: float | None = None) -> list[dict]:
+        """Every thread of each due conversation: never-read conversations first, then the longest
+        overdue, at most `limit` conversations. Each row carries its request's age and outcome so
+        the worker can space the next read of the whole conversation (see worker.poll_interval)."""
         with self._pool.connection() as conn:
             rows = conn.execute(
-                "select * from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
-                " order by checked_at nulls first limit %s",
+                "with due as (select haraj_conversation_id, bool_and(checked_at is not null) as read_before, min(retry_at) as due_at"
+                " from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
+                " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit %s)"
+                " select t.*, r.created_at as request_created_at, r.deal_outcome from due"
+                " join haraj_threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
+                " order by due.read_before, due.due_at, due.haraj_conversation_id",
                 (now, limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def reply_sync_health(self, now: float | None = None) -> dict:
+        """Whether every Haraj conversation we wrote to is being read, and whether sellers answer at all."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "with threads as ("
+                " select t.checked_at, t.retry_at, (select min(d.sent_at) from message_deliveries d where d.request_id = t.request_id"
+                "  and d.seller_id = t.seller_id and d.need = t.need and d.delivery_status = 'sent') as first_sent"
+                " from haraj_threads t where t.haraj_conversation_id is not null)"
+                " select count(*) filter (where checked_at is null and first_sent < coalesce(to_timestamp(%(now)s), now()) - interval '1 hour') as never_read,"
+                " count(*) filter (where checked_at is not null and retry_at < coalesce(to_timestamp(%(now)s), now()) - interval '1 hour') as overdue,"
+                " extract(epoch from coalesce(to_timestamp(%(now)s), now()) - min(case when checked_at is null then first_sent else retry_at end)) as oldest_wait"
+                " from threads",
+                {"now": now},
+            ).fetchone()
+            recent = conn.execute(_ANSWERED_SQL.replace("?", "%s"), _answered_window(now)).fetchall()
+        return _sync_health(row["never_read"], row["overdue"], row["oldest_wait"], [r["answered"] for r in recent])
 
     def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None) -> None:
         with self._pool.connection() as conn:
