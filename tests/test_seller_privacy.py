@@ -18,7 +18,7 @@ from farq.store import Store
 from tests.test_api import signed_in
 from tests.test_store_pg import pg_store, schema  # noqa: F401  (fixtures for the Postgres run)
 
-AWARD_TEXT = "تم اختيار عرضك. سنتواصل معك لإكمال التفاصيل."
+AWARD_TEXT = "تم اختيار عرضك. بنتواصل معك لإكمال التفاصيل."
 
 
 @pytest.fixture(autouse=True)

@@ -351,7 +351,7 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     def invite(item, seller):
         return tagged(
             "السلام عليكم عزيزي البائع\nلدينا مشتري يطلب توفير:\n"
-            f"{item} في الرياض\nفي حال توفرها الرجاء الضغط على الرابط التالي لتقديم عرضك\n"
+            f"{item} في الرياض\nإذا كانت متوفرة، افتح الرابط التالي وقدّم عرضك\n"
             f"https://taseer.farq.sa/s/{tokens[seller]}"
         )
 
