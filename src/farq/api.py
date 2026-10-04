@@ -1452,7 +1452,7 @@ def create_app(
         started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
         received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
-        return {"sent": sent, "received": received, "queue": _watch_queue(), "closing": _ring_closing_soon()}
+        return {"sent": sent, "received": received, "queue": _watch_queue(), "replies": _watch_replies(), "closing": _ring_closing_soon()}
 
     # The backlog belongs to the Haraj lane only: the in-app lane has no queue. A backlog is
     # a clock, because the whole platform sends three contacts a minute, so it is measured in
@@ -1479,6 +1479,25 @@ def create_app(
                 )
         return health
 
+    # Seller replies arrive only if every conversation we wrote to is read. A conversation left
+    # unread, or a run of requests no seller answered, is a failure to show, never an empty inbox.
+    REPLY_ALERT_MAIL_SECONDS = 3600
+
+    def _watch_replies() -> dict:
+        try:
+            health = store.reply_sync_health()
+        except Exception as exc:  # noqa: BLE001 - the watch must not fail the run that already sent
+            log.error("haraj reply sync health could not be read: %s", exc)
+            return {"alert": True, "reasons": ["reply sync health could not be read"]}
+        if health["alert"]:
+            log.error("haraj reply sync: %s", "; ".join(health["reasons"]))
+            where = os.environ.get("OPS_EMAIL", "").strip()
+            last = store.get_value("reply_alert_mailed_at")
+            if where and (not last or time.time() - float(last) >= REPLY_ALERT_MAIL_SECONDS):
+                store.set_value("reply_alert_mailed_at", str(time.time()))
+                mailer.send(where, "تنبيه: ردود البائعين في فرق", "\n".join(health["reasons"]))
+        return health
+
     def _ring_closing_soon() -> int:
         """A supplier who has not priced a request the customer is already deciding on is
         about to miss it. Rung one dedupes, so this is safe to run every minute."""
@@ -1493,6 +1512,11 @@ def create_app(
     def queue_health_report(authorization: str | None = Header(default=None)) -> dict:
         require_cron(authorization)
         return _watch_queue()
+
+    @app.get("/v1/internal/reply-health")
+    def reply_health_report(authorization: str | None = Header(default=None)) -> dict:
+        require_cron(authorization)
+        return store.reply_sync_health()
 
     # Registered after every API route: an unknown /v1 path is a JSON 404, never the web app.
     @app.api_route("/v1/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

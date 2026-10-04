@@ -431,6 +431,8 @@ def test_cron_route_is_not_swallowed_by_the_web_app(tmp_path: Path, monkeypatch)
     assert (body["sent"], body["received"], body["closing"]) == (0, 0, 0)
     # The same run watches the Haraj backlog, which is empty and not alerting.
     assert body["queue"]["queued"] == 0 and body["queue"]["alert"] is False
+    # And whether every Haraj conversation is being read: nothing sent, nothing to alert on.
+    assert body["replies"]["never_read_1h"] == 0 and body["replies"]["alert"] is False
 
 
 def test_unread_replies_and_phone_notifications(tmp_path: Path, monkeypatch):
