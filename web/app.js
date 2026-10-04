@@ -1667,7 +1667,7 @@ function renderReview() {
     ${Number.isFinite(cap) ? `<div class="fq-capbanner">تقدر تختار حتى ${esc(suppliers(cap))} لكل بند</div>` : ""}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
       <button class="fq-link" type="button" data-action="toggle-extra" aria-expanded="${extra}">${extra ? "إخفاء" : "إضافة"} ملاحظة أو مرفقات (اختياري)</button>
-      <span class="fq-count-pill">تم اختيار: ${formatCount(chosen.length)}${Number.isFinite(cap) ? ` من ${formatCount(cap)}` : ""}</span></div>
+      <span class="fq-count-pill">اخترت: ${formatCount(chosen.length)}${Number.isFinite(cap) ? ` من ${formatCount(cap)}` : ""}</span></div>
     ${extra
       ? `<div class="fq-card pad">
           <div class="fq-field"><label for="note">ملاحظة</label><div class="fq-inp" style="min-height:80px;align-items:flex-start"><textarea id="note" rows="2" maxlength="500" placeholder="مثلاً: التسريب تحت المغسلة، والأفضل الصباح">${esc(state.note)}</textarea></div></div>

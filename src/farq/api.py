@@ -1470,7 +1470,7 @@ def create_app(
                 mailer.send(
                     where,
                     "تنبيه: طابور إرسال فرق",
-                    f"في الطابور {health['queued']} رسالة، وتحتاج ~{health['drain_minutes']} دقيقة للتصريف."
+                    f"في الطابور {health['queued']} رسالة، وتحتاج نحو {health['drain_minutes']} دقيقة للإرسال."
                     f" الإرسال موقوف: {health['send_paused']}."
                     f" نسبة التسليم داخل التطبيق آخر 30 يوم: {health['in_app_share_30d']}.",
                 )
