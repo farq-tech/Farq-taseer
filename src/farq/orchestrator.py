@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Iterator
 from uuid import uuid4
@@ -19,7 +20,7 @@ from farq.contracts import (
 )
 from farq.corpus import LocalHit, MemoryCorpus
 from farq.dedup import deduplicate
-from farq.eligibility import decide
+from farq.eligibility import SOFT_REJECTIONS, decide
 from farq.intent import analyze, analyze_needs
 from farq.live_haraj import HarajLiveClient, LiveBatch, QueryFetch
 from farq.ranking import rank, score
@@ -102,6 +103,60 @@ def _live_results(intent: IntentResponse, batch: LiveBatch, config: SearchConfig
     return results, rejected, reasons
 
 
+NEAR_LIMIT = 10
+
+
+def _near_results(intent: IntentResponse, ads: list, config: SearchConfig, now: datetime) -> list[SearchResult]:
+    """Listings that failed only a soft rule, for when the strict pass kept nothing.
+
+    Each is marked match="near" so the app can say so; a hard rejection (another city,
+    another model, sold, deleted, a wanted-ad) never comes back this way."""
+    found: list[SearchResult] = []
+    seen: set[str] = set()
+    for ad in ads:
+        if ad.id in seen or ad.listing_state in ("deleted", "stale"):
+            continue
+        seen.add(ad.id)
+        ok, reasons = decide(intent, ad, ad.seller)
+        if ok or not reasons or not reasons[0].startswith(SOFT_REJECTIONS):
+            continue
+        ok, evidence = decide(intent, ad, ad.seller, relaxed=True)
+        if not ok:
+            continue
+        unit = ResultUnit.SERVICE_PROVIDER if intent.result_unit == ResultUnit.SERVICE_PROVIDER else (
+            ResultUnit.HYBRID if intent.result_unit == ResultUnit.HYBRID else ResultUnit.AD
+        )
+        found.append(
+            SearchResult(
+                result_unit=unit,
+                ad=ad,
+                seller=ad.seller,
+                score=score(intent, ad, ad.seller, evidence, config, now),
+                match_evidence=evidence,
+                match="near",
+            )
+        )
+    merged, _removed = deduplicate(found)
+    return rank(intent, merged, config, now)[:NEAR_LIMIT]
+
+
+def _zero_reason(state: SearchState, fetched: int, rejection_reasons: list[str]) -> str | None:
+    """Why there is no exact result, specific enough for the app to say what to do next."""
+    if state == SearchState.TIMEOUT:
+        return "timeout"
+    if state in (SearchState.LIVE_UNAVAILABLE, SearchState.INTERNAL_ERROR):
+        return "source_unavailable"
+    if state == SearchState.DELETED_AD:
+        return "deleted"
+    if state in (SearchState.LIVE_EMPTY, SearchState.LOCAL_EMPTY):
+        return "no_listings"
+    if state == SearchState.NO_QUALIFIED_RESULTS:
+        if rejection_reasons and all(reason == "location_mismatch" for reason in rejection_reasons):
+            return "none_in_city"
+        return "none_matching" if (fetched or rejection_reasons) else "no_listings"
+    return None
+
+
 def _wants_live(intent: IntentResponse, qualified_local: int, config: SearchConfig) -> list[str]:
     reasons: list[str] = []
     if not config.enable_live:
@@ -157,6 +212,11 @@ def _ordered(intent: IntentResponse, local_results: list[SearchResult], live_res
     return rank(intent, kept, config, now), removed
 
 
+def _reason_key(reason: str) -> str:
+    # «missing:هارد|هاردسك» is grouped as «missing»: the words are in the reading already.
+    return reason.split(":", 1)[0]
+
+
 def _search_need(
     intent: IntentResponse,
     corpus: MemoryCorpus,
@@ -164,6 +224,7 @@ def _search_need(
     config: SearchConfig,
     now: datetime,
     trace_id: str,
+    near: bool = False,
 ):
     """Yields events while it searches, then one {"type": "need_done", ...} with the outcome.
     Being a generator is the point: the customer sees each batch as it lands, not all of them at the end."""
@@ -254,6 +315,9 @@ def _search_need(
                 "fetched": len(live_batch.ads),
                 "qualified": len(live_results),
                 "rejected": live_rejected,
+                # Which rule turned the listings away: without it a zero-result search
+                # (238 fetched, 238 rejected) cannot be told apart from a broken source.
+                "rejected_by": dict(Counter(_reason_key(reason) for reason in live_reasons).most_common(6)),
                 "pages": live_batch.pages_fetched,
                 "queries": live_batch.queries_run,
                 "error": live_batch.error,
@@ -268,8 +332,13 @@ def _search_need(
         live=live_batch,
         rejection_reasons=local_reasons + live_reasons,
     )
-    stages.append({"stage": "response", "need": intent.need, "state": state.value, "results": len(ordered)})
-    yield {"type": "need_done", "state": state, "results": ordered, "stages": stages}
+    fetched = len(live_batch.ads) if live_batch is not None else 0
+    zero_reason = None if ordered else _zero_reason(state, fetched, local_reasons + live_reasons)
+    if not ordered and near and live_batch is not None and live_batch.ads and zero_reason == "none_matching":
+        ordered = _near_results(intent, live_batch.ads, config, now)
+        stages.append({"stage": "near_match", "need": intent.need, "kept": len(ordered)})
+    stages.append({"stage": "response", "need": intent.need, "state": state.value, "results": len(ordered), "zero_reason": zero_reason})
+    yield {"type": "need_done", "state": state, "results": ordered, "stages": stages, "zero_reason": zero_reason}
 
 
 def iter_search(
@@ -278,6 +347,7 @@ def iter_search(
     live_client: HarajLiveClient | None,
     config: SearchConfig | None = None,
     now: datetime | None = None,
+    near: bool = False,
 ) -> Iterator[dict]:
     config = config or SearchConfig()
     now = now or _now()
@@ -302,6 +372,7 @@ def iter_search(
         results: list[SearchResult],
         clarification: str | None = None,
         groups: list[NeedGroup] | None = None,
+        zero_reason: str | None = None,
     ) -> dict:
         response = SearchResponse(
             state=state,
@@ -310,6 +381,7 @@ def iter_search(
             groups=groups or [],
             clarification_question=clarification,
             trace_id=trace_id,
+            zero_reason=zero_reason,
         )
         trace = {"trace_id": trace_id, "stages": stages, "state": state.value}
         return {"type": "done", "response": response, "trace": trace}
@@ -344,7 +416,7 @@ def iter_search(
             outcome = done[index]
             need_intent = needs[index]
             label = need_intent.need or need_intent.original_query
-            groups.append(NeedGroup(need=label, intent=need_intent, results=outcome["results"], state=outcome["state"], need_index=index))
+            groups.append(NeedGroup(need=label, intent=need_intent, results=outcome["results"], state=outcome["state"], need_index=index, zero_reason=outcome.get("zero_reason")))
             for item in outcome["results"]:
                 key = (item.ad.id if item.ad else None, item.seller.id if item.seller else None)
                 if key in seen:
@@ -352,7 +424,7 @@ def iter_search(
                 seen.add(key)
                 flat.append(item)
 
-    for index, event in _search_needs_together(needs, corpus, live_client, config, now, trace_id):
+    for index, event in _search_needs_together(needs, corpus, live_client, config, now, trace_id, near):
         if event["type"] != "need_done":
             yield {**event, "need_index": index}
             continue
@@ -369,29 +441,30 @@ def iter_search(
         }
 
     if len(groups) == 1:
-        yield finish(groups[0].state, groups[0].results, groups=[groups[0]])
+        yield finish(groups[0].state, groups[0].results, groups=[groups[0]], zero_reason=groups[0].zero_reason)
         return
-    any_results = any(group.results for group in groups)
+    # Near matches are not results: an order of only near matches is still «none matched».
+    any_results = any(item.match == "exact" for group in groups for item in group.results)
     state = SearchState.RESULTS if any_results else SearchState.NO_QUALIFIED_RESULTS
-    yield finish(state, flat, groups=groups)
+    yield finish(state, flat, groups=groups, zero_reason=None if any_results else "none_matching")
 
 
-def _search_needs_together(needs, corpus, live_client, config, now, trace_id):
+def _search_needs_together(needs, corpus, live_client, config, now, trace_id, near=False):
     """(index, event) for every item, as the events come, all items searched at once.
     One item is searched inline; several run on threads and meet in one queue. A search
     that raises answers for its item with INTERNAL_ERROR rather than taking the rest down."""
     if len(needs) == 1:
-        for event in _search_need(needs[0], corpus, live_client, config, now, trace_id):
+        for event in _search_need(needs[0], corpus, live_client, config, now, trace_id, near):
             yield 0, event
         return
     box: queue.Queue = queue.Queue()
 
     def worker(index: int, need_intent) -> None:
         try:
-            for event in _search_need(need_intent, corpus, live_client, config, now, trace_id):
+            for event in _search_need(need_intent, corpus, live_client, config, now, trace_id, near):
                 box.put((index, event))
         except Exception as exc:  # noqa: BLE001 - one item's failure is that item's outcome
-            box.put((index, {"type": "need_done", "state": SearchState.INTERNAL_ERROR, "results": [], "stages": [{"stage": "error", "need": need_intent.need, "error": str(exc)[:200]}]}))
+            box.put((index, {"type": "need_done", "state": SearchState.INTERNAL_ERROR, "results": [], "stages": [{"stage": "error", "need": need_intent.need, "error": str(exc)[:200]}], "zero_reason": "source_unavailable"}))
         finally:
             box.put((index, None))
 
@@ -412,10 +485,11 @@ def run_search(
     live_client: HarajLiveClient | None,
     config: SearchConfig | None = None,
     now: datetime | None = None,
+    near: bool = False,
 ) -> tuple[SearchResponse, dict]:
     response = None
     trace = None
-    for event in iter_search(query, corpus, live_client, config, now):
+    for event in iter_search(query, corpus, live_client, config, now, near=near):
         if event["type"] == "done":
             response = event["response"]
             trace = event["trace"]

@@ -10,6 +10,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from farq.cities import known_city
@@ -135,6 +136,49 @@ def invite_text(item: str, city: str | None) -> str:
             QUOTE_LINK,
         ]
     )
+
+
+def with_delivery(recipients: list[RequestRecipient], messages: list[Message]) -> list[RequestRecipient]:
+    """Each supplier's real send state, read from the deliveries of the customer's messages.
+
+    A delivery a channel accepted makes the supplier «sent», with its first time and its
+    channel. One claimed by the sender but without an outcome stays «sending» - the result is
+    not known yet, so it is never shown as sent. A seller message marks «replied»."""
+    accepted: dict[str, dict] = {}
+    pending: dict[str, str] = {}
+    replied: set[str] = set()
+    for message in messages:
+        if message.sender_role == "seller":
+            if message.seller_id:
+                replied.add(message.seller_id)
+            continue
+        for item in message.deliveries:
+            seller = item.get("seller_id")
+            if not seller:
+                continue
+            status = item.get("status")
+            if status in ("sent", "in_app"):
+                first = accepted.get(seller)
+                stamp = item.get("sent_at")
+                if first is None or (stamp and (first["sent_at"] is None or str(stamp) < str(first["sent_at"]))):
+                    accepted[seller] = {"sent_at": stamp, "channel": "in_app" if status == "in_app" else "haraj"}
+            elif status in ("queued", "sending"):
+                # «sending» wins over «queued»: someone picked it up and the answer is pending.
+                if pending.get(seller) != "sending":
+                    pending[seller] = status
+    out: list[RequestRecipient] = []
+    for recipient in recipients:
+        update: dict[str, Any] = {"replied": recipient.seller_id in replied}
+        done = accepted.get(recipient.seller_id)
+        if done is not None:
+            stamp = done["sent_at"]
+            update.update(send_status="sent", sent_at=stamp.isoformat() if hasattr(stamp, "isoformat") else stamp, channel=done["channel"])
+        elif recipient.send_status not in ("failed",) and recipient.seller_id in pending:
+            update["send_status"] = pending[recipient.seller_id]
+        # Otherwise the row's own status stands (a «sent» row from before deliveries were
+        # recorded keeps a null time and channel: unknown, not invented).
+        out.append(recipient.model_copy(update=update))
+    return out
 
 
 def _delivery_state(deliveries: list[dict]) -> str:
@@ -1390,6 +1434,7 @@ class Store:
             for item in self._connection.execute("select * from attachments where request_id = ?", (request_id,))
         ]
         messages = self._messages_for_request(request_id)
+        recipients = with_delivery(recipients, messages)
         return RequestRecord(
             id=row["id"],
             owner_user_id=row["owner_user_id"],
@@ -2374,7 +2419,7 @@ class Store:
             ad_id=item["ad_id"],
             need=self._col(item, "need"),
             reply_token=self._col(item, "reply_token"),
-            send_status=self._col(item, "send_status", "sent"),
+            send_status=self._col(item, "send_status", "unknown") or "unknown",
             listing_url=self._col(item, "listing_url"),
         )
 

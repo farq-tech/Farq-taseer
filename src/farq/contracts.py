@@ -135,6 +135,10 @@ class SearchResult(ContractModel):
     seller: Seller | None = None
     score: float
     match_evidence: list[str] = Field(default_factory=list)
+    # "exact" passed every eligibility rule. "near" is offered only when nothing passed: a
+    # real listing that failed a soft rule (the head word not early in the title, or one of
+    # several word groups missing). The app labels it as near, never as a match.
+    match: str = "exact"
 
 
 class NeedGroup(ContractModel):
@@ -146,6 +150,7 @@ class NeedGroup(ContractModel):
     # are searched at the same time and finish in any order, so the position in the list
     # no longer says which item a group belongs to.
     need_index: int | None = None
+    zero_reason: str | None = None
 
 
 class SearchResponse(ContractModel):
@@ -156,6 +161,10 @@ class SearchResponse(ContractModel):
     groups: list[NeedGroup] = Field(default_factory=list)
     clarification_question: str | None = None
     trace_id: str
+    # Why there is no exact result, when there is none: source_unavailable | timeout |
+    # no_listings (the source returned nothing) | none_in_city (listings exist, none in the
+    # asked city) | none_matching (listings exist, none match) | deleted. Null with results.
+    zero_reason: str | None = None
 
 
 class Attachment(ContractModel):
@@ -209,8 +218,17 @@ class RequestRecipient(ContractModel):
     ad_id: str | None = None
     need: str | None = None
     reply_token: str | None = None
-    send_status: str = "sent"
+    # queued | sending | sent | failed | unknown. «sent» means a channel accepted the
+    # request (Haraj took the message, or it landed in the supplier's in-app inbox); it is
+    # not delivered and not read. A row with no recorded outcome is «unknown», never «sent».
+    send_status: str = "unknown"
     listing_url: str | None = None
+    # When and by which channel (haraj | in_app) the request was accepted, from the
+    # deliveries themselves. Null until then.
+    sent_at: str | None = None
+    channel: str | None = None
+    # The supplier wrote back in this request's conversation.
+    replied: bool = False
 
 
 class RequestRecord(ContractModel):
