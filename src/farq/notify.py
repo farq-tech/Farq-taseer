@@ -33,7 +33,7 @@ NOT_BUILT = ("sms", "whatsapp")
 EVENTS = {
     "request_new": {
         "title": "طلب تسعير جديد",
-        "body": "وصلك طلب جديد في مجالك. افتحه وقدّم سعرك قبل غيرك.",
+        "body": "وصلك طلب جديد في مجالك. افتحه وقدّم عرضك.",
         "urgent": True,
     },
     "question_new": {
@@ -52,7 +52,7 @@ EVENTS = {
         "urgent": False,
     },
     "awarded": {
-        "title": "🎉 تم اختيار عرضك",
+        "title": "تم اختيار عرضك",
         "body": "العميل اختارك لتنفيذ الطلب. نسّق معه من المحادثة.",
         "urgent": True,
     },

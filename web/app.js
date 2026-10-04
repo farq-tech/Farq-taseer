@@ -725,7 +725,7 @@ function understandProblem() {
       <div><h1 class="fq-h2">ما قدرنا نقرأ طلبك الحين</h1><p class="fq-lead">${state.intentErrorReason === "rate" ? "طلبات كثيرة خلال دقيقة. طلبك محفوظ، انتظر شوي ثم حاول مرة ثانية." : "صار خلل في الاتصال بفرق. طلبك محفوظ، جرّب مرة ثانية بعد لحظات."}</p></div>
       ${quote}
       <div class="fq-actions" style="width:100%">
-        <button class="fq-btn" type="button" data-action="retry-intent">حاول مرة ثانية</button>
+        <button class="fq-btn" type="button" data-action="retry-intent">جرّب مرة ثانية</button>
         <button class="fq-btn ghost" type="button" data-action="edit-request">عدّل الطلب</button>
       </div>
     </section>`;
@@ -846,7 +846,7 @@ function cityChoices(action) {
 
 function finalNotice(status, count) {
   if (status === "PARTIAL_RESULTS") return count ? "ما قدرنا نكمل البحث. هذي الخيارات اللي وصلت." : "البحث ما اكتمل.";
-  if (status === "LIVE_UNAVAILABLE") return "المصدر ما استجاب الحين، فما نقدر نأكد إذا فيه نتائج أو لا.";
+  if (status === "LIVE_UNAVAILABLE") return "المصدر ما رد الآن. ما نقدر نأكد وجود نتائج.";
   if (status === "TIMEOUT") return count ? "البحث طال، وهذي الخيارات اللي وصلت." : "انقطع البحث قبل ما يكتمل. جرّب مرة ثانية.";
   if (status === "NO_QUALIFIED_RESULTS") return "لقينا إعلانات، بس ما فيه شيء يطابق طلبك.";
   if (status === "LIVE_EMPTY" || status === "LOCAL_EMPTY") return "ما رجع المصدر إعلان يطابق هذا الطلب.";
@@ -1144,7 +1144,7 @@ function renderAuth() {
   if (!state.legacyAuth && !state.farqFallback) return renderFarqAuth();
   const linking = Boolean(state.farqLink) && !register;
   const fallback = Boolean(state.farqFallback) && !linking && !register;
-  const title = register ? "إنشاء حساب" : linking ? "اربط حساب تسعير القديم" : "تسجيل الدخول";
+  const title = register ? "أنشئ حساب" : linking ? "اربط حساب تسعير القديم" : "تسجيل الدخول";
   const sub = register ? "حساب واحد لكل طلباتك في فرق" : linking ? "عندك حساب تسعير قديم بنفس بريد فرق. ادخل بكلمة مروره مرة وحدة، وبعدها حساب فرق يكفي." : fallback ? "ما وصلتنا جلسة فرق من التطبيق. ادخل بحساب تسعير عشان نكمل إرسال طلبك، أو حدّث تطبيق فرق." : "ادخل إلى حسابك في فرق";
   const lang = `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>`;
   return `<header class="fq-head is-auth">
@@ -1195,7 +1195,7 @@ function renderFarqAuth() {
     <div class="fq-hero soft">
       <span class="halo" aria-hidden="true"></span>
       <h1 class="fq-h1" style="font-size:28px;font-weight:700">حسابك في فرق يكفي</h1>
-      <p class="fq-lead">تسعير جزء من فرق: نفس الحساب، نفس الدخول. سجّل دخولك مرة وحدة وترجع لنفس المكان.</p>
+      <p class="fq-lead">تسعير جزء من فرق وبنفس الحساب. سجّل دخولك مرة وحدة وترجع لنفس المكان.</p>
     </div>
     ${state.authError ? `<p class="fq-small" role="alert" style="color:#b3402a">${esc(state.authError)}</p>` : ""}
     <div class="fq-actions" style="gap:16px;align-items:center">
@@ -1265,7 +1265,7 @@ function showAuthError(message) {
 // what the composer suggests — it does not search on its own, because a bare category is
 // not a request: «سيارات» tells us nothing to price.
 const CATEGORIES = [
-  { code: "trades", name: "صيانة وحرفيين", examples: ["سباك يصلح تسريب حمام", "كهربائي يركب 3 أفياش", "دهان غرفتين"] },
+  { code: "trades", name: "صيانة وحرفيون", examples: ["سباك يصلح تسريب حمام", "كهربائي يركب 3 أفياش", "دهان غرفتين"] },
   { code: "building_materials", name: "مواد بناء ومقاولات", examples: ["مقاول تشطيب شقة", "طوب أحمر 5000 حبة", "صبة خرسانة جاهزة"] },
   { code: "vehicles", name: "سيارات", examples: ["لاندكروزر 2025 لون ابيض", "كامري مستعملة موديل 2020", "هايلكس غمارتين"] },
   { code: "parts", name: "قطع غيار السيارات", examples: ["إطارات 265/60 R18", "بطارية 100 أمبير", "دبل كلتش هايلكس"] },
@@ -1275,7 +1275,7 @@ const CATEGORIES = [
   { code: "furniture", name: "أثاث", examples: ["كنب زاوية 6 مقاعد", "غرفة نوم كاملة", "طاولة طعام 8 كراسي"] },
   { code: "moving", name: "نقل وسطحات", examples: ["نقل عفش شقة من الرياض لجدة", "سطحة نقل سيارة", "دينا نقل أغراض"] },
   { code: "equipment", name: "معدات", examples: ["مولد كهرباء 10 كيلو", "ضاغط هواء", "سقالات للإيجار"] },
-  { code: "animals", name: "حلال وحيوانات", examples: ["خروف نعيمي للذبح", "أعلاف برسيم", "نقل مواشي"] },
+  { code: "animals", name: "مواشٍ وحيوانات", examples: ["خروف نعيمي للذبح", "أعلاف برسيم", "نقل مواشي"] },
   { code: "general_services", name: "خدمات عامة", examples: ["تنظيف شقة بعد الترميم", "مكافحة حشرات", "تنظيف خزان"] },
 ];
 
@@ -1309,7 +1309,7 @@ function renderHome() {
     <div class="fq-hero">
       <span class="halo" aria-hidden="true"></span>
       <h1>وش تبي نسعّر لك؟</h1>
-      <p>قل لنا وش تحتاج، وفرق يجيب لك الفرق من عدة مصادر في محادثة وحدة. قارن، شوف الفرق، وخذ الأوفر.</p>
+      <p>قل لنا وش تحتاج. نجمع لك الخيارات من عدة مصادر في محادثة وحدة، وتقارن وتختار الأنسب.</p>
     </div>
     <form class="fq-card pad" id="composer" style="gap:10px">
       <label class="sr" for="composer-query">وش تبي نسعّر لك؟</label>
@@ -1355,7 +1355,7 @@ function renderSearching() {
     <div class="fq-card pad" style="gap:14px">
       <div class="fq-live wide"><span class="fq-pulse" aria-hidden="true"></span>
         <span style="flex:1">${state.results.length ? `وصل ${suppliers(state.results.length)} حتى الآن...` : "يبحث فرق عن أفضل سعر لك الآن..."}</span></div>
-      ${state.slowSearch ? `<p class="fq-meta" role="status" style="margin:0">البحث ياخذ وقت أطول من العادة. لو ما رجع شيء خلال لحظات بنوقفه ونقول لك.</p>` : ""}
+      ${state.slowSearch ? `<p class="fq-meta" role="status" style="margin:0">البحث أخذ وقتًا أطول من المعتاد. إذا ما وصلتنا نتائج خلال لحظات، بنوقفه ونبلغك.</p>` : ""}
       <div class="fq-live-count">
         <span class="fq-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>تحديث في الوقت الفعلي</span>
@@ -1542,7 +1542,7 @@ function emptyState() {
     return `<div class="fq-body center" style="padding:24px 0" role="alert">${blob("alert-triangle")}
       <div><h2 class="fq-h2">${esc(state.notice || finalNotice("INTERNAL_ERROR", 0))}</h2><p class="fq-lead">طلبك وبنودك محفوظة، ما يحتاج تكتبها من جديد.</p></div>
       <div class="fq-actions" style="width:100%">
-        <button class="fq-btn" type="button" data-action="retry-search">حاول مرة ثانية</button>
+        <button class="fq-btn" type="button" data-action="retry-search">جرّب مرة ثانية</button>
         <button class="fq-btn ghost" type="button" data-action="back-understand">عدّل البنود</button>
       </div></div>`;
   }
@@ -1720,7 +1720,7 @@ function capSheet() {
     <div class="fq-sheet" role="dialog" aria-label="حد الموردين لكل بند">
       <span class="fq-grab" aria-hidden="true"></span>
       <div><h2>${paid ? `وصلت لحد باقة «${esc(cap.plan_name)}»` : "وصلت لحد التجربة المجانية"}</h2>
-        <p class="fq-lead">${paid ? "باقتك تسمح" : "التجربة المجانية تسمح"} لك بإرسال طلب التسعير إلى ${formatCount(cap.sellers_per_item)} موردين كحد أقصى لكل بند لمقارنة أفضل الأسعار.</p></div>
+        <p class="fq-lead">${paid ? "باقتك تسمح" : "التجربة المجانية تسمح"} لك بإرسال طلب التسعير إلى ${formatCount(cap.sellers_per_item)} موردين كحد أقصى لكل بند لمقارنة الأسعار.</p></div>
       <div class="fq-actions">
         <button class="fq-btn" type="button" data-action="close-cap">متابعة بـ ${formatCount(cap.sellers_per_item)} موردين</button>
         <button class="fq-btn ghost" type="button" data-action="show-plans">${paid ? "ترقية الباقة" : "عرض الباقات"}</button>
@@ -1734,7 +1734,7 @@ function renderSending() {
   const total = state.sendingTo || state.selected.size;
   // What actually happens here: the request is recorded and joins the one sending queue.
   // No invented "geographic scope" steps - the honest line, and the wait it implies.
-  return `${fqHead({ title: "إرسال الطلب" })}
+  return `${fqHead({ title: "أرسل الطلب" })}
   <section class="fq-body center on-soft-mint" aria-live="polite" style="padding-top:80px">
     <div class="fq-sendring spin"><span>فرق</span></div>
     <div style="display:flex;flex-direction:column;gap:14px">
@@ -1747,10 +1747,10 @@ function renderSending() {
 // M10_RequestSent — node 27:374.
 function renderSent() {
   const info = state.sentInfo || {};
-  return `${fqHead({ title: "تم الإرسال" })}
+  return `${fqHead({ title: "أُرسل" })}
   <section class="fq-body center">
     <div class="fq-blob land">${ic("check", 56)}</div>
-    <div><h1 class="fq-h1">تم إرسال طلبك!</h1>
+    <div><h1 class="fq-h1">أرسلنا طلبك</h1>
       <p class="fq-lead">${(info.needs || []).length > 1 ? `${formatCount(info.needs.length)} طلبات، كل بند بمحادثته، في طريقها إلى ${esc(suppliers(info.sellers || 0))}.` : `طلب التسعير في طريقه إلى ${esc(suppliers(info.sellers || 0))}.`} نبلغك أول ما يوصلك رد.</p></div>
     <div class="fq-card pad fq-facts" style="width:100%">
       <div class="fq-row"><span class="fq-meta">عدد الموردين</span><strong>${formatCount(info.sellers || 0)}</strong></div>
@@ -1768,7 +1768,7 @@ function renderSent() {
     </div>` : ""}
     <div class="fq-actions" style="width:100%;margin-top:auto">
       <button class="fq-btn" type="button" data-action="open-sent">طلباتي</button>
-      <button class="fq-btn ghost" type="button" data-action="home">العودة للرئيسية</button>
+      <button class="fq-btn ghost" type="button" data-action="home">رجوع للرئيسية</button>
     </div>
   </section>
   ${fqNav("home")}`;
@@ -1789,7 +1789,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 function notifyBanner() {
   if (state.pushState === "on" || state.pushDismissed) return "";
   if (isIOS && !isStandalone) {
-    return `<div class="fq-banner"><span style="flex:1">تبي تنبيه لما يردون عليك؟ أضف تسعير للشاشة الرئيسية وافتحه من هناك.</span>
+    return `<div class="fq-banner"><span style="flex:1">تبي تنبيه إذا وصلك رد؟ أضف تسعير للشاشة الرئيسية وافتحه من هناك.</span>
       <button type="button" data-action="dismiss-notify" aria-label="إغلاق">✕</button></div>`;
   }
   if (!pushSupported || typeof Notification === "undefined" || Notification.permission === "denied") return "";
@@ -1885,7 +1885,7 @@ function renderRequests() {
     ${isFarqEmbed() ? `<h1 class="fq-sr-only">طلباتي</h1>` : ""}
     <div class="fq-row"><span class="fq-small" style="font-weight:600">تابع عروضك وطلباتك من مكان واحد</span>
       <button class="fq-addbtn" type="button" data-action="home">${ic("plus", 14)}طلب جديد</button></div>
-    <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تم إختيار افضل سعر")}${pill("done", "مكتملة")}</div>
+    <div class="fq-pills" style="justify-content:flex-start">${pill("all", "الكل")}${pill("active", "نشطة")}${pill("awarded", "تم اختيار أفضل سعر")}${pill("done", "مكتملة")}</div>
     <div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">
       ${state.requests.filter(match).map((item) => {
         const need = item.need || item.original_text;
@@ -2232,7 +2232,7 @@ function awardSheet(thread, pick) {
         <hr class="fq-line">
         <div class="fq-row"><span class="fq-meta">${esc(thread.need || thread.original_text || "")}</span><span class="fq-meta">${esc(cityLabel(thread.city) || "")}</span></div>
       </div>
-      <div class="fq-notice">بعد تأكيد الترسية سيتم اعتماد هذا العرض وإغلاق المنافسة على بقية الموردين.</div>
+      <div class="fq-notice">بعد تأكيد الترسية نعتمد هذا العرض ونغلق المنافسة على بقية الموردين.</div>
       <div class="fq-actions">
         <button class="fq-btn success" type="button" data-action="confirm-award" ${state.busy ? "disabled" : ""}>${state.busy ? "لحظة…" : `تأكيد الترسية على ${esc(who)}`}</button>
         <button class="fq-btn ghost" type="button" data-action="cancel-award">رجوع</button>
@@ -2254,7 +2254,7 @@ function renderAwarded() {
       <span class="fq-glow" style="width:220px;height:220px" aria-hidden="true"></span>
       <span class="fq-ringstack"><span class="ring">${ic("check", 28)}</span></span>
     </div>
-    <div><h1 class="fq-h1">تمت الترسية!</h1><p class="fq-lead">تم اعتماد هذا العرض وأرسلنا للمورد إشعار القبول.</p></div>
+    <div><h1 class="fq-h1">تمت الترسية!</h1><p class="fq-lead">اعتمدنا العرض وأرسلنا للمورد إشعار القبول.</p></div>
     <div class="fq-card pad fq-wincard" style="width:100%;align-items:center;text-align:center">
       <strong style="font-size:18px"><bdi>${esc(who)}</bdi></strong>
       ${offer?.total_price != null ? `<span class="fq-price won">${esc(money(offer.total_price))}</span>` : ""}
@@ -2576,8 +2576,8 @@ function payMethodLabel() {
 
 function paymentsOffNote() {
   return `<div class="fq-card pad grey" role="status">
-    <h2 class="fq-h2" style="font-size:17px">الاشتراك غير متاح حالياً</h2>
-    <p class="fq-lead">نجهّز الاشتراكات المدفوعة. تقدر تكمل استخدام التطبيق كالمعتاد وترجع لها لاحقاً.</p>
+    <h2 class="fq-h2" style="font-size:17px">الاشتراك غير متاح حاليًا</h2>
+    <p class="fq-lead">نجهّز الاشتراكات المدفوعة. تقدر تستخدم التطبيق وترجع لها لاحقًا.</p>
   </div>`;
 }
 
@@ -2632,7 +2632,7 @@ function renderNotifications() {
 const NOTIFY_ROWS = [
   ["messages", "رسائل الموردين", "تنبيه فوري عند وصول رسالة جديدة في المحادثة"],
   ["offers", "عروض جديدة", "تنبيه عند تقديم مورد لعرض سعر جديد لطلبك"],
-  ["lower", "عرض أقل", "تنبيه فوري عند وصول عرض سعر أقل من العروض الحالية"],
+  ["lower", "عرض أقل", "تنبيه فوري إذا وصل عرض سعر أقل من العروض الحالية"],
   ["updates", "تحديثات الطلب", "ترسية الطلب، إغلاق الطلب، أو تحديث حالته الرسمية"],
   ["billing", "الاشتراك والاستخدام", "تذكير بحد الاستخدام الشهري وتجديد باقة العضوية"],
 ];
@@ -2796,7 +2796,7 @@ function renderSubscribe() {
   if (view === "paying") {
     return `<section class="fq-body center">
       <div class="fq-spinner" aria-hidden="true"></div>
-      <div><h1 class="fq-h2">جاري تفعيل اشتراكك...</h1><p class="fq-lead">لا تغلق الصفحة، نجهز لك تجربة البحث الآن.</p></div>
+      <div><h1 class="fq-h2">نفعّل اشتراكك…</h1><p class="fq-lead">لا تغلق الصفحة، نجهز لك تجربة البحث الآن.</p></div>
     </section>`;
   }
 
@@ -2806,7 +2806,7 @@ function renderSubscribe() {
     <section class="fq-body center" style="padding-top:60px;padding-bottom:60px">
       <div class="fq-squircle ringed land">${ic("check", 56)}</div>
       <div style="display:flex;flex-direction:column;gap:14px">
-        <h1 class="fq-h1">تم تفعيل اشتراكك</h1>
+        <h1 class="fq-h1">تفعّل اشتراكك</h1>
         <p class="fq-lead">باقة: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p>
         <span class="fq-statepill green">نشط الآن</span></div>
       <div class="fq-actions" style="width:100%;margin-top:auto">
@@ -2818,14 +2818,14 @@ function renderSubscribe() {
 
   // SUB06_PaymentFailed — node 60:214.
   if (view === "failed") {
-    return `${fqHead({ title: "تعذر الدفع", mark: true })}
+    return `${fqHead({ title: "الدفع ما اكتمل", mark: true })}
     <section class="fq-body center" style="padding-top:48px">
       <div class="fq-squircle danger">${ic("alert-triangle", 56)}</div>
       <div style="display:flex;flex-direction:column;gap:20px">
-        <h1 class="fq-h1">تعذر إكمال الدفع</h1>
-        <p class="fq-lead">${esc(state.subError || "لم يتم خصم قيمة الاشتراك. يرجى مراجعة تفاصيل حسابك أو المحاولة مرة أخرى.")}</p></div>
+        <h1 class="fq-h1">ما قدرنا نكمل الدفع</h1>
+        <p class="fq-lead">${esc(state.subError || "ما انخصمت قيمة الاشتراك. شيّك على تفاصيل حسابك أو جرّب مرة ثانية.")}</p></div>
       <div class="fq-actions" style="width:100%;margin-top:auto;gap:12px">
-        <button class="fq-btn r14" type="button" data-action="retry-payment">إعادة المحاولة</button>
+        <button class="fq-btn r14" type="button" data-action="retry-payment">أعد المحاولة</button>
         <button class="fq-btn danger-soft r14" type="button" data-action="my-plan">رجوع</button>
       </div>
     </section>`;
@@ -2837,12 +2837,12 @@ function renderSubscribe() {
     <section class="fq-body" style="padding-top:24px;align-items:center;text-align:center">
       <div class="fq-squircle pale land">${ic("check", 64)}</div>
       <div style="display:flex;flex-direction:column;gap:18px">
-        <h1 class="fq-h1">تم تفعيل اشتراكك بنجاح!</h1>
+        <h1 class="fq-h1">تفعّل اشتراكك</h1>
         <p class="fq-lead">الباقة الحالية: ${esc(planName(state.subStatus?.subscription?.plan || state.subActivePlan))}</p></div>
       <div class="fq-card pad" style="width:100%;align-items:center;text-align:center;gap:10px">
         <span class="fq-arc" aria-hidden="true"></span>
-        <p class="fq-small" style="font-weight:700;color:var(--fq-text)">جاري إكمال إرسال طلبك تلقائياً...</p>
-        <p class="fq-meta">يتم الآن إرسال طلب التسعير إلى الموردين المحددين مسبقاً.</p>
+        <p class="fq-small" style="font-weight:700;color:var(--fq-text)">نكمل إرسال طلبك تلقائيًا…</p>
+        <p class="fq-meta">نرسل طلب التسعير إلى الموردين اللي اخترتهم…</p>
       </div>
     </section>`;
   }
@@ -2892,7 +2892,7 @@ function renderSubscribe() {
     const cap = allowance().items;
     return `${fqHead({ title: "تجاوزت الحد المسموح", back: "back-gate", mark: true })}
     <section class="fq-body tight">
-      <div class="fq-alert">عذرًا، لقد استهلكت كامل رصيد البنود المتاحة لباقة «${esc(planName(planCode))}».</div>
+      <div class="fq-alert">استخدمت كامل رصيد البنود في باقة «${esc(planName(planCode))}».</div>
       <div class="fq-plan">
         <div class="fq-row"><span class="fq-tag danger">مكتمل / منتهي</span><span class="name">باقة: ${esc(planName(planCode))}</span></div>
         <div class="fq-usage">
@@ -2930,7 +2930,7 @@ function renderSubscribe() {
             ${planDetails(target).description ? `<p class="desc">${esc(planDetails(target).description)}</p>` : ""}
             ${planDetails(target).features.length ? `<hr class="fq-line"><div class="fq-feats">${planDetails(target).features.map((f) => `<span class="fq-feat"><span class="y">✓</span>${esc(f)}</span>`).join("")}</div>` : ""}
           </article>`
-        : `<p class="fq-lead">لا توجد باقة أعلى متاحة حالياً.</p>`}
+        : `<p class="fq-lead">لا توجد باقة أعلى متاحة حاليًا.</p>`}
       <div class="fq-actions" style="margin-top:auto;gap:12px">
         ${paymentsOff() ? "" : `<button class="fq-btn r14" type="button" data-action="choose-plan" data-plan="${esc(target?.code || "")}" ${target ? "" : "disabled"}>متابعة للترقية</button>`}
         <button class="fq-btn ghost r14" type="button" data-action="my-plan">إلغاء</button>
@@ -2948,15 +2948,15 @@ function renderSubscribe() {
       ${isSubscribed()
         ? ""
         : `<article class="fq-plan trial">
-            <div class="fq-row"><span class="fq-tag ok">مفعلة حالياً</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
+            <div class="fq-row"><span class="fq-tag ok">مفعلة حاليًا</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
             <div class="fq-row"><span class="per">ابدأ بدون بطاقة</span><span class="amount">0 ر.س</span></div>
             <p class="desc">✓ ${formatAllowance(allowance().items)} بند تسعير • ✓ حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند</p>
           </article>
           <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
       ${paymentsOff() ? paymentsOffNote() : state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
-      ${plans.length ? plans.map((plan, index) => planCard(plan, { popular: index === popularIndex })).join("") : `<p class="fq-lead">لا توجد باقات متاحة حالياً.</p>`}
+      ${plans.length ? plans.map((plan, index) => planCard(plan, { popular: index === popularIndex })).join("") : `<p class="fq-lead">لا توجد باقات متاحة حاليًا.</p>`}
       <p class="fq-small" style="text-align:center;line-height:1.9">
-        الأسعار شهرية ونهائية، بدون ضريبة قيمة مضافة. الاشتراك لا يتجدّد تلقائياً.<br>
+        الأسعار شهرية ونهائية، بدون ضريبة قيمة مضافة. الاشتراك لا يتجدّد تلقائيًا.<br>
         <a class="fq-link" href="/terms" data-action="legal" data-doc="terms">الشروط والأحكام</a> ·
         <a class="fq-link" href="/refunds" data-action="legal" data-doc="refunds">الإلغاء والاسترداد</a> ·
         <a class="fq-link" href="/privacy" data-action="legal" data-doc="privacy">الخصوصية</a>
@@ -2998,12 +2998,12 @@ function renderSubscribe() {
           ? `<div class="fq-card pad" style="margin-top:10px">
               ${state.subBusy ? `<p class="fq-lead">نجهّز الدفع…</p>` : ""}
               <div id="moyasar-form-${esc(plan.code)}"></div>
-              ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p><button class="fq-btn ghost sm" type="button" data-action="retry-payment">حاول مرة ثانية</button>` : ""}
+              ${state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p><button class="fq-btn ghost sm" type="button" data-action="retry-payment">جرّب مرة ثانية</button>` : ""}
             </div>`
           : ""}
       </div>
       <p class="fq-small" style="text-align:center;line-height:1.9;margin-top:12px">
-        الاشتراك شهري ولا يتجدّد تلقائياً. السعر نهائي بدون ضريبة قيمة مضافة.<br>
+        الاشتراك شهري ولا يتجدّد تلقائيًا. السعر نهائي بدون ضريبة قيمة مضافة.<br>
         بالمتابعة توافق على <a class="fq-link" href="/terms" data-action="legal" data-doc="terms">الشروط</a>
         و<a class="fq-link" href="/refunds" data-action="legal" data-doc="refunds">سياسة الإلغاء والاسترداد</a>.
       </p>
@@ -3034,7 +3034,7 @@ function renderSubscribe() {
         ? `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">ترقية سريعة لتفادي الانقطاع</h2>
             <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الآن</button></div>`
         : `<div class="fq-upsell"><h2 class="fq-h2" style="font-size:17px">تحتاج مساحة أكبر؟</h2>
-            <p class="fq-lead">رقّ باقتك لتحصل على بنود تسعير أكثر ومزايا إضافية لك.</p>
+            <p class="fq-lead">رقّ باقتك لبنود تسعير أكثر ومزايا إضافية.</p>
             <button class="fq-btn r14" type="button" data-action="upgrade">ترقية الاشتراك</button></div>`
     : "";
   return `${fqHead({ title: "حسابي", mark: true, end: `<button class="fq-lang" type="button" data-action="lang">${ic("globe", 16)}<span>العربية</span></button>` })}
@@ -3049,7 +3049,7 @@ function renderSubscribe() {
           <div class="fq-feats">${[`حتى ${formatAllowance(allowance().items)} بند تسعير`, `حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
             .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
             .join("")}</div></div>
-        <p class="fq-meta">يمكنك التواصل مع حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند مجاناً.</p>
+        <p class="fq-meta">تقدر تتواصل مع حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند مجانًا.</p>
         <div class="fq-sticky">
           ${critical && !paymentsOff()
             ? `<button class="fq-btn r14" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
@@ -3057,7 +3057,7 @@ function renderSubscribe() {
               ? `<button class="fq-btn amber-chip r14" type="button" disabled>تجربتك نشطة</button>`
               : `<button class="fq-btn mint r14" type="button" disabled>تجربتك مفعلة</button>`}
           ${paymentsOff()
-            ? `<p class="fq-small" style="text-align:center;margin-top:12px">الاشتراك غير متاح حالياً</p>`
+            ? `<p class="fq-small" style="text-align:center;margin-top:12px">الاشتراك غير متاح حاليًا</p>`
             : `<p class="fq-small" style="text-align:center;margin-top:12px">تحتاج أكثر؟ <button class="fq-link" type="button" data-action="show-plans">عرض الباقات</button></p>`}
         </div>`}
   </section>
@@ -3638,12 +3638,12 @@ function renderVerify() {
       ? `<div class="fq-spinner" aria-hidden="true"></div><p class="fq-lead">نتأكد من الرابط…</p>`
       : done
         ? `<div class="fq-squircle ringed land">${ic("check", 56)}</div>
-           <div><h1 class="fq-h1">تم تأكيد بريدك</h1><p class="fq-lead">تقدر الآن ترسل طلباتك.</p></div>
+           <div><h1 class="fq-h1">تأكد بريدك الإلكتروني</h1><p class="fq-lead">تقدر الآن ترسل طلباتك.</p></div>
            <div class="fq-actions" style="width:100%;margin-top:auto">
              <button class="fq-btn r14" type="button" data-action="home">ابدأ التسعير</button></div>`
         : `<div class="fq-squircle danger">${ic("alert-triangle", 56)}</div>
            <div><h1 class="fq-h1">الرابط غير صالح</h1>
-             <p class="fq-lead">يمكن انتهت صلاحيته أو استُخدم من قبل. اطلب رابطاً جديداً من داخل التطبيق.</p></div>
+             <p class="fq-lead">قد يكون الرابط منتهيًا أو مستخدمًا من قبل. اطلب رابطًا جديدًا من داخل التطبيق.</p></div>
            <div class="fq-actions" style="width:100%;margin-top:auto">
              <button class="fq-btn r14" type="button" data-action="resend-verify">أرسل رابطاً جديداً</button>
              <button class="fq-btn ghost r14" type="button" data-action="home">رجوع</button></div>`}
@@ -3663,8 +3663,8 @@ function renderVerify() {
 const SUPPLIER_STATES = {
   new: { label: "جديد", tone: "warn" },
   quoted: { label: "مرسل عرض", tone: "deep" },
-  awarded: { label: "تم الترسية", tone: "ok" },
-  lost: { label: "لم يتم اختيارك", tone: "" },
+  awarded: { label: "تمت الترسية", tone: "ok" },
+  lost: { label: "العميل ما اختارك", tone: "" },
 };
 
 const SUPPLIER_FILTERS = [
@@ -3842,14 +3842,14 @@ function renderSupplierAuth() {
 
       <div class="fq-field"><label for="join-desc">وش تشتغل بالضبط؟</label>
         <div class="fq-inp" style="min-height:88px;align-items:flex-start"><textarea id="join-desc" name="description" rows="3" maxlength="400" placeholder="مثال: أشتغل سباكة وأصلح تسريبات المياه وأركب سخانات">${esc(state.supplierDesc)}</textarea></div>
-        <span class="fq-meta">اكتب بالعامية وبتفصيل. كل كلمة لها معنى نحفظها، حتى لو ما لها تصنيف جاهز.</span></div>
+        <span class="fq-meta">اكتب وصف نشاطك بكلامك وبالتفاصيل اللي تحتاجها. نحفظه حتى لو ما له تصنيف جاهز.</span></div>
 
       ${pickedItems.length
         ? `<div class="fq-field"><label>تصنيفاتك</label>
             <div class="fq-pills">${pickedItems.map((item) => supplierChip(item, true)).join("")}</div></div>`
         : ""}
       ${suggested.length
-        ? `<div class="fq-field"><label>تم التعرف على:</label>
+        ? `<div class="fq-field"><label>فهمنا من وصفك:</label>
             <div class="fq-pills">${suggested.map((item) => supplierChip(item, false)).join("")}</div></div>`
         : ""}
       ${state.supplierCapabilities.length
@@ -3921,8 +3921,7 @@ function renderSupplierRequests() {
   return `${fqHead({ title: "طلبات التسعير", mark: true, end: bell })}
   <section class="fq-body tight">
     ${pending
-      ? `<div class="fq-card pad grey"><h2 class="fq-h2" style="font-size:17px">حسابك تحت المراجعة</h2>
-          <p class="fq-lead">سجّلنا طلب انضمامك. لين نربط حسابك بإعلاناتك، ما تقدر تشوف طلبات هنا — وإذا وصلك رابط طلب من فرق، افتحه وهو يربط حسابك تلقائياً.</p></div>`
+      ? `<div class="fq-card pad grey"><h2 class="fq-h2" style="font-size:17px">حسابك تحت المراجعة</h2> <p class="fq-lead">سجّلنا طلب انضمامك. لين نربط حسابك بإعلاناتك، ما تقدر تشوف طلبات هنا — وإذا وصلك رابط طلب من فرق، افتحه وهو يربط حسابك تلقائيًا.</p></div>`
       : `<div class="fq-pills" style="overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px">${SUPPLIER_FILTERS.map((item) => {
           const n = counts[item.key];
           return `<button class="fq-pill${state.supplierFilter === item.key ? " on" : ""}" type="button" data-action="supplier-filter" data-key="${item.key}" style="white-space:nowrap">${esc(item.label)}${n != null ? ` (${formatCount(n)})` : ""}</button>`;
@@ -3964,7 +3963,7 @@ function renderSeller() {
       <div class="fq-blob warn">${ic(missing ? "alert-triangle" : "info", 48)}</div>
       <div><h1 class="fq-h2">${missing ? "الرابط غير صالح أو انتهت صلاحيته" : "ما قدرنا نفتح الطلب"}</h1>
         <p class="fq-lead">${missing ? "افتح الرابط كاملاً من رسالة فرق في حراج، أو اطلب من العميل يرسله لك مرة ثانية." : "تأكد من الاتصال وجرّب مرة ثانية."}</p></div>
-      ${missing ? "" : `<button class="fq-btn" type="button" data-action="seller-reload">حاول مرة ثانية</button>`}
+      ${missing ? "" : `<button class="fq-btn" type="button" data-action="seller-reload">جرّب مرة ثانية</button>`}
     </section>`;
   }
   if (!view) {
@@ -4073,8 +4072,8 @@ function renderSeller() {
     ${closed
       ? `<div class="fq-closed" role="status">
           <div class="fq-card pad grey">
-            <h2 class="fq-h2" style="font-size:17px">لم يتم اختيار عرضك لهذا الطلب</h2>
-            <p class="fq-lead">اختار العميل مورداً آخر. لا تقلق — بنرسل لك فرص تسعير جديدة ومناسبة لمجالك.</p>
+            <h2 class="fq-h2" style="font-size:17px">العميل ما اختار عرضك لهذا الطلب</h2>
+            <p class="fq-lead">العميل اختار موردًا ثانيًا. بنرسل لك طلبات تسعير جديدة تناسب مجالك.</p>
             ${state.supplierToken
               ? `<button class="fq-btn ghost r14" type="button" data-action="supplier-home">شاهد الفرص المتاحة ←</button>`
               : `<button class="fq-btn ghost r14" type="button" data-action="supplier-join">سجّل كمورد لتوصلك الطلبات مباشرة</button>`}
@@ -4178,7 +4177,7 @@ function sellerAwarded(view) {
     : "";
   return `<div class="fq-card pad" style="border-color:var(--fq-success)">
     <div class="fq-row"><span class="fq-tag ok">✓ تمت الترسية عليك</span>
-      <strong style="font-size:17px">🎉 تم اختيار عرضك!</strong></div>
+      <strong style="font-size:17px">تم اختيار عرضك</strong></div>
     <p class="fq-lead">اختارك العميل لتنفيذ الطلب. نسّق معه من نفس المحادثة تحت.</p>
     ${contact
       ? `<hr class="fq-line">
@@ -4195,7 +4194,7 @@ function renderLegal() {
   const title = LEGAL_TITLES[state.legalDoc] || LEGAL_TITLES.terms;
   const others = Object.keys(LEGAL_TITLES).filter((doc) => doc !== state.legalDoc);
   const body = state.legalError
-    ? `<div class="fq-body center" role="alert"><h1 class="fq-h2">ما قدرنا نفتح الصفحة</h1><button class="fq-btn" type="button" data-action="legal" data-doc="${esc(state.legalDoc)}">حاول مرة ثانية</button></div>`
+    ? `<div class="fq-body center" role="alert"><h1 class="fq-h2">ما قدرنا نفتح الصفحة</h1><button class="fq-btn" type="button" data-action="legal" data-doc="${esc(state.legalDoc)}">جرّب مرة ثانية</button></div>`
     : state.legalText
       ? `<article class="fq-legaldoc">${markdownHtml(state.legalText)}</article>`
       : `<div class="fq-card"><span class="fq-skel" style="height:18px;width:60%;border-radius:8px"></span><span class="fq-skel" style="height:14px;width:90%;border-radius:8px"></span><span class="fq-skel" style="height:14px;width:80%;border-radius:8px"></span></div>`;
@@ -4554,7 +4553,7 @@ async function runSearch(text, city = "") {
       } else if (event.type === "status") {
         state.searchState = event.state;
         state.partial = true;
-        state.notice = state.results.length ? "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر." : "ندور لك…";
+        state.notice = state.results.length ? "لقينا خيارات مناسبة، ونبحث لك عن خيارات أكثر." : "ندور لك…";
       } else if (event.type === "results") {
         // partial batches move the counter and the list, and say nothing
         const hadCards = state.results.length > 0;
@@ -4575,7 +4574,7 @@ async function runSearch(text, city = "") {
         }
         state.partial = true;
         state.searchState = event.state;
-        if (state.results.length) state.notice = "لقينا خيارات مناسبة، وقاعدين ندور لك على أكثر.";
+        if (state.results.length) state.notice = "لقينا خيارات مناسبة، ونبحث لك عن خيارات أكثر.";
         // A batch that arrives on a list already on screen adds its new cards to the end
         // instead of redrawing eighty cards and their pictures; the search's end reorders.
         if (hadCards && state.view === "flow" && patchResults()) return;
@@ -5246,7 +5245,7 @@ async function loadNotifications() {
   for (const item of state.requests) {
     const need = item.need || item.original_text || "";
     const at = item.last_message_at || item.created_at;
-    if (item.awarded_seller_id) feed.push({ kind: "award", need, text: "تم اعتماد العرض الفائز", at, request_id: item.id, unread: false });
+    if (item.awarded_seller_id) feed.push({ kind: "award", need, text: "اعتمدنا العرض الفائز", at, request_id: item.id, unread: false });
     if (item.latest_offer_amount != null) feed.push({ kind: "offer", need, text: `وصل عرض بقيمة ${money(item.latest_offer_amount)}`, at, request_id: item.id, unread: Boolean(item.unread_count) });
     if (item.unread_count) feed.push({ kind: "message", need, text: item.last_message || "رسالة جديدة في المحادثة", at, request_id: item.id, unread: true });
   }
@@ -5307,9 +5306,9 @@ function showVerifyResult(result) {
   } else if (result.pending) {
     state.subError = "";
     state.subView = "my-plan";
-    toast("البنك ما زال يؤكد الدفع. بنفعّل اشتراكك تلقائياً أول ما يكتمل.");
+    toast("البنك ما زال يؤكد الدفع. بنفعّل اشتراكك تلقائيًا أول ما يكتمل.");
   } else {
-    state.subError = "الدفع لم يكتمل، تحققنا منه ولم يُفعَّل الاشتراك. تقدر تحاول مرة ثانية.";
+    state.subError = "تحققنا من الدفع، لكنه ما اكتمل. الاشتراك غير مفعّل. تقدر تحاول مرة ثانية.";
     state.subView = "failed";
   }
 }
@@ -5369,7 +5368,7 @@ async function handleSubscribeCallback() {
       // the subscription screen again checks it; the webhook settles it meanwhile.
       state.subView = "my-plan";
       state.subError = "";
-      toast(error.status === 503 ? "الاشتراك غير متاح حالياً" : "ما قدرنا نتأكد من الدفع الآن. بنكمل التحقق تلقائياً.");
+      toast(error.status === 503 ? "الاشتراك غير متاح حاليًا" : "ما قدرنا نتأكد من الدفع الآن. بنكمل التحقق تلقائيًا.");
     }
   }
   // Nothing auto-mounts a new checkout here: the plan list offers an explicit choice instead.
@@ -5426,7 +5425,7 @@ async function mountPayment(planCode) {
           showVerifyResult(await verifyPayment(checkout.payment_id, payment.id, { tries: 3 }));
         } catch (_error) {
           state.subView = "review";
-          state.subError = "ما قدرنا نتأكد من الدفع الآن. إذا خُصم المبلغ بنفعّل اشتراكك تلقائياً.";
+          state.subError = "ما قدرنا نتأكد من الدفع الآن. إذا خُصم المبلغ بنفعّل اشتراكك تلقائيًا.";
         }
         render();
       },

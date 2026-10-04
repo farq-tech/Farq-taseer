@@ -30,7 +30,7 @@ export function LandingPage() {
             <p className="text-sm font-semibold text-brand-700">منصة اكتشاف وتسعير الموردين</p>
             <h1 className="mt-3 text-4xl font-extrabold leading-tight md:text-6xl">كل الموردين. كل الردود. مكان واحد.</h1>
             <p className="mt-4 max-w-xl text-lg text-ink-subtle">
-              ابحث، أرسل استفسارك عبر أكثر من قناة، واستقبل الأسعار في صندوق ذكي واحد ثم أرسِ العقد على العرض الأنسب.
+              ابحث وأرسل استفسارك عبر أكثر من قناة. استقبل الأسعار في مكان واحد، وقارن ورسِّ العقد على العرض الأنسب.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button onClick={() => go("discovery")}>اكتشف الموردين</Button>
