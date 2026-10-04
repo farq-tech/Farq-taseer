@@ -99,6 +99,21 @@ def test_young_requests_are_read_every_run_and_old_or_closed_ones_back_off():
     # Postgres hands back datetimes, SQLite text; an unknown age is read promptly.
     assert poll_interval([{"request_created_at": datetime.fromtimestamp(now - 3600, tz=timezone.utc)}], now) == FRESH_READ_SECONDS
     assert poll_interval([{"request_created_at": None}], now) == FRESH_READ_SECONDS
+    # A fresh message from the customer on an old or closed request is answered promptly.
+    assert poll_interval([{**old, "last_sent_at": iso(now - 600)}], now) == FRESH_READ_SECONDS
+    assert poll_interval([{**closed, "last_sent_at": iso(now - 600)}], now) == FRESH_READ_SECONDS
+    assert poll_interval([{**old, "last_sent_at": iso(now - 20 * DAY)}], now) == OLD_READ_SECONDS
+
+
+def test_a_new_message_on_an_old_request_brings_its_conversation_back_to_the_fast_pace(tmp_path: Path):
+    store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
+    request_id = sent_request(store, ["100"], NOW - 20 * DAY)
+    sql(store, "update message_deliveries set sent_at = ? where request_id = ?", (iso(NOW - 20 * DAY), request_id))
+    rows = store.threads_to_sync(now=NOW)
+    assert poll_interval(rows, NOW) == OLD_READ_SECONDS
+    sql(store, "update message_deliveries set sent_at = ? where request_id = ?", (iso(NOW - 60), request_id))
+    rows = store.threads_to_sync(now=NOW)
+    assert rows[0]["last_sent_at"] and poll_interval(rows, NOW) == FRESH_READ_SECONDS
 
 
 def test_a_large_old_history_cannot_starve_new_requests(tmp_path: Path):
@@ -163,3 +178,16 @@ def test_a_run_of_requests_no_seller_answered_raises_the_alert(tmp_path: Path):
     # A request younger than a day is not judged yet.
     sent_request(store, ["400", "401", "402"], NOW - 3600)
     assert store.reply_sync_health(now=NOW + 4)["silent_streak"] == 3
+
+
+def test_sending_on_a_backed_off_conversation_makes_it_due_at_once(tmp_path: Path):
+    from farq.haraj_chat import SentMessage
+
+    store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
+    request_id = sent_request(store, ["100"], NOW - 20 * DAY)
+    sql(store, "update haraj_threads set checked_at = ?, retry_at = ?", (iso(NOW - 60), "2999-01-01T00:00:00+00:00"))
+    sql(store, "update message_deliveries set delivery_status = 'sending' where request_id = ?", (request_id,))
+    delivery = store._connection.execute("select id from message_deliveries where request_id = ?", (request_id,)).fetchone()["id"]
+    store.finish_delivery(delivery, sent=SentMessage("p2p7_100", "p2p7_100:9", 9))
+    due = store.threads_to_sync()
+    assert [row["haraj_conversation_id"] for row in due] == ["p2p7_100"]

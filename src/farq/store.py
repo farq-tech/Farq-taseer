@@ -2118,6 +2118,10 @@ class Store:
                 "update haraj_threads set haraj_conversation_id = ?, high_water = coalesce(high_water, ?) where request_id = ? and seller_id = ? and need = ?",
                 (sent.haraj_conversation_id, sent.seq, *key),
             )
+            # A fresh message makes its conversation due now, whatever back-off it was on.
+            self._connection.execute(
+                "update haraj_threads set retry_at = ? where haraj_conversation_id = ? and retry_at > ?", (_now(), sent.haraj_conversation_id, _now())
+            )
             status = "sent"
         else:
             status = "queued" if retry else "failed"
@@ -2144,7 +2148,9 @@ class Store:
             "with due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
             " from haraj_threads where haraj_conversation_id is not null and (retry_at is null or retry_at <= ?)"
             " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit ?)"
-            " select t.*, r.created_at as request_created_at, r.deal_outcome from due"
+            " select t.*, r.created_at as request_created_at, r.deal_outcome,"
+            " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
+            " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
             " join haraj_threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
             " order by due.read_before, due.due_at, due.haraj_conversation_id",
             (stamp, limit),

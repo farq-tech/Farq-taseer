@@ -192,10 +192,15 @@ def _age_seconds(created_at, now: float) -> float | None:
 
 
 def poll_interval(threads: list[dict], now: float) -> int:
-    """Seconds until a conversation is due again, from its youngest request still being decided.
+    """Seconds until a conversation is due again, from its most recent activity.
 
-    A conversation is shared by every request we sent that seller, so the youngest open one sets
-    the pace. Closed deals and old requests back off instead of crowding out new ones."""
+    A conversation is shared by every request we sent that seller, so the youngest open request,
+    or our latest message on any of them, sets the pace: a seller answering a fresh message is read
+    promptly even on an old or closed request. Otherwise old and closed requests back off instead
+    of crowding out new ones."""
+    sends = [_age_seconds(item.get("last_sent_at"), now) for item in threads]
+    if any(age is not None and age < 3 * 86400 for age in sends):
+        return FRESH_READ_SECONDS
     open_ages = [_age_seconds(item.get("request_created_at"), now) for item in threads if not item.get("deal_outcome")]
     if not open_ages:
         return OLD_READ_SECONDS
