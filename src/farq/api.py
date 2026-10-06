@@ -979,6 +979,9 @@ def create_app(
     def send_held() -> bool:
         """Haraj sending is held (not connected, or the sending account is still in canary
         mode): queued messages are said to be not sent yet, never given a delivery time."""
+        if user_connection_enabled():
+            from farq.haraj_broker import UserHarajBroker
+            return not UserHarajBroker().configured
         return getattr(chat, "send_mode", "closed" if isinstance(chat, NotConnectedChat) else "open") != "open"
 
     @app.get("/v1/requests")
@@ -1680,7 +1683,7 @@ def create_default_app() -> FastAPI:
     config = SearchConfig()
     live = HarajLiveClient(config) if config.enable_live else None
     moyasar = MoyasarClient(payments.moyasar_secret_key, payments.moyasar_base_url)
-    # Taseer's own Haraj account from its own server settings; without them nothing is sent.
+    # Legacy transport remains closed; the user-account worker delegates to Farq's vault.
     chat = chat_from_env(cache=store)
     application = create_app(store, corpus, live, config, payments, moyasar, chat)
     # Serverless instances do not keep a thread alive; on Vercel the cron route drives the sync.

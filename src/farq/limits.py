@@ -241,15 +241,14 @@ def _items_in(recipients, default_need: str | None) -> dict[str, set[str]]:
 
 def check_new_request(store, limits: Limits, user_id: str, recipients, default_need: str | None, trace_id: str | None = None) -> None:
     """recipients: objects with seller_id and need. Raises LimitExceeded."""
-    # Before anything else: an unverified address must not be able to make Taseer's Haraj
-    # account write to a real supplier, because a free trial per throwaway address is the
-    # cheapest way to spend the shared send capacity.
-    if limits.verification_required() and not store.email_verified(user_id):
+    from farq.haraj_user_connection import enabled as user_connection_enabled
+    # The user-account API verifies Haraj connection before this check. Preserve
+    # the legacy verification rule only for the other existing flow.
+    if not user_connection_enabled() and limits.verification_required() and not store.email_verified(user_id):
         raise LimitExceeded(
             403, "EMAIL_NOT_VERIFIED",
             "أكّد بريدك الإلكتروني قبل إرسال أول طلب. أرسلنا لك رابط التأكيد.",
         )
-    from farq.haraj_user_connection import enabled as user_connection_enabled
     per_user_haraj = user_connection_enabled()
     per_item = _items_in(recipients, default_need)
     allowance = entitlement(store, limits, user_id)
