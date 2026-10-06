@@ -28,3 +28,26 @@ No further messaging HAR is currently requested. Cookie-free compatibility
 remains unverified. Targeted bridge/connection tests: 13 passed.
 
 Latest normal local suite: 1097 passed, 65 PostgreSQL tests skipped, 1 live integration test deselected. No merge, deployment or new live send.
+
+## Actual iPhone trial — 2026-10-07
+
+The isolated per-user worker, consent, owner-scoped reply routing and exact buyer
+text are implemented and deployed to the separate staging service. The normal
+suite now passes **1105 tests**, with **65 PostgreSQL cases skipped** in that run.
+A separate disposable real PostgreSQL suite passed **57 tests**. These are
+distinct from a live provider delivery claim.
+
+The customer reached the real native review screen for a plumbing RFQ and reported
+that sending failed. Haraj connection/verification requests completed, then both
+RFQ creation attempts failed with HTTP 500: `dataclasses.replace` received the
+unset default Targeting value. This occurred before RFQ persistence or outbound
+enqueue. Commit `36256be` initializes the factory default and includes a regression
+test exercising request creation without an explicitly injected Targeting instance.
+Targeted account/worker/broker tests: **20 passed**; the full normal suite passed
+after the fix. The corrected staging deployment is being verified.
+
+No resend was initiated. The native review selection was reduced to one recipient
+to prepare a bounded canary. A new explicit approval for the named seller, current
+RFQ and exact message is required before the agent presses Send. The provider
+receipt, actual seller reply and native inbox/read persistence remain pending.
+Neither paired branch is merged; no production service or production OTA changed.
