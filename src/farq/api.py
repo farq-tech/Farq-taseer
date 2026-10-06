@@ -347,6 +347,7 @@ def create_app(
         max_age=600,
     )
     limits = limits or Limits()
+    targeting = targeting or Targeting()
     payments = payments or PaymentsConfig()
     # Farq's central credit ledger (api.farq.sa) - the only authority on credits.
     # Tests hand in a Billing built on an httpx.MockTransport speaking the same contract.

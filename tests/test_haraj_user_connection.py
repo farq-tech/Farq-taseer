@@ -90,3 +90,23 @@ def test_buyer_authored_message_is_preserved_without_company_invite(tmp_path):
     assert len(messages) == 1
     assert messages[0]['body'] == text == messages[0]['haraj_text']
     assert 'فرق' not in messages[0]['haraj_text'] and 'https://' not in messages[0]['haraj_text']
+
+
+def test_personal_account_request_uses_default_targeting_without_server_error(tmp_path, monkeypatch):
+    monkeypatch.setenv('FARQ_RECIPIENTS_FROM_SEARCH', '0')
+    monkeypatch.setenv('FARQ_REQUIRE_LISTING_MATCH', '1')
+    store = Store(tmp_path/'default-targeting.sqlite3', tmp_path/'uploads')
+    # Match the deployed factory: no explicit Targeting configuration supplied.
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
+    login = api.post('/v1/auth/register', json={'email':'default-targeting@example.test','password':'synthetic-password','name':'اختبار'})
+    monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '1')
+    monkeypatch.setattr('farq.api.require_messaging_evidence', lambda *_: {'status':'CONNECTED','provider_user_id':'101'})
+    response = api.post('/v1/requests', headers={'Authorization':'Bearer '+login.json()['token']}, json={
+        'original_text':'باب PVC', 'need':'باب PVC', 'city':'الرياض',
+        'supplier_message':'بكم الباب؟', 'haraj_consent':True,
+        'recipients':[{'seller_id':'haraj:seller:202','seller_name':'synthetic','ad_id':'303'}],
+    })
+    # Missing listing evidence is an explicit refusal, never a crash or a send.
+    assert response.status_code == 422, response.text
+    assert response.json()['detail']['code'] == 'NO_MATCHING_LISTINGS'
+    assert store.list_requests(store.user_for_token(login.json()['token'])) == []
