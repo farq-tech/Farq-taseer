@@ -8,7 +8,6 @@ import httpx
 import pytest
 
 from farq.haraj_chat import (
-    GRAPHQL_LOGIN,
     HarajAccounts,
     HarajChatClient,
     HarajChatUnavailable,
@@ -48,7 +47,7 @@ class FakeHaraj:
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.calls.append(request)
         url = str(request.url)
-        if url.startswith("https://ios.haraj.sa/") or url.startswith(GRAPHQL_LOGIN):
+        if url.startswith("https://ios.haraj.sa/") or url.startswith("https://graphql.haraj.com.sa/"):
             self.logins += 1
             return httpx.Response(200, json={"data": {"login": {"status": 200, "accessToken": f"token-{self.logins}", "refreshToken": "refresh", "ATvalidUntil": time.time() + 10 * 86400}}})
         if request.method == "POST" and url.endswith("/chat/users/7/topics"):
@@ -82,7 +81,15 @@ class FakeSocket:
 
 def make_client(haraj: FakeHaraj, env=ENV, sockets=None):
     http = httpx.Client(transport=httpx.MockTransport(haraj.handler))
-    session = HarajSession(env, http=http)
+    class FixtureSession:
+        renewable = True
+        def access_token(self):
+            if not haraj.logins:
+                haraj.logins = 1
+            return f"token-{haraj.logins}"
+        def invalidate(self):
+            haraj.logins += 1
+    session = FixtureSession()
     opened = sockets if sockets is not None else []
 
     def socket_factory(token):
@@ -100,16 +107,14 @@ def test_seller_address_is_the_author_id_only():
     assert author_id("haraj:seller:abc") is None
 
 
-def test_login_goes_through_the_ios_app_request():
-    haraj = FakeHaraj()
-    client, _ = make_client(haraj)
-    client.session.access_token()
-    login = haraj.calls[0]
-    assert str(login.url) == APP_URL
-    assert login.headers["user-agent"] == "Haraj/7.8.1 iOS"
-    body = json.loads(login.content)
-    assert body["operationName"] == "login"
-    assert body["variables"] == {"username": "taseer", "password": "secret", "oldToken": "", "loginByURL": None}
+def test_central_session_is_retired_without_reading_env_or_cache():
+    from unittest.mock import Mock
+    http, cache = Mock(), Mock()
+    session = HarajSession(ENV, http=http, cache=cache)
+    assert not session.configured and not session.renewable and not session.can_login
+    with pytest.raises(HarajChatUnavailable, match="HARAJ_USER_CONNECTION_REQUIRED"):
+        session.access_token()
+    assert not http.mock_calls and not cache.mock_calls
 
 
 def test_send_opens_the_topic_then_posts_with_a_fresh_socket_session():
@@ -203,13 +208,13 @@ def test_nothing_is_sent_without_the_server_switches():
     assert isinstance(chat_from_env({**TASEER_ENV, "HARAJ_TASEER_USER_ID": "8"}), NotConnectedChat)
     assert isinstance(chat_from_env({**TASEER_ENV, "HARAJ_SEND_ENABLED": "1"}), NotConnectedChat)  # no account id
     chat = chat_from_env({**TASEER_ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_TASEER_USER_ID": "8"})
-    assert isinstance(chat, HarajAccounts) and chat.send_account_id == "8"
+    assert isinstance(chat, NotConnectedChat)
     # The old shared account never sends from Taseer: configured alone, nothing is sent.
     assert isinstance(chat_from_env({**ENV, "HARAJ_SEND_ENABLED": "1", "HARAJ_USER_ID": "7"}), NotConnectedChat)
     assert isinstance(chat_from_env({"HARAJ_TOKEN": "t", "HARAJ_SEND_ENABLED": "1", "HARAJ_FARQ_USER_ID": "7"}), NotConnectedChat)
     # With the inbox on, it is still read.
     reading = chat_from_env({**ENV, "HARAJ_INBOX_ENABLED": "1", "HARAJ_SEND_ENABLED": "1", "HARAJ_USER_ID": "7"})
-    assert isinstance(reading, HarajAccounts) and not reading.can_send and set(reading.readers) == {"7"}
+    assert isinstance(reading, NotConnectedChat)
 
 
 class ScriptedChat:

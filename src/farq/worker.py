@@ -26,6 +26,7 @@ from typing import Callable
 from farq.outreach import daily_send_cap, render_invite, send_jitter_seconds, send_spacing_seconds
 from farq.push import notify_reply
 from farq.store import QUOTE_LINK
+from farq.haraj_user_connection import enabled as user_connection_enabled
 from farq.haraj_chat import (
     READ_PAUSE_SECONDS,
     READ_SPACING_SECONDS,
@@ -76,6 +77,8 @@ def dispatch_pending(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.time,
 ) -> int:
+    if user_connection_enabled():
+        return 0
     if isinstance(chat, NotConnectedChat) or not getattr(chat, "can_send", True):
         return 0
     account = getattr(chat, "send_account_id", None)
@@ -273,6 +276,8 @@ def sync_replies(
     clock: Callable[[], float] = time.time,
 ) -> int:
     """Read each supplier's Haraj conversation once, and file every reply under the right request."""
+    if user_connection_enabled():
+        return 0
     if isinstance(chat, NotConnectedChat) or _paused(store, "inbox_paused_until", clock()):
         return 0
     received = 0

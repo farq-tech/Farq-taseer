@@ -28,6 +28,7 @@ from farq.billing import Billing, BillingUnavailable
 from farq.cities import city_choices, known_city
 from farq.config import PaymentsConfig, SearchConfig
 from farq import farq_auth
+from farq.haraj_user_connection import require_messaging_evidence
 from farq.contracts import Offer, RequestRecipient, SearchResponse, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
@@ -156,6 +157,7 @@ class RecipientBody(ApiModel):
 
 class RequestBody(ApiModel):
     original_text: str
+    supplier_message: str | None = None
     need: str | None = None
     notes: str | None = None
     city: str | None = None
@@ -1015,6 +1017,7 @@ def create_app(
 
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        require_messaging_evidence()
         try:
             check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
         except LimitExceeded as exc:
@@ -1119,6 +1122,7 @@ def create_app(
                 body.attributes,
                 recipients,
                 request_id=request_id,
+                supplier_message=body.supplier_message,
             )
         except ValueError as exc:
             if ledger_active:
@@ -1180,6 +1184,7 @@ def create_app(
     @app.post("/v1/requests/{request_id}/attachments")
     async def upload(request_id: str, background: BackgroundTasks, file: UploadFile = File(...), user_id: str = Depends(current_user)) -> dict:
         """Photos added on the review screen go to every supplier on the request, like any other message."""
+        require_messaging_evidence()
         content_type, data = await read_upload(file)
         try:
             check_new_message(store, limits, user_id)
@@ -1202,6 +1207,7 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/messages")
     def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        require_messaging_evidence()
         try:
             check_new_message(store, limits, user_id)
         except LimitExceeded as exc:
@@ -1284,6 +1290,7 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/award")
     def award(request_id: str, body: AwardBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        require_messaging_evidence()
         record = store.get_request(request_id, user_id)
         if record is None:
             raise HTTPException(status_code=404, detail="request not found")
@@ -1305,6 +1312,7 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/counter")
     def counter(request_id: str, body: CounterBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        require_messaging_evidence()
         # A counter-offer is a message to one supplier: same limits, same queue, same spacing.
         try:
             check_new_message(store, limits, user_id)

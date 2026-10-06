@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from farq.contracts import RequestRecipient
-from farq.haraj_chat import HarajAccounts, HarajChatUnavailable, HarajNotSent, SentMessage, chat_from_env
+from farq.haraj_chat import HarajAccounts, HarajChatUnavailable, HarajNotSent, SentMessage, NotConnectedChat, chat_from_env
 from farq.store import Store
 from farq.worker import CANARY_SPENT_KEY, dispatch_pending
 
@@ -98,26 +98,12 @@ def run(store, chat, rounds=3) -> int:
 # -- the flags -----------------------------------------------------------------------
 
 
-def test_send_enabled_alone_puts_the_new_account_in_canary_mode_and_the_old_one_never_sends():
-    chat = chat_from_env(env())
-    assert chat.send_account_id == NEW and chat.send_mode == "canary" and chat.canary is None
-    assert not chat.readers[OLD].send_enabled
-    # Nothing is approved: even a direct send is refused.
+@pytest.mark.parametrize("settings", [{}, {"HARAJ_TASEER_SEND_ENABLED":"1"}, {"HARAJ_TASEER_CANARY_DELIVERY":"synthetic"}])
+def test_former_central_account_flags_cannot_create_a_session(settings):
+    chat = chat_from_env(env(**settings))
+    assert isinstance(chat, NotConnectedChat)
     with pytest.raises(HarajChatUnavailable):
-        chat.send(conversation_id=None, seller_id="15672569", ad_id=None, body="x")
-
-    named = chat_from_env(env(HARAJ_TASEER_CANARY_DELIVERY=" T-837199:15672569 "))
-    assert named.send_mode == "canary" and named.canary == "T-837199:15672569"
-    assert chat_from_env(env(HARAJ_TASEER_SEND_ENABLED="1")).send_mode == "open"
-    assert chat_from_env(env(HARAJ_TASEER_SEND_ENABLED="true")).send_mode == "canary"
-
-
-def test_the_old_account_never_sends_even_with_every_flag_on():
-    only_old = env(HARAJ_TASEER_SEND_ENABLED="1", HARAJ_TASEER_CANARY_DELIVERY="x")
-    for name in ("HARAJ_TASEER_USER_ID", "HARAJ_TASEER_USERNAME", "HARAJ_TASEER_PASSWORD"):
-        only_old.pop(name)
-    chat = chat_from_env(only_old)
-    assert not chat.can_send and chat.send_mode == "closed" and not chat.readers[OLD].send_enabled
+        chat.send(conversation_id=None, seller_id="900000002", ad_id=None, body="test")
 
 
 # -- the gate in the worker ------------------------------------------------------------

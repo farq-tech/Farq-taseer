@@ -330,6 +330,7 @@ class PgStore:
         attributes: dict,
         recipients: list[RequestRecipient],
         request_id: str | None = None,
+        supplier_message: str | None = None,
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
@@ -371,12 +372,12 @@ class PgStore:
                 self._enqueue(
                     conn,
                     request_id,
-                    "\n".join(line for line in lines if line),
+                    supplier_message if supplier_message is not None else "\n".join(line for line in lines if line),
                     item_need or None,
                     None,
                     None,
                     owner_user_id,
-                    haraj_text=invite_text(item_need or need or original_text, city_name),
+                    haraj_text=supplier_message if supplier_message is not None else invite_text(item_need or need or original_text, city_name),
                 )
         return request_id
 

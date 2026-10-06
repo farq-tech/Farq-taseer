@@ -1393,6 +1393,7 @@ class Store:
         attributes: dict,
         recipients: list[RequestRecipient],
         request_id: str | None = None,
+        supplier_message: str | None = None,
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
@@ -1432,12 +1433,12 @@ class Store:
                 lines.append(notes.strip())
             self._enqueue(
                 request_id,
-                "\n".join(line for line in lines if line),
+                supplier_message if supplier_message is not None else "\n".join(line for line in lines if line),
                 item_need or None,
                 None,
                 None,
                 owner_user_id,
-                haraj_text=invite_text(item_need or need or original_text, city_name),
+                haraj_text=supplier_message if supplier_message is not None else invite_text(item_need or need or original_text, city_name),
             )
         self._connection.commit()
         return request_id
@@ -2143,7 +2144,8 @@ class Store:
         rows = self._connection.execute(
             """
             select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id,
-                   t.haraj_account_id, q.ref_code
+                   t.haraj_account_id, q.ref_code, q.created_at as request_created_at,
+                   (select count(*) from request_recipients rr where rr.request_id=d.request_id) as recipient_count
             from message_deliveries d
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
