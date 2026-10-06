@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class ContractModel(BaseModel):
@@ -187,10 +187,21 @@ class Offer(ContractModel):
     total_price: float | None = None
     need: str | None = None
     cheapest: bool = False
+    quantity: int | None = None
+    unit_price: float | None = None
+    availability: str | None = None
     # «جديد» / «مستعمل», only when the supplier chose it on his offer form; a price read
     # from a free chat reply leaves it unknown rather than guessing from his words.
     condition: str | None = None
     created_at: str | None = None
+
+    @model_serializer(mode='wrap')
+    def serialize_optional_quote_metadata(self, handler):
+        data=handler(self)
+        for key in ('quantity','unit_price','availability'):
+            if data.get(key) is None:
+                data.pop(key,None)
+        return data
 
 
 class Message(ContractModel):

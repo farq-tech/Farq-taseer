@@ -26,7 +26,7 @@ import re
 import secrets
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, replace
 from typing import Callable, Protocol
 
 import httpx
@@ -587,6 +587,9 @@ class Quote:
     delivery_price: float | None = None
     delivery_included: bool | None = None
     uncertain: str | None = None
+    quantity: int | None = None
+    unit_price: float | None = None
+    availability: str | None = None
 
     @property
     def total(self) -> float | None:
@@ -663,3 +666,35 @@ def extract_price(text: str) -> float | None:
     """The total the seller asked for (price plus any delivery he named), or None when unsure."""
     quote = extract_quote(text)
     return None if quote is None else quote.total
+
+
+_PIECE_QUANTITY = re.compile(r"(?<!\d)([1-9]\d{0,8})\s*(?:باب|أبواب|ابواب|قطعة|قطع|حبة|حبات)(?!["+_AR+r"])")
+def extract_user_quote(text: str, need: str) -> Quote | None:
+    """Resolve an explicit per-piece quote only with a single quantity on this RFQ item.
+    Unitless totals, ranges and unclear units keep the existing conservative behavior.
+    """
+    quote=extract_quote(text)
+    if quote is None:
+        return None
+    normalized=(text or '').translate(_DIGITS)
+    availability='unavailable' if re.search(r"(?:غير|مو|ليس)\s*متوفر|نفد",normalized) else 'available' if 'متوفر' in normalized else None
+    if availability=='unavailable':
+        return replace(quote,base=None,uncertain='unavailable',availability=availability)
+    if quote.uncertain != 'unit_price':
+        return replace(quote,availability=availability)
+    quantities={int(m.group(1)) for m in _PIECE_QUANTITY.finditer((need or '').translate(_DIGITS))}
+    units=list(_UNIT.finditer(normalized))
+    if len(quantities)!=1 or not units or any(not re.search(r"(?:حب[ةه]|قطع[ةه])",m.group()) for m in units):
+        return quote
+    unit=extract_quote(_UNIT.sub(' ',normalized))
+    if unit is None or unit.total is None or unit.base is None:
+        return quote
+    quantity=next(iter(quantities))
+    return replace(unit,base=unit.base*quantity,quantity=quantity,unit_price=unit.base,availability=availability)
+
+
+def quote_metadata(text, need, total):
+    quote=extract_user_quote(text,need)
+    if quote is None or quote.total is None or total is None or abs(float(quote.total)-float(total))>0.01:
+        return {}
+    return {k:v for k,v in {'quantity':quote.quantity,'unit_price':quote.unit_price,'availability':quote.availability}.items() if v is not None}

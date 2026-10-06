@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 import json
 from uuid import uuid4
 import logging
@@ -28,7 +29,7 @@ from farq.billing import Billing, BillingUnavailable
 from farq.cities import city_choices, known_city
 from farq.config import PaymentsConfig, SearchConfig
 from farq import farq_auth
-from farq.haraj_user_connection import require_messaging_evidence
+from farq.haraj_user_connection import require_messaging_evidence, enabled as user_connection_enabled
 from farq.contracts import Offer, RequestRecipient, SearchResponse, SearchResult
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.idempotency import IdempotencyMiddleware
@@ -158,6 +159,7 @@ class RecipientBody(ApiModel):
 class RequestBody(ApiModel):
     original_text: str
     supplier_message: str | None = None
+    haraj_consent: bool = False
     need: str | None = None
     notes: str | None = None
     city: str | None = None
@@ -1015,9 +1017,33 @@ def create_app(
     def customer_inbox_read(body: NotificationReadBody, user_id: str = Depends(current_user)) -> dict:
         return {"marked": store.mark_customer_notifications_read(user_id, body.id)}
 
+    @app.get("/v1/haraj/unmatched")
+    def haraj_unmatched(user_id: str = Depends(current_user)) -> dict:
+        from farq.haraj_broker import owned_unmatched
+        return {"messages":owned_unmatched(store,user_id)}
+
+    @app.post("/v1/haraj/unmatched/assign")
+    def haraj_assign(body: dict, user_id: str = Depends(current_user)) -> dict:
+        from farq.haraj_broker import owned_unmatched
+        from farq.haraj_chat import InboundMessage
+        if set(body)-{"message_id","request_id","need"}:
+            raise HTTPException(422,detail="invalid assignment")
+        row=next((r for r in owned_unmatched(store,user_id) if r["id"]==body.get("message_id")),None)
+        if row is None:
+            raise HTTPException(404,detail="message not found")
+        candidate=next((c for c in row["candidates"] if c["request_id"]==body.get("request_id") and c["need"]==body.get("need")),None)
+        if candidate is None:
+            raise HTTPException(404,detail="item not found")
+        message=InboundMessage(row["id"],row["text"],row["sent_at"],int(row["id"].rsplit(":",1)[-1]))
+        recorded=store.record_inbound({**candidate,"haraj_conversation_id":row["conversation_id"]},message)
+        store.remove_owned_unmatched(store.farq_user_id(user_id),row["id"])
+        return {"assigned":True,"message_id":recorded.id if recorded else None}
+
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
-        require_messaging_evidence()
+        haraj_identity = require_messaging_evidence(store, user_id)
+        if user_connection_enabled() and (not body.haraj_consent or not body.supplier_message or not body.supplier_message.strip()):
+            raise HTTPException(422,detail={"code":"HARAJ_CONSENT_REQUIRED","message":"راجع رسالتك والموردين ثم وافق على الإرسال من حسابك"})
         try:
             check_new_request(store, limits, user_id, body.recipients, body.need, body.trace_id)
         except LimitExceeded as exc:
@@ -1035,7 +1061,7 @@ def create_app(
             reader(user_id, body.trace_id, since) if reader else [],
             known_city(body.city),
             body.need,
-            targeting,
+            replace(targeting,max_invites=max(1,len(body.recipients))) if user_connection_enabled() else targeting,
         )
         if selection.skipped:
             log.info("request targeting kept %s, skipped %s: %s", len(selection.kept), len(selection.skipped),
@@ -1119,7 +1145,7 @@ def create_app(
                 body.need,
                 body.notes,
                 body.city,
-                body.attributes,
+                {**{k:v for k,v in body.attributes.items() if k != "_haraj_consent"}, **({"_haraj_consent":{"owner":store.farq_user_id(user_id),"account":haraj_identity.get("provider_user_id"),"at":datetime.now(timezone.utc).isoformat(),"recipients":[r.seller_id for r in recipients]}} if user_connection_enabled() else {})},
                 recipients,
                 request_id=request_id,
                 supplier_message=body.supplier_message,
@@ -1184,7 +1210,9 @@ def create_app(
     @app.post("/v1/requests/{request_id}/attachments")
     async def upload(request_id: str, background: BackgroundTasks, file: UploadFile = File(...), user_id: str = Depends(current_user)) -> dict:
         """Photos added on the review screen go to every supplier on the request, like any other message."""
-        require_messaging_evidence()
+        if user_connection_enabled():
+            raise HTTPException(409,detail={"code":"HARAJ_UNSUPPORTED_MESSAGE_CONTENT","message":"إرسال الملفات عبر حراج غير متاح حاليًا"})
+        require_messaging_evidence(store, user_id)
         content_type, data = await read_upload(file)
         try:
             check_new_message(store, limits, user_id)
@@ -1207,7 +1235,7 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/messages")
     def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
-        require_messaging_evidence()
+        require_messaging_evidence(store, user_id)
         try:
             check_new_message(store, limits, user_id)
         except LimitExceeded as exc:
@@ -1290,7 +1318,7 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/award")
     def award(request_id: str, body: AwardBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
-        require_messaging_evidence()
+        require_messaging_evidence(store, user_id)
         record = store.get_request(request_id, user_id)
         if record is None:
             raise HTTPException(status_code=404, detail="request not found")
@@ -1312,7 +1340,7 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/counter")
     def counter(request_id: str, body: CounterBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
-        require_messaging_evidence()
+        require_messaging_evidence(store, user_id)
         # A counter-offer is a message to one supplier: same limits, same queue, same spacing.
         try:
             check_new_message(store, limits, user_id)

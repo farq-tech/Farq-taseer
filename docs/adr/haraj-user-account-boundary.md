@@ -16,3 +16,29 @@ Third HAR satisfies the missing plain-text messaging evidence. REST calls
 belong to Farq API; Taseer delegates signed owner/RFQ operations and never
 receives provider credentials. Keep workers closed until existing central
 queues cannot be replayed under user accounts and new consent is persisted.
+
+## Current implementation after the third recording
+
+The earlier 501/closed-worker boundary describes the pre-chat-evidence stage.
+The third recording proves REST topic creation, plain-text sending and recent
+message retrieval. The feature now runs through the existing delivery worker
+with a signed server-only bridge to Farq's vault. New RFQs persist explicit
+recipient consent, exact buyer text, immutable Farq owner and verified native
+Haraj account. Legacy queues without that consent cannot execute through this
+bridge. Tokens never enter Taseer. User identity linkage cannot be reassigned;
+conversation reads require both the request owner and recorded native account.
+
+Provider acceptance is recorded separately from delivery/read. Unknown send
+outcomes remain failed pending reconciliation, never automatically replayed.
+Multiple RFQs sharing a conversation require owner assignment of the original
+reply, rather than guessing its item. Existing quote extraction supports an
+explicit piece count and an unambiguous unit price; the UI identifies the
+calculated total. Unsupported attachments and incomplete history fail visibly.
+
+A database-level provider ownership registry survives disconnect, and encrypted
+credentials are authenticated against owner, provider identity and purpose.
+Client caches reject content and late callbacks from a previous session. A
+legitimate ownership transfer requires a separate recovery workflow.
+
+Cookie-free live compatibility, actual supplier reply routing and the native
+Farq app journey remain unverified until the isolated test deployment is used.

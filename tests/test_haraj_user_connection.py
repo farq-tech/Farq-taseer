@@ -65,10 +65,10 @@ def test_http_gate_before_request_message_attachment_or_billing(tmp_path: Path, 
     store.route_customer_message = Mock(side_effect=AssertionError('must not write'))
     for path, body in cases:
         response = api.post(path, headers=headers, json=body)
-        assert response.status_code == 501, response.text
+        assert response.status_code == 503, response.text
         assert response.json()['detail']['code'] == EVIDENCE_REQUIRED
     response = api.post('/v1/requests/synthetic-request/attachments', headers=headers, files={'file':('test.jpg',b'test','image/jpeg')})
-    assert response.status_code == 501
+    assert response.status_code == 409
     assert store.list_requests(store.user_for_token(login.json()['token'])) == []
     store.create_request.assert_not_called()
     store.route_customer_message.assert_not_called()
