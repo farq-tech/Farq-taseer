@@ -45,7 +45,7 @@ from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
 from farq.outreach import Targeting, listing_evidence, select_recipients
-from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement
+from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement, uses_central_ledger
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware, cors_origins
 from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids, seller_key
@@ -1088,9 +1088,7 @@ def create_app(
         # key is a success, and a request that then cannot be created reverses every spend.
         # Fail closed: no clear yes from central means the item is NOT granted.
         request_id = uuid4().hex
-        ledger_active = limits.ledger_enabled and not (
-            getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
-        )
+        ledger_active = uses_central_ledger(store, limits, user_id)
         needs = list(dict.fromkeys(item.need or body.need or "" for item in recipients))
         item_keys = [f"item:{request_id}:{item_need or ''}" for item_need in needs]
 

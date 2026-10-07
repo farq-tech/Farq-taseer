@@ -141,6 +141,14 @@ class Entitlement:
         return payload
 
 
+def uses_central_ledger(store, limits: Limits, user_id: str) -> bool:
+    """Per-user Haraj accounts always spend the enabled central membership balance."""
+    from farq.haraj_user_connection import enabled
+    return limits.ledger_enabled and (enabled() or not (
+        getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
+    ))
+
+
 def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlement:
     """Read the customer's allowance from their plan, or fall back to the free trial.
 
@@ -153,7 +161,8 @@ def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlemen
     # subscription row that would show it a renewal date and a payment history that do not
     # exist. sellers_per_item still honours the platform ceiling, because that one protects
     # the shared Haraj account rather than the customer's wallet.
-    if getattr(store, "account_unlimited", None) and store.account_unlimited(user_id):
+    if (getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
+            and not uses_central_ledger(store, limits, user_id)):
         return Entitlement(
             plan_code=OPEN_ACCOUNT,
             plan_name="حساب مفتوح",
