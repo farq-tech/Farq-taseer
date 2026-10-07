@@ -98,3 +98,27 @@ def test_read_binds_the_stored_account_and_refuses_unknown_legacy_account():
     with pytest.raises(HarajChatUnavailable, match='HARAJ_CONVERSATION_OWNERSHIP'):
         broker.read_thread(store, {**thread, 'haraj_account_id':None}, 7)
     broker.call.assert_not_called()
+
+
+def test_uncertain_provider_result_is_visible_without_requeue(tmp_path):
+    from farq.store import Store
+    from farq.contracts import RequestRecipient
+    store = Store(tmp_path/'uncertain.sqlite3', tmp_path/'uploads')
+    owner = store.register('test@example.test', 'synthetic')
+    request = store.create_request(owner, 'باب', 'باب', None, 'الرياض', {}, [RequestRecipient(seller_id='seller-test',seller_name='تجريبي')],supplier_message='بكم الباب؟')
+    delivery = store.claim_deliveries(request_id=request)[0]
+    store.finish_delivery(delivery['id'], error='HARAJ_SEND_UNCERTAIN', retry=False)
+    record = store.get_request(request, owner)
+    assert record.messages[0].delivery_state == 'unknown'
+    assert record.messages[0].deliveries[0]['status'] == 'unknown'
+    assert not store.claim_deliveries(request_id=request)
+    assert store.get_request(request, 'another-owner') is None
+
+
+def test_shared_routing_bounds_actual_targets_including_attachment_routes():
+    from farq.store import route_targets
+    recipients=[{"seller_id":str(i),"need":"باب" if i < 40 else "سباك"} for i in range(100)]
+    assert len(route_targets(recipients,None,"باب",None)[0]) == 40
+    assert len(route_targets(recipients,None,None,"99")[0]) == 1
+    with pytest.raises(ValueError,match="٥٠"):
+        route_targets(recipients,None,"سباك",None)

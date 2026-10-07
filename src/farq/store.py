@@ -174,8 +174,15 @@ def with_delivery(recipients: list[RequestRecipient], messages: list[Message]) -
     return out
 
 
+def _public_delivery_status(row) -> str:
+    # Preserve the stored failure receipt; expose uncertain acceptance honestly.
+    return "unknown" if row["delivery_status"] == "failed" and row["error"] == "HARAJ_SEND_UNCERTAIN" else row["delivery_status"]
+
+
 def _delivery_state(deliveries: list[dict]) -> str:
     statuses = {item["status"] for item in deliveries}
+    if "unknown" in statuses:
+        return "unknown"
     if statuses == {"sent"}:
         return "sent"
     if statuses & {"queued", "sending"}:
@@ -295,7 +302,7 @@ def _stamp(value) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
-def route_targets(recipients, default_need: str | None, need: str | None, seller_id: str | None, seller_ids=None):
+def _route_targets(recipients, default_need: str | None, need: str | None, seller_id: str | None, seller_ids=None):
     """Who a customer message goes to: the suppliers picked, one supplier, or every supplier on the item.
     Returns (targets, need, scope)."""
     item_of = lambda row: row["need"] or default_need or ""
@@ -325,6 +332,14 @@ def route_targets(recipients, default_need: str | None, need: str | None, seller
     if not targets:
         raise ValueError("unknown item")
     return targets, need, ALL_SELLERS
+
+
+
+def route_targets(recipients, default_need, need, seller_id, seller_ids=None):
+    targets, item, scope = _route_targets(recipients, default_need, need, seller_id, seller_ids)
+    if len({seller_key(row["seller_id"]) for row in targets}) > 50:
+        raise ValueError("اختر حتى ٥٠ مورداً لكل إرسال")
+    return targets, item, scope
 
 
 def reply_audience(quoted_seller_id: str | None, delivered: list[str], seller_id: str | None, seller_ids=None):
@@ -1570,8 +1585,8 @@ class Store:
 
     def _messages_for_request(self, request_id: str) -> list[Message]:
         deliveries: dict[str, list[dict]] = {}
-        for item in self._connection.execute("select message_id, seller_id, delivery_status, sent_at from message_deliveries where request_id = ? order by created_at", (request_id,)):
-            deliveries.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": item["sent_at"]})
+        for item in self._connection.execute("select message_id, seller_id, delivery_status, sent_at, error from message_deliveries where request_id = ? order by created_at", (request_id,)):
+            deliveries.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": _public_delivery_status(item), "sent_at": item["sent_at"]})
         messages = []
         for item in self._connection.execute("select * from messages where request_id = ? order by created_at", (request_id,)):
             offer = None
@@ -2891,9 +2906,9 @@ class Store:
             return found
         marks = ", ".join("?" for _ in ids)
         for item in self._connection.execute(
-            f"select message_id, seller_id, delivery_status, sent_at from message_deliveries where message_id in ({marks}) order by created_at", ids
+            f"select message_id, seller_id, delivery_status, sent_at, error from message_deliveries where message_id in ({marks}) order by created_at", ids
         ):
-            found.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": item["sent_at"]})
+            found.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": _public_delivery_status(item), "sent_at": item["sent_at"]})
         return found
 
     # -- customer notifications (a supplier replied) --------------------------

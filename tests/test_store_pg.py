@@ -357,3 +357,17 @@ def test_haraj_harvest_pg(name, tmp_path, monkeypatch, pg_store):
         fn(tmp_path, monkeypatch)
     else:
         fn(tmp_path)
+
+
+def test_uncertain_provider_outcome_stays_unknown_and_not_requeued(pg_store, tmp_path):
+    from farq.contracts import RequestRecipient
+    store = pg_store(tmp_path/'unused', tmp_path/'uploads')
+    owner = store.register('unknown@example.test','synthetic')
+    request = store.create_request(owner,'باب','باب',None,'الرياض',{},[RequestRecipient(seller_id='test-supplier',seller_name='اختبار')],supplier_message='بكم الباب؟')
+    delivery = store.claim_deliveries(request_id=request)[0]
+    store.finish_delivery(delivery['id'],error='HARAJ_SEND_UNCERTAIN',retry=False)
+    record = store.get_request(request, owner)
+    assert record.messages[0].delivery_state == 'unknown'
+    assert record.messages[0].deliveries[0]['status'] == 'unknown'
+    assert store.get_request(request,'other-owner') is None
+    assert not store.claim_deliveries(request_id=request)

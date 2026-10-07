@@ -766,3 +766,18 @@ def test_a_search_that_arrives_during_its_warm_up_follows_it_instead_of_starting
     assert out["lines"][-1]["type"] == "done"
     # ...and Haraj was asked once for the sentence, not twice.
     assert len(calls) == 1
+
+
+def test_more_than_50_suppliers_is_rejected_before_send(tmp_path):
+    api = client(tmp_path)
+    headers = signed_in(api)
+    response = api.post("/v1/requests", headers=headers, json={"original_text":"سباك", "recipients":[{"seller_id":str(i), "seller_name":"مورد"} for i in range(51)]})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "SUPPLIER_SEND_LIMIT"
+
+
+def test_limit_counts_distinct_suppliers_not_ads(tmp_path):
+    api = client(tmp_path)
+    headers = signed_in(api)
+    response = api.post("/v1/requests", headers=headers, json={"original_text":"سباك", "recipients":[{"seller_id":"one", "seller_name":"مورد", "ad_id":str(i)} for i in range(51)]})
+    assert response.status_code != 422 or response.json()["detail"].get("code") != "SUPPLIER_SEND_LIMIT"

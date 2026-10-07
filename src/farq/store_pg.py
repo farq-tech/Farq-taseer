@@ -40,6 +40,7 @@ from farq.store import (
     counter_views,
     deal_view,
     _delivery_state,
+    _public_delivery_status,
     with_delivery,
     award_notice,
     customer_notification_view,
@@ -527,9 +528,9 @@ class PgStore:
     def _messages(self, conn, request_id: str) -> list[Message]:
         deliveries: dict[str, list[dict]] = {}
         for item in conn.execute(
-            "select message_id, seller_id, delivery_status, sent_at from message_deliveries where request_id = %s order by created_at", (request_id,)
+            "select message_id, seller_id, delivery_status, sent_at, error from message_deliveries where request_id = %s order by created_at", (request_id,)
         ):
-            deliveries.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": _iso(item["sent_at"])})
+            deliveries.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": _public_delivery_status(item), "sent_at": _iso(item["sent_at"])})
         messages = []
         for item in conn.execute("select * from messages where request_id = %s order by created_at", (request_id,)):
             offer = None
@@ -1855,9 +1856,9 @@ class PgStore:
         if not ids:
             return found
         for item in conn.execute(
-            "select message_id, seller_id, delivery_status, sent_at from message_deliveries where message_id = any(%s) order by created_at", (ids,)
+            "select message_id, seller_id, delivery_status, sent_at, error from message_deliveries where message_id = any(%s) order by created_at", (ids,)
         ):
-            found.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": item["delivery_status"], "sent_at": _iso(item["sent_at"])})
+            found.setdefault(item["message_id"], []).append({"seller_id": item["seller_id"], "status": _public_delivery_status(item), "sent_at": _iso(item["sent_at"])})
         return found
 
     # -- customer notifications (a supplier replied) --------------------------

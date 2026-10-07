@@ -118,7 +118,9 @@ def test_a_new_message_on_an_old_request_brings_its_conversation_back_to_the_fas
 
 def test_a_large_old_history_cannot_starve_new_requests(tmp_path: Path):
     store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
-    sent_request(store, [str(1000 + i) for i in range(150)], NOW - 20 * DAY)
+    # Same 150 historic conversations, now seeded as three bounded sends.
+    for offset in range(0, 150, 50):
+        sent_request(store, [str(1000 + i) for i in range(offset, offset + 50)], NOW - 20 * DAY)
     chat = ReadingChat()
     at = NOW
     # Five reads a minute: the 150 old conversations take 30 runs to read once.
