@@ -327,3 +327,48 @@ def test_register_reopens_only_with_the_env_flag(tmp_path: Path, monkeypatch):
     _store, api = make_api(tmp_path)
     created = api.post("/v1/auth/register", json={"email": "new@example.com", "password": "secret-pass", "name": "عميل"})
     assert created.status_code == 200
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_legacy_open_account_cannot_bypass_per_user_membership(monkeypatch, tmp_path, enabled):
+    from farq.limits import entitlement, uses_central_ledger
+    stub, billing = central()
+    store, api = make_api(tmp_path, billing=billing, ledger_enabled=True)
+    user, farq_user, _ = linked(api, store, stub, credits=3)
+    store.set_unlimited(user)
+    monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '1' if enabled else '0')
+    limits = Limits(ledger_enabled=True)
+    assert uses_central_ledger(store, limits, user) is enabled
+    allowance = entitlement(store, limits, user, billing)
+    if enabled:
+        assert allowance.credits == 3 and allowance.items_left == 3
+    else:
+        assert allowance.credits is None and allowance.items_left > 1000
+
+
+def test_open_account_direct_request_debits_once_and_refuses_empty_balance(monkeypatch, tmp_path):
+    from farq.outreach import Targeting
+    stub, billing = central()
+    store = make_store(tmp_path)
+    app = create_app(store, MemoryCorpus.from_json(default_sample_path()), None,
+                     SearchConfig(enable_live=False),
+                     limits=Limits(ledger_enabled=True, recipients_from_search=False),
+                     billing=billing, targeting=Targeting(require_listing_match=False))
+    api = TestClient(app)
+    user, farq_user, headers = linked(api, store, stub, credits=1)
+    store.set_unlimited(user)
+    monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION','1')
+    monkeypatch.setattr('farq.api.require_messaging_evidence', lambda *_: {'provider_user_id':'101'})
+    sends = []
+    monkeypatch.setattr('farq.haraj_broker.send_request_directly', lambda *args: sends.append(args[1]))
+    body = {'original_text':'سباك','need':'سباك','city':'الرياض',
+            'recipients':[{'seller_id':'202','seller_name':'synthetic'}],
+            'haraj_consent':True,'supplier_message':'بكم؟'}
+    keyed = {**headers, 'Idempotency-Key':'synthetic-credit-once'}
+    first = api.post('/v1/requests', headers=keyed, json=body)
+    assert first.status_code == 200, first.text
+    replay = api.post('/v1/requests', headers=keyed, json=body)
+    assert replay.status_code == 200 and replay.json()['id'] == first.json()['id']
+    assert len(stub.consumes) == 1 and stub.balances[farq_user] == 0
+    assert len(sends) == 1
+    refused = api.post('/v1/requests', headers=headers, json=body)
+    assert refused.status_code == 402 and len(sends) == 1
