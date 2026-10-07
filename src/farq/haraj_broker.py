@@ -132,8 +132,11 @@ def sync_user_replies(store, budget_seconds, clock):
             consent = attributes.get('_haraj_consent', {})
         except (ValueError, AttributeError):
             consent = {}
+        if not isinstance(consent, dict):
+            consent = {}
         if (not owner or consent.get('owner') != owner or not consent.get('at')
                 or str(consent.get('account')) != str(thread.get('haraj_account_id'))
+                or not isinstance(consent.get('recipients'), list)
                 or thread['seller_id'] not in consent.get('recipients', [])):
             store.thread_checked(thread, failure_code='HARAJ_CONSENT_REQUIRED', retry_seconds=3600, now=clock())
             continue

@@ -115,3 +115,16 @@ def test_legacy_shared_threads_cannot_read_or_steal_new_account_replies(store, m
   assert not store.get_request(rid,store.request_owner(rid)).offers
   row=store._connection.execute('select failure_code from haraj_threads where request_id=?',(rid,)).fetchone()
   assert row['failure_code']=='HARAJ_CONSENT_REQUIRED'
+
+
+@pytest.mark.parametrize('bad', ['corrupt', {'recipients':None}, []])
+def test_malformed_legacy_consent_cannot_call_provider(store, monkeypatch, bad):
+ rid=request(store)
+ item=store.claim_deliveries(request_id=rid)[0]
+ store.finish_delivery(item['id'],sent=SentMessage('p2p101_202','p2p101_202:7',7,'101'))
+ store._connection.execute('update requests set attributes_json=? where id=?',(json.dumps({'_haraj_consent':bad}),rid))
+ store._connection.commit()
+ broker=Mock(configured=True)
+ monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:broker)
+ assert sync_user_replies(store,10,lambda:2000000000)==0
+ broker.read_thread.assert_not_called()
