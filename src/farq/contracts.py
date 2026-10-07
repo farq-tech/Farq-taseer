@@ -154,6 +154,7 @@ class NeedGroup(ContractModel):
 
 
 class SearchResponse(ContractModel):
+    next_page: int | None = None
     contract_version: str = CONTRACT_VERSION
     state: SearchState
     intent: IntentResponse

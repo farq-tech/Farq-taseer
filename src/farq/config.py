@@ -37,6 +37,8 @@ class SearchConfig:
     """
 
     min_qualified_local: int = field(default_factory=lambda: _env_int("FARQ_MIN_QUALIFIED_LOCAL", 3))
+    live_start_page: int = 1
+    include_older_ads: bool = False
     live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 20))
     live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 3))
     live_max_queries: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_QUERIES", 4))

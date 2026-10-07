@@ -41,6 +41,7 @@ from farq.text import normalize
 from farq.haraj_chat import HarajChat, NotConnectedChat, _Prefixed, chat_from_env
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
+from farq.haraj_harvest import HarvestStore, CachedHarajClient, harvest_once
 from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
@@ -142,6 +143,8 @@ SAUDI_MOBILE = re.compile(r"^(?:\+9665|009665|05)\d{8}$")
 
 
 class SearchBody(ApiModel):
+    page: int | None = Field(default=None, ge=1, le=10000)
+    continuation_trace: str | None = None
     query: str
     # The app labels near matches («قريبة من طلبك»). Only a client that says so gets them,
     # so an older app never shows a near match as if it were one.
@@ -818,7 +821,7 @@ def create_app(
 
     def _serve_cached(response, query: str, user_id: str | None):
         trace_id = uuid4().hex
-        response = response.model_copy(update={"trace_id": trace_id})
+        response = response.model_copy(update={"trace_id": trace_id, "next_page": None})
         store.record_journey(trace_id, user_id, query, response.state.value, [{"stage": "cache"}])
         _remember_sellers(trace_id, user_id, _response_results(response))
         _remember_listings(trace_id, user_id, _response_pairs(response))
@@ -897,18 +900,57 @@ def create_app(
             background.add_task(_warm_search, body.query, body.near)
         return {"warming": not hit, "ready": hit}
 
+    harvest = HarvestStore(store)
+
+    @app.get("/v1/internal/haraj-public-harvest")
+    def public_harvest(authorization: str | None = Header(default=None)) -> dict:
+        require_cron(authorization)
+        if os.environ.get("FARQ_HARAJ_PUBLIC_HARVEST_ENABLED") != "1":
+            return {"enabled": False, "pages_saved": 0}
+        return harvest_once(harvest, config)
+
+    def page_search(body: SearchBody):
+        if body.page is None:
+            return config, live_client
+        paged = replace(config, live_start_page=body.page, max_results=0, min_score_ratio=0, include_older_ads=True)
+        return paged, ((CachedHarajClient(paged, harvest) if os.environ.get("FARQ_HARAJ_PUBLIC_HARVEST_ENABLED") == "1" else HarajLiveClient(paged)) if live_client is not None else None)
+
+    def continuation_id(body: SearchBody, user_id: str | None) -> str | None:
+        if body.page is None:
+            if body.continuation_trace:
+                raise HTTPException(status_code=400, detail="unexpected continuation")
+            return None
+        if body.page == 1 and not body.continuation_trace:
+            return None
+        previous = store.journey(body.continuation_trace or "", user_id)
+        if (not isinstance(previous, dict) or previous.get("pagination_owner") != user_id
+                or previous.get("pagination_query") != body.query
+                or previous.get("next_page") != body.page):
+            raise HTTPException(status_code=404, detail="search continuation not found")
+        return body.continuation_trace
+
+    def pagination_trace(trace: dict, body: SearchBody, user_id: str | None, response, search_client=None) -> None:
+        if body.page is None:
+            response.next_page = None
+        trace.update(pagination_owner=user_id, pagination_query=body.query, next_page=response.next_page)
+        trace["harvest_jobs"] = sorted(getattr(search_client, "jobs", []))
+
     @app.post("/v1/search")
     def search(body: SearchBody, request: Request, authorization: str | None = Header(default=None)) -> dict:
         guard_search(request, body.query, search_limiter)
         user_id = _user_from_header(authorization)
-        kept = _cached_or_warming(body.query, body.near)
+        kept = _cached_or_warming(body.query, body.near) if body.page is None else None
         if kept is not None:
             return _serve_cached(kept, body.query, user_id).model_dump(mode="json")
-        response, trace = run_search(body.query, corpus, live_client, config, near=body.near)
+        search_config, search_client = page_search(body)
+        continued = continuation_id(body, user_id)
+        response, trace = run_search(body.query, corpus, search_client, search_config, near=body.near, trace_id=continued)
+        pagination_trace(trace, body, user_id, response, search_client)
         store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
         _remember_sellers(response.trace_id, user_id, _response_results(response))
         _remember_listings(response.trace_id, user_id, _response_pairs(response))
-        _keep_search(body.query, response, body.near)
+        if body.page is None:
+            _keep_search(body.query, response, body.near)
         return response.model_dump(mode="json")
 
     @app.post("/v1/search/stream")
@@ -916,8 +958,10 @@ def create_app(
         guard_search(request, body.query, search_limiter)
         user_id = _user_from_header(authorization)
 
+        continued = continuation_id(body, user_id)
+
         def generate():
-            kept = _cached_or_warming(body.query, body.near)
+            kept = _cached_or_warming(body.query, body.near) if body.page is None else None
             if kept is not None:
                 response = _serve_cached(kept, body.query, user_id)
                 yield json.dumps(_public_event({"type": "intent", "trace_id": response.trace_id, "intent": response.intent, "intents": [group.intent for group in response.groups] or None, "clarification_question": response.clarification_question}), ensure_ascii=False) + "\n"
@@ -925,8 +969,9 @@ def create_app(
                 payload["type"] = "done"
                 yield json.dumps(payload, ensure_ascii=False) + "\n"
                 return
-            warm = _warming_for(body.query, body.near)
-            source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, live_client, config, near=body.near)
+            warm = _warming_for(body.query, body.near) if body.page is None else None
+            search_config, search_client = page_search(body)
+            source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, search_client, search_config, near=body.near, trace_id=continued)
             intents: dict = {}
             for event in source:
                 if event["type"] == "intent":
@@ -942,14 +987,27 @@ def create_app(
                         _remember_sellers(event["trace_id"], user_id, event["results"], intents.get(event.get("need")))
                 if event["type"] == "done":
                     response = event["response"]
+                    pagination_trace(event["trace"], body, user_id, response, search_client)
                     store.record_journey(response.trace_id, user_id, body.query, response.state.value, event["trace"])
                     _remember_sellers(response.trace_id, user_id, _response_results(response))
                     _remember_listings(response.trace_id, user_id, _response_pairs(response))
-                    if warm is None:
+                    if warm is None and body.page is None:
                         _keep_search(body.query, response, body.near)
                 yield json.dumps(_public_event(event), ensure_ascii=False) + "\n"
 
         return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+    @app.get("/v1/search/{trace_id}/availability")
+    def search_availability(trace_id: str, authorization: str | None = Header(default=None)) -> dict:
+        user_id = _user_from_header(authorization)
+        trace = store.journey(trace_id, user_id)
+        if not isinstance(trace, dict) or trace.get("pagination_owner") != user_id:
+            raise HTTPException(status_code=404, detail="search not found")
+        jobs = [harvest.status(key) for key in trace.get("harvest_jobs", [])]
+        jobs = [job for job in jobs if job]
+        states = [job["state"] for job in jobs]
+        state = next((state for state in ("CHALLENGE", "RATE_LIMITED", "RETRY", "FETCHING") if state in states), "COMPLETE")
+        return {"state": state, "last_success": min((job["last_success"] for job in jobs if job["last_success"] is not None), default=None)}
 
     @app.get("/v1/search/{trace_id}/trace")
     def search_trace(trace_id: str, user_id: str = Depends(current_user)) -> dict:
