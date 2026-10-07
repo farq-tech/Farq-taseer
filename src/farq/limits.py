@@ -241,14 +241,15 @@ def _items_in(recipients, default_need: str | None) -> dict[str, set[str]]:
 
 def check_new_request(store, limits: Limits, user_id: str, recipients, default_need: str | None, trace_id: str | None = None) -> None:
     """recipients: objects with seller_id and need. Raises LimitExceeded."""
-    # Before anything else: an unverified address must not be able to make Taseer's Haraj
-    # account write to a real supplier, because a free trial per throwaway address is the
-    # cheapest way to spend the shared send capacity.
-    if limits.verification_required() and not store.email_verified(user_id):
+    from farq.haraj_user_connection import enabled as user_connection_enabled
+    # The user-account API verifies Haraj connection before this check. Preserve
+    # the legacy verification rule only for the other existing flow.
+    if not user_connection_enabled() and limits.verification_required() and not store.email_verified(user_id):
         raise LimitExceeded(
             403, "EMAIL_NOT_VERIFIED",
             "أكّد بريدك الإلكتروني قبل إرسال أول طلب. أرسلنا لك رابط التأكيد.",
         )
+    per_user_haraj = user_connection_enabled()
     per_item = _items_in(recipients, default_need)
     allowance = entitlement(store, limits, user_id)
 
@@ -266,19 +267,19 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
             message = f"انتهت التجربة المجانية ({allowance.items} بنود). اشترك لإرسال طلبات جديدة."
         raise LimitExceeded(402, "ITEM_ALLOWANCE_EXHAUSTED", message, allowance.items)
 
-    if any(len(sellers) > allowance.sellers_per_item for sellers in per_item.values()):
+    if not per_user_haraj and any(len(sellers) > allowance.sellers_per_item for sellers in per_item.values()):
         suffix = "." if allowance.subscribed else " في التجربة المجانية."
         message = f"يمكن إرسال الطلب إلى {allowance.sellers_per_item} موردين كحد أقصى لكل بند" + suffix
         raise LimitExceeded(403, "TOO_MANY_SELLERS", message, allowance.sellers_per_item)
 
-    if len(recipients) > allowance.contacts_left_today:
+    if not per_user_haraj and len(recipients) > allowance.contacts_left_today:
         message = (
             f"وصلت للحد اليومي ({allowance.daily_contacts} مورد في اليوم)."
             " الإرسال مجدول بالتساوي على كل العملاء، فحاول مرة ثانية بكرة."
         )
         raise LimitExceeded(429, "DAILY_CONTACT_LIMIT", message, allowance.daily_contacts)
 
-    if store.count_requests(user_id, since=_since(days=1)) >= limits.daily_requests:
+    if not per_user_haraj and store.count_requests(user_id, since=_since(days=1)) >= limits.daily_requests:
         raise LimitExceeded(429, "DAILY_REQUEST_LIMIT", f"وصلت للحد اليومي ({limits.daily_requests} طلب). حاول مرة ثانية بكرة.", limits.daily_requests)
 
     if limits.recipients_from_search:
@@ -288,5 +289,8 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
 
 
 def check_new_message(store, limits: Limits, user_id: str) -> None:
+    from farq.haraj_user_connection import enabled as user_connection_enabled
+    if user_connection_enabled():
+        return
     if store.count_customer_messages(user_id, _since(days=1)) >= limits.daily_messages:
         raise LimitExceeded(429, "DAILY_MESSAGE_LIMIT", f"وصلت للحد اليومي للرسائل ({limits.daily_messages} رسالة). حاول مرة ثانية بكرة.", limits.daily_messages)

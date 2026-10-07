@@ -7,3 +7,7 @@ data/runtime/
 dist/
 build/
 node_modules/
+.vercel
+
+# Local deployment configuration (never commit secrets)
+.env.haraj-preview

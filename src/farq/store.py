@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
-from farq.haraj_chat import InboundMessage, SentMessage, author_id, extract_quote, find_references, new_reference
+from farq.haraj_chat import InboundMessage, SentMessage, author_id, extract_quote, extract_user_quote, quote_metadata, find_references, new_reference
 from farq import outreach
 
 ALL_SELLERS = "all_sellers"
@@ -1123,6 +1123,8 @@ class Store:
             create index if not exists search_listings_user on search_listings (user_id, created_at);
             """
         )
+        self._ensure_column("haraj_unmatched", "farq_user_id", "text")
+        self._connection.executescript("create trigger if not exists immutable_farq_user before update of farq_user_id on users when old.farq_user_id is not null and new.farq_user_id is not old.farq_user_id begin select raise(abort,'immutable Farq identity'); end;")
         self._ensure_column("search_listings", "seller_name", "text")
         self._connection.commit()
         self._seed_plans()
@@ -1233,6 +1235,9 @@ class Store:
 
     def link_farq(self, user_id: str, farq_user_id: str) -> bool:
         """See PgStore.link_farq."""
+        bound = self.farq_user_id(user_id)
+        if bound and bound != farq_user_id:
+            return False
         other = self._connection.execute("select id from users where farq_user_id = ? and id <> ?", (farq_user_id, user_id)).fetchone()
         if other is not None:
             return False
@@ -1393,6 +1398,7 @@ class Store:
         attributes: dict,
         recipients: list[RequestRecipient],
         request_id: str | None = None,
+        supplier_message: str | None = None,
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
@@ -1432,12 +1438,12 @@ class Store:
                 lines.append(notes.strip())
             self._enqueue(
                 request_id,
-                "\n".join(line for line in lines if line),
+                supplier_message if supplier_message is not None else "\n".join(line for line in lines if line),
                 item_need or None,
                 None,
                 None,
                 owner_user_id,
-                haraj_text=invite_text(item_need or need or original_text, city_name),
+                haraj_text=supplier_message if supplier_message is not None else invite_text(item_need or need or original_text, city_name),
             )
         self._connection.commit()
         return request_id
@@ -2143,7 +2149,8 @@ class Store:
         rows = self._connection.execute(
             """
             select d.id, d.request_id, d.seller_id, d.need, coalesce(m.haraj_text, m.body) as body, m.media_json as media, t.ad_id, t.haraj_conversation_id,
-                   t.haraj_account_id, q.ref_code
+                   t.haraj_account_id, q.ref_code, q.created_at as request_created_at, q.attributes_json as consent_attributes,
+                   (select count(*) from request_recipients rr where rr.request_id=d.request_id) as recipient_count
             from message_deliveries d
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
@@ -2272,12 +2279,12 @@ class Store:
         """The request a seller's reply belongs to (see choose_thread); None when it cannot be told apart."""
         return choose_thread(self._inbound_candidates(conversation_id), body, sent_at)
 
-    def record_unmatched_inbound(self, conversation_id: str, seller_id: str, inbound: InboundMessage) -> list[str]:
+    def record_unmatched_inbound(self, conversation_id: str, seller_id: str, inbound: InboundMessage, farq_user_id: str | None = None) -> list[str]:
         """Keep a reply no request can safely claim, out of every customer's view. Returns the requests it could belong to."""
         candidates = sorted({row["request_id"] for row in self._inbound_candidates(conversation_id)})
         self._connection.execute(
-            "insert or ignore into haraj_unmatched (haraj_message_id, haraj_conversation_id, seller_id, body, media_json, sent_at, candidate_request_ids_json, created_at)"
-            " values (?, ?, ?, ?, ?, ?, ?, ?)",
+            "insert or ignore into haraj_unmatched (haraj_message_id, haraj_conversation_id, seller_id, body, media_json, sent_at, candidate_request_ids_json, created_at, farq_user_id)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 inbound.haraj_message_id,
                 conversation_id,
@@ -2287,6 +2294,7 @@ class Store:
                 inbound.sent_at,
                 json.dumps(candidates),
                 _now(),
+                farq_user_id,
             ),
         )
         self._connection.commit()
@@ -2423,6 +2431,15 @@ class Store:
         )
         self._connection.commit()
 
+    def owner_conversation_checked(self, farq_owner, conversation_id, failure_code=None, retry_seconds=30, now=None, high_water=0):
+        moment = datetime.fromtimestamp(now,tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
+        self._connection.execute("update haraj_threads set checked_at=?,retry_at=?,failure_code=?,high_water=max(coalesce(high_water,0),?) where haraj_conversation_id=? and request_id in (select r.id from requests r join users u on u.id=r.owner_user_id where u.farq_user_id=?)",(moment.isoformat(),(moment+timedelta(seconds=retry_seconds)).isoformat(),failure_code,high_water or 0,conversation_id,farq_owner))
+        self._connection.commit()
+
+    def remove_owned_unmatched(self, farq_owner, message_id):
+        self._connection.execute("delete from haraj_unmatched where farq_user_id=? and haraj_message_id=?",(farq_owner,message_id))
+        self._connection.commit()
+
     def has_haraj_message(self, haraj_message_id: str) -> bool:
         return (
             self._connection.execute(
@@ -2480,7 +2497,9 @@ class Store:
             (request_id, seller_id, need or ""),
         ).fetchone()
         offer = None
-        quote = extract_quote(inbound.body)
+        attrs=self._connection.execute("select attributes_json from requests where id=?",(request_id,)).fetchone()
+        personal=bool(attrs and json.loads(attrs["attributes_json"]).get("_haraj_consent"))
+        quote = extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)
         price = None if quote is None else quote.total
         awarded = self._connection.execute("select awarded_seller_id from requests where id = ?", (request_id,)).fetchone()["awarded_seller_id"]
         # After the award, a price from anyone but the winner is kept as a message, not an offer.
@@ -2493,6 +2512,7 @@ class Store:
                 note=inbound.body,
                 provider_name=recipient["seller_name"] if recipient else None,
                 seller_id=seller_id,
+                quantity=quote.quantity,unit_price=quote.unit_price,availability=quote.availability,
                 base_price=quote.base,
                 delivery_included=quote.delivery_included,
                 delivery_price=quote.delivery_price,
@@ -2619,6 +2639,7 @@ class Store:
         offers: list[Offer] = []
         for item in current_offer_rows(rows):
             offer = Offer(
+                **quote_metadata(item["message"],item["need"] or '',item["total_price"]),
                 amount=item["total_price"],
                 currency=item["currency"] or "SAR",
                 note=item["message"],

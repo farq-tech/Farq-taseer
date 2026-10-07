@@ -9,11 +9,8 @@ api/lib/construction/haraj-session.js, haraj-invite.js, haraj-chat.js,
 haraj-inbox.js; docs/construction/HARAJ_DISPATCH_AND_QUOTE_TOTALS.md), ported
 as-is.
 
-Two Haraj accounts are involved. Taseer SENDS only from its own dedicated account
-(HARAJ_TASEER_USER_ID / _USERNAME / _PASSWORD / _REFRESH_TOKEN). The older account
-(HARAJ_USER_ID / HARAJ_USERNAME ...) is shared with Farq Construction; Taseer only READS
-it, for the conversations its earlier messages opened there. Each account keeps its own
-token cache, keyed by its user id, so one account's token is never used for the other.
+Central Haraj accounts have been retired. Sessions come only from the Farq
+per-user credential vault when the owner-scoped messaging adapter is evidenced.
 
 The seller's address is the Haraj author id only (``haraj:seller:19676360`` ->
 ``19676360``). No phone number is looked up, and ``postContact`` is never used.
@@ -29,21 +26,17 @@ import re
 import secrets
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, replace
 from typing import Callable, Protocol
 
 import httpx
+
+from farq.haraj_user_connection import EVIDENCE_REQUIRED, enabled as user_connection_enabled
 
 log = logging.getLogger("farq.haraj_chat")
 
 CHAT_ENDPOINT = "https://api-chat.haraj.com.sa"
 CHAT_SOCKET = "wss://api-chat.haraj.com.sa/chat/ws"
-GRAPHQL_REFRESH = "https://graphql.haraj.com.sa/?queryName=refreshAccessToken"
-GRAPHQL_LOGIN = "https://graphql.haraj.com.sa/?queryName=login"
-REFRESH = "mutation refreshAccessToken($token: String!) { refreshAccessToken(refreshToken: $token) { accessToken ATvalidUntil message status } }"
-LOGIN = "mutation login($username: String!, $password: String!, $oldToken: String!, $loginByURL: String) { login(username: $username, password: $password, oldRefreshToken: $oldToken, loginByURL: $loginByURL) { accessToken ATvalidUntil refreshToken RTvalidUntil ul username message status } }"
-APP_LOGIN_URL = re.compile(r"^https://ios\.haraj\.sa/\?")
-
 # Statuses that mean stop, not slow down.
 HARD_STOP = frozenset({401, 402, 403, 429, 451})
 SEND_PAUSE_SECONDS = 30 * 60
@@ -155,118 +148,21 @@ class TokenCache(Protocol):
 
 
 class HarajSession:
-    """The Haraj access token, kept alive without anyone copying it by hand.
+    """Retired central session. Credentials are never read from environment/cache."""
+    configured = False
+    renewable = False
+    can_login = False
+    last_error = "HARAJ_USER_CONNECTION_REQUIRED"
 
-    Order: HARAJ_USERNAME + HARAJ_PASSWORD (login the way the iOS app does,
-    through HARAJ_APP_LOGIN_URL), then HARAJ_REFRESH_TOKEN, then a fixed
-    HARAJ_TOKEN. Tokens live about ten days and are renewed a day early.
-    Serverless instances do not share memory, so the current tokens are kept in
-    ``cache`` (the server-side store) rather than logging in on every cold start.
-    """
-
-    def __init__(self, env: dict | None = None, http: httpx.Client | None = None, cache: TokenCache | None = None, now: Callable[[], float] = time.time):
-        env = os.environ if env is None else env
-        self._env = env
-        self._http = http or httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False)
-        self._cache = cache
-        self._now = now
-        self._lock = threading.Lock()
-        self.username = str(env.get("HARAJ_USERNAME") or "").strip()
-        self._password = str(env.get("HARAJ_PASSWORD") or "")
-        self.can_login = bool(self.username and self._password)
-        self._refresh = re.sub(r"^Bearer\s+", "", str(env.get("HARAJ_REFRESH_TOKEN") or ""), flags=re.I).strip()
-        static = re.sub(r"^Bearer\s+", "", str(env.get("HARAJ_TOKEN") or ""), flags=re.I).strip()
-        self.configured = bool(self._refresh or self.can_login or static)
-        self.renewable = bool(self._refresh or self.can_login)
-        self._current: tuple[str, float] | None = None
-        self.last_error: str | None = None
-        if cache is not None and self.renewable:
-            token, until, refresh = cache.get_value("access_token"), cache.get_value("access_valid_until"), cache.get_value("refresh_token")
-            if token and until:
-                self._current = (token, float(until))
-            if refresh:
-                self._refresh = refresh
-        if not self.renewable and static:
-            exp = float(_claims(static).get("exp") or 0)
-            self._current = (static, exp if exp > 0 else float("inf"))
-
-    def _store(self, token: str, valid_until: float, refresh: str | None = None) -> str:
-        self._current = (token, valid_until)
-        if refresh:
-            self._refresh = refresh
-        self.last_error = None
-        if self._cache is not None:
-            self._cache.set_value("access_token", token)
-            self._cache.set_value("access_valid_until", str(valid_until))
-            if refresh:
-                self._cache.set_value("refresh_token", refresh)
-        return token
-
-    def _valid_until(self, data: dict, token: str) -> float:
-        return float(data.get("ATvalidUntil") or 0) or float(_claims(token).get("exp") or 0) or self._now() + 9 * 24 * 3600
-
-    def _login(self) -> str:
-        # Haraj refuses password login from its web endpoint («يجب استعادة الرقم السري»)
-        # but accepts it the way its iOS app sends it.
-        app_url = str(self._env.get("HARAJ_APP_LOGIN_URL") or "").strip()
-        app_agent = str(self._env.get("HARAJ_APP_USER_AGENT") or "").strip()
-        url = app_url if APP_LOGIN_URL.match(app_url) else GRAPHQL_LOGIN
-        headers = {"content-type": "application/json"}
-        if url != GRAPHQL_LOGIN and app_agent:
-            headers.update({"user-agent": app_agent, "accept": "application/json"})
-        body = {"operationName": "login", "query": LOGIN, "variables": {"username": self.username, "password": self._password, "oldToken": "", "loginByURL": None}}
-        response = self._http.post(url, headers=headers, json=body)
-        data = _json(response).get("data", {}).get("login") if response.is_success else None
-        if not data or int(data.get("status") or 0) != 200 or not data.get("accessToken") or not data.get("refreshToken"):
-            raise HarajChatUnavailable(f"HARAJ_LOGIN_{(data or {}).get('status') or 'EMPTY'}" if response.is_success else f"HARAJ_LOGIN_HTTP_{response.status_code}")
-        return self._store(data["accessToken"], self._valid_until(data, data["accessToken"]), data["refreshToken"])
-
-    def _refresh_token(self) -> str:
-        body = {"operationName": "refreshAccessToken", "query": REFRESH, "variables": {"token": self._refresh}}
-        response = self._http.post(GRAPHQL_REFRESH, headers={"content-type": "application/json"}, json=body)
-        data = _json(response).get("data", {}).get("refreshAccessToken") if response.is_success else None
-        if not data or int(data.get("status") or 0) != 200 or not isinstance(data.get("accessToken"), str) or not data["accessToken"]:
-            raise HarajChatUnavailable(f"HARAJ_REFRESH_{(data or {}).get('status') or 'EMPTY'}" if response.is_success else f"HARAJ_REFRESH_HTTP_{response.status_code}")
-        return self._store(data["accessToken"], self._valid_until(data, data["accessToken"]))
-
-    def _renew(self) -> str:
-        if not self._refresh:
-            return self._login()
-        try:
-            return self._refresh_token()
-        except HarajChatUnavailable:
-            # A cancelled refresh token is replaced by a fresh login.
-            if not self.can_login:
-                raise
-            self._refresh = ""
-            return self._login()
+    def __init__(self, env=None, http=None, cache=None, now=None):
+        pass
 
     def access_token(self) -> str:
-        with self._lock:
-            current = self._current
-            margin = RENEW_BEFORE_SECONDS if self.renewable else 0
-            if current and current[1] - self._now() > margin:
-                return current[0]
-            if not self.renewable:
-                if current and current[1] > self._now():
-                    return current[0]
-                raise HarajChatUnavailable("HARAJ_TOKEN_EXPIRED")
-            try:
-                return self._renew()
-            except (HarajChatUnavailable, httpx.HTTPError) as exc:
-                self.last_error = getattr(exc, "code", "HARAJ_REFRESH_FAILED")
-                # Still valid but inside the renewal window: keep using it.
-                if current and current[1] > self._now():
-                    return current[0]
-                raise HarajChatUnavailable("HARAJ_SESSION_UNAVAILABLE") from exc
+        raise HarajChatUnavailable("HARAJ_USER_CONNECTION_REQUIRED")
 
     def invalidate(self) -> None:
-        """Haraj refused the token: drop it so the next call renews."""
-        if self.renewable:
-            with self._lock:
-                self._current = None
-                if self._cache is not None:
-                    self._cache.set_value("access_token", None)
+        pass
+
 
 
 def _json(response: httpx.Response) -> dict:
@@ -431,6 +327,8 @@ class HarajChatClient:
         return receipt
 
     def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
+        if user_connection_enabled():
+            raise HarajChatUnavailable(EVIDENCE_REQUIRED)
         if not self.send_enabled:
             raise HarajChatUnavailable("NOT_SENT_CONFIGURATION_REQUIRED")
         author = author_id(seller_id)
@@ -461,6 +359,8 @@ class HarajChatClient:
 
     def fetch(self, *, conversation_id: str, seller_id: str, after_seq: int, max_pages: int = 10, sleep: Callable[[float], None] = time.sleep) -> list[InboundMessage]:
         """Only conversations we already wrote to; pages back until after_seq is reached."""
+        if user_connection_enabled():
+            raise HarajChatUnavailable(EVIDENCE_REQUIRED)
         if not self.inbox_enabled:
             raise HarajChatUnavailable("DISABLED")
         author = author_id(seller_id)
@@ -565,25 +465,6 @@ class _Prefixed:
         self._cache.set_value(self._prefix + key, value)
 
 
-class _AccountCache:
-    """One account's slice of the shared token store: ``session:{user_id}:``. ``legacy`` is
-    the unprefixed slice the old account used before accounts were split; it is read (never
-    written) only for that account, so its live session carries over."""
-
-    def __init__(self, cache: TokenCache, user_id: str, legacy: bool = False):
-        self._own = _Prefixed(cache, f"session:{user_id}:")
-        self._legacy = _Prefixed(cache, "session:") if legacy else None
-
-    def get_value(self, key: str) -> str | None:
-        value = self._own.get_value(key)
-        if value is None and self._legacy is not None:
-            value = self._legacy.get_value(key)
-        return value
-
-    def set_value(self, key: str, value: str | None) -> None:
-        self._own.set_value(key, value)
-
-
 class HarajAccounts:
     """Taseer's Haraj channel across its accounts: every send from the one sending account,
     each read from the account its conversation lives on.
@@ -612,6 +493,8 @@ class HarajAccounts:
         return self._mode
 
     def send(self, *, conversation_id: str | None, seller_id: str, ad_id: str | None, body: str, attachments: list[dict] | None = None) -> SentMessage:
+        if user_connection_enabled():
+            raise HarajChatUnavailable(EVIDENCE_REQUIRED)
         if self.send_mode == "closed" or (self.send_mode == "canary" and self.canary is None):
             raise HarajChatUnavailable("NOT_SENT_CONFIGURATION_REQUIRED")
         # A conversation on another account is never written to: the sender opens its own.
@@ -620,57 +503,17 @@ class HarajAccounts:
         return self.sender.send(conversation_id=conversation_id, seller_id=seller_id, ad_id=ad_id, body=body, attachments=attachments)
 
     def fetch(self, *, conversation_id: str, seller_id: str, after_seq: int) -> list[InboundMessage]:
+        if user_connection_enabled():
+            raise HarajChatUnavailable(EVIDENCE_REQUIRED)
         reader = self.readers.get(conversation_account(conversation_id, seller_id) or "")
         if reader is None:
             raise HarajChatUnavailable("AMBIGUOUS")
         return reader.fetch(conversation_id=conversation_id, seller_id=seller_id, after_seq=after_seq)
 
 
-_SHARED_LOGIN_SETTINGS = ("HARAJ_APP_LOGIN_URL", "HARAJ_APP_USER_AGENT")
-
-
-def _account_env(env, prefix: str) -> dict:
-    """The generic HARAJ_* session settings for one account."""
-    values = {name: env.get(name) for name in _SHARED_LOGIN_SETTINGS if env.get(name)}
-    for name in ("USERNAME", "PASSWORD", "REFRESH_TOKEN", "TOKEN"):
-        value = env.get(f"{prefix}{name}")
-        if value:
-            values[f"HARAJ_{name}"] = value
-    return values
-
-
 def chat_from_env(env: dict | None = None, cache: TokenCache | None = None) -> HarajChat:
-    """Taseer's accounts from its own server settings, or a channel that sends nothing.
-
-    HARAJ_SEND_ENABLED=1 lets the Taseer account (HARAJ_TASEER_*) send; the old shared
-    account (HARAJ_USER_ID, HARAJ_USERNAME ...) never sends from Taseer. HARAJ_INBOX_ENABLED=1
-    reads replies on both. Until HARAJ_TASEER_SEND_ENABLED=1 the Taseer account is in canary
-    mode: it sends nothing but the one delivery HARAJ_TASEER_CANARY_DELIVERY names
-    (a delivery id, or ``<request ref>:<seller id>``), once; everything else stays queued."""
-    env = os.environ if env is None else env
-    send = env.get("HARAJ_SEND_ENABLED") == "1"
-    inbox = env.get("HARAJ_INBOX_ENABLED") == "1"
-    if not (send or inbox):
-        return NotConnectedChat()
-    taseer_id = str(env.get("HARAJ_TASEER_USER_ID") or "").strip()
-    legacy_id = str(env.get("HARAJ_USER_ID") or env.get("HARAJ_FARQ_USER_ID") or "").strip()
-    clients: dict[str, HarajChatClient] = {}
-    sender = None
-    for user_id, prefix, legacy in ((taseer_id, "HARAJ_TASEER_", False), (legacy_id, "HARAJ_", True)):
-        if not re.fullmatch(r"[1-9]\d*", user_id) or user_id in clients:
-            continue
-        is_taseer = prefix == "HARAJ_TASEER_"
-        session = HarajSession(_account_env(env, prefix), cache=None if cache is None else _AccountCache(cache, user_id, legacy=legacy and user_id != taseer_id))
-        if not session.configured:
-            continue
-        client = HarajChatClient(session, user_id, send_enabled=send and is_taseer, inbox_enabled=inbox)
-        clients[user_id] = client
-        if is_taseer:
-            sender = client
-    if sender is None and not (inbox and clients):
-        return NotConnectedChat()
-    mode = "open" if env.get("HARAJ_TASEER_SEND_ENABLED") == "1" else "canary"
-    return HarajAccounts(sender if send else None, clients if inbox else {}, send_mode=mode, canary=env.get("HARAJ_TASEER_CANARY_DELIVERY"))
+    """No central-account fallback; future transport must resolve verified owner via vault."""
+    return NotConnectedChat()
 
 
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٬٫", "01234567890123456789,.")
@@ -744,6 +587,9 @@ class Quote:
     delivery_price: float | None = None
     delivery_included: bool | None = None
     uncertain: str | None = None
+    quantity: int | None = None
+    unit_price: float | None = None
+    availability: str | None = None
 
     @property
     def total(self) -> float | None:
@@ -820,3 +666,35 @@ def extract_price(text: str) -> float | None:
     """The total the seller asked for (price plus any delivery he named), or None when unsure."""
     quote = extract_quote(text)
     return None if quote is None else quote.total
+
+
+_PIECE_QUANTITY = re.compile(r"(?<!\d)([1-9]\d{0,8})\s*(?:باب|أبواب|ابواب|قطعة|قطع|حبة|حبات)(?!["+_AR+r"])")
+def extract_user_quote(text: str, need: str) -> Quote | None:
+    """Resolve an explicit per-piece quote only with a single quantity on this RFQ item.
+    Unitless totals, ranges and unclear units keep the existing conservative behavior.
+    """
+    quote=extract_quote(text)
+    if quote is None:
+        return None
+    normalized=(text or '').translate(_DIGITS)
+    availability='unavailable' if re.search(r"(?:غير|مو|ليس)\s*متوفر|نفد",normalized) else 'available' if 'متوفر' in normalized else None
+    if availability=='unavailable':
+        return replace(quote,base=None,uncertain='unavailable',availability=availability)
+    if quote.uncertain != 'unit_price':
+        return replace(quote,availability=availability)
+    quantities={int(m.group(1)) for m in _PIECE_QUANTITY.finditer((need or '').translate(_DIGITS))}
+    units=list(_UNIT.finditer(normalized))
+    if len(quantities)!=1 or not units or any(not re.search(r"(?:حب[ةه]|قطع[ةه])",m.group()) for m in units):
+        return quote
+    unit=extract_quote(_UNIT.sub(' ',normalized))
+    if unit is None or unit.total is None or unit.base is None:
+        return quote
+    quantity=next(iter(quantities))
+    return replace(unit,base=unit.base*quantity,quantity=quantity,unit_price=unit.base,availability=availability)
+
+
+def quote_metadata(text, need, total):
+    quote=extract_user_quote(text,need)
+    if quote is None or quote.total is None or total is None or abs(float(quote.total)-float(total))>0.01:
+        return {}
+    return {k:v for k,v in {'quantity':quote.quantity,'unit_price':quote.unit_price,'availability':quote.availability}.items() if v is not None}

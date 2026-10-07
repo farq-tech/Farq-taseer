@@ -1,0 +1,9 @@
+# Isolated Haraj test deployment. Production Vercel configuration is unchanged.
+FROM python:3.12-slim
+WORKDIR /app
+COPY pyproject.toml ./
+COPY src ./src
+COPY data/corpus ./data/corpus
+RUN pip install --no-cache-dir .
+ENV PYTHONUNBUFFERED=1 PORT=8000
+CMD ["farq-api"]

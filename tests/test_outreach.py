@@ -79,45 +79,17 @@ def both_accounts(**extra) -> dict:
     }
 
 
-def test_taseer_sends_only_from_its_own_account_and_reads_both():
-    chat = chat_from_env(both_accounts())
-    assert isinstance(chat, HarajAccounts)
-    assert chat.send_account_id == NEW and chat.can_send
-    assert chat.sender.session.username == "taseer"
-    assert set(chat.readers) == {OLD, NEW}
-    assert not chat.readers[OLD].send_enabled and chat.readers[OLD].inbox_enabled
-    assert chat.readers[OLD].session.username == "shared"
-
-
-def test_without_the_taseer_account_nothing_is_sent_but_old_replies_are_still_read():
-    env = both_accounts()
-    for name in ("HARAJ_TASEER_USER_ID", "HARAJ_TASEER_USERNAME", "HARAJ_TASEER_PASSWORD"):
-        env.pop(name)
-    chat = chat_from_env(env)
-    assert isinstance(chat, HarajAccounts) and not chat.can_send and set(chat.readers) == {OLD}
-    with pytest.raises(HarajChatUnavailable):
-        chat.send(conversation_id=None, seller_id="17035483", ad_id=None, body="x")
-
-
-def test_each_account_has_its_own_token_cache_and_the_new_one_never_reads_the_old():
-    future = str(time.time() + 9 * 86400)
-    # The single unprefixed slice the shared account used before the split.
-    cache = MemoryCache({"session:access_token": "old-token", "session:access_valid_until": future, "session:refresh_token": "old-refresh"})
+def test_all_former_central_accounts_and_cached_tokens_are_ignored():
+    from farq.haraj_chat import NotConnectedChat
+    from unittest.mock import Mock
+    cache = Mock()
     chat = chat_from_env(both_accounts(), cache=cache)
-    # The old account carries its live session over; the new one has none and must log in.
-    assert chat.readers[OLD].session.access_token() == "old-token"
-    assert chat.sender.session._current is None
-    assert chat.sender.session._refresh == ""
-    chat.sender.session._store("new-token", time.time() + 9 * 86400, "new-refresh")
-    assert cache.values[f"session:{NEW}:access_token"] == "new-token"
-    assert cache.values["session:access_token"] == "old-token"  # never overwritten
-    assert f"session:{OLD}:access_token" not in cache.values
-    # A refreshed old-account token lands in its own slice.
-    chat.readers[OLD].session._store("old-token-2", time.time() + 9 * 86400)
-    assert cache.values[f"session:{OLD}:access_token"] == "old-token-2"
-    again = chat_from_env(both_accounts(), cache=cache)
-    assert again.readers[OLD].session.access_token() == "old-token-2"
-    assert again.sender.session.access_token() == "new-token"
+    assert isinstance(chat, NotConnectedChat)
+    assert not cache.mock_calls
+    with pytest.raises(HarajChatUnavailable):
+        chat.send(conversation_id=None, seller_id="900000002", ad_id=None, body="test")
+    with pytest.raises(HarajChatUnavailable):
+        chat.fetch(conversation_id="synthetic", seller_id="900000002", after_seq=0)
 
 
 class RecordingClient:
@@ -162,7 +134,7 @@ def test_the_real_client_stamps_its_account_on_every_receipt():
         return httpx.Response(200, json={"status": 200, "data": {"message": {"seq_id": 3}}})
 
     http = httpx.Client(transport=httpx.MockTransport(handler))
-    session = HarajSession({"HARAJ_USERNAME": "taseer", "HARAJ_PASSWORD": "p", "HARAJ_APP_LOGIN_URL": APP_URL}, http=http)
+    session = type("FixtureSession", (), {"renewable": False, "access_token": lambda self: "synthetic-token"})()
     client = HarajChatClient(session, NEW, http=http, socket_factory=lambda token: (type("S", (), {"close": lambda self: None})(), "sid"))
     sent = client.send(conversation_id=None, seller_id="19676360", ad_id=None, body="هلا")
     assert sent == SentMessage(f"p2p{NEW}_19676360", f"p2p{NEW}_19676360:3", 3, account_id=NEW)

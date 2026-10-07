@@ -24,7 +24,7 @@ from psycopg_pool import ConnectionPool
 from farq.cities import known_city
 from farq.contracts import Attachment, Message, Offer, RequestRecipient, RequestRecord
 from farq import outreach
-from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, new_reference
+from farq.haraj_chat import InboundMessage, SentMessage, extract_quote, extract_user_quote, quote_metadata, new_reference
 from farq.store import (
     _ANSWERED_SQL,
     _ADVANCE_THREAD,
@@ -164,6 +164,9 @@ class PgStore:
         password and a live Farq session. False when that Farq id already belongs to another
         Taseer account."""
         with self._pool.connection() as conn:
+            bound=conn.execute("select farq_user_id from users where id=%s for update",(user_id,)).fetchone()
+            if bound and bound["farq_user_id"] and bound["farq_user_id"]!=farq_user_id:
+                return False
             other = conn.execute("select id from users where farq_user_id = %s and id <> %s", (farq_user_id, user_id)).fetchone()
             if other is not None:
                 return False
@@ -330,6 +333,7 @@ class PgStore:
         attributes: dict,
         recipients: list[RequestRecipient],
         request_id: str | None = None,
+        supplier_message: str | None = None,
     ) -> str:
         if not recipients:
             raise ValueError("at least one recipient is required")
@@ -371,12 +375,12 @@ class PgStore:
                 self._enqueue(
                     conn,
                     request_id,
-                    "\n".join(line for line in lines if line),
+                    supplier_message if supplier_message is not None else "\n".join(line for line in lines if line),
                     item_need or None,
                     None,
                     None,
                     owner_user_id,
-                    haraj_text=invite_text(item_need or need or original_text, city_name),
+                    haraj_text=supplier_message if supplier_message is not None else invite_text(item_need or need or original_text, city_name),
                 )
         return request_id
 
@@ -562,6 +566,7 @@ class PgStore:
         return mark_cheapest(
             [
                 Offer(
+                    **quote_metadata(item["message"],item["need"] or '',item["total_price"]),
                     amount=_num(item["total_price"]),
                     currency=item["currency"] or "SAR",
                     note=item["message"],
@@ -1352,7 +1357,9 @@ class PgStore:
                        order by coalesce(r.need, '') = %s desc, r.id limit 1) as reply_token,
                       (select r.ad_title from request_recipients r where r.request_id = %s and r.seller_id = %s
                        order by coalesce(r.need, '') = %s desc, r.id limit 1) as ad_title,
-                      (select q.ref_code from requests q where q.id = t.request_id) as ref_code
+                      (select q.ref_code from requests q where q.id = t.request_id) as ref_code,
+                      (select q.created_at from requests q where q.id = t.request_id) as request_created_at,
+                      (select q.attributes from requests q where q.id = t.request_id) as consent_attributes
                     from messages m join haraj_threads t on t.request_id = %s and t.seller_id = %s and t.need = %s
                     where m.id = %s
                     """,
@@ -1479,14 +1486,14 @@ class PgStore:
             candidates = self._inbound_candidates(conn, conversation_id)
         return choose_thread(candidates, body, sent_at)
 
-    def record_unmatched_inbound(self, conversation_id: str, seller_id: str, inbound: InboundMessage) -> list[str]:
+    def record_unmatched_inbound(self, conversation_id: str, seller_id: str, inbound: InboundMessage, farq_user_id: str | None = None) -> list[str]:
         """Keep a reply no request can safely claim, out of every customer's view. Returns the requests it could belong to."""
         with self._pool.connection() as conn:
             candidates = sorted({row["request_id"] for row in self._inbound_candidates(conn, conversation_id)})
             conn.execute(
-                "insert into haraj_unmatched (haraj_message_id, haraj_conversation_id, seller_id, body, media, sent_at, candidate_request_ids)"
-                " values (%s, %s, %s, %s, %s, %s::timestamptz, %s) on conflict (haraj_message_id) do nothing",
-                (inbound.haraj_message_id, conversation_id, seller_id, inbound.body, Jsonb(list(inbound.media)), inbound.sent_at, Jsonb(candidates)),
+                "insert into haraj_unmatched (haraj_message_id, haraj_conversation_id, seller_id, body, media, sent_at, candidate_request_ids, farq_user_id)"
+                " values (%s, %s, %s, %s, %s, %s::timestamptz, %s, %s) on conflict (haraj_message_id) do nothing",
+                (inbound.haraj_message_id, conversation_id, seller_id, inbound.body, Jsonb(list(inbound.media)), inbound.sent_at, Jsonb(candidates), farq_user_id),
             )
         return candidates
 
@@ -1632,6 +1639,15 @@ class PgStore:
                 (now, now, retry_seconds, failure_code, conversation_id, high_water or 0, conversation_id, high_water or 0, conversation_id, conversation_id),
             )
 
+    def owner_conversation_checked(self, farq_owner, conversation_id, failure_code=None, retry_seconds=30, now=None, high_water=0):
+        moment = datetime.fromtimestamp(now,tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
+        with self._pool.connection() as conn:
+            conn.execute("update haraj_threads set checked_at=%s,retry_at=%s,failure_code=%s,high_water=greatest(coalesce(high_water,0),%s) where haraj_conversation_id=%s and request_id in (select r.id from requests r join users u on u.id=r.owner_user_id where u.farq_user_id=%s)",(moment,(moment+timedelta(seconds=retry_seconds)),failure_code,high_water or 0,conversation_id,farq_owner))
+
+    def remove_owned_unmatched(self, farq_owner, message_id):
+        with self._pool.connection() as conn:
+            conn.execute("delete from haraj_unmatched where farq_user_id=%s and haraj_message_id=%s",(farq_owner,message_id))
+
     def has_haraj_message(self, haraj_message_id: str) -> bool:
         with self._pool.connection() as conn:
             return (
@@ -1674,7 +1690,9 @@ class PgStore:
                 (request_id, seller_id, need or ""),
             ).fetchone()
             offer = None
-            quote = extract_quote(inbound.body)
+            attrs=conn.execute("select attributes from requests where id=%s",(request_id,)).fetchone()
+            personal=bool(attrs and (attrs["attributes"] or {}).get("_haraj_consent"))
+            quote = extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)
             price = None if quote is None else quote.total
             awarded = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
             # After the award, a price from anyone but the winner is kept as a message, not an offer.
@@ -1687,6 +1705,7 @@ class PgStore:
                     note=inbound.body,
                     provider_name=recipient["seller_name"] if recipient else None,
                     seller_id=seller_id,
+                    quantity=quote.quantity,unit_price=quote.unit_price,availability=quote.availability,
                     base_price=quote.base,
                     delivery_included=quote.delivery_included,
                     delivery_price=quote.delivery_price,
