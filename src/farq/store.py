@@ -470,9 +470,9 @@ def _sync_health(never_read, overdue, oldest_wait, answered_newest_first) -> dic
 # old shared account had opened keeps that conversation as legacy_conversation_id, still read.
 # Every conversation of every thread, one row each, with that conversation's own read position.
 THREAD_CONVERSATIONS = (
-    "select request_id, seller_id, need, ad_id, haraj_conversation_id, high_water, checked_at, retry_at, failure_code, last_fetched_at"
+    "select request_id, seller_id, need, ad_id, haraj_conversation_id, haraj_account_id, high_water, checked_at, retry_at, failure_code, last_fetched_at"
     " from haraj_threads where haraj_conversation_id is not null"
-    " union all select request_id, seller_id, need, ad_id, legacy_conversation_id, legacy_high_water, checked_at, retry_at, failure_code, last_fetched_at"
+    " union all select request_id, seller_id, need, ad_id, legacy_conversation_id, NULL as haraj_account_id, legacy_high_water, checked_at, retry_at, failure_code, last_fetched_at"
     " from haraj_threads where legacy_conversation_id is not null"
 )
 # After a send: the thread takes the sending conversation; one it leaves is kept as legacy (read on).

@@ -191,3 +191,12 @@ def test_sending_on_a_backed_off_conversation_makes_it_due_at_once(tmp_path: Pat
     store.finish_delivery(delivery, sent=SentMessage("p2p7_100", "p2p7_100:9", 9))
     due = store.threads_to_sync()
     assert [row["haraj_conversation_id"] for row in due] == ["p2p7_100"]
+
+
+def test_sync_projection_preserves_current_account_and_does_not_borrow_it_for_legacy(tmp_path):
+    store = Store(tmp_path / 'db.sqlite3', tmp_path / 'uploads')
+    request = sent_request(store, ['202'], NOW - 60)
+    sql(store, 'update haraj_threads set haraj_account_id = ?, legacy_conversation_id = ?, legacy_high_water = 2 where request_id = ?', ('101', 'p2p303_202', request))
+    rows = {row['haraj_conversation_id']: row for row in store.threads_to_sync(now=NOW)}
+    assert rows['p2p7_202']['haraj_account_id'] == '101'
+    assert rows['p2p303_202']['haraj_account_id'] is None

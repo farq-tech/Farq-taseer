@@ -291,3 +291,16 @@ def test_direct_claim_is_scoped_to_current_request(pg_store):
     with store._pool.connection() as conn:
         row=conn.execute('select delivery_status,attempts from message_deliveries where request_id=%s',(older,)).fetchone()
     assert row['delivery_status']=='queued' and row['attempts']==0
+
+
+def test_sync_account_projection_on_postgres(pg_store, tmp_path):
+    from farq.contracts import RequestRecipient
+    from farq.haraj_chat import SentMessage
+    store = pg_store(upload_dir=tmp_path / 'uploads')
+    owner = store.start_guest()['user_id']
+    rid = store.create_request(owner, 'synthetic', 'door', None, 'الرياض', {},
+                               [RequestRecipient(seller_id='202', seller_name='synthetic')])
+    delivery = store.claim_deliveries(request_id=rid)[0]
+    store.finish_delivery(delivery['id'], sent=SentMessage('p2p101_202','p2p101_202:7',7,'101'))
+    rows = store.threads_to_sync()
+    assert len(rows) == 1 and rows[0]['haraj_account_id'] == '101'

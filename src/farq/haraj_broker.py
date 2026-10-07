@@ -74,6 +74,8 @@ class UserHarajBroker:
         return SentMessage(data['conversation_id'], data['message_id'], data['seq'], data['account_id'])
 
     def read_thread(self, store, thread, after_seq):
+        if not thread.get('haraj_account_id'):
+            raise HarajChatUnavailable('HARAJ_CONVERSATION_OWNERSHIP')
         owner = store.farq_user_for_request(thread['request_id'])
         recipient = str(thread['seller_id'])
         if recipient.startswith('haraj:seller:'):
