@@ -90,7 +90,7 @@ def score(
 
 def rank(intent: IntentResponse, results: list[SearchResult], config: SearchConfig, now: datetime) -> list[SearchResult]:
     del intent
-    ordered = sorted(results, key=lambda item: item.score, reverse=True)
+    ordered = sorted(results, key=lambda item: (item.match == "exact", item.score), reverse=True)
     if config.max_results > 0:
         ordered = ordered[:config.max_results]
     if not ordered or config.min_score_ratio <= 0:

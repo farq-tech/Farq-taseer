@@ -1103,6 +1103,9 @@ def create_app(
 
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        # Count provider identities, never listings or RFQ items. Reject before debit/send.
+        if len({seller_key(item.seller_id) for item in body.recipients}) > 50:
+            raise HTTPException(422, detail={"code": "SUPPLIER_SEND_LIMIT", "message": "اختر حتى ٥٠ مورداً لكل إرسال", "limit": 50})
         haraj_identity = require_messaging_evidence(store, user_id)
         if user_connection_enabled() and (not body.haraj_consent or not body.supplier_message or not body.supplier_message.strip()):
             raise HTTPException(422,detail={"code":"HARAJ_CONSENT_REQUIRED","message":"راجع رسالتك والموردين ثم وافق على الإرسال من حسابك"})
@@ -1303,6 +1306,12 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/messages")
     def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
+        record = store.get_request(request_id, user_id)
+        if record is None:
+            raise HTTPException(404, detail="request not found")
+        requested = body.seller_ids or ([body.seller_id] if body.seller_id else [r.seller_id for r in record.recipients])
+        if len({seller_key(s) for s in requested}) > 50:
+            raise HTTPException(422, detail={"code":"SUPPLIER_SEND_LIMIT", "message":"اختر حتى ٥٠ مورداً لكل إرسال", "limit":50})
         require_messaging_evidence(store, user_id)
         try:
             check_new_message(store, limits, user_id)
