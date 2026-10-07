@@ -29,6 +29,9 @@ def schema():
     import psycopg
 
     with psycopg.connect(URL, autocommit=True) as conn:
+        for role in ("anon", "authenticated"):
+            if not conn.execute("select 1 from pg_roles where rolname=%s", (role,)).fetchone():
+                conn.execute(f"create role {role}")
         conn.execute("drop schema if exists taseer cascade")
         for path in MIGRATIONS:
             conn.execute(path.read_text())
@@ -325,3 +328,32 @@ def test_checked_thread_does_not_clear_legacy_failures(pg_store, tmp_path):
         statuses={r['request_id']:r for r in conn.execute('select request_id,failure_code,high_water from haraj_threads')}
     assert statuses[ids[0]]['failure_code']=='HARAJ_CONSENT_REQUIRED'
     assert statuses[ids[1]]['high_water']==8
+
+
+@pytest.mark.parametrize("name", [
+    "test_pages_continue_without_restarting_or_losing_trace",
+    "test_continuation_cannot_change_query_or_skip_pages",
+    "test_user_cannot_continue_other_users_search",
+    "test_stream_continuation_uses_same_page_contract",
+    "test_paged_search_keeps_older_ads_and_distinct_ads_by_same_seller",
+    "test_partial_failure_retries_current_window_without_skipping",
+])
+def test_search_pagination_on_postgres(name, tmp_path, monkeypatch, pg_store):
+    import tests.test_search_pagination as pagination
+    monkeypatch.setattr(pagination, "Store", pg_store)
+    getattr(pagination, name)(tmp_path, monkeypatch)
+
+@pytest.mark.parametrize('name', [
+    'test_background_resumes_without_browser_and_load_more_uses_saved_details',
+    'test_failed_page_keeps_cursor_details_and_last_success',
+    'test_lease_fencing_and_expiry',
+    'test_rate_limit_and_challenge_preserve_data_and_pause',
+])
+def test_haraj_harvest_pg(name, tmp_path, monkeypatch, pg_store):
+    import test_haraj_harvest as module
+    monkeypatch.setattr(module, 'Store', pg_store)
+    fn = getattr(module, name)
+    if 'monkeypatch' in __import__('inspect').signature(fn).parameters:
+        fn(tmp_path, monkeypatch)
+    else:
+        fn(tmp_path)

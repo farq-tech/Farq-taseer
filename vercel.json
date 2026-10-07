@@ -1,7 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["syd1"],
+  "regions": [
+    "syd1"
+  ],
   "crons": [
-    { "path": "/v1/internal/haraj-sync", "schedule": "* * * * *" }
+    {
+      "path": "/v1/internal/haraj-sync",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/v1/internal/haraj-public-harvest",
+      "schedule": "* * * * *"
+    }
   ]
 }

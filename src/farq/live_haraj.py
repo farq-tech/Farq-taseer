@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 import queue
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from farq.cities import canonical_city
@@ -62,6 +62,7 @@ class LiveBatch:
 
 @dataclass
 class QueryFetch:
+    query: str | None = None
     ads: list[Ad] = field(default_factory=list)
     pages: int = 0
     has_next: bool = False
@@ -191,7 +192,7 @@ class HarajLiveClient:
         """One page at a time, so the customer sees the first ads while the rest are still loading."""
         seen: set[str] = set()
         try:
-            for page in range(1, self.config.live_max_pages + 1):
+            for page in range(self.config.live_start_page, self.config.live_start_page + self.config.live_max_pages):
                 search = self._post({"search": query, "page": page, "limit": self.config.live_page_size, "city": city})
                 fresh: list[Ad] = []
                 for item in search.get("items") or []:
@@ -240,7 +241,7 @@ class HarajLiveClient:
         def work(query: str) -> None:
             try:
                 for fetch in self.search_one_iter(query, city):
-                    pages.put(fetch)
+                    pages.put(replace(fetch, query=query))
             except LiveTimeout as exc:
                 pages.put(QueryFetch(timed_out=True, error=str(exc)))
             except LiveUnavailable as exc:

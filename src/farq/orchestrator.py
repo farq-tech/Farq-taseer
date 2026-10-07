@@ -72,13 +72,13 @@ def _live_results(intent: IntentResponse, batch: LiveBatch, config: SearchConfig
             rejected += 1
             reasons.append(evidence[0] if evidence else "rejected")
             continue
-        if intent.result_unit == ResultUnit.SERVICE_PROVIDER:
+        if intent.result_unit == ResultUnit.SERVICE_PROVIDER and not config.include_older_ads:
             grouped.setdefault(ad.seller.id or ad.id, []).append((ad, evidence))
             continue
         accepted.append(
             (
                 SearchResult(
-                    result_unit=ResultUnit.AD if intent.result_unit != ResultUnit.HYBRID else ResultUnit.HYBRID,
+                    result_unit=intent.result_unit if intent.result_unit in (ResultUnit.SERVICE_PROVIDER, ResultUnit.HYBRID) else ResultUnit.AD,
                     ad=ad,
                     seller=ad.seller,
                     score=score(intent, ad, ad.seller, evidence, config, now),
@@ -89,7 +89,7 @@ def _live_results(intent: IntentResponse, batch: LiveBatch, config: SearchConfig
         )
     results = [item for item, _seller in accepted]
     for _seller_id, pairs in grouped.items():
-        ad, evidence = pairs[0]
+        ad, evidence = max(pairs, key=lambda pair: score(intent, pair[0], pair[0].seller, pair[1], config, now))
         titles = [item.title for item, _evidence in pairs[:3]]
         results.append(
             SearchResult(
@@ -206,8 +206,8 @@ def _drop_stale(results: list[SearchResult]) -> list[SearchResult]:
 
 
 def _ordered(intent: IntentResponse, local_results: list[SearchResult], live_results: list[SearchResult], config: SearchConfig, now: datetime) -> tuple[list[SearchResult], int]:
-    merged, removed = deduplicate(local_results + live_results)
-    kept = _drop_stale(merged)
+    merged, removed = deduplicate(local_results + live_results, by_listing=config.include_older_ads)
+    kept = merged if config.include_older_ads else _drop_stale(merged)
     removed += len(merged) - len(kept)
     return rank(intent, kept, config, now), removed
 
@@ -279,7 +279,9 @@ def _search_need(
                     error=once.error,
                 )
             ]
+        continuation: dict[str, bool] = {}
         for fetch in fetches:
+            continuation[fetch.query or "default"] = fetch.has_next
             live_batch.ads.extend(fetch.ads)
             live_batch.pages_fetched += fetch.pages
             live_batch.queries_run += 1
@@ -318,6 +320,7 @@ def _search_need(
                 # Which rule turned the listings away: without it a zero-result search
                 # (238 fetched, 238 rejected) cannot be told apart from a broken source.
                 "rejected_by": dict(Counter(_reason_key(reason) for reason in live_reasons).most_common(6)),
+                "has_more": any(continuation.values()),
                 "pages": live_batch.pages_fetched,
                 "queries": live_batch.queries_run,
                 "error": live_batch.error,
@@ -348,10 +351,11 @@ def iter_search(
     config: SearchConfig | None = None,
     now: datetime | None = None,
     near: bool = False,
+    trace_id: str | None = None,
 ) -> Iterator[dict]:
     config = config or SearchConfig()
     now = now or _now()
-    trace_id = uuid4().hex
+    trace_id = trace_id or uuid4().hex
     stages: list[dict] = []
     needs = understand.refine(query, analyze_needs(query))
     intent = needs[0] if needs else analyze(query)
@@ -382,6 +386,7 @@ def iter_search(
             clarification_question=clarification,
             trace_id=trace_id,
             zero_reason=zero_reason,
+            next_page=(config.live_start_page if any(stage.get("error") or stage.get("timed_out") for stage in stages) else config.live_start_page + config.live_max_pages) if any(stage.get("has_more") or stage.get("error") or stage.get("timed_out") for stage in stages) else None,
         )
         trace = {"trace_id": trace_id, "stages": stages, "state": state.value}
         return {"type": "done", "response": response, "trace": trace}
@@ -486,10 +491,11 @@ def run_search(
     config: SearchConfig | None = None,
     now: datetime | None = None,
     near: bool = False,
+    trace_id: str | None = None,
 ) -> tuple[SearchResponse, dict]:
     response = None
     trace = None
-    for event in iter_search(query, corpus, live_client, config, now, near=near):
+    for event in iter_search(query, corpus, live_client, config, now, near=near, trace_id=trace_id):
         if event["type"] == "done":
             response = event["response"]
             trace = event["trace"]
