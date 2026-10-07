@@ -1417,7 +1417,7 @@ class PgStore:
                 " due as (select haraj_conversation_id, bool_and(checked_at is not null) as read_before, min(retry_at) as due_at"
                 " from threads where (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
                 " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit %s)"
-                " select t.*, r.created_at as request_created_at, r.deal_outcome,"
+                " select t.*, r.attributes as consent_attributes, r.created_at as request_created_at, r.deal_outcome,"
                 " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
                 " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
                 " join threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
@@ -1443,12 +1443,12 @@ class PgStore:
             recent = conn.execute(_ANSWERED_SQL.replace("?", "%s"), _answered_window(now)).fetchall()
         return _sync_health(row["never_read"], row["overdue"], row["oldest_wait"], [r["answered"] for r in recent])
 
-    def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None) -> None:
+    def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int = 0) -> None:
         with self._pool.connection() as conn:
             conn.execute(
                 "update haraj_threads set checked_at = coalesce(to_timestamp(%s), now()), retry_at = coalesce(to_timestamp(%s), now()) + make_interval(secs => %s),"
-                " failure_code = %s where request_id = %s and seller_id = %s and need = %s",
-                (now, now, retry_seconds, failure_code, thread["request_id"], thread["seller_id"], thread["need"]),
+                " failure_code = %s, high_water = greatest(coalesce(high_water,0),%s) where request_id = %s and seller_id = %s and need = %s",
+                (now, now, retry_seconds, failure_code, high_water, thread["request_id"], thread["seller_id"], thread["need"]),
             )
 
     def reserve_send_slot(self, spacing: float, now: float, deadline: float) -> float | None:

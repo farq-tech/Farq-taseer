@@ -126,6 +126,20 @@ def sync_user_replies(store, budget_seconds, clock):
     conversations = {}
     for thread in store.threads_to_sync(now=clock()):
         owner=store.farq_user_for_request(thread['request_id'])
+        attributes = thread.get('consent_attributes') or {}
+        try:
+            attributes = json.loads(attributes) if isinstance(attributes, str) else attributes
+            consent = attributes.get('_haraj_consent', {})
+        except (ValueError, AttributeError):
+            consent = {}
+        if not isinstance(consent, dict):
+            consent = {}
+        if (not owner or consent.get('owner') != owner or not consent.get('at')
+                or str(consent.get('account')) != str(thread.get('haraj_account_id'))
+                or not isinstance(consent.get('recipients'), list)
+                or thread['seller_id'] not in consent.get('recipients', [])):
+            store.thread_checked(thread, failure_code='HARAJ_CONSENT_REQUIRED', retry_seconds=3600, now=clock())
+            continue
         key=(owner,thread['haraj_conversation_id'],thread.get('haraj_account_id'))
         conversations.setdefault(key,[]).append(thread)
     received=0
@@ -161,8 +175,8 @@ def sync_user_replies(store, budget_seconds, clock):
                 notify_reply(store,thread['request_id'],thread['seller_id'],item.body,message_id=recorded.id)
         # Unique provider-owner connections make this update owner-exclusive. Preserve original
         # messages and use existing quote extraction / per-user read persistence.
-        store.owner_conversation_checked(owner,conversation,retry_seconds=30,now=clock(),high_water=high_water,failure_code='HARAJ_ITEM_ASSIGNMENT_REQUIRED' if len(threads)!=1 and messages else None)
         for thread in threads:
+            store.thread_checked(thread,retry_seconds=30,now=clock(),high_water=high_water,failure_code='HARAJ_ITEM_ASSIGNMENT_REQUIRED' if len(threads)!=1 and messages else None)
             if len(threads)==1:
                 store.mark_synced(thread['request_id'])
     return received

@@ -304,3 +304,24 @@ def test_sync_account_projection_on_postgres(pg_store, tmp_path):
     store.finish_delivery(delivery['id'], sent=SentMessage('p2p101_202','p2p101_202:7',7,'101'))
     rows = store.threads_to_sync()
     assert len(rows) == 1 and rows[0]['haraj_account_id'] == '101'
+
+
+def test_checked_thread_does_not_clear_legacy_failures(pg_store, tmp_path):
+    from farq.contracts import RequestRecipient
+    from farq.haraj_chat import SentMessage
+    store = pg_store(upload_dir=tmp_path / 'uploads')
+    owner = store.start_guest()['user_id']
+    ids = [store.create_request(owner, 'synthetic', 'door', None, 'الرياض',
+            {'_haraj_consent':{'account':'101'}} if i else {},
+            [RequestRecipient(seller_id='202',seller_name='synthetic')]) for i in range(2)]
+    for rid in ids:
+        delivery=store.claim_deliveries(request_id=rid)[0]
+        store.finish_delivery(delivery['id'],sent=SentMessage('p2p101_202','p2p101_202:7',7,'101'))
+    rows = {row['request_id']:row for row in store.threads_to_sync()}
+    assert rows[ids[1]]['consent_attributes']['_haraj_consent']['account']=='101'
+    store.thread_checked(rows[ids[0]],failure_code='HARAJ_CONSENT_REQUIRED')
+    store.thread_checked(rows[ids[1]],high_water=8)
+    with store._pool.connection() as conn:
+        statuses={r['request_id']:r for r in conn.execute('select request_id,failure_code,high_water from haraj_threads')}
+    assert statuses[ids[0]]['failure_code']=='HARAJ_CONSENT_REQUIRED'
+    assert statuses[ids[1]]['high_water']==8
