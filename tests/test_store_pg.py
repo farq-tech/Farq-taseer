@@ -275,3 +275,19 @@ def test_outreach_columns_on_postgres(pg_store):
     with store._pool.connection() as conn:
         thread = conn.execute("select haraj_conversation_id, haraj_account_id, high_water from haraj_threads").fetchone()
     assert (thread["haraj_conversation_id"], thread["haraj_account_id"], thread["high_water"]) == ("p2p26038924_501", "26038924", 3)
+
+
+def test_direct_claim_is_scoped_to_current_request(pg_store):
+    from farq.contracts import RequestRecipient
+    store=pg_store()
+    owner_a=store.start_guest()['user_id']
+    owner_b=store.start_guest()['user_id']
+    recipient=[RequestRecipient(seller_id='900000002',seller_name='synthetic')]
+    older=store.create_request(owner_b,'older','باب',None,'الرياض',{},recipient,supplier_message='بكم؟')
+    current=store.create_request(owner_a,'current','باب',None,'الرياض',{},recipient,supplier_message='بكم؟')
+    rows=store.claim_deliveries(request_id=current)
+    assert len(rows)==1 and rows[0]['request_id']==current
+    assert store.claim_deliveries(request_id=current)==[]
+    with store._pool.connection() as conn:
+        row=conn.execute('select delivery_status,attempts from message_deliveries where request_id=%s',(older,)).fetchone()
+    assert row['delivery_status']=='queued' and row['attempts']==0
