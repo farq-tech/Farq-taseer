@@ -1,0 +1,12 @@
+{
+  "name": "taseer-web-layout-tests",
+  "private": true,
+  "type": "module",
+  "description": "Phone layout regression for web/: overflow, zoom and keyboard on the conversation screens.",
+  "scripts": {
+    "test": "node chat-layout.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

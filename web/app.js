@@ -2479,15 +2479,14 @@ function renderThread() {
       </div>`
     : "";
 
+  const context = `${awardedHead}${group && !awarded ? offersBar(thread, allOffers) : ""}${pills}`;
   return `${fqHead({ title, sub, back: backAction, backStart: true, end: menu })}
-    ${awardedHead}
-    ${group && !awarded ? offersBar(thread, allOffers) : ""}
-    ${pills}
+    ${context ? `<div class="fq-chat-context">${context}</div>` : ""}
     <section class="fq-chat${privateWinner ? " won" : ""}" id="chat-wall">
       ${privateWinner ? `<div class="fq-sys">✓ محادثة خاصة مع ${esc(sellerName(thread, awarded))}</div>` : ""}
       ${waMessages(thread, messages, group) || `<div class="fq-sys">بانتظار الرد.</div>`}
     </section>
-    <div>
+    <div class="fq-dock">
       ${state.notice ? `<div class="fq-target" style="background:#fdeee9;color:#b3402a" role="alert">${esc(state.notice)}<button type="button" data-action="clear-notice" aria-label="إغلاق">${ic("x", 14)}</button></div>` : ""}
       ${target
         ? `<div class="fq-target" style="--who:${sellerColor(thread, target.sellerId)}">${ic("message-square", 14)}<bdi>${esc(target.name)}: ${esc(snippet(target.body, 40))}</bdi><button type="button" data-action="cancel-reply">إلغاء</button></div>`
@@ -3218,31 +3217,39 @@ function applyRoute(path, { pop = false } = {}) {
   return show("home");
 }
 
-// A reload or a closed tab writes the draft at once instead of waiting for the next pause.
-// iOS Safari does not shrink the layout when the keyboard rises, so a screen that is
-// exactly one viewport tall keeps its composer under the keys. On the supplier's page the
-// shell follows the visible part instead, and the chat stays pinned to its last message.
+// The app shell is pinned to what the customer can see, on every screen. iOS Safari does
+// not shrink the layout when the keyboard rises: it keeps the page's height, slides the keys
+// over its bottom and pans the visible part down to the focused field. So while the visible
+// part is shorter than the layout, the shell takes exactly its height and its offset
+// (--fq-vh / --fq-vv-top, read by .fq in app.css): the header stays where it was, the
+// composer sits right on the keys, and only the messages give up height. Android and a
+// natively resized WebView shrink the layout itself; there the variables stay unset and
+// 100dvh follows. A pinch-zoomed page is left alone.
+// The page never scrolls (html/body do not overflow), so any scroll Safari applies to reveal
+// the field is undone at once.
+const SHORT_SCREEN = 520;
 function fitVisibleViewport() {
   const vv = window.visualViewport;
   const root = document.documentElement;
-  if (!vv || state.view !== "seller" || vv.scale !== 1 || window.innerHeight - vv.height < 120) {
+  const covered = vv && vv.scale <= 1.01 && window.innerHeight - vv.height > 1;
+  if (covered) {
+    root.style.setProperty("--fq-vh", `${vv.height}px`);
+    root.style.setProperty("--fq-vv-top", `${Math.max(0, vv.offsetTop)}px`);
+  } else {
     root.style.removeProperty("--fq-vh");
-    return;
+    root.style.removeProperty("--fq-vv-top");
   }
-  root.style.setProperty("--fq-vh", `${Math.round(vv.height)}px`);
-  window.scrollTo(0, 0);
-  const wall = document.getElementById("chat-wall");
-  if (wall) wall.scrollTop = wall.scrollHeight;
+  root.classList.toggle("fq-short", (covered ? vv.height : window.innerHeight) < SHORT_SCREEN);
+  for (const node of document.querySelectorAll(".fq-inputg textarea")) node.dispatchEvent(new Event("fq-fit"));
+  if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
 }
 window.visualViewport?.addEventListener("resize", fitVisibleViewport);
-// Where the keyboard shrinks the layout itself (Android), the chat keeps its last message
-// in view instead of leaving the conversation scrolled to somewhere in the middle.
-window.addEventListener("resize", () => {
-  if (state.view !== "seller") return;
-  const wall = document.getElementById("chat-wall");
-  if (wall) wall.scrollTop = wall.scrollHeight;
-});
+window.visualViewport?.addEventListener("scroll", fitVisibleViewport);
+window.addEventListener("resize", fitVisibleViewport);
+window.addEventListener("orientationchange", fitVisibleViewport);
+fitVisibleViewport();
 
+// A reload or a closed tab writes the draft at once instead of waiting for the next pause.
 window.addEventListener("pagehide", () => {
   if (state.view !== "seller" && state.view !== "legal") saveDraft();
 });
@@ -4067,7 +4074,7 @@ function renderSeller() {
     : "";
 
   return `${head}
-    ${brief}
+    <div class="fq-chat-context">${brief}</div>
     <section class="fq-chat" id="chat-wall">
       ${intro}
       ${bubbles}
@@ -4331,16 +4338,34 @@ function render() {
 
 // A conversation behaves like a chat: swipe a supplier's bubble to reply to it, and a
 // chevron appears to jump back to the latest message when the customer has scrolled up.
+// The conversation also keeps its last message in view whenever it changes height - the
+// keyboard rising or falling, the composer growing a line, the phone turning - as long as
+// the reader was at the bottom. Scrolled up to read, he stays where he was.
+let chatObserver = null;
 function bindChat(root) {
+  chatObserver?.disconnect();
+  chatObserver = null;
   const wall = root.querySelector("#chat-wall");
   const jump = root.querySelector(".fq-tobottom");
   if (!wall) return;
-  if (jump) {
-    const check = () => {
-      jump.hidden = wall.scrollHeight - wall.scrollTop - wall.clientHeight < 200;
-    };
-    wall.addEventListener("scroll", check, { passive: true });
-    check();
+  const gap = () => wall.scrollHeight - wall.scrollTop - wall.clientHeight;
+  let atBottom = true;
+  // A scroll that lands between a resize and its observer is the resize, not the reader:
+  // only a scroll at the height last seen says where the reader is.
+  let seenHeight = wall.clientHeight;
+  const check = () => {
+    if (wall.clientHeight === seenHeight) atBottom = gap() < 48;
+    if (jump) jump.hidden = gap() < 200;
+  };
+  wall.addEventListener("scroll", check, { passive: true });
+  requestAnimationFrame(check);
+  if ("ResizeObserver" in window) {
+    chatObserver = new ResizeObserver(() => {
+      if (atBottom) wall.scrollTop = wall.scrollHeight;
+      seenHeight = wall.clientHeight;
+      check();
+    });
+    chatObserver.observe(wall);
   }
   let start = null;
   wall.addEventListener("touchstart", (event) => {
@@ -4365,14 +4390,21 @@ function bindChat(root) {
   });
 }
 
-// The composer grows with the message, up to four lines, the way a chat input does.
+// The composer grows with the message, up to four lines, the way a chat input does, then
+// scrolls inside itself. On a short screen (a phone on its side with the keyboard up) it
+// stops sooner, at about a fifth of the screen, so the messages keep room to be read.
 function bindGrow(root) {
   root.querySelectorAll(".fq-inputg textarea, #composer textarea").forEach((node) => {
     const grow = () => {
+      const screen = node.closest(".fq")?.clientHeight || window.innerHeight;
+      const tallest = node.closest("#composer") ? 96 : 120;
+      const cap = Math.min(tallest, Math.max(44, Math.round(screen * 0.22)));
+      node.style.maxHeight = `${cap}px`;
       node.style.height = "auto";
-      node.style.height = `${Math.min(node.scrollHeight, 96)}px`;
+      node.style.height = `${Math.min(node.scrollHeight, cap)}px`;
     };
     node.addEventListener("input", grow);
+    node.addEventListener("fq-fit", grow);
     grow();
   });
 }
