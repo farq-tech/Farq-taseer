@@ -95,3 +95,23 @@ def test_farq_mapping_cannot_be_reassigned_and_worker_rejects_forged_consent_own
   broker.send_delivery(store,item)
  assert rejected.value.code=='HARAJ_CONSENT_REQUIRED'
  broker.call.assert_not_called()
+
+
+def test_legacy_shared_threads_cannot_read_or_steal_new_account_replies(store, monkeypatch):
+ old_a=request(store, consent=False)
+ old_b=request(store, owner=B, consent=False)
+ current=request(store)
+ for rid in [old_a,old_b,current]:
+  item=store.claim_deliveries(request_id=rid)[0]
+  store.finish_delivery(item['id'],sent=SentMessage('p2p101_202','p2p101_202:7',7,'101'))
+ broker=Mock(configured=True)
+ broker.read_thread.return_value=[InboundMessage('p2p101_202:8','متوفر، الحبة 780 ريال','2026-10-06T19:30:00Z',8)]
+ monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:broker)
+ assert sync_user_replies(store,10,lambda:2000000000)==1
+ assert broker.read_thread.call_count==1
+ assert broker.read_thread.call_args.args[1]['request_id']==current
+ assert store.get_request(current,store.request_owner(current)).offers
+ for rid in [old_a,old_b]:
+  assert not store.get_request(rid,store.request_owner(rid)).offers
+  row=store._connection.execute('select failure_code from haraj_threads where request_id=?',(rid,)).fetchone()
+  assert row['failure_code']=='HARAJ_CONSENT_REQUIRED'

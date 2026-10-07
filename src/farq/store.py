@@ -2225,7 +2225,7 @@ class Store:
             " due as (select haraj_conversation_id, min(checked_at is not null) as read_before, min(retry_at) as due_at"
             " from threads where (retry_at is null or retry_at <= ?)"
             " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit ?)"
-            " select t.*, r.created_at as request_created_at, r.deal_outcome,"
+            " select t.*, r.attributes_json as consent_attributes, r.created_at as request_created_at, r.deal_outcome,"
             " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
             " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
             " join threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
@@ -2251,11 +2251,11 @@ class Store:
         recent = self._connection.execute(_ANSWERED_SQL, tuple(t.isoformat() for t in _answered_window(now))).fetchall()
         return _sync_health(never_read, overdue, oldest, [bool(r["answered"]) for r in recent])
 
-    def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None) -> None:
+    def thread_checked(self, thread: dict, failure_code: str | None = None, retry_seconds: int = 30, now: float | None = None, high_water: int = 0) -> None:
         now = datetime.fromtimestamp(now, tz=timezone.utc) if now is not None else datetime.now(timezone.utc)
         self._connection.execute(
-            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ? where request_id = ? and seller_id = ? and need = ?",
-            (now.isoformat(), (now + timedelta(seconds=retry_seconds)).isoformat(), failure_code, thread["request_id"], thread["seller_id"], thread["need"]),
+            "update haraj_threads set checked_at = ?, retry_at = ?, failure_code = ?, high_water = max(coalesce(high_water,0),?) where request_id = ? and seller_id = ? and need = ?",
+            (now.isoformat(), (now + timedelta(seconds=retry_seconds)).isoformat(), failure_code, high_water, thread["request_id"], thread["seller_id"], thread["need"]),
         )
         self._connection.commit()
 
