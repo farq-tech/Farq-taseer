@@ -113,3 +113,12 @@ def test_uncertain_provider_result_is_visible_without_requeue(tmp_path):
     assert record.messages[0].deliveries[0]['status'] == 'unknown'
     assert not store.claim_deliveries(request_id=request)
     assert store.get_request(request, 'another-owner') is None
+
+
+def test_shared_routing_bounds_actual_targets_including_attachment_routes():
+    from farq.store import route_targets
+    recipients=[{"seller_id":str(i),"need":"باب" if i < 40 else "سباك"} for i in range(100)]
+    assert len(route_targets(recipients,None,"باب",None)[0]) == 40
+    assert len(route_targets(recipients,None,None,"99")[0]) == 1
+    with pytest.raises(ValueError,match="٥٠"):
+        route_targets(recipients,None,"سباك",None)

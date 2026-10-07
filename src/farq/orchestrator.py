@@ -428,6 +428,7 @@ def iter_search(
                     continue
                 seen.add(key)
                 flat.append(item)
+        flat.sort(key=lambda item: (item.match == "exact", item.score), reverse=True)
 
     for index, event in _search_needs_together(needs, corpus, live_client, config, now, trace_id, near):
         if event["type"] != "need_done":

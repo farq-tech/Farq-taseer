@@ -1306,12 +1306,6 @@ def create_app(
 
     @app.post("/v1/requests/{request_id}/messages")
     def message(request_id: str, body: MessageBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
-        record = store.get_request(request_id, user_id)
-        if record is None:
-            raise HTTPException(404, detail="request not found")
-        requested = body.seller_ids or ([body.seller_id] if body.seller_id else [r.seller_id for r in record.recipients])
-        if len({seller_key(s) for s in requested}) > 50:
-            raise HTTPException(422, detail={"code":"SUPPLIER_SEND_LIMIT", "message":"اختر حتى ٥٠ مورداً لكل إرسال", "limit":50})
         require_messaging_evidence(store, user_id)
         try:
             check_new_message(store, limits, user_id)
