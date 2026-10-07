@@ -2144,7 +2144,7 @@ class Store:
         ).fetchone()
         return row["id"] if row else None
 
-    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None) -> list[dict]:
+    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None, request_id: str | None = None) -> list[dict]:
         """The oldest queued deliveries, marked sending; only that one when ``delivery_id`` is given."""
         rows = self._connection.execute(
             """
@@ -2155,11 +2155,11 @@ class Store:
             join messages m on m.id = d.message_id
             join haraj_threads t on t.request_id = d.request_id and t.seller_id = d.seller_id and t.need = d.need
             join requests q on q.id = d.request_id
-            where d.delivery_status = 'queued' and (? is null or d.id = ?)
+            where d.delivery_status = 'queued' and (? is null or d.id = ?) and (? is null or d.request_id = ?)
             order by d.created_at
             limit ?
             """,
-            (delivery_id, delivery_id, limit),
+            (delivery_id, delivery_id, request_id, request_id, limit),
         ).fetchall()
         claimed = []
         for row in rows:

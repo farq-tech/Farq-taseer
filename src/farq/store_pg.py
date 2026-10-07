@@ -1333,7 +1333,7 @@ class PgStore:
             ).fetchone()
         return row["id"] if row else None
 
-    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None) -> list[dict]:
+    def claim_deliveries(self, limit: int = 50, delivery_id: str | None = None, request_id: str | None = None) -> list[dict]:
         """The oldest queued deliveries, marked sending; only that one when ``delivery_id`` is given."""
         # SKIP LOCKED: two instances never claim the same delivery.
         with self._pool.connection() as conn:
@@ -1341,12 +1341,12 @@ class PgStore:
                 """
                 update message_deliveries d set delivery_status = 'sending', attempts = d.attempts + 1, last_attempt_at = now()
                 where d.id in (
-                  select id from message_deliveries where delivery_status = 'queued' and (%s::text is null or id = %s)
+                  select id from message_deliveries where delivery_status = 'queued' and (%s::text is null or id = %s) and (%s::text is null or request_id = %s)
                   order by created_at limit %s for update skip locked
                 )
                 returning d.id, d.request_id, d.seller_id, d.need, d.message_id, d.created_at
                 """,
-                (delivery_id, delivery_id, limit),
+                (delivery_id, delivery_id, request_id, request_id, limit),
             ).fetchall()
             claimed = []
             for row in sorted(rows, key=lambda item: item["created_at"]):

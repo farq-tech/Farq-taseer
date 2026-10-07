@@ -1162,9 +1162,13 @@ def create_app(
             if ledger_active:
                 _give_back(item_keys, "request creation failed")
             raise
-        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        if user_connection_enabled():
+            from farq.haraj_broker import send_request_directly
+            send_request_directly(store, request_id, user_id)
+        else:
+            background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         # Registered suppliers are told here, in the app, because nothing will be sent to
-        # them through Haraj. The rest are reached by the worker, as before.
+        # them through Haraj. Haraj recipients were attempted in this action.
         background.add_task(
             notify.notify_sellers, store, [item.seller_id for item in recipients],
             "request_new", request_id=request_id, need=body.need,
@@ -1229,7 +1233,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        if user_connection_enabled():
+            from farq.haraj_broker import send_request_directly
+            send_request_directly(store, request_id, user_id)
+        else:
+            background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return {"id": saved["file_id"], "filename": saved["name"], "content_type": content_type, "size_bytes": saved["size"], "url": saved["url"]}
 
     def _single_need(request_id: str, user_id: str) -> str | None:
@@ -1259,7 +1267,11 @@ def create_app(
             raise HTTPException(status_code=404, detail="request not found") from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        if user_connection_enabled():
+            from farq.haraj_broker import send_request_directly
+            send_request_directly(store, request_id, user_id)
+        else:
+            background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         # A message to a supplier who has already priced is an answer to him; to one who
         # has not, it is a question about the job.
         record = store.get_request(request_id, user_id)
@@ -1339,13 +1351,17 @@ def create_app(
         others = [item.seller_id for item in record.recipients if seller_key(item.seller_id) != seller_key(body.seller_id)]
         if others:
             background.add_task(notify.notify_sellers, store, others, "request_cancelled", request_id=request_id)
-        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        if user_connection_enabled():
+            from farq.haraj_broker import send_request_directly
+            send_request_directly(store, request_id, user_id)
+        else:
+            background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return store.get_request(request_id, user_id).model_dump(mode="json")
 
     @app.post("/v1/requests/{request_id}/counter")
     def counter(request_id: str, body: CounterBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
         require_messaging_evidence(store, user_id)
-        # A counter-offer is a message to one supplier: same limits, same queue, same spacing.
+        # A counter-offer is sent directly within this authenticated request.
         try:
             check_new_message(store, limits, user_id)
         except LimitExceeded as exc:
@@ -1357,7 +1373,11 @@ def create_app(
         except ValueError as exc:
             status = 409 if str(exc) in ("request already awarded", "counter already sent for this offer") else 422
             raise HTTPException(status_code=status, detail=str(exc)) from exc
-        background.add_task(dispatch_pending, store, chat, budget_seconds=1)
+        if user_connection_enabled():
+            from farq.haraj_broker import send_request_directly
+            send_request_directly(store, request_id, user_id)
+        else:
+            background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         background.add_task(
             notify.notify_sellers, store, [body.seller_id], "buyer_reply",
             request_id=request_id, need=created.need, body=created.body[:140],
@@ -1546,11 +1566,11 @@ def create_app(
     def haraj_sync(authorization: str | None = Header(default=None)) -> dict:
         # Vercel Cron sends "Authorization: Bearer $CRON_SECRET".
         require_cron(authorization)
-        # One run a minute: at most one send (sends are 45-90 s apart, 60 a day), then read replies.
+        # Per-user mode only reads replies here; sending requires an authenticated action.
         started = time.monotonic()
         sent = dispatch_pending(store, chat, budget_seconds=42)
         received = sync_replies(store, chat, budget_seconds=max(12.0, 54 - (time.monotonic() - started)))
-        return {"sent": sent, "received": received, "queue": _watch_queue(), "replies": _watch_replies(), "closing": _ring_closing_soon()}
+        return {"sent": sent, "received": received, "queue": {"send_mode":"direct","automatic_dispatch":False} if user_connection_enabled() else _watch_queue(), "replies": _watch_replies(), "closing": _ring_closing_soon()}
 
     # The backlog belongs to the Haraj lane only: the in-app lane has no queue. A backlog is
     # a clock, because the whole platform sends three contacts a minute, so it is measured in
