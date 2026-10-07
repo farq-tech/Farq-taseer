@@ -125,3 +125,28 @@ def test_availability_is_owned_and_cron_requires_secret(tmp_path,monkeypatch):
     assert api.get(path).status_code==404
     assert api.get('/v1/internal/haraj-public-harvest').status_code==401
     assert api.get('/v1/internal/haraj-public-harvest',headers={'Authorization':'Bearer synthetic-cron-key'}).status_code==200
+
+
+def test_real_urllib_rate_limit_and_challenge_activate_pause(tmp_path):
+    import urllib.error
+    from farq.haraj_harvest import error_code
+    import pytest
+    harvest=HarvestStore(Store(tmp_path/'db',tmp_path/'uploads'))
+    def opener(request, timeout):
+        raise urllib.error.HTTPError(request.full_url,429,'Too Many Requests',{},None)
+    live=HarajLiveClient(SearchConfig(),opener=opener)
+    with pytest.raises(LiveUnavailable) as error:
+        live._post({'search':'سباك','page':1,'limit':20})
+    assert error_code(error.value)=='rate_limited'
+    harvest.pause(error_code(error.value))
+    assert harvest.paused()
+    def forbidden(request, timeout):
+        raise urllib.error.HTTPError(request.full_url,403,'Forbidden',{},None)
+    live=HarajLiveClient(SearchConfig(),opener=forbidden)
+    with pytest.raises(LiveUnavailable) as error:
+        live._post({'search':'سباك','page':1,'limit':20})
+    assert error_code(error.value)=='challenge'
+    harvest.pause(error_code(error.value))
+    harvest.pause('rate_limited')  # later concurrent failure cannot downgrade a challenge
+    with harvest.transaction() as execute:
+        assert execute('select state from haraj_public_control where id=1').fetchone()['state']=='CHALLENGE'

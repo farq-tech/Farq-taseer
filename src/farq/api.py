@@ -821,7 +821,7 @@ def create_app(
 
     def _serve_cached(response, query: str, user_id: str | None):
         trace_id = uuid4().hex
-        response = response.model_copy(update={"trace_id": trace_id})
+        response = response.model_copy(update={"trace_id": trace_id, "next_page": None})
         store.record_journey(trace_id, user_id, query, response.state.value, [{"stage": "cache"}])
         _remember_sellers(trace_id, user_id, _response_results(response))
         _remember_listings(trace_id, user_id, _response_pairs(response))
@@ -923,13 +923,15 @@ def create_app(
         if body.page == 1 and not body.continuation_trace:
             return None
         previous = store.journey(body.continuation_trace or "", user_id)
-        if (previous is None or previous.get("pagination_owner") != user_id
+        if (not isinstance(previous, dict) or previous.get("pagination_owner") != user_id
                 or previous.get("pagination_query") != body.query
                 or previous.get("next_page") != body.page):
             raise HTTPException(status_code=404, detail="search continuation not found")
         return body.continuation_trace
 
     def pagination_trace(trace: dict, body: SearchBody, user_id: str | None, response, search_client=None) -> None:
+        if body.page is None:
+            response.next_page = None
         trace.update(pagination_owner=user_id, pagination_query=body.query, next_page=response.next_page)
         trace["harvest_jobs"] = sorted(getattr(search_client, "jobs", []))
 
@@ -999,7 +1001,7 @@ def create_app(
     def search_availability(trace_id: str, authorization: str | None = Header(default=None)) -> dict:
         user_id = _user_from_header(authorization)
         trace = store.journey(trace_id, user_id)
-        if trace is None or trace.get("pagination_owner") != user_id:
+        if not isinstance(trace, dict) or trace.get("pagination_owner") != user_id:
             raise HTTPException(status_code=404, detail="search not found")
         jobs = [harvest.status(key) for key in trace.get("harvest_jobs", [])]
         jobs = [job for job in jobs if job]

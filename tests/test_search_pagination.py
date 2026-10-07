@@ -92,3 +92,14 @@ def test_partial_failure_retries_current_window_without_skipping(tmp_path, monke
     result = api.post("/v1/search", json={"query": "سباك بالرياض", "page": 1}).json()
     assert result["state"] == "PARTIAL_RESULTS"
     assert result["next_page"] == 1
+
+
+def test_legacy_cached_search_cannot_advertise_or_crash_continuation(tmp_path,monkeypatch):
+    api,_=make_api(tmp_path,monkeypatch)
+    first=api.post('/v1/search',json={'query':'سباك بالرياض'}).json()
+    cached=api.post('/v1/search',json={'query':'سباك بالرياض'}).json()
+    assert first['next_page'] is None and cached['next_page'] is None
+    body={'query':'سباك بالرياض','page':4,'continuation_trace':cached['trace_id']}
+    assert api.post('/v1/search',json=body).status_code==404
+    assert api.post('/v1/search/stream',json=body).status_code==404
+    assert api.get('/v1/search/'+cached['trace_id']+'/availability').status_code==404

@@ -85,7 +85,7 @@ class HarvestStore:
         if code not in ('challenge', 'rate_limited'):
             return
         with self.transaction() as execute:
-            execute('update haraj_public_control set state=?,retry_at=? where id=1',
+            execute("update haraj_public_control set state=?,retry_at=? where id=1 and state <> 'CHALLENGE'",
                     ('CHALLENGE' if code == 'challenge' else 'RATE_LIMITED', self.clock() + 3600))
 
     def status(self, key):

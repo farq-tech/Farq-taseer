@@ -177,6 +177,8 @@ class HarajLiveClient:
         try:
             with self._opener(request, timeout=self.config.live_timeout_seconds) as response:
                 payload = json.loads(response.read().decode())
+        except urllib.error.HTTPError as exc:
+            raise LiveUnavailable(f"HTTP {exc.code}") from exc
         except urllib.error.URLError as exc:
             reason = str(exc.reason) if getattr(exc, "reason", None) else str(exc)
             if "timed out" in reason.lower():
