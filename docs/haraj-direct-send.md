@@ -15,3 +15,7 @@ Request-scoped store claiming retains PostgreSQL SKIP LOCKED. Credentials and
 provider-owner verification remain isolated in the Farq vault. Item debit remains
 in the central membership ledger; provider acceptance is distinct from delivery
 or read evidence. No global backlog length can promise a send time.
+
+Interrupted or server-failed per-user send actions retain their owner-bound HTTP
+idempotency reservation until reconciled, preventing retries from creating a
+second RFQ after an uncertain response. Validation failures remain retryable.
