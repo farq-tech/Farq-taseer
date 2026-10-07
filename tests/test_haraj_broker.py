@@ -85,3 +85,16 @@ def test_real_store_claim_skips_older_requests_and_other_users(tmp_path):
     assert len(claimed)==1 and claimed[0]['request_id']==current
     assert store.claim_deliveries(request_id=current)==[]
     assert store._connection.execute('select delivery_status,attempts from message_deliveries where request_id=?',(older,)).fetchone()['delivery_status']=='queued'
+
+
+def test_read_binds_the_stored_account_and_refuses_unknown_legacy_account():
+    store = Mock(); store.farq_user_for_request.return_value = OWNER
+    broker = UserHarajBroker(ENV, Mock())
+    broker.call = Mock(return_value={'account_id':'101','messages':[]})
+    thread = {'request_id':'synthetic','seller_id':'haraj:seller:202','haraj_conversation_id':'p2p101_202','haraj_account_id':'101'}
+    assert broker.read_thread(store, thread, 7) == []
+    assert broker.call.call_args.args[2]['expectedAccountId'] == '101'
+    broker.call.reset_mock()
+    with pytest.raises(HarajChatUnavailable, match='HARAJ_CONVERSATION_OWNERSHIP'):
+        broker.read_thread(store, {**thread, 'haraj_account_id':None}, 7)
+    broker.call.assert_not_called()
