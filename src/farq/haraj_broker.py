@@ -89,31 +89,31 @@ class UserHarajBroker:
                 for item in data.get('messages',[]) if item['sender_id'] != account]
 
 
-def dispatch_user_deliveries(store, budget_seconds, clock):
-    from farq.haraj_chat import HarajChatUnavailable
+def send_request_directly(store, request_id, local_owner):
+    """Send only the authenticated request now; no global drain or automatic retry."""
+    if store.get_request(request_id, local_owner) is None:
+        raise HarajChatUnavailable('HARAJ_CONVERSATION_OWNERSHIP')
     broker = UserHarajBroker()
-    if not broker.configured:
-        return 0
     sent = 0
-    deadline = clock()+budget_seconds
-    while clock() < deadline:
-        rows = store.claim_deliveries(limit=1)
+    while True:
+        rows = store.claim_deliveries(limit=1, request_id=request_id)
         if not rows:
-            break
+            return sent
         item = rows[0]
         try:
-            receipt = broker.send_delivery(store,item)
-        except HarajChatUnavailable as error:
-            # Pacing failures are safe to defer; unknown POST outcomes must never be resent.
-            store.finish_delivery(item['id'],error=error.code,retry=error.code=='HARAJ_RATE_LIMITED')
-            if error.code in ('HARAJ_RATE_LIMITED','HARAJ_REAUTH_REQUIRED','HARAJ_CHALLENGE_REQUIRED'):
-                break
-        except Exception:
-            store.finish_delivery(item['id'],error='HARAJ_SEND_UNCERTAIN',retry=False)
+            receipt = broker.send_delivery(store, item)
+        except Exception as error:
+            code = error.code if isinstance(error, HarajChatUnavailable) else 'HARAJ_SEND_UNCERTAIN'
+            store.finish_delivery(item['id'], error=code, retry=False)
+            # Stop this action on refusal or unknown outcome. No remaining POST is attempted.
+            while True:
+                remaining = store.claim_deliveries(limit=1, request_id=request_id)
+                if not remaining:
+                    return sent
+                store.finish_delivery(remaining[0]['id'], error='HARAJ_ACTION_STOPPED', retry=False)
         else:
-            store.finish_delivery(item['id'],sent=receipt)
+            store.finish_delivery(item['id'], sent=receipt)
             sent += 1
-    return sent
 
 
 def sync_user_replies(store, budget_seconds, clock):

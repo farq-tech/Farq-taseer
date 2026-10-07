@@ -1,22 +1,8 @@
-"""Server-side limits on what a customer can make Taseer's Haraj account send.
+"""Customer item allowances and recipient validation.
 
-Every quote request and message leaves from one Haraj account. A refusal from Haraj
-(401/403/429) stops sending for every customer for 30 minutes and risks the account, so the
-server, not the app, decides who may be written to and how often:
-
-- recipients must be Haraj sellers a search showed this customer (search_sellers);
-- an allowance is spent in **items**, not requests. One request carries a distinct need per
-  item, so counting requests would let ten items inside one request cost one;
-- how many items, how many sellers per item, and how many supplier contacts a day come from
-  the subscriber's own plan row (subscription_plans.monthly_items / sellers_per_item /
-  daily_contacts). The free trial's numbers are the environment defaults below;
-- daily_contacts exists because send capacity is shared and fixed: the 20-second spacing in
-  worker.py is platform-wide, so the whole product sends three supplier contacts a minute.
-  One customer must not be able to spend a day of it.
-
-The monthly allowance resets against subscriptions.period_anchor, not starts_at: a renewal
-updates the existing row and leaves starts_at at the original activation, so an allowance
-measured from starts_at would never reset.
+Haraj messages use each customer's own account and are sent in their authenticated
+request action. No shared-account capacity or platform-wide send wait is used.
+Item allowances remain in Farq's central billing ledger when enabled.
 """
 
 from __future__ import annotations

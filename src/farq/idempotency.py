@@ -6,7 +6,9 @@ key runs normally and its successful JSON answer is kept against (account, path,
 a repeat with the same key and the same body gets that answer back without running again
 (no second request, no second supplier message, no second pending payment). The same key
 with a different body is refused (422); a repeat that arrives while the first is still
-running gets 409. A failed call (non-2xx) releases its key so the client can retry.
+running gets 409. Validation failures release their key. In per-user Haraj mode, a server failure or
+interruption retains the reservation until reconciled; a retry cannot create a
+second request or supplier message after an uncertain outcome.
 
 This sits in front of the route handlers as ASGI middleware so the handlers themselves
 stay unchanged. Calls without the header behave exactly as before.
@@ -94,7 +96,8 @@ class IdempotencyMiddleware:
         try:
             await self.app(scope, replay_receive, capture_send)
         except BaseException:
-            self.store.release_idempotency(user_id, path, key)
+            if not _haraj_reconciliation_required(path):
+                self.store.release_idempotency(user_id, path, key)
             raise
         try:
             response = json.loads(b"".join(captured)) if 200 <= status < 300 else None
@@ -102,8 +105,13 @@ class IdempotencyMiddleware:
             response = None
         if isinstance(response, dict):
             self.store.complete_idempotency(user_id, path, key, response)
-        else:
+        elif status < 500 or not _haraj_reconciliation_required(path):
             self.store.release_idempotency(user_id, path, key)
+
+
+def _haraj_reconciliation_required(path):
+    from farq.haraj_user_connection import enabled
+    return enabled() and path.startswith("/v1/requests")
 
 
 async def _json(send, status: int, payload: dict, replayed: bool = False) -> None:

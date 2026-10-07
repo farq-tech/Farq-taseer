@@ -78,9 +78,8 @@ def dispatch_pending(
     clock: Callable[[], float] = time.time,
 ) -> int:
     if user_connection_enabled():
-        from farq.haraj_broker import dispatch_user_deliveries
-        with _lock:
-            return dispatch_user_deliveries(store,budget_seconds,clock)
+        # Per-user sends happen in the authenticated action, never in a cron backlog.
+        return 0
     if isinstance(chat, NotConnectedChat) or not getattr(chat, "can_send", True):
         return 0
     account = getattr(chat, "send_account_id", None)

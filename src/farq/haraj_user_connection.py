@@ -6,7 +6,7 @@ EVIDENCE_REQUIRED = 'HARAJ_MESSAGING_NOT_READY'
 
 def enabled(env=None) -> bool:
     values = os.environ if env is None else env
-    return str(values.get('HARAj_USER_ACCOUNT_CONNECTION','0')).lower() in ('1','true')
+    return str(values.get('HARAj_USER_ACCOUNT_CONNECTION','0')).strip().lower() in ('1','true')
 
 def require_messaging_evidence(store=None, user_id=None) -> None:
     if not enabled():

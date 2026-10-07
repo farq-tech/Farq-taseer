@@ -14,7 +14,7 @@ from farq.store import Store
 from farq.worker import dispatch_pending, sync_replies
 
 
-@pytest.mark.parametrize('value,expected', [('0',False), ('1',True), ('true',True), ('false',False)])
+@pytest.mark.parametrize('value,expected', [('0',False), ('1',True), ('true',True), ('1\n',True), (' true ',True), ('false',False)])
 def test_flag(value, expected):
     assert enabled({'HARAj_USER_ACCOUNT_CONNECTION': value}) is expected
 

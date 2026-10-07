@@ -4,7 +4,7 @@ import pytest
 from farq.store import Store
 from farq.haraj_chat import HarajChatUnavailable, InboundMessage, SentMessage
 from farq.contracts import RequestRecipient
-from farq.haraj_broker import UserHarajBroker, dispatch_user_deliveries, sync_user_replies, owned_unmatched
+from farq.haraj_broker import UserHarajBroker, send_request_directly, sync_user_replies, owned_unmatched
 
 A='11111111-1111-4111-8111-111111111111'
 B='22222222-2222-4222-8222-222222222222'
@@ -44,7 +44,7 @@ def test_dispatch_acceptance_preserves_provider_receipt_without_company_footer(s
  mock=Mock(configured=True)
  mock.send_delivery.return_value=SentMessage('p2p101_202','p2p101_202:7',7,'101')
  monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:mock)
- assert dispatch_user_deliveries(store,10,lambda:0)==1
+ assert send_request_directly(store,rid,store.request_owner(rid))==1
  delivery=store._connection.execute('select * from message_deliveries').fetchone()
  assert delivery['haraj_account_id']=='101' and delivery['haraj_message_id']=='p2p101_202:7'
  assert mock.send_delivery.call_args.args[1]['body']=='بكم الباب؟'
