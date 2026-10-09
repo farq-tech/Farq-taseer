@@ -7,3 +7,5 @@ data/runtime/
 dist/
 build/
 node_modules/
+.vercel
+.env*
