@@ -123,6 +123,7 @@ class Entitlement:
         return max(0, self.daily_contacts - self.contacts_today)
 
     def as_dict(self) -> dict:
+        from farq.haraj_user_connection import enabled as user_connection_enabled
         payload = {
             "plan": self.plan_code,
             "plan_name": self.plan_name,
@@ -131,6 +132,7 @@ class Entitlement:
             "items_used": self.items_used,
             "items_left": self.items_left,
             "sellers_per_item": self.sellers_per_item,
+            "seller_selection_unlimited": user_connection_enabled(),
             "daily_contacts": self.daily_contacts,
             "contacts_today": self.contacts_today,
             "contacts_left_today": self.contacts_left_today,

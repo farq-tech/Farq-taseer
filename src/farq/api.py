@@ -1223,7 +1223,7 @@ def create_app(
             raise
         if user_connection_enabled():
             from farq.haraj_broker import send_request_directly
-            send_request_directly(store, request_id, user_id)
+            background.add_task(send_request_directly, store, request_id, user_id)
         else:
             background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         # Registered suppliers are told here, in the app, because nothing will be sent to
@@ -1294,7 +1294,7 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if user_connection_enabled():
             from farq.haraj_broker import send_request_directly
-            send_request_directly(store, request_id, user_id)
+            background.add_task(send_request_directly, store, request_id, user_id)
         else:
             background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return {"id": saved["file_id"], "filename": saved["name"], "content_type": content_type, "size_bytes": saved["size"], "url": saved["url"]}
@@ -1328,7 +1328,7 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if user_connection_enabled():
             from farq.haraj_broker import send_request_directly
-            send_request_directly(store, request_id, user_id)
+            background.add_task(send_request_directly, store, request_id, user_id)
         else:
             background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         # A message to a supplier who has already priced is an answer to him; to one who
@@ -1412,7 +1412,7 @@ def create_app(
             background.add_task(notify.notify_sellers, store, others, "request_cancelled", request_id=request_id)
         if user_connection_enabled():
             from farq.haraj_broker import send_request_directly
-            send_request_directly(store, request_id, user_id)
+            background.add_task(send_request_directly, store, request_id, user_id)
         else:
             background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         return store.get_request(request_id, user_id).model_dump(mode="json")
@@ -1434,7 +1434,7 @@ def create_app(
             raise HTTPException(status_code=status, detail=str(exc)) from exc
         if user_connection_enabled():
             from farq.haraj_broker import send_request_directly
-            send_request_directly(store, request_id, user_id)
+            background.add_task(send_request_directly, store, request_id, user_id)
         else:
             background.add_task(dispatch_pending, store, chat, budget_seconds=1)
         background.add_task(

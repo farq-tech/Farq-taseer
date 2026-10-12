@@ -122,3 +122,21 @@ def test_shared_routing_bounds_actual_targets_including_attachment_routes():
     assert len(route_targets(recipients,None,None,"99")[0]) == 1
     with pytest.raises(ValueError,match="٥٠"):
         route_targets(recipients,None,"سباك",None)
+
+
+def test_direct_send_spaces_provider_attempts_after_acceptance(monkeypatch):
+    from farq.haraj_broker import send_request_directly
+    store = Mock(); store.get_request.return_value = object()
+    store.claim_deliveries.side_effect = [[{'id':'one'}], [{'id':'two'}], []]
+    now = [100.0]; attempts = []; waits = []
+    def sleep(seconds):
+        waits.append(seconds); now[0] += seconds
+    def send(*args):
+        attempts.append(now[0]); now[0] += 2.0
+        return object()
+    broker = Mock(); broker.send_delivery.side_effect = send
+    monkeypatch.setattr('farq.haraj_broker.UserHarajBroker', lambda: broker)
+    assert send_request_directly(store, 'approved', 'owner', sleep=sleep, clock=lambda:now[0]) == 2
+    assert waits == [0.0, 30.0]
+    assert attempts == [100.0, 132.0]
+    assert store.finish_delivery.call_count == 2

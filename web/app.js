@@ -2954,7 +2954,7 @@ function renderSubscribe() {
         : `<article class="fq-plan trial">
             <div class="fq-row"><span class="fq-tag ok">مفعلة حاليًا</span><span class="name" style="font-size:17px">التجربة المجانية</span></div>
             <div class="fq-row"><span class="per">ابدأ بدون بطاقة</span><span class="amount">0 ر.س</span></div>
-            <p class="desc">✓ ${formatAllowance(allowance().items)} بند تسعير • ✓ حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند</p>
+            <p class="desc">✓ ${formatAllowance(allowance().items)} بند تسعير • ✓ ${sellerAllowanceLabel()}</p>
           </article>
           <div style="display:flex;align-items:center;gap:12px"><hr class="fq-line" style="flex:1"><span class="fq-meta">الباقات المدفوعة</span><hr class="fq-line" style="flex:1"></div>`}
       ${paymentsOff() ? paymentsOffNote() : state.subError ? `<p class="fq-small" style="color:#b3402a">${esc(state.subError)}</p>` : ""}
@@ -3050,10 +3050,10 @@ function renderSubscribe() {
     ${subscribed
       ? upsell
       : `<div class="fq-card pad"><h2 class="fq-h2" style="font-size:17px">مزايا الفترة التجريبية:</h2>
-          <div class="fq-feats">${[`حتى ${formatAllowance(allowance().items)} بند تسعير`, `حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند`, "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
+          <div class="fq-feats">${[`حتى ${formatAllowance(allowance().items)} بند تسعير`, sellerAllowanceLabel(), "البحث والمقارنة السريعة", "المحادثات واستقبل العروض"]
             .map((line) => `<span class="fq-feat"><span class="y">✓</span>${esc(line)}</span>`)
             .join("")}</div></div>
-        <p class="fq-meta">تقدر تتواصل مع حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند مجانًا.</p>
+        <p class="fq-meta">${allowance().seller_selection_unlimited === true ? "اختيار الموردين مفتوح في حساب حراج المرتبط." : `تقدر تتواصل مع حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند مجانًا.`}</p>
         <div class="fq-sticky">
           ${critical && !paymentsOff()
             ? `<button class="fq-btn r14" type="button" data-action="show-plans">ترقية باقة الاشتراك لتفادي الانقطاع</button>`
@@ -4655,7 +4655,14 @@ function selectResult(key) {
 }
 
 // Sellers per item is a plan property now, not "six on the trial and no ceiling after".
+function sellerAllowanceLabel() {
+  return allowance().seller_selection_unlimited === true
+    ? "اختيار الموردين مفتوح"
+    : `حتى ${formatCount(allowance().sellers_per_item)} موردين لكل بند`;
+}
+
 function sellerCap() {
+  if (allowance().seller_selection_unlimited === true) return Infinity;
   return allowance().sellers_per_item || TRIAL_SELLERS;
 }
 
