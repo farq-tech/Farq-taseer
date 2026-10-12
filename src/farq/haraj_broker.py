@@ -91,18 +91,20 @@ class UserHarajBroker:
                 for item in data.get('messages',[]) if item['sender_id'] != account]
 
 
-def send_request_directly(store, request_id, local_owner):
-    """Send only the authenticated request now; no global drain or automatic retry."""
+def send_request_directly(store, request_id, local_owner, *, sleep=time.sleep, clock=time.monotonic):
+    """Pace only the authenticated request; no global drain or automatic retry."""
     if store.get_request(request_id, local_owner) is None:
         raise HarajChatUnavailable('HARAJ_CONVERSATION_OWNERSHIP')
     broker = UserHarajBroker()
     sent = 0
+    next_send_at = 0.0
     while True:
         rows = store.claim_deliveries(limit=1, request_id=request_id)
         if not rows:
             return sent
         item = rows[0]
         try:
+            sleep(max(0.0, next_send_at - clock()))
             receipt = broker.send_delivery(store, item)
         except Exception as error:
             code = error.code if isinstance(error, HarajChatUnavailable) else 'HARAJ_SEND_UNCERTAIN'
@@ -116,6 +118,7 @@ def send_request_directly(store, request_id, local_owner):
         else:
             store.finish_delivery(item['id'], sent=receipt)
             sent += 1
+            next_send_at = clock() + 30.0
 
 
 def sync_user_replies(store, budget_seconds, clock):
