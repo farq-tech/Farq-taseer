@@ -8,6 +8,7 @@ Item allowances remain in Farq's central billing ledger when enabled.
 from __future__ import annotations
 
 import os
+from uuid import UUID
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -106,6 +107,7 @@ class Entitlement:
     contacts_today: int
     # The spendable ledger balance, or None while TASEER_LEDGER_ENABLED is off.
     credits: int | None = None
+    quota_exempt: bool = False
 
     @property
     def subscribed(self) -> bool:
@@ -131,8 +133,9 @@ class Entitlement:
             "items": self.items,
             "items_used": self.items_used,
             "items_left": self.items_left,
-            "sellers_per_item": 20 if user_connection_enabled() else self.sellers_per_item,
-            "seller_selection_unlimited": False,
+            "sellers_per_item": None if self.quota_exempt else (20 if user_connection_enabled() else self.sellers_per_item),
+            "seller_selection_unlimited": self.quota_exempt,
+            "quota_exempt": self.quota_exempt,
             "daily_contacts": self.daily_contacts,
             "contacts_today": self.contacts_today,
             "contacts_left_today": self.contacts_left_today,
@@ -143,10 +146,34 @@ class Entitlement:
         return payload
 
 
+def account_quota_exempt(store, user_id: str) -> bool:
+    """Operator-only exemption, bound to the immutable authenticated Farq UUID.
+
+    Never infer this permission from email, client input, or legacy unlimited.
+    Missing/malformed identity fails closed. Removing the server setting revokes it.
+    """
+    from farq.haraj_user_connection import enabled
+    if not enabled():
+        return False
+    lookup = getattr(store, "farq_user_id", None)
+    identity = lookup(user_id) if lookup else None
+    try:
+        identity = str(UUID(identity))
+    except (ValueError, TypeError, AttributeError):
+        return False
+    allowed = set()
+    for value in os.environ.get("TASEER_QUOTA_EXEMPT_FARQ_USER_IDS", "").split(","):
+        try:
+            allowed.add(str(UUID(value.strip())))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return identity in allowed
+
+
 def uses_central_ledger(store, limits: Limits, user_id: str) -> bool:
     """Per-user Haraj accounts always spend the enabled central membership balance."""
     from farq.haraj_user_connection import enabled
-    return limits.ledger_enabled and (enabled() or not (
+    return limits.ledger_enabled and not account_quota_exempt(store, user_id) and (enabled() or not (
         getattr(store, "account_unlimited", None) and store.account_unlimited(user_id)
     ))
 
@@ -158,6 +185,14 @@ def entitlement(store, limits: Limits, user_id: str, billing=None) -> Entitlemen
     falls back to the trial numbers rather than to no limit: an unknown allowance must not
     become an unlimited one.
     """
+    if account_quota_exempt(store, user_id):
+        return Entitlement(
+            plan_code=OPEN_ACCOUNT, plan_name="حساب مفتوح باستثناء خاص",
+            items=OPEN_ALLOWANCE, sellers_per_item=OPEN_ALLOWANCE,
+            daily_contacts=OPEN_ALLOWANCE, period_start=None,
+            items_used=0, contacts_today=0, quota_exempt=True,
+        )
+
     # An open account: the owner's own, and any account he opens later. It is neither on the
     # trial nor a paying subscriber, so it is neither given a plan it never bought nor a
     # subscription row that would show it a renewal date and a payment history that do not
@@ -247,7 +282,7 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
             "أكّد بريدك الإلكتروني قبل إرسال أول طلب. أرسلنا لك رابط التأكيد.",
         )
     per_user_haraj = user_connection_enabled()
-    if per_user_haraj and len({seller_key(item.seller_id) for item in recipients}) > 20:
+    if per_user_haraj and not account_quota_exempt(store, user_id) and len({seller_key(item.seller_id) for item in recipients}) > 20:
         raise LimitExceeded(403, "TOO_MANY_SELLERS", "يمكن اختيار 20 بائعًا كحد أقصى لكل طلب.", 20)
     per_item = _items_in(recipients, default_need)
     allowance = entitlement(store, limits, user_id)
@@ -256,7 +291,7 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
     # against Farq's central billing ledger (in api.py's create_request) grants an item.
     # A locally read balance is display-only and stale by design, so refusing on it would
     # make a cached number the authority. Every other cap below still holds.
-    if not limits.ledger_enabled and len(per_item) > allowance.items_left:
+    if not allowance.quota_exempt and not limits.ledger_enabled and len(per_item) > allowance.items_left:
         if allowance.subscribed:
             message = (
                 f"وصلت لحد باقتك ({allowance.items} بند في الشهر)."

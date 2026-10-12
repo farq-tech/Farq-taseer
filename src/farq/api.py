@@ -46,7 +46,7 @@ from farq.media import fetch_thumb, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
 from farq.outreach import Targeting, listing_evidence, select_recipients
-from farq.limits import LimitExceeded, Limits, check_new_message, check_new_request, entitlement, uses_central_ledger
+from farq.limits import LimitExceeded, Limits, account_quota_exempt, check_new_message, check_new_request, entitlement, uses_central_ledger
 from farq.ratelimit import SlidingWindow, client_ip
 from farq.security_headers import SecurityHeadersMiddleware, cors_origins
 from farq.store import MAX_FILE_BYTES, MEDIA_TYPES, AwardConflict, Store, search_seller_ids, seller_key
@@ -1104,7 +1104,7 @@ def create_app(
     @app.post("/v1/requests")
     def create_request(body: RequestBody, background: BackgroundTasks, user_id: str = Depends(current_user)) -> dict:
         # Count provider identities, never listings or RFQ items. Reject before debit/send.
-        if len({seller_key(item.seller_id) for item in body.recipients}) > 50:
+        if not account_quota_exempt(store, user_id) and len({seller_key(item.seller_id) for item in body.recipients}) > 50:
             raise HTTPException(422, detail={"code": "SUPPLIER_SEND_LIMIT", "message": "اختر حتى ٥٠ مورداً لكل إرسال", "limit": 50})
         haraj_identity = require_messaging_evidence(store, user_id)
         if user_connection_enabled() and (not body.haraj_consent or not body.supplier_message or not body.supplier_message.strip()):
@@ -1151,7 +1151,7 @@ def create_app(
         request_id = uuid4().hex
         ledger_active = uses_central_ledger(store, limits, user_id)
         needs = list(dict.fromkeys(item.need or body.need or "" for item in recipients))
-        item_keys = [f"item:{request_id}:{item_need or ''}" for item_need in needs]
+        item_keys = [f"item:{request_id}:{hashlib.sha256((item_need or '').encode()).hexdigest()}" for item_need in needs]
 
         farq_uid = store.farq_user_id(user_id) if ledger_active else None
         if ledger_active and not farq_uid:

@@ -11,6 +11,7 @@ Also here: the closed password sign-up door and the CRON_SECRET gate on /v1/inte
 """
 
 import json
+import hashlib
 from pathlib import Path
 from uuid import uuid4
 
@@ -58,6 +59,8 @@ class CentralLedger:
             if self.fail_consumes_after is not None and len(self.consumes) >= self.fail_consumes_after:
                 return httpx.Response(500)
             user, key, amount = body["user_id"], body["idempotency_key"], body["amount"]
+            if len(key) > 300:
+                return httpx.Response(400, json=_envelope(False, {"code": "INVALID_IDEMPOTENCY_KEY"}))
             if user not in self.balances:
                 return httpx.Response(404, json=_envelope(False, {"code": "USER_NOT_FOUND"}))
             if key in self.consumes:
@@ -169,7 +172,7 @@ def test_flag_on_debits_central_per_item_and_shows_the_balance(tmp_path: Path):
     assert sent.status_code == 200, sent.text
     request_id = sent.json()["id"]
     assert stub.balances[farq_uid] == 0
-    assert set(stub.consumes) == {f"item:{request_id}:سباك", f"item:{request_id}:كهربائي"}
+    assert set(stub.consumes) == {f"item:{request_id}:{hashlib.sha256(need.encode()).hexdigest()}" for need in ("سباك", "كهربائي")}
     assert stub.reversals == {}
     # Spent means spent, whatever the trial's counted numbers say.
     refused = ask(api, headers, ["103"], need="بلاط")
@@ -372,3 +375,15 @@ def test_open_account_direct_request_debits_once_and_refuses_empty_balance(monke
     assert len(sends) == 1
     refused = api.post('/v1/requests', headers=headers, json=body)
     assert refused.status_code == 402 and len(sends) == 1
+
+
+def test_long_arabic_need_has_bounded_distinct_credit_keys(tmp_path):
+    stub, billing = central()
+    store, api = make_api(tmp_path, billing=billing, ledger_enabled=True)
+    _, farq_uid, headers = linked(api, store, stub, credits=3)
+    need = 'أبواب بمواصفات تفصيلية ' * 100
+    response = ask(api, headers, ['101'], need=need)
+    assert response.status_code == 200, response.text
+    assert len(stub.consumes) == 1
+    assert all(len(key) < 300 for key in stub.consumes)
+    assert stub.balances[farq_uid] == 2

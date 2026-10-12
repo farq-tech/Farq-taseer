@@ -309,3 +309,44 @@ def test_connected_request_accepts_twenty_and_rejects_twenty_one(tmp_path, monke
     with pytest.raises(LimitExceeded) as error:
         check_new_request(store, limits, owner, recipients, 'سباك')
     assert error.value.detail['limit'] == 20
+
+
+def test_operator_exception_is_bound_to_farq_identity(tmp_path, monkeypatch):
+    from farq.limits import account_quota_exempt, entitlement, uses_central_ledger, check_new_request, LimitExceeded
+    from farq.contracts import RequestRecipient
+    monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '1')
+    identity = 'e25a8120-ec8d-43ef-a7a3-ab99d309e594'
+    monkeypatch.setenv('TASEER_QUOTA_EXEMPT_FARQ_USER_IDS', identity)
+    store, _ = make(tmp_path, recipients_from_search=False)
+    owner = store.register('owner@example.test', 'synthetic')
+    other = store.register('other@example.test', 'synthetic')
+    store.link_farq(owner, identity)
+    store.set_unlimited(other)
+    limits = Limits(ledger_enabled=True, recipients_from_search=False)
+    assert account_quota_exempt(store, owner)
+    assert not account_quota_exempt(store, other)
+    assert not uses_central_ledger(store, limits, owner)
+    assert uses_central_ledger(store, limits, other)
+    metadata = entitlement(store, limits, owner).as_dict()
+    assert metadata['seller_selection_unlimited'] is True
+    assert metadata['sellers_per_item'] is None
+    recipients = [RequestRecipient(seller_id=str(1000+n), seller_name='م', need='باب') for n in range(150)]
+    check_new_request(store, limits, owner, recipients, 'باب')
+    with pytest.raises(LimitExceeded):
+        check_new_request(store, limits, other, recipients, 'باب')
+    # Even the exempt owner cannot manufacture recipients outside their own search.
+    with pytest.raises(LimitExceeded) as error:
+        check_new_request(store, Limits(ledger_enabled=True), owner, recipients, 'باب')
+    assert error.value.detail['code'] == 'UNKNOWN_RECIPIENT'
+    monkeypatch.delenv('TASEER_QUOTA_EXEMPT_FARQ_USER_IDS')
+    assert not account_quota_exempt(store, owner)
+    assert uses_central_ledger(store, limits, owner)
+
+
+def test_exception_fails_closed_on_malformed_or_unlinked_identity(tmp_path, monkeypatch):
+    from farq.limits import account_quota_exempt
+    monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '1')
+    monkeypatch.setenv('TASEER_QUOTA_EXEMPT_FARQ_USER_IDS', 'owner@example.test,not-a-uuid')
+    store, _ = make(tmp_path)
+    owner = store.register('owner@example.test', 'synthetic')
+    assert not account_quota_exempt(store, owner)
