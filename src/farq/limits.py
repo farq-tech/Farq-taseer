@@ -131,8 +131,8 @@ class Entitlement:
             "items": self.items,
             "items_used": self.items_used,
             "items_left": self.items_left,
-            "sellers_per_item": self.sellers_per_item,
-            "seller_selection_unlimited": user_connection_enabled(),
+            "sellers_per_item": 20 if user_connection_enabled() else self.sellers_per_item,
+            "seller_selection_unlimited": False,
             "daily_contacts": self.daily_contacts,
             "contacts_today": self.contacts_today,
             "contacts_left_today": self.contacts_left_today,
@@ -247,6 +247,8 @@ def check_new_request(store, limits: Limits, user_id: str, recipients, default_n
             "أكّد بريدك الإلكتروني قبل إرسال أول طلب. أرسلنا لك رابط التأكيد.",
         )
     per_user_haraj = user_connection_enabled()
+    if per_user_haraj and len({seller_key(item.seller_id) for item in recipients}) > 20:
+        raise LimitExceeded(403, "TOO_MANY_SELLERS", "يمكن اختيار 20 بائعًا كحد أقصى لكل طلب.", 20)
     per_item = _items_in(recipients, default_need)
     allowance = entitlement(store, limits, user_id)
 
