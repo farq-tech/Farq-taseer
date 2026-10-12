@@ -36,3 +36,7 @@ policy, not a claim that Haraj permits a particular volume or cannot block it.
 Tasks are not recovered automatically after process restart. Persisted statuses
 remain available; uncertain attempts require reconciliation. Revert this release
 to restore synchronous dispatch and the previous UI metadata.
+
+Clarification (2026-10-12): connected selection is limited to 20 distinct sellers
+per request. Entitlement metadata exposes 20 and disables unlimited selection;
+the server independently rejects 21 sellers. Existing 30-second pacing remains.

@@ -1,3 +1,5 @@
+import pytest
+
 """TSR-014 / TSR-033: the server decides who Taseer's Haraj account may write to, and how often."""
 
 from datetime import datetime, timedelta, timezone
@@ -283,12 +285,27 @@ def test_an_open_account_is_not_a_subscriber_and_is_not_on_the_trial(tmp_path: P
     assert open_account.sellers_per_item == limits.max_sellers_per_item
 
 
-def test_per_user_haraj_exposes_open_seller_selection(tmp_path: Path, monkeypatch):
+def test_per_user_haraj_exposes_twenty_seller_selection(tmp_path: Path, monkeypatch):
     monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '1')
     _, api = make(tmp_path, recipients_from_search=False)
     headers = signed_in(api)
     allowance = api.get('/v1/subscriptions/me', headers=headers).json()['entitlement']
-    assert allowance['seller_selection_unlimited'] is True
+    assert allowance['seller_selection_unlimited'] is False
+    assert allowance['sellers_per_item'] == 20
     monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '0')
     allowance = api.get('/v1/subscriptions/me', headers=headers).json()['entitlement']
     assert allowance['seller_selection_unlimited'] is False
+
+
+def test_connected_request_accepts_twenty_and_rejects_twenty_one(tmp_path, monkeypatch):
+    from farq.limits import check_new_request, Limits, LimitExceeded
+    from farq.contracts import RequestRecipient
+    monkeypatch.setenv('HARAj_USER_ACCOUNT_CONNECTION', '1')
+    store, _ = make(tmp_path, recipients_from_search=False)
+    owner = store.register('cap@example.test', 'synthetic')
+    recipients = [RequestRecipient(seller_id=str(1000+n), seller_name='م', need='سباك') for n in range(21)]
+    limits = Limits(recipients_from_search=False)
+    check_new_request(store, limits, owner, recipients[:20], 'سباك')
+    with pytest.raises(LimitExceeded) as error:
+        check_new_request(store, limits, owner, recipients, 'سباك')
+    assert error.value.detail['limit'] == 20
