@@ -1313,7 +1313,9 @@ class PgStore:
                     raise ValueError("unknown reply_to")
                 delivered = [item["seller_id"] for item in conn.execute("select seller_id from message_deliveries where message_id = %s order by created_at", (reply_to,))]
                 seller_id, seller_ids = reply_audience(quoted["seller_id"], delivered, seller_id, seller_ids)
-                need = need or quoted["need"]
+                # Replies retain the quoted item even when the client sends the
+                # consolidated request title as its current item. Audience stays narrowed.
+                need = quoted["need"] or need
             message = self._enqueue(conn, request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
             return next(item for item in self._messages(conn, request_id) if item.id == message.id)
 
