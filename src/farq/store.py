@@ -318,11 +318,15 @@ def _route_targets(
         picked = list(dict.fromkeys(str(item) for item in seller_ids))
         targets = []
         for picked_id in picked:
-            match = [
-                row
-                for row in recipients
-                if row["seller_id"] == picked_id and (request_wide or need is None or item_of(row) == need)
-            ]
+            seller_rows = [row for row in recipients if row["seller_id"] == picked_id]
+            match = [row for row in seller_rows if request_wide or need is None or item_of(row) == need]
+            # A consolidated request can retain the source item's need on the
+            # recipient while the client still has the consolidated title
+            # selected. An explicit supplier selection is unambiguous when
+            # that supplier has only one recipient row, so route to that row
+            # instead of reporting the misleading "unknown seller" error.
+            if not match and len(seller_rows) == 1:
+                match = seller_rows
             if not match:
                 raise ValueError("unknown seller")
             targets.append(match[0])
@@ -338,7 +342,10 @@ def _route_targets(
             return targets, item or None, SINGLE_SELLER
         return targets, item or None, ALL_SELLERS if {row["seller_id"] for row in targets} == on_item else SOME_SELLERS
     if seller_id is not None:
-        targets = [row for row in recipients if row["seller_id"] == seller_id and (need is None or item_of(row) == need)]
+        seller_rows = [row for row in recipients if row["seller_id"] == seller_id]
+        targets = [row for row in seller_rows if need is None or item_of(row) == need]
+        if not targets and len(seller_rows) == 1:
+            targets = seller_rows
         if not targets:
             raise ValueError("unknown seller")
         return targets[:1], item_of(targets[0]) or None, SINGLE_SELLER

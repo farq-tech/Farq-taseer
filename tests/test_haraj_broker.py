@@ -124,6 +124,36 @@ def test_shared_routing_bounds_actual_targets_including_attachment_routes():
         route_targets(recipients,None,"سباك",None)
 
 
+def test_explicit_seller_survives_stale_need_after_request_consolidation():
+    from farq.store import route_targets
+
+    recipients = [
+        {"seller_id": "seller-a", "need": "أبواب WPC"},
+        {"seller_id": "seller-b", "need": "أبواب PVC"},
+    ]
+
+    targets, need, scope = route_targets(
+        recipients,
+        "أبواب PVC وWPC — الرياض",
+        "أبواب PVC وWPC — الرياض",
+        "seller-a",
+    )
+    assert targets == [recipients[0]]
+    assert need == "أبواب WPC"
+    assert scope == "single_seller"
+
+    targets, need, scope = route_targets(
+        recipients,
+        "أبواب PVC وWPC — الرياض",
+        "أبواب PVC وWPC — الرياض",
+        None,
+        ["seller-a"],
+    )
+    assert targets == [recipients[0]]
+    assert need == "أبواب WPC"
+    assert scope == "single_seller"
+
+
 def test_direct_send_spaces_provider_attempts_after_acceptance(monkeypatch):
     from farq.haraj_broker import send_request_directly
     store = Mock(); store.get_request.return_value = object()
