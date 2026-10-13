@@ -2130,7 +2130,9 @@ class Store:
                 raise ValueError("unknown reply_to")
             delivered = [item["seller_id"] for item in self._connection.execute("select seller_id from message_deliveries where message_id = ? order by created_at", (reply_to,))]
             seller_id, seller_ids = reply_audience(quoted["seller_id"], delivered, seller_id, seller_ids)
-            need = need or quoted["need"]
+            # Replies retain the quoted item even when the client sends the
+            # consolidated request title as its current item. Audience stays narrowed.
+            need = quoted["need"] or need
         return self._enqueue(request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
 
     def save_file(self, owner_user_id: str, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:

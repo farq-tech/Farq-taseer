@@ -115,6 +115,11 @@ def test_a_reply_narrows_to_the_quoted_audience_and_never_widens(tmp_path: Path)
     reply = api.post(f"/v1/seller/{created['tokens']['12']}/messages", json={"body": "تمام"}).json()
     back = api.post(url, headers=headers, json={"body": "شكراً", "reply_to": reply["id"]}).json()
     assert (back["scope"], back["seller_id"]) == ("single_seller", "12")
+    # A merged request title sent by the client must not replace the quoted item.
+    retained = api.post(url, headers=headers, json={"body": "المواصفات؟", "reply_to": reply["id"], "need": "طلب موحد جديد"})
+    assert retained.status_code == 200, retained.text
+    assert retained.json()["need"] == back["need"]
+    assert [item["seller_id"] for item in retained.json()["deliveries"]] == ["12"]
 
 
 def test_a_revised_offer_replaces_the_earlier_one(tmp_path: Path):
