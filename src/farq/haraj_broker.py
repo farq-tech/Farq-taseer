@@ -9,6 +9,14 @@ import uuid
 import httpx
 from farq.haraj_chat import HarajChatUnavailable, SentMessage, InboundMessage
 
+def recipient_consent(attributes, seller_id):
+    """A merged campaign preserves each supplier's original account and consent."""
+    if not isinstance(attributes, dict):
+        return {}
+    mapping = attributes.get('_merge_recipient_consents')
+    consent = mapping.get(seller_id, {}) if isinstance(mapping, dict) else attributes.get('_haraj_consent', {})
+    return consent if isinstance(consent, dict) else {}
+
 class UserHarajBroker:
     def __init__(self, env=None, http=None):
         env = os.environ if env is None else env
@@ -53,7 +61,7 @@ class UserHarajBroker:
             raise HarajChatUnavailable('HARAJ_UNSUPPORTED_MESSAGE_CONTENT')
         attributes = item.get('consent_attributes') or '{}'
         attributes = json.loads(attributes) if isinstance(attributes,str) else attributes
-        consent = attributes.get('_haraj_consent',{})
+        consent = recipient_consent(attributes, item['seller_id'])
         recipients = consent.get('recipients',[])
         if consent.get('owner') != owner or item['seller_id'] not in recipients or not consent.get('at'):
             raise HarajChatUnavailable('HARAJ_CONSENT_REQUIRED')
@@ -132,7 +140,7 @@ def sync_user_replies(store, budget_seconds, clock):
         attributes = thread.get('consent_attributes') or {}
         try:
             attributes = json.loads(attributes) if isinstance(attributes, str) else attributes
-            consent = attributes.get('_haraj_consent', {})
+            consent = recipient_consent(attributes, thread['seller_id'])
         except (ValueError, AttributeError):
             consent = {}
         if not isinstance(consent, dict):

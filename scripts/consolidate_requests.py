@@ -28,7 +28,7 @@ DECLARE
  target text := '{target}';
  owner_id text := '{owner}';
  allowed_tables text[] := {tables};
- tbl text; manifest jsonb := '{{}}'; snapshot jsonb; old_target jsonb;
+ tbl text; manifest jsonb := '{{}}'; snapshot jsonb; old_target jsonb; consents jsonb;
 BEGIN
  PERFORM id FROM taseer.requests WHERE id = ANY(ids) ORDER BY id FOR UPDATE;
  IF (SELECT count(*) FROM taseer.requests WHERE id=ANY(ids) AND owner_user_id=owner_id) <> cardinality(ids)
@@ -47,6 +47,8 @@ BEGIN
    AND NOT(table_name=ANY(allowed_tables)))
  THEN RAISE EXCEPTION 'unreviewed request-reference table'; END IF;
  SELECT jsonb_build_object('need',need,'attributes',attributes) INTO old_target FROM taseer.requests WHERE id=target;
+ SELECT jsonb_object_agg(p.seller_id,r.attributes->'_haraj_consent') INTO consents
+   FROM taseer.request_recipients p JOIN taseer.requests r ON r.id=p.request_id WHERE r.id=ANY(ids);
  FOREACH tbl IN ARRAY allowed_tables LOOP
    IF tbl='haraj_threads' THEN
      EXECUTE format('SELECT coalesce(jsonb_agg(jsonb_build_object(''request_id'',request_id,''seller_id'',seller_id,''need'',need)),''[]''::jsonb) FROM taseer.%I WHERE request_id=ANY($1) AND request_id<>$2',tbl)
@@ -61,7 +63,8 @@ BEGIN
  UPDATE taseer.requests SET attributes=attributes || jsonb_build_object('merged_into_request_id',target)
    WHERE id=ANY(ids) AND id<>target;
  UPDATE taseer.requests SET need='{title}', attributes=attributes || jsonb_build_object(
-   '_merge_manifest',manifest,'_merge_previous_target',old_target,'_merge_sources',to_jsonb(ids),'_merged_at',now()) WHERE id=target;
+   '_merge_manifest',manifest,'_merge_previous_target',old_target,'_merge_sources',to_jsonb(ids),
+   '_merge_recipient_consents',consents,'_merged_at',now()) WHERE id=target;
 END $merge$;
 COMMIT;
 """
