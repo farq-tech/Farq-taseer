@@ -5047,6 +5047,9 @@ async function sendChatMessage(body) {
     const picked = recipients.filter((item) => state.picked?.has(item.seller_id)).map((item) => item.seller_id);
     if (!picked.length) return;
     json.seller_ids = picked;
+    // A consolidated request may contain recipients from several original items. The
+    // selected seller ids are authoritative; its display title is not an item filter.
+    json.need = null;
   }
   // The bubble appears the moment he sends, with a clock, the way a chat does; the server's
   // answer replaces it (or, on failure, takes it back and says so).
