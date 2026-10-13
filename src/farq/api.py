@@ -1221,7 +1221,7 @@ def create_app(
                 body.need,
                 body.notes,
                 body.city,
-                {**{k:v for k,v in body.attributes.items() if k != "_haraj_consent"}, **({"_haraj_consent":{"owner":store.farq_user_id(user_id),"account":haraj_identity.get("provider_user_id"),"at":datetime.now(timezone.utc).isoformat(),"recipients":[r.seller_id for r in recipients]}} if user_connection_enabled() else {})},
+                {**{k:v for k,v in body.attributes.items() if k != "_haraj_consent" and k != "merged_into_request_id" and not k.startswith("_merge")}, **({"_haraj_consent":{"owner":store.farq_user_id(user_id),"account":haraj_identity.get("provider_user_id"),"at":datetime.now(timezone.utc).isoformat(),"recipients":[r.seller_id for r in recipients]}} if user_connection_enabled() else {})},
                 recipients,
                 request_id=request_id,
                 supplier_message=body.supplier_message,

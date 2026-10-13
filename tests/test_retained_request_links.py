@@ -15,7 +15,9 @@ def test_old_batch_link_keeps_authorization_and_routes_message_to_target(tmp_pat
     token = api.post("/v1/auth/register", json={"email": "owner@example.com", "password": "secret-pass", "name": "Owner"}).json()["token"]
     other = api.post("/v1/auth/register", json={"email": "other@example.com", "password": "secret-pass", "name": "Other"}).json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
-    target = api.post("/v1/requests", headers=headers, json={"original_text": "أبواب", "need": "أبواب", "city": "الرياض", "recipients": [{"seller_id": "14371810", "seller_name": "مورد"}]}).json()["id"]
+    created = api.post("/v1/requests", headers=headers, json={"original_text": "أبواب", "need": "أبواب", "city": "الرياض", "attributes": {"merged_into_request_id": "b"*32, "_merge_manifest": {}, "_merge_sources": ["a"*32], "finish": "cream"}, "recipients": [{"seller_id": "14371810", "seller_name": "مورد"}]}).json()
+    target = created["id"]
+    assert created["attributes"] == {"finish": "cream"}
     old = "a" * 32
     store.canonical_request_id = lambda rid: target if rid == old else rid
     assert api.get(f"/v1/requests/{old}", headers=headers).json()["id"] == target
