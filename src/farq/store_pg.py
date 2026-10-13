@@ -479,7 +479,19 @@ class PgStore:
         with self._pool.connection() as conn:
             return self._insert_message(conn, request_id, sender_role, sender_user_id, body, offer, seller_id=seller_id, **fields)
 
+    def canonical_request_id(self, request_id: str) -> str:
+        """Retained batch links resolve to the campaign; authorization stays on the target."""
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "select target.id from requests source join requests target"
+                " on target.id = source.attributes->>'merged_into_request_id'"
+                " and target.owner_user_id = source.owner_user_id where source.id = %s",
+                (request_id,),
+            ).fetchone()
+            return row["id"] if row else request_id
+
     def get_request(self, request_id: str, owner_user_id: str) -> RequestRecord | None:
+        request_id = self.canonical_request_id(request_id)
         with self._pool.connection() as conn:
             row = conn.execute("select * from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone()
             if row is None:
@@ -591,7 +603,7 @@ class PgStore:
         # recipients, offers and messages in one query each, and the sending queue once.
         # It was four queries per request (a customer with 25 requests waited on 100).
         with self._pool.connection() as conn:
-            rows = conn.execute("select * from requests where owner_user_id = %s order by created_at desc", (owner_user_id,)).fetchall()
+            rows = conn.execute("select * from requests where owner_user_id = %s and not (attributes ? 'merged_into_request_id') order by created_at desc", (owner_user_id,)).fetchall()
             if not rows:
                 return []
             ids = [row["id"] for row in rows]
@@ -626,16 +638,16 @@ class PgStore:
     def _request_by_token(self, token: str):
         with self._pool.connection() as conn:
             return conn.execute(
-                "select r.* from requests r where r.reply_token = %s"
-                " union all select r.* from requests r join request_recipients p on p.request_id = r.id where p.reply_token = %s limit 1",
+                "select r.* from requests r join request_recipients p on p.request_id = r.id where p.reply_token = %s"
+                " union all select r.* from requests r where r.reply_token = %s limit 1",
                 (token, token),
             ).fetchone()
 
     def seller_view(self, token: str) -> dict | None:
         with self._pool.connection() as conn:
             row = conn.execute(
-                "select r.* from requests r where r.reply_token = %s"
-                " union all select r.* from requests r join request_recipients p on p.request_id = r.id where p.reply_token = %s limit 1",
+                "select r.* from requests r join request_recipients p on p.request_id = r.id where p.reply_token = %s"
+                " union all select r.* from requests r where r.reply_token = %s limit 1",
                 (token, token),
             ).fetchone()
             if row is None:
@@ -699,8 +711,8 @@ class PgStore:
     def add_seller_reply(self, token: str, seller_id: str | None, body: str, offer: Offer | None) -> Message:
         with self._pool.connection() as conn:
             row = conn.execute(
-                "select r.* from requests r where r.reply_token = %s"
-                " union all select r.* from requests r join request_recipients p on p.request_id = r.id where p.reply_token = %s limit 1",
+                "select r.* from requests r join request_recipients p on p.request_id = r.id where p.reply_token = %s"
+                " union all select r.* from requests r where r.reply_token = %s limit 1",
                 (token, token),
             ).fetchone()
             if row is None:
@@ -1681,6 +1693,17 @@ class PgStore:
         """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
         request_id, seller_id, need = thread["request_id"], thread["seller_id"], thread["need"] or None
         with self._pool.connection() as conn:
+            # A poll may have loaded the old batch immediately before the consolidation.
+            # Hold the source row until insertion completes so a merge cannot miss this reply.
+            source = conn.execute("select attributes from requests where id = %s for share", (request_id,)).fetchone()
+            merged = (source["attributes"] or {}).get("merged_into_request_id") if source else None
+            if merged:
+                target = conn.execute(
+                    "select target.id from requests source join requests target on target.id = %s"
+                    " and target.owner_user_id = source.owner_user_id where source.id = %s", (merged, request_id),
+                ).fetchone()
+                if target:
+                    request_id = target["id"]
             conversation = thread["haraj_conversation_id"]
             advance_args = (conversation, inbound.seq, conversation, inbound.seq, request_id, seller_id, thread["need"])
             if conn.execute("select 1 from messages where haraj_message_id = %s", (inbound.haraj_message_id,)).fetchone():
@@ -1847,7 +1870,7 @@ class PgStore:
     def open_request_count(self, owner_user_id: str) -> int:
         with self._pool.connection() as conn:
             return int(conn.execute(
-                "select count(*) as count from requests where owner_user_id = %s and awarded_seller_id is null", (owner_user_id,)
+                "select count(*) as count from requests where owner_user_id = %s and awarded_seller_id is null and not (attributes ? 'merged_into_request_id')", (owner_user_id,)
             ).fetchone()["count"])
 
     def _award_deliveries(self, conn, message_ids) -> dict[str, list[dict]]:

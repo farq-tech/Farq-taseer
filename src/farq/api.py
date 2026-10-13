@@ -22,6 +22,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from farq import push, subscriptions
@@ -336,6 +337,18 @@ def create_app(
     )
     app.add_middleware(IdempotencyMiddleware, store=store)
     app.add_middleware(SecurityHeadersMiddleware)
+    @app.middleware("http")
+    async def retained_request_links(request: Request, call_next):
+        # Rewrite internally, including POST: no redirect drops the body or sends it again.
+        # Every original endpoint still performs its normal ownership and permission checks.
+        match = re.fullmatch(r"(/v1/requests/)([0-9a-f]{32})(/.*)?", request.scope["path"])
+        resolver = getattr(store, "canonical_request_id", None)
+        if match and resolver:
+            canonical = await run_in_threadpool(resolver, match[2])
+            if canonical != match[2]:
+                request.scope["path"] = match[1] + canonical + (match[3] or "")
+                request.scope["raw_path"] = request.scope["path"].encode("ascii")
+        return await call_next(request)
     # Added last so it runs first: a preflight is answered before anything else looks at it.
     app.add_middleware(
         CORSMiddleware,
