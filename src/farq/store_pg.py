@@ -784,10 +784,13 @@ class PgStore:
         haraj_text: str | None = None,
         seller_ids=None,
         media: list[dict] | None = None,
+        request_wide: bool = False,
     ) -> Message:
         recipients = conn.execute("select * from request_recipients where request_id = %s order by id", (request_id,)).fetchall()
         default_need = conn.execute("select need from requests where id = %s", (request_id,)).fetchone()["need"]
-        targets, need, scope = route_targets(recipients, default_need, need, seller_id, seller_ids)
+        targets, need, scope = route_targets(
+            recipients, default_need, need, seller_id, seller_ids, request_wide=request_wide
+        )
         single = targets[0]["seller_id"] if scope == SINGLE_SELLER else None
         message = self._insert_message(
             conn, request_id, "user", owner_user_id, body, None, seller_id=single, need=need, reply_to=reply_to, scope=scope, haraj_text=haraj_text, media=media
@@ -1293,6 +1296,7 @@ class PgStore:
         media_ids=None,
     ) -> Message:
         """Everyone on the item by default; the suppliers picked; or one when replying to him."""
+        request_wide_allowed = bool(seller_ids and self.account_unlimited(owner_user_id) and not reply_to)
         with self._pool.connection() as conn:
             if conn.execute("select 1 from requests where id = %s and owner_user_id = %s", (request_id, owner_user_id)).fetchone() is None:
                 raise LookupError("request not found")
@@ -1316,7 +1320,18 @@ class PgStore:
                 # Replies retain the quoted item even when the client sends the
                 # consolidated request title as its current item. Audience stays narrowed.
                 need = quoted["need"] or need
-            message = self._enqueue(conn, request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
+            message = self._enqueue(
+                conn,
+                request_id,
+                body,
+                need,
+                seller_id,
+                reply_to,
+                owner_user_id,
+                seller_ids=seller_ids,
+                media=media,
+                request_wide=request_wide_allowed,
+            )
             return next(item for item in self._messages(conn, request_id) if item.id == message.id)
 
     def save_file(self, owner_user_id: str, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:

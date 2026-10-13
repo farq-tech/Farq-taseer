@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from farq.api import create_app
 from farq.config import SearchConfig
+from farq.contracts import RequestRecipient
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.haraj_chat import InboundMessage
 from farq.store import Store
@@ -63,7 +64,9 @@ def test_a_message_to_some_suppliers_stays_with_them(tmp_path: Path):
         f"/v1/requests/{created['id']}/messages",
         headers=headers,
         json={"body": "محمد عرض 350، خالد تقدر تنزل عن 300؟", "seller_ids": ["11", "12"]},
-    ).json()
+    )
+    assert sent.status_code == 200, sent.text
+    sent = sent.json()
     assert (sent["scope"], sent["seller_id"]) == ("some_sellers", None)
     seen = {seller: [item["body"] for item in api.get(f"/v1/seller/{token}").json()["messages"]] for seller, token in created["tokens"].items()}
     assert sent["body"] in seen["11"] and sent["body"] in seen["12"]
@@ -72,6 +75,57 @@ def test_a_message_to_some_suppliers_stays_with_them(tmp_path: Path):
     everyone = api.post(f"/v1/requests/{created['id']}/messages", headers=headers, json={"body": "للكل"}).json()
     assert everyone["scope"] == "all_sellers"
     assert "للكل" in [item["body"] for item in api.get(f"/v1/seller/{created['tokens']['13']}").json()["messages"]]
+
+
+def test_unlimited_account_can_message_every_supplier_across_merged_items(tmp_path: Path):
+    api, store = app_with_store(tmp_path)
+    headers = signed_in(api)
+    user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
+    assert user_id
+    store.set_unlimited(user_id)
+    recipients = [
+        RequestRecipient(
+            seller_id=str(index),
+            seller_name=f"مورد {index}",
+            need="PVC" if index < 40 else "WPC" if index < 80 else "ملحقات",
+        )
+        for index in range(120)
+    ]
+    request_id = store.create_request(
+        user_id, "طلب أبواب موحد", "طلب أبواب موحد", None, "الرياض", {}, recipients
+    )
+    seller_ids = [item.seller_id for item in recipients]
+    sent = api.post(
+        f"/v1/requests/{request_id}/messages",
+        headers=headers,
+        json={"body": "فضلاً سعر الحبة لكل نوع", "need": "طلب أبواب موحد", "seller_ids": seller_ids},
+    )
+    assert sent.status_code == 200, sent.text
+    body = sent.json()
+    assert body["scope"] == "all_sellers"
+    assert body["need"] is None
+    assert len(body["deliveries"]) == 120
+
+
+def test_regular_account_cannot_bypass_item_or_fifty_supplier_bounds(tmp_path: Path):
+    api, store = app_with_store(tmp_path)
+    headers = signed_in(api)
+    user_id = store.user_for_token(headers["Authorization"].removeprefix("Bearer "))
+    assert user_id
+    recipients = [
+        RequestRecipient(seller_id=str(index), seller_name=f"مورد {index}", need="PVC" if index < 30 else "WPC")
+        for index in range(60)
+    ]
+    request_id = store.create_request(
+        user_id, "طلب أبواب موحد", "طلب أبواب موحد", None, "الرياض", {}, recipients
+    )
+    seller_ids = [item.seller_id for item in recipients]
+    refused = api.post(
+        f"/v1/requests/{request_id}/messages",
+        headers=headers,
+        json={"body": "للجميع", "seller_ids": seller_ids},
+    )
+    assert refused.status_code == 422
 
 
 def test_the_seller_view_shows_no_other_suppliers_and_no_buyer_words(tmp_path: Path):

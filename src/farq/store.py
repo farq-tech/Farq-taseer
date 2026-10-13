@@ -302,7 +302,15 @@ def _stamp(value) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
-def _route_targets(recipients, default_need: str | None, need: str | None, seller_id: str | None, seller_ids=None):
+def _route_targets(
+    recipients,
+    default_need: str | None,
+    need: str | None,
+    seller_id: str | None,
+    seller_ids=None,
+    *,
+    request_wide: bool = False,
+):
     """Who a customer message goes to: the suppliers picked, one supplier, or every supplier on the item.
     Returns (targets, need, scope)."""
     item_of = lambda row: row["need"] or default_need or ""
@@ -310,13 +318,21 @@ def _route_targets(recipients, default_need: str | None, need: str | None, selle
         picked = list(dict.fromkeys(str(item) for item in seller_ids))
         targets = []
         for picked_id in picked:
-            match = [row for row in recipients if row["seller_id"] == picked_id and (need is None or item_of(row) == need)]
+            match = [
+                row
+                for row in recipients
+                if row["seller_id"] == picked_id and (request_wide or need is None or item_of(row) == need)
+            ]
             if not match:
                 raise ValueError("unknown seller")
             targets.append(match[0])
         item = item_of(targets[0])
         if any(item_of(row) != item for row in targets):
-            raise ValueError("pick suppliers from one item")
+            if not request_wide:
+                raise ValueError("pick suppliers from one item")
+            all_ids = {row["seller_id"] for row in recipients}
+            scope = ALL_SELLERS if {row["seller_id"] for row in targets} == all_ids else SOME_SELLERS
+            return targets, None, scope
         on_item = {row["seller_id"] for row in recipients if item_of(row) == item}
         if len(targets) == 1:
             return targets, item or None, SINGLE_SELLER
@@ -335,9 +351,11 @@ def _route_targets(recipients, default_need: str | None, need: str | None, selle
 
 
 
-def route_targets(recipients, default_need, need, seller_id, seller_ids=None):
-    targets, item, scope = _route_targets(recipients, default_need, need, seller_id, seller_ids)
-    if len({seller_key(row["seller_id"]) for row in targets}) > 50:
+def route_targets(recipients, default_need, need, seller_id, seller_ids=None, *, request_wide: bool = False):
+    targets, item, scope = _route_targets(
+        recipients, default_need, need, seller_id, seller_ids, request_wide=request_wide
+    )
+    if not request_wide and len({seller_key(row["seller_id"]) for row in targets}) > 50:
         raise ValueError("اختر حتى ٥٠ مورداً لكل إرسال")
     return targets, item, scope
 
@@ -1628,11 +1646,14 @@ class Store:
         haraj_text: str | None = None,
         seller_ids=None,
         media: list[dict] | None = None,
+        request_wide: bool = False,
     ) -> Message:
         recipients = self._connection.execute("select * from request_recipients where request_id = ?", (request_id,)).fetchall()
         default_need = self._connection.execute("select need from requests where id = ?", (request_id,)).fetchone()["need"]
         item_of = lambda row: row["need"] or default_need or ""
-        targets, need, scope = route_targets(recipients, default_need, need, seller_id, seller_ids)
+        targets, need, scope = route_targets(
+            recipients, default_need, need, seller_id, seller_ids, request_wide=request_wide
+        )
         single = targets[0]["seller_id"] if scope == SINGLE_SELLER else None
         message = self.add_message(request_id, "user", owner_user_id, body, None, seller_id=single, need=need, reply_to=reply_to, scope=scope)
         if haraj_text is not None:
@@ -2133,7 +2154,18 @@ class Store:
             # Replies retain the quoted item even when the client sends the
             # consolidated request title as its current item. Audience stays narrowed.
             need = quoted["need"] or need
-        return self._enqueue(request_id, body, need, seller_id, reply_to, owner_user_id, seller_ids=seller_ids, media=media)
+        request_wide = bool(seller_ids and self.account_unlimited(owner_user_id) and not reply_to)
+        return self._enqueue(
+            request_id,
+            body,
+            need,
+            seller_id,
+            reply_to,
+            owner_user_id,
+            seller_ids=seller_ids,
+            media=media,
+            request_wide=request_wide,
+        )
 
     def save_file(self, owner_user_id: str, request_id: str, content_type: str, filename: str, data: bytes, width: int | None = None, height: int | None = None) -> dict:
         if self._connection.execute("select 1 from requests where id = ? and owner_user_id = ?", (request_id, owner_user_id)).fetchone() is None:
