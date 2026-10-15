@@ -43,7 +43,7 @@ from farq.haraj_chat import HarajChat, NotConnectedChat, _Prefixed, chat_from_en
 from farq.worker import dispatch_pending, start_poller, sync_replies
 from farq.live_haraj import HarajLiveClient
 from farq.haraj_harvest import HarvestStore, CachedHarajClient, harvest_once
-from farq.media import fetch_thumb, listing_images
+from farq.media import fetch_thumb, listing_details, listing_images
 from farq.moyasar import MoyasarClient, verify_webhook_secret
 from farq.orchestrator import iter_search, run_search
 from farq.outreach import Targeting, listing_evidence, select_recipients
@@ -1374,6 +1374,30 @@ def create_app(
         # Opening the conversation reads it.
         store.mark_read(request_id, user_id)
         return {**record.model_dump(mode="json"), "send_held": send_held()}
+
+    @app.get("/v1/requests/{request_id}/sellers/{seller_id}/listing")
+    def seller_listing(request_id: str, seller_id: str, user_id: str = Depends(current_user)) -> dict:
+        """The Haraj ad this seller was asked about, so the customer can go back from the
+        conversation to the ad and its photos. Read-only: nothing is sent and the request is
+        not marked read. Only the request's owner, and only a seller the request went to."""
+        record = store.get_request(request_id, user_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        wanted = seller_key(seller_id)
+        recipient = next((item for item in record.recipients if seller_key(item.seller_id) == wanted), None)
+        if recipient is None or not recipient.listing_url:
+            raise HTTPException(status_code=404, detail="no listing linked")
+        try:
+            details = listing_details(recipient.listing_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="no listing linked") from exc
+        return {
+            **details,
+            "seller_id": recipient.seller_id,
+            "ad_id": recipient.ad_id,
+            # What the invite named, for the header while the page is unavailable.
+            "ad_title": recipient.ad_title,
+        }
 
     @app.get("/v1/seller/{token}")
     def seller_request(token: str, authorization: str | None = Header(default=None)) -> dict:
