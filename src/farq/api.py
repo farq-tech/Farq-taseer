@@ -1384,7 +1384,9 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail="request not found")
         wanted = seller_key(seller_id)
-        recipient = next((item for item in record.recipients if seller_key(item.seller_id) == wanted), None)
+        # A request for several items lists a seller once per item; any row naming his ad will do.
+        mine = [item for item in record.recipients if seller_key(item.seller_id) == wanted]
+        recipient = next((item for item in mine if item.listing_url), mine[0] if mine else None)
         if recipient is None or not recipient.listing_url:
             raise HTTPException(status_code=404, detail="no listing linked")
         try:
