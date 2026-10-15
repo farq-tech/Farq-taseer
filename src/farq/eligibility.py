@@ -138,6 +138,26 @@ _PRODUCT_NOT_TRADE = (
     "ماكينه",
     "مكينه",
 )
+# A tradesman names the furniture or appliance he works on: «نجار موبيليا وفك وتركيب
+# جميع انواع العفش», «سباك وتركيب سخانات». Those words reject a title only when it is
+# not the trade doing work. Vehicles stay out: «كهربائي سيارات» is not a home electrician.
+_MOVING = ("نقل عفش", "نقل اثاث", "نقل العفش", "نقل الاثاث")
+_SERVICE_VERBS = ("تفصيل", "تركيب", "فك", "صيانه", "تصنيع", "تصليح", "اصلاح", "ترميم")
+_VEHICLE_WORDS = ("سياره", "سيارات", "ميكانيكي", "دباب", "سكوتر", "سيكل", "دراجه", "دركسون")
+
+
+def _trade_names_the_work(intent: IntentResponse, title: str) -> bool:
+    """The trade word in the title, leading it or next to a service verb."""
+
+    if has_word(title, _VEHICLE_WORDS) or not intent.eligibility_groups:
+        return False
+    trade = intent.eligibility_groups[0]
+    if not _group_hit(title, trade):
+        return False
+    first = tokens(title)[:1]
+    return bool(first and _group_hit(first[0], trade)) or bool(has_word(title, _SERVICE_VERBS))
+
+
 # "كهربائي" is the trade when the title leads with it or names the work.
 _ELECTRIC = ("كهربايي", "كهرباء", "كهربا", "كهربه")
 _ELECTRIC_WORK = (
@@ -378,8 +398,14 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         lead = [word for word in tokens(title) if not set(prefix_variants(word)) & set(_SALE_WORDS)][:1]
         if not lead or not _group_hit(lead[0], intent.eligibility_groups[0]) or lead[0].startswith("لل"):
             return False, ["side_mention_for_sale"]
+    if intent.result_unit.value == "service_provider" and title and intent.subcategory.value != "moving" and intent.eligibility_groups:
+        # «شركة نقل اثاث فك وتركيب غرف نوم مكيفات»: a furniture mover lists the
+        # carpenter's and the AC fitter's work in its title. Unless the title also names
+        # the asked trade, the mover is not the carpenter.
+        if has_word(title, _MOVING) and not _group_hit(title, intent.eligibility_groups[0]):
+            return False, ["mover_not_trade"]
     if intent.subcategory.value in {"electrician", "plumber", "carpenter"} and title:
-        if has_word(title, _PRODUCT_NOT_TRADE):
+        if has_word(title, _PRODUCT_NOT_TRADE) and not _trade_names_the_work(intent, title):
             return False, ["product_not_trade"]
     if provider and title:
         # «غسالة تحتاج صيانة», «غسالة 9 ك بها عطل»: a listing that leads with the appliance

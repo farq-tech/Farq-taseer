@@ -291,6 +291,15 @@ _AC_OBJECTS = ("مكيف", "تكييف", "مكيفات")
 _AC_CLEAN_VERBS = ("تنظيف", "غسيل", "غسل")
 _AC_REPAIR_VERBS = ("صيانة", "تصليح", "اصلاح", "فني", "فريون", "تعبئة فريون")
 _AC_INSTALL_VERBS = ("تركيب", "فك")
+# Carpentry work named without the word «نجار»: a workshop («منجرة») or made-to-order
+# cupboards. Verb-first phrases only: «دولاب» or «ابواب خشب» alone is a thing for sale,
+# and «فك وتركيب غرف نوم» is in every furniture mover's title (measured 2026-10-15).
+_CARPENTRY = ("نجار", "نجاره", "منجره", "تفصيل دواليب", "تفصيل دولاب", "تفصيل خزائن", "تفصيل مطابخ", "تفصيل غرف نوم")
+# Haraj Search texts in order of measured yield (2026-10-15, Riyadh, new qualified
+# listings per text over 3 pages): منجرة 50, نجار موبيليا 48, تفصيل خزائن 37, نجار ابواب
+# 35, نجاره 33, نجار مسلح 30, نجار 25. Bare objects find sellers of things, not
+# carpenters: ابواب خشب 7, غرف نوم تفصيل 6, فك وتركيب اثاث 1 (movers), مطابخ خشب 0.
+_CARPENTER_QUERIES = ("نجار", "نجار موبيليا", "منجرة", "تفصيل خزائن", "نجار ابواب", "نجاره", "نجار مسلح")
 _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت", "سوكريت", "سكرت", "شاور", "شاورات", "شورات", "واجهات", "واجهة", "قاطع", "قواطع")
 
 HEADS: tuple[Head, ...] = (
@@ -303,8 +312,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="land", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ارض", "أرض"), eligibility=(("ارض",),), expansions=("ارض", "أراضي")),
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا",), eligibility=(("فيلا",),), expansions=("فيلا",)),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
-    _head(type="service", category="trades", subcategory="carpenter", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نجار", "نجاره", "نجارة", "carpenter"), eligibility=(("نجار", "نجاره"),), expansions=("نجار", "نجار موبيليا", "تفصيل دولاب", "نجاره")),
-    _head(type="service", category="trades", subcategory="plumber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سباك", "سباكه", "سباكة", "plumber"), eligibility=(("سباك", "سباكه", "سباكة"),), expansions=("سباك", "سباك صحي", "تسليك مجاري")),
+    _head(type="service", category="trades", subcategory="carpenter", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نجار", "نجاره", "نجارة", "carpenter"), eligibility=(_CARPENTRY,), expansions=_CARPENTER_QUERIES),
+    _head(type="service", category="trades", subcategory="plumber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سباك", "سباكه", "سباكة", "plumber"), eligibility=(("سباك", "سباكه", "سباكة", "تسليك مجاري", "تمديدات صحيه"),), expansions=("سباك", "سباكة", "سباك صحي", "تسليك مجاري", "تمديدات صحية")),
     _head(type="service", category="trades", subcategory="electrician", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كهربائي", "كهرباء", "كهربائي منازل", "فني كهرباء", "electrician"), label="كهربائي", eligibility=(("كهربائي", "كهرباء", "كهربا"),), expansions=("كهربائي", "كهربائي منازل", "فني كهرباء", "تمديد كهرباء")),
     _head(type="service", category="trades", subcategory="insulation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("عزل سطح", "عزل اسطح", "عزل فوم", "مقاول عزل"), eligibility=(("عزل",), ("سطح", "اسطح", "فوم")), expansions=("عزل اسطح", "عزل فوم", "مقاول عزل")),
     _head(type="service", category="building_materials", subcategory="railings", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("درابزين",), eligibility=(("درابزين",),), expansions=("درابزين ستانلس", "درابزين درج", "درابزين سلالم", "تفصيل درابزين", "تركيب درابزين")),

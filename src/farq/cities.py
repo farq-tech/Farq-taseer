@@ -67,6 +67,80 @@ def known_city(value: str | None) -> str | None:
     return None
 
 
+# Haraj's Search `city` filter takes the city ("الدمام", "الخرج") and returns the
+# listings of that city, but the `city` field on each listing is often the region.
+# Measured 2026-10-15 with `search:"سباك"` per city: الدمام/الخبر/الهفوف/الجبيل/القطيف/
+# الظهران/المبرز -> "الشرقيه", بريدة/عنيزة -> "القصيم", خميس مشيط -> "أبها",
+# سكاكا/القريات -> "الجوف", الخرج/الدرعية -> "الرياض". The listings themselves were in
+# the asked city ("نجار غرف نوم فى الخرج", neighbourhood "جوهرة الخرج").
+_HARAJ_REGION: dict[str, str] = {
+    "الدمام": "الشرقيه",
+    "الخبر": "الشرقيه",
+    "الهفوف": "الشرقيه",
+    "الجبيل": "الشرقيه",
+    "القطيف": "الشرقيه",
+    "الظهران": "الشرقيه",
+    "المبرز": "الشرقيه",
+    "بريدة": "القصيم",
+    "عنيزة": "القصيم",
+    "خميس مشيط": "أبها",
+    "سكاكا": "الجوف",
+    "القريات": "الجوف",
+    "الخرج": "الرياض",
+    "الدرعية": "الرياض",
+}
+
+
+def haraj_listing_city(listed: str | None, filtered: str | None) -> str | None:
+    """The city of a listing that Haraj returned for a search filtered by `filtered`.
+
+    Haraj filtered by the city, so a listing labelled with that city's region (or with
+    no city at all) is in that city. A listing labelled with any other place keeps its
+    own label, and eligibility can still reject it as another city.
+    """
+
+    listed_city = canonical_city(listed)
+    wanted = canonical_city(filtered)
+    if not wanted:
+        return listed_city
+    if listed_city is None:
+        return wanted
+    region = _HARAJ_REGION.get(wanted)
+    if region is not None and listed_city == canonical_city(region):
+        return wanted
+    return listed_city
+
+
+def strip_city_words(text: str, city: str | None) -> str:
+    """The text without the words naming `city` ("نجار الرياض" -> "نجار",
+    "سباك بالرياض" -> "سباك"). Haraj gets the city as its own filter instead."""
+
+    canonical = canonical_city(city)
+    if not canonical or canonical not in _ALIASES:
+        return " ".join((text or "").split())
+    folded_names = sorted({normalize(name) for name in (canonical, *_ALIASES[canonical], _LABELS.get(canonical, canonical))}, key=len, reverse=True)
+    words = (text or "").split()
+    kept: list[str] = []
+    index = 0
+    while index < len(words):
+        matched = 0
+        for name in folded_names:
+            parts = name.split()
+            window = " ".join(normalize(word) for word in words[index : index + len(parts)])
+            if len(parts) and re.fullmatch(_city_word(name), window):
+                matched = len(parts)
+                break
+        if matched:
+            # "نجار في الرياض": the joining word goes with the city.
+            if kept and normalize(kept[-1]) in {"في", "فى", "داخل"}:
+                kept.pop()
+            index += matched
+            continue
+        kept.append(words[index])
+        index += 1
+    return " ".join(kept)
+
+
 def city_choices() -> list[dict[str, str]]:
     return [{"value": name, "label": _LABELS.get(name, name)} for name in _ALIASES]
 
@@ -83,13 +157,17 @@ def city_label(value: str | None) -> str | None:
 _BARE_WORD_CITIES = {"المدينة": ("المدينة المنورة", "madinah", "medina")}
 
 
-def _city_pattern(folded: str) -> str:
+def _city_word(folded: str) -> str:
     alternatives = [re.escape(folded)]
     if folded.startswith("ال"):
         # ل + "الدمام" is written "للدمام".
         alternatives.append("ل" + re.escape(folded[1:]))
     body = "|".join(alternatives)
-    return rf"(?:^|\s)(?:و|ف)?(?:ب|ل)?(?:{body})(?:\s|$)"
+    return rf"(?:و|ف)?(?:ب|ل)?(?:{body})"
+
+
+def _city_pattern(folded: str) -> str:
+    return rf"(?:^|\s){_city_word(folded)}(?:\s|$)"
 
 
 def _city_matches(normalized: str, strict: bool) -> list[tuple[int, int, str]]:

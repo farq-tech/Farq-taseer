@@ -88,6 +88,11 @@ class HarvestStore:
             execute("update haraj_public_control set state=?,retry_at=? where id=1 and state <> 'CHALLENGE'",
                     ('CHALLENGE' if code == 'challenge' else 'RATE_LIMITED', self.clock() + 3600))
 
+    def resume(self):
+        with self.transaction() as execute:
+            execute("update haraj_public_control set state='READY',retry_at=0 where id=1")
+            execute("update haraj_public_jobs set state='FETCHING',next_run=? where state in ('RATE_LIMITED','CHALLENGE')", (self.clock(),))
+
     def status(self, key):
         with self.transaction() as execute:
             row = execute('select state,next_page,last_success,last_error_code from haraj_public_jobs where id=?', (key,)).fetchone()
@@ -178,12 +183,18 @@ class CachedHarajClient(HarajLiveClient):
         cached = self.harvest.cached(key, variables['page'], ttl)
         if cached is not None:
             return cached
-        state = self.harvest.status(key)
-        if self.harvest.paused() or state['state'] == 'CHALLENGE':
-            raise LiveUnavailable(state['last_error_code'])
+        # A pause (one 429 or 403, often from the background harvest) used to fail every
+        # uncached page of every customer search until a person cleared it: the customer
+        # saw two cached listings while the same server's direct live search returned
+        # forty. The customer's own search is one bounded request, the same one the
+        # unpaged search makes; it goes to Haraj, and its failure is still reported.
+        paused = self.harvest.paused()
         try:
             data = super()._post(variables)
             self.harvest.save(key, variables['page'], data, ttl)
+            if paused:
+                # Haraj answered: the pause is over, for the background harvest too.
+                self.harvest.resume()
             return data
         except Exception as exc:
             self.harvest.pause(error_code(exc))

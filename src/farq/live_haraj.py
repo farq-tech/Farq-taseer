@@ -11,9 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
-from farq.cities import canonical_city
+from farq.cities import canonical_city, find_cities, haraj_listing_city, strip_city_words
 from farq.config import SearchConfig
 from farq.contracts import Ad, Seller
+from farq.text import normalize
 
 ENDPOINT = "https://graphql.haraj.com.sa/?queryName=Search&version=N0.0.1"
 THUMB_CDN = "https://thumbcdn.haraj.com.sa/"
@@ -121,7 +122,9 @@ def _price(raw: dict | None) -> float | None:
     return amount
 
 
-def ad_from_item(item: dict) -> Ad:
+def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
+    """`filtered_city` is the city Haraj was asked to filter by. Haraj labels many
+    listings with their region ("الشرقيه" for a Dammam search); see haraj_listing_city."""
     posted = None
     if item.get("postDate"):
         posted = datetime.fromtimestamp(int(item["postDate"]), tz=timezone.utc).isoformat()
@@ -129,11 +132,12 @@ def ad_from_item(item: dict) -> Ad:
     url = url_path if str(url_path).startswith("http") else (f"https://haraj.com.sa/{url_path}" if url_path else None)
     price = _price(item.get("price"))
     status = item.get("status")
+    city = haraj_listing_city(item.get("city"), filtered_city) if filtered_city else canonical_city(item.get("city"))
     listing_state = "active" if status is True else "deleted" if status is False else "unknown"
     seller = Seller(
         id=str(item.get("authorId") or ""),
         name=item.get("authorUsername") or "",
-        city=canonical_city(item.get("city")),
+        city=city,
         district=item.get("geoNeighborhood"),
         profile_url=None,
         specialty_evidence=[],
@@ -143,7 +147,7 @@ def ad_from_item(item: dict) -> Ad:
         title=item.get("title") or "",
         description=item.get("bodyTEXT") or None,
         url=url,
-        city=canonical_city(item.get("city")),
+        city=city,
         district=item.get("geoNeighborhood"),
         price_amount=price,
         price_currency="SAR" if price is not None else None,
@@ -154,6 +158,46 @@ def ad_from_item(item: dict) -> Ad:
         listing_state=listing_state,
         seller=seller,
     )
+
+
+def haraj_queries(terms: list[str], city: str | None) -> list[str]:
+    """The texts sent to Haraj Search, in order, each once.
+
+    Haraj takes the city as its own filter, so the city's name in the text only spends
+    a query ("نجار الرياض" after "نجار") and narrows it to listings that repeat the
+    city in their words. A term naming another place as well ("نقل عفش من الرياض إلى
+    جدة") keeps its words: there the city is part of the need.
+    """
+
+    wanted = canonical_city(city) if city else None
+    selected: list[str] = []
+    fillers: list[str] = []
+    seen: set[str] = set()
+
+    def add(text: str, into: list[str]) -> None:
+        key = normalize(text)
+        if key and key not in seen:
+            seen.add(key)
+            into.append(text)
+
+    for term in terms:
+        if not term:
+            continue
+        text = " ".join(term.split())
+        if wanted and not [named for named in find_cities(text) if named != wanted]:
+            stripped = strip_city_words(text, wanted)
+            if stripped and stripped != text:
+                add(stripped, selected)
+                fillers.append(text)
+                continue
+        add(text, selected)
+    # Measured 2026-10-15 (Riyadh): «دهان الرياض» as text returned 95 qualified painters
+    # with «دهان» beside it, 42 with «دهان» alone - Haraj ranks the two differently. So a
+    # need with fewer distinct texts than the query budget still spends the spare slots
+    # on the city-in-text variants, after every city-free text.
+    for text in fillers:
+        add(text, selected)
+    return selected
 
 
 class HarajLiveClient:
@@ -200,7 +244,7 @@ class HarajLiveClient:
                 for item in search.get("items") or []:
                     if not item.get("id"):
                         continue
-                    ad = ad_from_item(item)
+                    ad = ad_from_item(item, city)
                     if ad.id in seen:
                         continue
                     seen.add(ad.id)
@@ -234,7 +278,7 @@ class HarajLiveClient:
 
     def search_iter(self, queries: list[str], city: str | None):
         """Every page from every query, handed over the moment it arrives."""
-        selected = [query for query in queries if query][: self.config.live_max_queries]
+        selected = haraj_queries(queries, city)[: self.config.live_max_queries]
         if not selected:
             return
         workers = max(1, min(self.config.live_concurrency, len(selected)))
@@ -257,12 +301,16 @@ class HarajLiveClient:
             for query in selected:
                 pool.submit(work, query)
             finished = 0
+            # One listing found by two queries ("نجار" and "نجاره") is one listing.
+            seen: set[str] = set()
             while finished < len(selected):
                 fetch = pages.get()
                 if fetch is None:
                     finished += 1
                     continue
-                yield fetch
+                fresh = [ad for ad in fetch.ads if ad.id not in seen]
+                seen.update(ad.id for ad in fresh)
+                yield replace(fetch, ads=fresh)
 
     def search(self, queries: list[str], city: str | None) -> LiveBatch:
         batch = LiveBatch()
