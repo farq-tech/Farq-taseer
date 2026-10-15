@@ -72,6 +72,18 @@ def notify_farq_reply(store, request_id: str, seller_id: str | None, body: str,
         log.warning("farq push for %s answered %s", request_id, response.status_code)
         return False
     try:
-        return int((response.json().get("data") or {}).get("delivered") or 0) > 0
-    except ValueError:
+        data = response.json().get("data") or {}
+        delivered = int(data.get("delivered") or 0)
+    except (ValueError, TypeError, AttributeError):
+        log.warning("farq push for %s answered 200 with an unreadable body", request_id)
         return False
+    if delivered <= 0:
+        # 200 only means Farq took the request; no phone took the push. Say so, or a
+        # silent phone looks like a healthy path in these logs (2026-10-15).
+        log.warning(
+            "farq push for %s reached no phone (devices=%s, retired=%s)",
+            request_id, data.get("devices"), data.get("retired"),
+        )
+        return False
+    log.info("farq push for %s delivered to %s phone(s)", request_id, delivered)
+    return True
