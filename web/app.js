@@ -1093,6 +1093,8 @@ function fqHead({ title = "", sub = "", back = "", start = "", end = "", mark = 
   </header>`;
 }
 
+const PRICE_NOTICE = "الأسعار حسب عروض المصادر وقد تتغير — أكّدها مع البائع قبل الدفع";
+
 // Bottom navigation, exactly the three tabs the final screens carry.
 function fqNav(active) {
   const tab = (key, action, label, glyph) => {
@@ -1107,7 +1109,10 @@ function fqNav(active) {
     : `${tab("home", "home", "الرئيسية", "home")}
     ${tab("requests", "requests", "طلباتي", "file-text")}
     ${tab("account", "account", "حسابي", "user")}`;
-  return `<nav class="fq-nav" aria-label="التنقل"><div class="fq-nav-row">
+  // The sector's standing disclosure, pinned above the tabs the same way Farq pins its
+  // restaurant and grocery notices above its own tab bar. Not on حسابي: nothing there is priced.
+  const notice = active === "account" ? "" : `<p class="fq-nav-notice" role="note">${esc(PRICE_NOTICE)}</p>`;
+  return `<nav class="fq-nav" aria-label="التنقل">${notice}<div class="fq-nav-row">
     ${tabs}
   </div></nav>`;
   // (the row itself is laid out left-to-right, so this order renders الرئيسية · طلباتي · حسابي)
