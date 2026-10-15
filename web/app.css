@@ -1350,7 +1350,7 @@ button.fq-card { cursor: pointer; }
 .fq-inp { display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 14px; background: var(--fq-app-bg); border: 1.5px solid var(--fq-line); border-radius: var(--fq-r-small); }
 .fq-inp:focus-within { border-color: var(--fq-success); }
 .fq-inp svg { width: 18px; height: 18px; color: var(--fq-muted); flex: none; }
-.fq-inp input, .fq-inp textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 15px; font-family: inherit; color: var(--fq-text); padding: 12px 0; }
+.fq-inp input, .fq-inp textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 16px; font-family: inherit; color: var(--fq-text); padding: 12px 0; }
 .fq-inp textarea { resize: none; line-height: 1.6; }
 .fq-inp select { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 15px; font-family: inherit; color: var(--fq-text); min-height: 44px; }
 .fq-inp input::placeholder, .fq-inp textarea::placeholder { color: var(--fq-muted); }
@@ -1440,7 +1440,7 @@ button.fq-card { cursor: pointer; }
 .fq-inputg { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; background: var(--fq-app-bg); border: 1px solid var(--fq-line); border-radius: 22px; padding: 4px 12px; }
 .fq-inputg textarea { min-width: 120px; }
 .fq-composer { padding-bottom: calc(12px + var(--safe-bottom, 0px)); }
-.fq-inputg textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; font: inherit; font-size: 14px; color: var(--fq-text); max-height: 96px; padding: 8px 0; line-height: 1.5; }
+.fq-inputg textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; font: inherit; font-size: 16px; color: var(--fq-text); max-height: 120px; overflow-y: auto; overscroll-behavior: contain; padding: 8px 0; line-height: 1.5; }
 .fq-inputg textarea::placeholder { color: var(--fq-muted); }
 .fq-iconbtn { background: none; border: 0; padding: 0; display: grid; place-items: center; color: var(--fq-muted); flex: none; }
 .fq-iconbtn svg { width: 20px; height: 20px; }
@@ -1604,10 +1604,34 @@ html.is-busy .fq-head-accent { background: linear-gradient(90deg, var(--fq-succe
 .fq-celebrate .fq-glow { position: absolute; }
 .fq-note { align-items: center; }
 
-/* The shell is exactly one viewport tall so the conversation scrolls inside it and the
-   composer stays above the navigation instead of sliding under it. */
-.fq { height: var(--fq-vh, 100dvh); }
-@media (min-width: 900px) { body.fq-web .fq { height: calc(100dvh - 48px); } }
+/* The app shell. The document never scrolls: the shell is pinned to the part of the screen
+   the customer can actually see, and only the region inside it that holds the content
+   (.fq-body, the conversation) scrolls.
+   --fq-vh / --fq-vv-top follow window.visualViewport (fitVisibleViewport in app.js). They are
+   only set while the visible part is shorter than the layout viewport, which on iOS is the
+   keyboard: Safari keeps the page's height and slides the keys over it, so without them a
+   100dvh screen keeps its composer under the keys and Safari scrolls the header away to
+   reveal the field. Android and a natively resized WebView shrink the viewport itself, and
+   100dvh follows on its own. */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
+.fq {
+  position: fixed;
+  top: var(--fq-vv-top, 0px);
+  inset-inline: 0;
+  height: var(--fq-vh, 100dvh);
+  /* the base rule's min-height: 100dvh would win over the keyboard height above */
+  min-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+@media (min-width: 900px) { body.fq-web .fq { position: relative; top: auto; height: calc(100dvh - 48px); min-height: 0; } }
+/* Flex and grid children shrink to the screen instead of widening it with a long word. */
+.fq > *, .fq-body > *, .fq-chat > * { min-width: 0; max-width: 100%; }
+/* Inside the shell the chrome keeps its height - header, context bar, composer - and the
+   one content region (.fq-body or the conversation) takes whatever is left and scrolls. */
+.fq > * { flex-shrink: 0; }
+.fq > .fq-body, .fq > .fq-chat { flex: 1 1 0; min-height: 0; }
 .fq-grp { align-items: flex-start; }
 .fq-bub, .fq-offer, .fq-offer-foot { align-self: stretch; }
 
@@ -2200,7 +2224,7 @@ html.fq-embed .skip { display: none; }
    send button at the end - the order a chat app uses, read right-to-left here. */
 .fq-composer.wa { flex-direction: row; direction: rtl; gap: 8px; padding: 8px 10px calc(8px + var(--safe-bottom, 0px)); }
 .fq-composer.wa .fq-inputg { direction: rtl; background: #fff; border-color: var(--fq-line); border-radius: 22px; padding: 2px 6px 2px 12px; gap: 6px; min-height: 42px; }
-.fq-composer.wa .fq-inputg textarea { direction: rtl; text-align: right; font-size: 15px; padding: 9px 0; min-width: 0; }
+.fq-composer.wa .fq-inputg textarea { direction: rtl; text-align: right; font-size: 16px; padding: 9px 0; min-width: 0; }
 .fq-plus { width: 40px; height: 40px; border-radius: 20px; border: 0; background: none; color: var(--fq-deep); display: grid; place-items: center; flex: none; }
 .fq-plus svg { width: 22px; height: 22px; }
 .fq-composer.wa .fq-send { background: var(--fq-deep); width: 42px; height: 42px; border-radius: 21px; }
@@ -2208,7 +2232,7 @@ html.fq-embed .skip { display: none; }
 .fq-tobottom {
   position: absolute;
   inset-inline-start: 12px;
-  bottom: calc(84px + var(--safe-bottom, 0px));
+  bottom: calc(100% + 12px);
   width: 38px;
   height: 38px;
   border-radius: 19px;
@@ -2451,3 +2475,25 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [tabindex]
   .fq-sticky { padding-top: 12px; box-shadow: 0 16px 0 var(--fq-app-bg); }
   .fq-body { scroll-padding-bottom: calc(52px + 12px + 16px + var(--safe-bottom, 0px)); }
 }
+
+/* The composer dock under the conversation: never shrinks, and anchors the jump-to-latest
+   chevron to its own top edge. On a screen too short for everything it holds (open price
+   fields, attachments, the keyboard up in landscape) it scrolls inside itself - the browser
+   keeps the focused field in view - instead of pushing past the bottom of the screen. */
+.fq-dock { position: relative; flex: none; }
+.fq-dock, .fq > #seller-reply { max-height: 72%; overflow-y: auto; overscroll-behavior: contain; }
+/* the chevron sits above the dock, outside its scroll box */
+.fq-dock:has(.fq-tobottom:not([hidden])) { overflow: visible; }
+/* A short screen - a phone on its side, or any phone with the keyboard up - keeps the header
+   and the composer and gives the rest to the messages: the offer summary and the supplier
+   pills step aside until there is room again. */
+html.fq-short .fq-chat-context,
+html.fq-short #seller-reply .fq-safe,
+html.fq-short #seller-reply:has(#seller-body:focus) .fq-pricebar { display: none; }
+/* In a conversation the header is one line, as in any chat app: a long request or supplier
+   name ends in an ellipsis instead of wrapping and taking the messages' room. */
+.fq:has(#chat-wall) .fq-head-title,
+.fq:has(#chat-wall) .fq-head-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fq:has(#chat-wall) .fq-head-title bdi { display: inline; }
+/* On a short screen the header keeps its place and its content but gives back its padding. */
+html.fq-short .fq:has(#chat-wall) .fq-head-row { min-height: 44px; padding-block: 4px; }
