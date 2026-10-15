@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import html as html_lib
+from datetime import datetime, timezone
+import json
 import re
 import time
 import urllib.parse
 import urllib.request
 from urllib.error import HTTPError, URLError
 
-from farq.live_haraj import image_urls_for
+from farq.cities import canonical_city
+from farq.live_haraj import _price, image_urls_for
 
 _LISTING = re.compile(r"^https://haraj\.com\.sa/\S+$")
 _IMAGE = re.compile(r"https://(?:thumbcdn|postcdn|mimg\d*cdn)\.haraj\.com\.sa/[^\s\"'<>]+", re.I)
@@ -60,6 +64,17 @@ def listing_images(url: str, opener=None, now: float | None = None) -> list[str]
             html = response.read(400_000).decode("utf-8", "replace")
     except (HTTPError, URLError, TimeoutError, ValueError, OSError):
         return []
+    ordered = _gallery(html)
+    _CACHE[url] = (moment, ordered)
+    return list(ordered)
+
+
+_PRODUCT_LD = re.compile(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', re.S)
+_POST_DATE = re.compile(r'postDate\\?"\s*,\s*(\d{9,11})')
+_DETAILS: dict[str, tuple[float, dict]] = {}
+
+
+def _gallery(html: str) -> list[str]:
     best: dict[str, str] = {}
     for found in _IMAGE.findall(html):
         cleaned = found.rstrip("\\")
@@ -69,9 +84,82 @@ def listing_images(url: str, opener=None, now: float | None = None) -> list[str]
         current = best.get(stem)
         if current is None or _rank(cleaned) < _rank(current):
             best[stem] = cleaned
-    ordered = sorted(best.values(), key=lambda item: (_rank(item), item))[:8]
-    _CACHE[url] = (moment, ordered)
-    return list(ordered)
+    # Best file per photo, in the order the page lists the photos (stable sort keeps it).
+    return sorted(best.values(), key=_rank)[:8]
+
+
+def _product(html: str) -> dict | None:
+    for block in _PRODUCT_LD.findall(html):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("@type") == "Product":
+            return data
+    return None
+
+
+def listing_details(url: str, opener=None, now: float | None = None) -> dict:
+    """What the public Haraj listing page says about the ad, read-only, for the customer who
+    asked that seller: title, the price as the seller typed it, city, posting date, body and
+    photos. ``state`` is ``unavailable`` when the page is gone, unreachable or no longer an
+    ad; nothing is guessed then. The price passes the same placeholder floor as search
+    (a «1» typed to mean "call me" is no price)."""
+
+    if not url or not _LISTING.match(url):
+        raise ValueError("listing url must be on haraj.com.sa")
+    moment = time.time() if now is None else now
+    cached = _DETAILS.get(url)
+    if cached and moment - cached[0] < _TTL_SECONDS:
+        return dict(cached[1])
+    unavailable = {"state": "unavailable", "url": url}
+    request = urllib.request.Request(
+        urllib.parse.quote(url, safe=":/?&=%#+,;@"),
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; FARQ-individuals/1.0)",
+            "Accept": "text/html",
+        },
+    )
+    open_url = opener or urllib.request.urlopen
+    try:
+        with open_url(request, timeout=8) as response:
+            final = response.geturl()
+            if not str(final).startswith("https://haraj.com.sa/"):
+                return unavailable
+            html = response.read(600_000).decode("utf-8", "replace")
+    except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+        # Not cached: an outage is retried on the next open, a deleted ad answers the same.
+        return unavailable
+    product = _product(html)
+    if product is None or not product.get("name"):
+        _DETAILS[url] = (moment, unavailable)
+        return dict(unavailable)
+    offer = product.get("offers") if isinstance(product.get("offers"), dict) else {}
+    place = offer.get("availableAtOrFrom") if isinstance(offer.get("availableAtOrFrom"), dict) else {}
+    raw_price = offer.get("price")
+    amount = _price({"inputPrice": str(raw_price)}) if raw_price not in (None, "") else None
+    posted = None
+    stamp = _POST_DATE.search(html)
+    if stamp:
+        posted = datetime.fromtimestamp(int(stamp.group(1)), tz=timezone.utc).isoformat()
+    images = _gallery(html)
+    if not images:
+        listed = product.get("image")
+        images = [item for item in (listed if isinstance(listed, list) else [listed]) if isinstance(item, str) and _IMAGE.match(item)]
+    description = product.get("description")
+    details = {
+        "state": "available",
+        "url": url,
+        "title": html_lib.unescape(str(product["name"])).strip(),
+        "price_amount": amount,
+        "price_currency": (offer.get("priceCurrency") or "SAR") if amount is not None else None,
+        "city": canonical_city(place.get("name")) if place.get("name") else None,
+        "posted_at": posted,
+        "description": html_lib.unescape(description).strip() if isinstance(description, str) and description.strip() else None,
+        "images": images,
+    }
+    _DETAILS[url] = (moment, details)
+    return dict(details)
 
 
 def fetch_thumb(name: str, size: str, opener=None) -> tuple[bytes, str]:
