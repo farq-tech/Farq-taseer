@@ -114,3 +114,11 @@ def test_farq_failure_never_raises(tmp_path, configured):
 
     down = httpx.Client(transport=httpx.MockTransport(boom))
     assert notify_farq_reply(store, request_id, "101", "hi", client=down) is False
+
+
+def test_200_that_reached_no_phone_is_logged_not_hidden(tmp_path, configured, caplog):
+    store, request_id = owned_request(tmp_path)
+    with caplog.at_level("WARNING", logger="farq.farq_push"):
+        assert notify_farq_reply(store, request_id, "101", "hi", client=FarqPush(delivered=0).client()) is False
+    assert "reached no phone" in caplog.text
+    assert "devices=1" in caplog.text
