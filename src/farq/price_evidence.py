@@ -29,7 +29,7 @@ _HYPHEN_RANGE = re.compile(
 )
 _ALTERNATE_PRICES = re.compile(
     r"(?:السعر|سعر\s+البيع|بسعر|سعر)[^\n]{0,35}?[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
-    r"[^\n]{0,25}?(?:او|أو|و|/|،|,\s+)[^\n]{0,15}?(?P<second>[0-9][0-9,٬]*(?:[.٫][0-9]+)?)"
+    r"[^\n]{0,25}?(?:او|أو|\sو(?=\s*[0-9])\s*|/|،|,\s+)[^\n]{0,15}?(?P<second>[0-9][0-9,٬]*(?:[.٫][0-9]+)?)"
 )
 _AUCTION = ("على السوم", "السوم", "يسوم", "مزايده", "مزايدة")
 _CONTACT = ("للاستفسار عن السعر", "السعر على الخاص", "السعر بالخاص", "تواصل لمعرفة السعر", "السعر عند التواصل")
@@ -57,6 +57,12 @@ _CURRENCY_AMOUNT = re.compile(
 _DOTTED_THOUSANDS = re.compile(r"(?<![0-9])[0-9]{1,3}[.٫][0-9]{3}(?![0-9])")
 _CURRENCY_SUFFIX = re.compile(r"^\s*(?:ريال|ر\s*\.?\s*س|﷼|⃁|SAR|SR)(?![\w])", re.IGNORECASE)
 _CHARGE_WORDS = ("التوصيل", "توصيل", "الشحن", "شحن", "التركيب", "تركيب", "النقل", "نقل", "الضريبة", "ضريبة")
+_CHARGE_AMOUNT_WITHOUT_CURRENCY = re.compile(
+    r"(?:للتوصيل|التوصيل|توصيل|للشحن|الشحن|شحن|للتركيب|التركيب|تركيب|للنقل|النقل|نقل|للضريبة|الضريبة|ضريبة)"
+    r"[ \t:：=/-]{0,4}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+    r"|[0-9][0-9,٬]*(?:[.٫][0-9]+)?[ \t:：=/-]{0,4}"
+    r"(?:للتوصيل|التوصيل|توصيل|للشحن|الشحن|شحن|للتركيب|التركيب|تركيب|للنقل|النقل|نقل|للضريبة|الضريبة|ضريبة)"
+)
 
 
 def _amount(number: str, multiplier: str | None, minimum: float = PRICE_FLOOR) -> float | None:
@@ -99,6 +105,14 @@ def _has_alternate_prices(text: str) -> bool:
             continue
         return True
     return False
+
+
+def _has_separate_additional_charge(text: str) -> bool:
+    """Do not treat an item price as the total when the ad gives a separate fee."""
+    for match in _CURRENCY_AMOUNT.finditer(text):
+        if _is_additional_charge_at(text, match.start(1), match.end(1)):
+            return True
+    return bool(_CHARGE_AMOUNT_WITHOUT_CURRENCY.search(normalize(text)))
 
 
 def _has_partial_payment(text: str) -> bool:
@@ -172,6 +186,8 @@ def infer_price_evidence(
         if _has_partial_payment(all_text):
             source = "title" if _has_partial_payment(title_text) else "description"
             return PriceEvidence(kind="partial_payment", source=source)
+        if _has_separate_additional_charge(all_text):
+            return PriceEvidence(kind="ambiguous_amount", source="price_field")
         # A separate currency-marked amount can be a former price, installment,
         # delivery charge, or a second option. Do not silently prefer the field.
         conflicting_currency_amounts = []
@@ -223,6 +239,9 @@ def infer_price_evidence(
     if _has_partial_payment(all_text) and _CURRENCY_AMOUNT.search(all_text):
         source = "title" if _CURRENCY_AMOUNT.search(title_text) else "description"
         return PriceEvidence(kind="partial_payment", source=source)
+
+    if explicit and _has_separate_additional_charge(all_text):
+        return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1])
 
     # Descriptions can be long, so the historical wording may be far from the
     # explicit price label. Do not trust a current asking-price claim when the
