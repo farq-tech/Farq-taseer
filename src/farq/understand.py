@@ -182,6 +182,9 @@ def _parse(body: str) -> list[dict] | None:
         need = item.get("need")
         if not isinstance(need, str) or not need.strip():
             continue
+        hiring = item.get("hiring")
+        if not isinstance(hiring, bool):
+            continue
         groups = _groups(item.get("must_include"))
         terms = _strings(item.get("search_terms"), MAX_TERMS)
         if not groups or not terms:
@@ -189,7 +192,7 @@ def _parse(body: str) -> list[dict] | None:
             continue
         read.append({
             "need": " ".join(need.split()),
-            "hiring": bool(item.get("hiring")),
+            "hiring": hiring,
             "must_include": groups,
             "search_terms": terms,
         })
