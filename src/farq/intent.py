@@ -113,6 +113,7 @@ _STOP = {
     "نحتاج",
     "في",
     "من",
+    "عن",
     "على",
     "الي",
     "الى",
@@ -210,7 +211,7 @@ _STOP = {
 
 _DIRECTIONS = {"شمال", "جنوب", "شرق", "غرب"}
 _PROPERTY_RENT_CUES = (
-    "للإيجار", "إيجار", "استئجار", "باليوم", "يومي", "يوميا", "يومية", "ليلي", "ليليا",
+    "للإيجار", "إيجار", "تأجير", "استئجار", "باليوم", "يومي", "يوميا", "يومية", "ليلي", "ليليا",
     "ليلة", "بالليلة", "لليلة", "بالأسبوع", "اسبوعي", "اسبوعيا", "اسبوعية", "بالويكند", "ويكند",
     "weekend", "بالشهر", "شهري", "شهريا", "شهرية", "بالسنة", "سنوي", "سنويا", "سنوية",
 )
@@ -221,9 +222,14 @@ _PROPERTY_SALE_GROUP = ("للبيع", "بيع", "للتمليك", "تمليك")
 
 
 def _property_transaction(normalized: str) -> str | None:
-    padded = f" {normalize(normalized)} "
-    rent = any(f" {normalize(cue)} " in padded for cue in _PROPERTY_RENT_CUES)
-    sale = any(f" {normalize(cue)} " in padded for cue in _PROPERTY_SALE_CUES)
+    words = normalize(normalized).split()
+
+    def has_cue(cues: tuple[str, ...]) -> bool:
+        cue_forms = {normalize(cue) for cue in cues}
+        return any(cue_forms.intersection(prefix_variants(word)) for word in words)
+
+    rent = has_cue(_PROPERTY_RENT_CUES)
+    sale = has_cue(_PROPERTY_SALE_CUES)
     if rent and sale:
         return "ambiguous"
     if rent:
@@ -495,7 +501,14 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             for start in range(len(words)):
                 if not _phrase_at(words, start, phrase):
                     continue
-                if head.subcategory == "house" and words[start:start + 2] == ["بيت", "شعر"]:
+                if head.type == "property" and _service_request(normalized):
+                    continue
+                if head.subcategory == "house" and words[start : start + 2] in (
+                    ["بيت", "شعر"],
+                    ["بيت", "الشعر"],
+                    ["بيوت", "شعر"],
+                    ["بيوت", "الشعر"],
+                ):
                     continue
                 if head.subcategory == "house" and not find_cities(normalized) and _property_transaction(normalized) is None:
                     continue

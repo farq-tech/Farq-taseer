@@ -202,6 +202,25 @@ _ELECTRIC_WORK = (
 # A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
 _NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
 _RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار")
+_PROPERTY_TRANSACTION_MARKERS = {
+    "للايجار",
+    "ايجار",
+    "تاجير",
+    "استئجار",
+    "للاستئجار",
+    "للبيع",
+    "بيع",
+    "للتمليك",
+    "تمليك",
+}
+_RENT_PERIODS = {
+    "daily": ("يومي", "يوميا", "يومية", "باليوم"),
+    "overnight": ("ليلي", "ليليا", "ليلة", "بالليلة", "لليلة"),
+    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "بالاسبوع"),
+    "weekend": ("ويكند", "weekend", "بالويكند"),
+    "monthly": ("شهري", "شهريا", "شهرية", "بالشهر"),
+    "yearly": ("سنوي", "سنويا", "سنوية", "بالسنة", "بالسنه"),
+}
 _CAR = ("سياره", "سيارات", "السيارات")
 _MAP_LISTING = ("جوجل", "قوقل", "google")
 _MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
@@ -314,6 +333,17 @@ def _explicit_condition(text: str) -> str | None:
     if says_used and not says_new:
         return "used"
     return None
+
+
+def _property_transaction_group(group: list[str]) -> bool:
+    return bool({normalize(term) for term in group} & _PROPERTY_TRANSACTION_MARKERS)
+
+
+def _rent_period(text: str) -> str | None:
+    matches = [
+        period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 # The rules a near match may fail. Everything else - a deleted or sold listing, another
@@ -480,8 +510,14 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             for letters, numbers in asked_codes.items():
                 if letters in stated_codes and not numbers & stated_codes[letters]:
                     return False, [f"model_mismatch:{letters}"]
-        asked = normalize(intent.original_query)
-        if "سنوي" in asked.split() and has_word(title, ("شهري", "يومي")) and not has_word(title, ("سنوي",)):
+        asked_period = _rent_period(intent.original_query)
+        title_periods = {
+            period for period, cues in _RENT_PERIODS.items() if has_word(title, cues)
+        }
+        stated_periods = title_periods or {
+            period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+        }
+        if asked_period and stated_periods and asked_period not in stated_periods:
             return False, ["rent_term_mismatch"]
     if intent.subcategory.value == "electrician" and ad is not None and title:
         if not _electric_trade(title, seller, text):
@@ -507,6 +543,8 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     for group in intent.eligibility_groups:
         hit = _group_hit(text, group)
         if hit is None:
+            if relaxed and intent.type.value == "property" and _property_transaction_group(group):
+                return False, ["property_transaction_mismatch"]
             missing.append(group)
             continue
         matched.append(hit)

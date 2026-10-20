@@ -1,3 +1,5 @@
+import pytest
+
 from farq.contracts import Ad, ResultUnit, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
@@ -61,9 +63,46 @@ def test_house_without_transaction_does_not_invent_a_rent_or_sale_filter():
 
 
 def test_house_intent_does_not_match_tent():
-    intent = analyze("أبي بيت شعر للإيجار في جدة")
+    for query in (
+        "أبي بيت شعر للإيجار في جدة",
+        "أبي بيت الشعر للإيجار في جدة",
+        "أبي بيوت شعر للإيجار في جدة",
+        "أبي بيوت الشعر للإيجار في جدة",
+    ):
+        intent = analyze(query)
+        assert intent.subcategory is None or intent.subcategory.value != "house", query
 
-    assert intent.subcategory is None or intent.subcategory.value != "house"
+
+@pytest.mark.parametrize("query", ("استراحة تأجير بالرياض", "استراحة وبالإيجار بالرياض"))
+def test_attached_and_synonym_rental_cues_are_classified(query):
+    intent = analyze(query)
+    sale = _listing("استراحة للبيع", "موقع مميز")
+
+    assert intent.subcategory.value == "resthouses"
+    assert any("تأجير" in group or "إيجار" in group for group in intent.eligibility_groups)
+    assert decide(intent, sale, sale.seller)[0] is False
+
+
+def test_mixed_attached_transaction_cues_request_clarification():
+    intent = analyze("استراحة وبالإيجار أو للبيع بالرياض")
+
+    assert intent.missing_decision_information == ["transaction_type"]
+    assert intent.clarification_question == "هل تبحث عن العقار للبيع أم للإيجار؟"
+
+
+def test_property_query_qualifiers_drop_about_connector():
+    intent = analyze("أبحث عن شاليه للبيع بجدة")
+
+    assert intent.subcategory.value == "chalets"
+    assert intent.search_terms[0] == "شاليه للبيع جدة"
+
+
+@pytest.mark.parametrize("query", ("عامل مزرعة بالرياض", "تنظيف استراحة بالرياض"))
+def test_property_nouns_do_not_override_service_requests(query):
+    intent = analyze(query)
+
+    assert intent.type.value == "service"
+    assert intent.result_unit == ResultUnit.SERVICE_PROVIDER
 
 
 def test_weekend_chalet_search_is_classified_as_rental():
@@ -95,6 +134,20 @@ def test_property_sale_and_rental_queries_reject_the_opposite_transaction():
     assert decide(sale_intent, rental, rental.seller)[0] is False
     assert decide(rent_intent, rental, rental.seller)[0] is True
     assert decide(rent_intent, sale, sale.seller)[0] is False
+
+
+def test_property_near_match_does_not_relax_requested_transaction():
+    rent_intent = analyze("استراحة للإيجار بجدة")
+    sale = _listing("استراحة للبيع", "موقعها مميز", city="جده")
+
+    assert decide(rent_intent, sale, sale.seller, relaxed=True)[0] is False
+
+
+def test_monthly_rental_rejects_explicit_daily_listing():
+    monthly = analyze("استراحة شهري بالرياض")
+    daily = _listing("استراحة متاحة يوميًا", "الإيجار يومي فقط")
+
+    assert decide(monthly, daily, daily.seller)[0] is False
 
 
 def test_conflicting_sale_and_rental_request_asks_for_clarification():
