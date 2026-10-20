@@ -28,8 +28,8 @@ _HYPHEN_RANGE = re.compile(
     r"(?:السعر|سعر\s+البيع|بسعر|سعر)\s*[:：=]?\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?\s*[-–—]\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
 )
 _ALTERNATE_PRICES = re.compile(
-    r"(?:السعر|سعر\s+البيع|بسعر|سعر)[^\n]{0,35}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
-    r"[^\n]{0,25}(?:او|أو|و|/|،|,\s+)[^\n]{0,15}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+    r"(?:السعر|سعر\s+البيع|بسعر|سعر)[^\n]{0,35}?[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+    r"[^\n]{0,25}?(?:او|أو|و|/|،|,\s+)[^\n]{0,15}?(?P<second>[0-9][0-9,٬]*(?:[.٫][0-9]+)?)"
 )
 _AUCTION = ("على السوم", "السوم", "يسوم", "مزايده", "مزايدة")
 _CONTACT = ("للاستفسار عن السعر", "السعر على الخاص", "السعر بالخاص", "تواصل لمعرفة السعر", "السعر عند التواصل")
@@ -46,12 +46,17 @@ _UNIT_OR_INSTALLMENT = (
     "للثلاثه", "للاربعه", "شهري", "شهريا", "للشهر", "في الشهر", "سنوي", "سنويا",
     "في السنه", "قسط", "اقساط", "تقسيط", "دفعتين", "دفعات", "دفعه واحده", "لليوم", "لليله",
 )
+_PARTIAL_PAYMENT = (
+    "عربون", "دفعة اولى", "الدفعة الاولى", "دفعة مقدمه", "الدفعة المقدمه",
+    "مبلغ الحجز", "رسوم الحجز", "دفعة حجز",
+)
 _CURRENCY_AMOUNT = re.compile(
     r"(?<![\w])([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.?\s*س|ر\.س|﷼|⃁|SAR|SR)(?![\w])",
     re.IGNORECASE,
 )
 _DOTTED_THOUSANDS = re.compile(r"(?<![0-9])[0-9]{1,3}[.٫][0-9]{3}(?![0-9])")
 _CURRENCY_SUFFIX = re.compile(r"^\s*(?:ريال|ر\s*\.?\s*س|﷼|⃁|SAR|SR)(?![\w])", re.IGNORECASE)
+_CHARGE_WORDS = ("التوصيل", "توصيل", "الشحن", "شحن", "التركيب", "تركيب", "النقل", "نقل", "الضريبة", "ضريبة")
 
 
 def _amount(number: str, multiplier: str | None, minimum: float = PRICE_FLOOR) -> float | None:
@@ -78,13 +83,22 @@ def _is_negotiable(text: str) -> bool:
     return _contains_any(text, _NEGOTIABLE) and not _contains_any(text, _NOT_NEGOTIABLE)
 
 
-def _currency_amounts(text: str) -> list[float]:
-    values = []
-    for match in _CURRENCY_AMOUNT.finditer(text):
-        amount = _amount(match.group(1), match.group(2), minimum=0.01)
-        if amount is not None:
-            values.append(amount)
-    return values
+def _is_additional_charge_at(text: str, start: int, end: int) -> bool:
+    """Recognize a fee label attached to an amount, not a distant mention."""
+    before = normalize(text[max(0, start - 32):start]).rstrip()
+    after = normalize(text[end:end + 32]).lstrip()
+    after = re.sub(r"^(?:ريال|ر\s*\.?\s*س|﷼|sar|sr)\s*", "", after, flags=re.IGNORECASE)
+    return any(before.endswith(normalize(word)) for word in _CHARGE_WORDS) or any(
+        after.startswith(normalize(word)) for word in ("للتوصيل", "للشحن", "للتركيب", "للنقل", "رسوم", "ضريبة")
+    )
+
+
+def _has_alternate_prices(text: str) -> bool:
+    for match in _ALTERNATE_PRICES.finditer(text):
+        if _is_additional_charge_at(text, match.start("second"), match.end("second")):
+            continue
+        return True
+    return False
 
 
 def _window(text: str, start: int, end: int, extra: int = 45) -> str:
@@ -143,8 +157,17 @@ def infer_price_evidence(
     if field_amount is not None:
         # A separate currency-marked amount can be a former price, installment,
         # delivery charge, or a second option. Do not silently prefer the field.
-        currency_amounts = _currency_amounts(all_text)
-        if any(amount != field_amount for amount in currency_amounts):
+        conflicting_currency_amounts = []
+        for currency_match in _CURRENCY_AMOUNT.finditer(all_text):
+            amount = _amount(currency_match.group(1), currency_match.group(2), minimum=0.01)
+            if amount is None or amount == field_amount:
+                continue
+            if _is_additional_charge_at(all_text, currency_match.start(1), currency_match.end(1)):
+                continue
+            conflicting_currency_amounts.append(amount)
+        if explicit and _contains_any(all_text, _PARTIAL_PAYMENT):
+            return PriceEvidence(kind="partial_payment", source=explicit[0][1])
+        if conflicting_currency_amounts:
             return PriceEvidence(kind="ambiguous_amount", source="price_field")
         is_estimated = _contains_any(field_text, _ESTIMATED) or _contains_any(all_text, _ESTIMATED)
         is_negotiable = _is_negotiable(all_text)
@@ -159,7 +182,7 @@ def infer_price_evidence(
             or has_other_text_price
             or (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
             or _HYPHEN_RANGE.search(all_text)
-            or _ALTERNATE_PRICES.search(all_text)
+            or _has_alternate_prices(all_text)
             or (_contains_any(all_text, _UNIT_OR_INSTALLMENT) and _contains_any(all_text, _PRICE_CONTEXT))
         ):
             return PriceEvidence(kind="ambiguous_amount", source="price_field")
@@ -172,7 +195,7 @@ def infer_price_evidence(
     if (
         (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
         or _HYPHEN_RANGE.search(all_text)
-        or _ALTERNATE_PRICES.search(all_text)
+        or _has_alternate_prices(all_text)
     ):
         return PriceEvidence(kind="price_range")
     if _contains_any(all_text, _AUCTION):
@@ -180,12 +203,20 @@ def infer_price_evidence(
     if _contains_any(all_text, _CONTACT):
         return PriceEvidence(kind="contact_for_price")
 
+    if _contains_any(all_text, _PARTIAL_PAYMENT) and _CURRENCY_AMOUNT.search(all_text):
+        source = "title" if _CURRENCY_AMOUNT.search(title_text) else "description"
+        return PriceEvidence(kind="partial_payment", source=source)
+
     # Descriptions can be long, so the historical wording may be far from the
     # explicit price label. Do not trust a current asking-price claim when the
     # same ad also discusses a past purchase price or a former price. The field
     # price path applies the same conservative rule above.
     if explicit and _contains_any(all_text, _HISTORICAL):
         return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1])
+    if explicit and _contains_any(all_text, _PARTIAL_PAYMENT):
+        return PriceEvidence(kind="partial_payment", source=explicit[0][1])
+    if explicit and _contains_any(all_text, _UNIT_OR_INSTALLMENT):
+        return PriceEvidence(kind="unit_or_installment_price", source=explicit[0][1])
 
     if explicit:
         text_values = {

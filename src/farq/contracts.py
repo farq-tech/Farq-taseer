@@ -123,6 +123,7 @@ class PriceEvidence(ContractModel):
         "contact_for_price",
         "price_range",
         "unit_or_installment_price",
+        "partial_payment",
         "historical_price",
         "ambiguous_amount",
         "no_price_signal",
