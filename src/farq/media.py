@@ -85,8 +85,9 @@ def _gallery(html: str) -> list[str]:
         current = best.get(stem)
         if current is None or _rank(cleaned) < _rank(current):
             best[stem] = cleaned
-    # Best file per photo, in the order the page lists the photos (stable sort keeps it).
-    return sorted(best.values(), key=_rank)[:8]
+    # Keep every distinct photo, in the order the page lists them. Haraj listings can
+    # have far more than eight photos; limiting this list silently hid most of a listing.
+    return list(best.values())
 
 
 def _product(html: str) -> dict | None:
