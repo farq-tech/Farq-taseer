@@ -303,9 +303,46 @@ _CARPENTRY = ("نجار", "نجاره", "منجره", "تفصيل دواليب",
 _CARPENTER_QUERIES = ("نجار", "نجار موبيليا", "منجرة", "تفصيل خزائن", "نجار ابواب", "نجاره", "نجار مسلح")
 _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت", "سوكريت", "سكرت", "شاور", "شاورات", "شورات", "واجهات", "واجهة", "قاطع", "قواطع")
 
+def _stroller_accessory_heads() -> tuple[Head, ...]:
+    """Keep accessory searches specific to the requested part and stroller family."""
+    heads = []
+    for label, noun_forms in (
+        ("فرش", ("فرش", "مفرش")),
+        ("مظلة", ("مظلة", "مظلات")),
+        ("مقبض", ("مقبض", "مقابض")),
+        ("مقعد", ("مقعد", "مقاعد")),
+        ("هيكل", ("هيكل", "هياكل")),
+        ("مهد", ("مهد", "مهاد", "سرير")),
+        ("كارسيت", ("كارسيت",)),
+        ("ملحقات", ("ملحقات", "accessories")),
+    ):
+        phrases = tuple(
+            f"{noun} {vehicle} يويو"
+            for noun in noun_forms
+            for vehicle in ("عربية", "عربة")
+        ) + tuple(f"يويو {noun} {vehicle}" for noun in noun_forms for vehicle in ("عربية", "عربة"))
+        heads.append(_head(
+            type="product", category="baby_products", subcategory="stroller_accessories",
+            result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+            phrases=phrases, label=f"{label} عربة يويو", label_from_match=True,
+            eligibility=(noun_forms, ("يويو", "yoyo", "babyzen"), ("عربية", "عربيه", "عربة", "عربه", "stroller", "strollers", "pushchair")),
+            expansions=tuple(phrases[:4]) + (f"Babyzen YOYO {label}",),
+        ))
+    heads.append(_head(
+        type="product", category="baby_products", subcategory="stroller_accessories",
+        result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+        phrases=("stroller accessories", "stroller accessory", "ملحقات عربات الأطفال", "ملحقات عربات اطفال"),
+        label="ملحقات عربة أطفال", label_from_match=True,
+        eligibility=(("accessories", "accessory", "ملحقات"), ("stroller", "strollers", "عربية", "عربيه", "عربة", "عربه", "pushchair")),
+        expansions=("stroller accessories", "stroller accessory", "ملحقات عربات الأطفال"),
+    ))
+    return tuple(heads)
+
+_STROLLER_ACCESSORY_HEADS = _stroller_accessory_heads()
+
 HEADS: tuple[Head, ...] = (
-    _head(type="product", category="baby_products", subcategory="stroller_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("فرش عربية يويو", "مفرش عربية يويو", "مظلة عربية يويو", "مقبض عربية يويو", "مقعد عربية يويو", "هيكل عربية يويو", "مهد عربية يويو", "سرير عربية يويو", "كارسيت يويو", "ملحقات عربية يويو", "ملحقات يويو", "stroller accessories"), label="ملحقات عربة يويو", label_from_match=True, eligibility=(("فرش", "مفرش", "مظلة", "مقبض", "مقعد", "هيكل", "مهد", "سرير", "كارسيت", "ملحقات", "accessories"), ("يويو", "yoyo", "عربية", "عربة")), expansions=("ملحقات عربية يويو", "فرش عربية يويو", "مظلة عربية يويو", "مقعد عربية يويو", "مقبض عربية يويو", "Babyzen YOYO accessories")),
-    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
+    *_STROLLER_ACCESSORY_HEADS,
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
@@ -454,7 +491,7 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
         if stroller_head is not None:
             words = normalized.split()
             stroller_at = next((i for i, word in enumerate(words) if any(form in {"عربيه", "عربه", "عربيات", "عربات", "stroller", "strollers", "pushchair"} for form in prefix_variants(word))), None)
-            yoyo_at = next((i for i, word in enumerate(words) if any(form in {"يويو", "yoyo", "babyzen", "بيبيزن", "بيبيزين"} for form in prefix_variants(word)) or re.fullmatch(r"yoyo[23]", word)), None)
+            yoyo_at = next((i for i, word in enumerate(words) if any(form in {"يويو", "yoyo", "babyzen", "بيبيزن", "بيبيزين"} for form in prefix_variants(word)) or re.fullmatch(r"(?:yoyo|يويو)[23]", word)), None)
             if stroller_at is None:
                 stroller_at = next((i for i in range(len(words) - 1) if _phrase_at(words, i, "عربية أطفال") or _phrase_at(words, i, "عربة أطفال")), None)
             if yoyo_at is None:

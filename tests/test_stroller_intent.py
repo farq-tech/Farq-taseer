@@ -90,6 +90,24 @@ def test_yoyo_lookalike_is_not_exact_but_can_be_a_labeled_near_match():
     assert decide(intent, inspired, seller, relaxed=True)[0] is True
 
 
+def test_yoyo_near_match_cannot_drop_requested_model_identity():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    generic = Ad(id="ad-generic", title="عربية أطفال للبيع", seller=seller)
+
+    assert decide(intent, generic, seller, relaxed=True)[0] is False
+
+
+def test_condition_phrase_similar_to_new_does_not_mark_original_yoyo_as_lookalike():
+    intent = analyze("عربية أطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    original = Ad(id="ad-original", title="Babyzen YOYO stroller, similar to new", seller=seller)
+
+    allowed, evidence = decide(intent, original, seller)
+    assert allowed is True
+    assert "yoyo" in evidence
+
+
 def test_babyzen_brand_is_only_set_when_the_query_names_it():
     assert not analyze("عربية أطفال يويو").brand.known
     assert analyze("Babyzen YOYO stroller").brand.value == "Babyzen"
@@ -145,12 +163,48 @@ def test_yoyo_generations_do_not_match_each_other_as_exact_results():
     assert decide(intent, unspecified, seller)[0] is True
 
 
+def test_yoyo_generation_mismatch_remains_only_a_relaxed_match():
+    intent = analyze("عربية أطفال يويو 2")
+    seller = Seller(id="seller-1", name="معلن")
+    yoyo3 = Ad(id="ad-3", title="عربية أطفال يويو 3 أصلية", seller=seller)
+
+    assert decide(intent, yoyo3, seller, relaxed=True)[0] is True
+
+
 def test_stroller_accessory_search_is_separate_from_complete_stroller_search():
     intent = analyze("مفرش عربية يويو")
 
     assert intent.category.value == "baby_products"
     assert intent.subcategory.value == "stroller_accessories"
     assert intent.model.value is None
+
+
+@pytest.mark.parametrize("query,title", [("مفرش عربية يويو", "مظلة عربية يويو"), ("مظلة عربة يويو", "مقعد عربة يويو")])
+def test_stroller_accessory_search_keeps_the_requested_part(query, title):
+    intent = analyze(query)
+    seller = Seller(id="seller-1", name="معلن")
+    wrong_part = Ad(id="wrong-part", title=title, seller=seller)
+
+    assert intent.subcategory.value == "stroller_accessories"
+    assert decide(intent, wrong_part, seller)[0] is False
+
+
+def test_generic_english_stroller_accessory_search_accepts_matching_listing():
+    intent = analyze("stroller accessories")
+    seller = Seller(id="seller-1", name="seller")
+    listing = Ad(id="accessory", title="Stroller accessories for sale", seller=seller)
+
+    assert intent.subcategory.value == "stroller_accessories"
+    assert decide(intent, listing, seller)[0] is True
+
+
+def test_attached_arabic_yoyo_generation_keeps_model_specific_eligibility():
+    intent = analyze("عربية أطفال يويو3")
+    seller = Seller(id="seller-1", name="معلن")
+    generic = Ad(id="generic", title="عربية أطفال مستعملة", seller=seller)
+
+    assert intent.model.value == "YOYO 3"
+    assert decide(intent, generic, seller)[0] is False
 
 
 def test_stroller_sellers_are_classified_as_product_suppliers():
@@ -163,4 +217,18 @@ def test_stroller_accessory_sellers_are_classified_separately():
     result = read_business("بيع فرش ومظلات ومقابض عربيات الأطفال")
 
     assert any(item["key"] == "stroller_accessories" for item in result["products"])
+    assert not any(item["key"] == "shades" for item in result["services"])
+
+
+@pytest.mark.parametrize("description", ["بيع ألعاب يويو", "بيع فرش سيارات"])
+def test_ambiguous_yoyo_or_furnishing_words_do_not_classify_stroller_suppliers(description):
+    result = read_business(description)
+
+    assert not any(item["key"] in {"strollers", "stroller_accessories"} for item in result["products"])
+
+
+def test_english_plural_stroller_business_descriptions_are_classified():
+    result = read_business("Babyzen YOYO strollers and baby strollers")
+
+    assert any(item["key"] == "strollers" for item in result["products"])
 

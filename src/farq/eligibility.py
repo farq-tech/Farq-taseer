@@ -25,7 +25,7 @@ _GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
 _LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
 _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
-_MODEL_LOOKALIKE = ("مستوحى", "مستوحاة", "شبيه", "شبيهه", "مشابه", "مشابهه", "تقليد", "على شكل", "inspired", "lookalike", "similar to")
+_MODEL_LOOKALIKE = ("مستوحى", "مستوحاة", "شبيه", "شبيهه", "تقليد", "على شكل", "inspired", "lookalike", "similar to yoyo", "similar to babyzen", "مشابه ليويو")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 # A listing that leads with the accessory sells the accessory, not the device; one that leads
 # with another thing («كاميرا مراقبة بطارية طاقة شمسية», «كشاف طاقة شمسية») sells that thing,
@@ -421,7 +421,7 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["leftovers_not_provider"]
     if title and has_word(title, _GONE):
         return False, ["already_sold"]
-    if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO") and not relaxed and has_word(text, _MODEL_LOOKALIKE):
+    if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO") and not relaxed and _yoyo_lookalike_claim(text):
         return False, ["model_lookalike"]
     if intent.subcategory.value == "strollers" and intent.model.value in {"YOYO 2", "YOYO 3"} and not relaxed:
         asked_variant = str(intent.model.value[-1])
@@ -512,9 +512,26 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     needed = intent.eligibility_min or len(intent.eligibility_groups)
     if relaxed and len(intent.eligibility_groups) >= 2:
         needed = max(1, needed - 1)
+        # Relaxed matching may waive a secondary detail, never the requested YOYO identity.
+        if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO"):
+            needed = max(needed, 2)
     if missing and len(matched) < needed:
         return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched
+
+
+def _yoyo_lookalike_claim(text: str) -> bool:
+    """Only treat likeness wording near a YOYO name as a clone claim."""
+    words = tokens(text)
+    cues = {normalize(item) for item in _MODEL_LOOKALIKE}
+    model = {"يويو", "yoyo", "babyzen"}
+    for index, word in enumerate(words):
+        window = words[max(0, index - 4) : index + 5]
+        if not any(has_word(" ".join(window), (cue,)) for cue in cues):
+            continue
+        if any(set(prefix_variants(candidate)) & model for candidate in window):
+            return True
+    return False
 
 
 def _electric_trade(title: str, seller: Seller | None, text: str) -> bool:
