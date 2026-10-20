@@ -749,7 +749,15 @@ def create_app(
         # few seconds later finds it ready instead of waiting for it. Measured on production:
         # reading on M02 itself put M02 at 2.3-3s for a first result only 0.5s sooner.
         intents = understand.refine_if_ready(body.query, analyze_needs(body.query))
-        if understand.enabled():
+        # If the rules could not understand any part, don't send M02 a dead end while the
+        # background read is still warming. Resolve that case inline, bounded by the model's
+        # four-second timeout; ordinary understood requests keep the fast response path.
+        needs_model_now = understand.enabled() and any(
+            not intent.understood for intent in intents
+        )
+        if needs_model_now:
+            intents = understand.refine(body.query, intents)
+        elif understand.enabled():
             background.add_task(understand.read_query, body.query)
         intent = intents[0] if intents else analyze(body.query)
         return {
