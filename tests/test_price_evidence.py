@@ -161,6 +161,20 @@ def test_unit_price_field_is_labeled_as_a_unit_rate(price_text):
     assert evidence.amount is None
 
 
+@pytest.mark.parametrize(
+    "description",
+    [
+        "سعر المتر يبدأ من 1,200 ريال",
+        "سعر الوحدة 300 ريال",
+    ],
+)
+def test_unit_prices_named_as_price_of_unit_are_not_listing_totals(description):
+    evidence = infer_price_evidence("عقار أو سلعة", description, None)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
 def test_down_payment_is_never_used_as_a_comparable_listing_price():
     evidence = infer_price_evidence(
         "سيارة للبيع",
