@@ -220,10 +220,10 @@ def test_transfers_and_map_listings_are_not_providers():
 
 
 # TSR-085 / TSR-069: placeholder and glued prices.
-def test_prices_are_first_number_and_above_the_floor():
+def test_prices_must_be_unambiguous_and_above_the_floor():
     assert _price({"inputPrice": "9"}) is None
     assert _price({"inputPrice": "20"}) is None
-    assert _price({"formattedPrice": "من 100 الى 200"}) == 100
+    assert _price({"formattedPrice": "من 100 الى 200"}) is None
     assert _price({"formattedPrice": "0555555555"}) is None
     assert _price({"formattedPrice": "123456789"}) is None
     assert _price({"formattedPrice": "2,800 ريال"}) == 2800

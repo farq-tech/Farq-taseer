@@ -121,6 +121,9 @@ class Ad(ContractModel):
     district: str | None = None
     price_amount: float | None = None
     price_currency: str | None = None
+    # Seller's original Haraj price-field text. This stays available when the
+    # field is a range, bid, or unit price and cannot safely become one amount.
+    price_text: str | None = None
     posted_at: str | None = None
     image_ref: str | None = None
     image_urls: list[str] = Field(default_factory=list)

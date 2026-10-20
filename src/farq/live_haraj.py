@@ -95,31 +95,50 @@ _PRICE_NUMBER = re.compile(r"\d[\d,٬]*(?:\.\d+)?")
 # Haraj sellers type 1, 2, 9, 20 ... to mean "call me". Below this many riyals
 # the number is a placeholder, not a price, and it must not feed "you save 99%".
 PRICE_FLOOR = 50
+_PRICE_AMBIGUOUS_CUES = (
+    "السوم", "مزايده", "مزاد", "يفتح الباب", "فتح الباب",
+    "للحبه", "للقطعه", "للوحده", "للمتر", "لليوم", "للساعه",
+    "للكيلو", "للطن", "للكرتون", "per unit", "per piece", "per meter",
+    "per day", "per hour", "per kg", "per ton",
+)
 
 
 def _price(raw: dict | None) -> float | None:
     if not raw:
         return None
-    text = raw.get("inputPrice") or raw.get("formattedPrice")
-    if text is None:
+    texts = [
+        str(value).strip()
+        for value in (raw.get("inputPrice"), raw.get("formattedPrice"))
+        if value is not None and str(value).strip()
+    ]
+    if not texts:
         return None
-    value = str(text).translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
-    # The first number only: "من 100 الى 200" is not 100200.
-    match = _PRICE_NUMBER.search(value)
-    if not match:
-        return None
-    digits = match.group(0).replace(",", "").replace("٬", "")
-    whole = digits.split(".")[0]
-    # A phone number ("0555...") or nine or more digits is not a price.
-    if whole.startswith("05") or len(whole) >= 9:
-        return None
-    try:
-        amount = float(digits)
-    except ValueError:
-        return None
-    if amount < PRICE_FLOOR:
-        return None
-    return amount
+    amounts: list[float] = []
+    for text in texts:
+        value = text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+        normalized = normalize(value)
+        if any(cue in normalized for cue in _PRICE_AMBIGUOUS_CUES):
+            return None
+        matches = list(_PRICE_NUMBER.finditer(value))
+        # A range, bid ladder, or several sizes has no single asking price. Never
+        # promote its first number into the search filters or a displayed price.
+        if len(matches) != 1:
+            return None
+        digits = matches[0].group(0).replace(",", "").replace("٬", "")
+        whole = digits.split(".")[0]
+        # A phone number ("0555...") or nine or more digits is not a price.
+        if whole.startswith("05") or len(whole) >= 9:
+            return None
+        try:
+            amount = float(digits)
+        except ValueError:
+            return None
+        if amount < PRICE_FLOOR:
+            return None
+        amounts.append(amount)
+    # Haraj supplies both a raw and a formatted value. If they disagree, neither
+    # is safe to use as one comparable amount.
+    return amounts[0] if amounts and all(amount == amounts[0] for amount in amounts[1:]) else None
 
 
 def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
@@ -130,7 +149,9 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
         posted = datetime.fromtimestamp(int(item["postDate"]), tz=timezone.utc).isoformat()
     url_path = item.get("URL") or ""
     url = url_path if str(url_path).startswith("http") else (f"https://haraj.com.sa/{url_path}" if url_path else None)
-    price = _price(item.get("price"))
+    price_data = item.get("price") or {}
+    price = _price(price_data)
+    raw_price_text = price_data.get("formattedPrice") or price_data.get("inputPrice")
     status = item.get("status")
     city = haraj_listing_city(item.get("city"), filtered_city) if filtered_city else canonical_city(item.get("city"))
     listing_state = "active" if status is True else "deleted" if status is False else "unknown"
@@ -151,6 +172,7 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
         district=item.get("geoNeighborhood"),
         price_amount=price,
         price_currency="SAR" if price is not None else None,
+        price_text=str(raw_price_text) if raw_price_text is not None else None,
         posted_at=posted,
         image_ref=item.get("thumbURL") or None,
         image_urls=image_urls_for(item.get("thumbURL")),
