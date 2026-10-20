@@ -138,6 +138,7 @@ def listing_details(url: str, opener=None, now: float | None = None) -> dict:
     place = offer.get("availableAtOrFrom") if isinstance(offer.get("availableAtOrFrom"), dict) else {}
     raw_price = offer.get("price")
     amount = _price({"inputPrice": str(raw_price)}) if raw_price not in (None, "") else None
+    price_text = html_lib.unescape(str(raw_price)).strip() if raw_price not in (None, "") else None
     posted = None
     stamp = _POST_DATE.search(html)
     if stamp:
@@ -153,6 +154,7 @@ def listing_details(url: str, opener=None, now: float | None = None) -> dict:
         "title": html_lib.unescape(str(product["name"])).strip(),
         "price_amount": amount,
         "price_currency": (offer.get("priceCurrency") or "SAR") if amount is not None else None,
+        "price_text": price_text,
         "city": canonical_city(place.get("name")) if place.get("name") else None,
         "posted_at": posted,
         "description": html_lib.unescape(description).strip() if isinstance(description, str) and description.strip() else None,
