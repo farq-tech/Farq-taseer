@@ -383,6 +383,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="resthouses", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("استراحة", "استراحه", "استراحات"), label="استراحة", label_from_match=True, eligibility=(("استراحة", "استراحه", "استراحات"),), title_groups=(("استراحة", "استراحه", "استراحات"),), expansions=("استراحات", "استراحة يومية", "استراحة للإيجار")),
     _head(type="property", category="property", subcategory="chalets", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شاليه", "شاليهات", "chalet", "chalets"), label="شاليه", label_from_match=True, eligibility=(("شاليه", "شاليهات", "chalet"),), title_groups=(("شاليه", "شاليهات", "chalet"),), expansions=("شاليهات", "شاليه يومي", "شاليه للإيجار")),
     _head(type="property", category="property", subcategory="apartment", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شقة", "شقه", "شقق"), eligibility=(("شقه", "شقق"),), expansions=("شقة", "شقق")),
+    _head(type="property", category="property", subcategory="house", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("بيت سكني", "بيوت سكنية", "بيت", "بيوت", "منزل", "منازل"), label="بيت", label_from_match=True, eligibility=(("بيت", "بيوت", "منزل", "منازل"),), title_groups=(("بيت", "بيوت", "منزل", "منازل"),), expansions=("بيوت", "منازل", "بيت")),
     _head(type="property", category="property", subcategory="land", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ارض", "أرض"), eligibility=(("ارض",),), expansions=("ارض", "أراضي")),
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا",), eligibility=(("فيلا",),), expansions=("فيلا",)),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
@@ -493,6 +494,10 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             parts = phrase.split()
             for start in range(len(words)):
                 if not _phrase_at(words, start, phrase):
+                    continue
+                if head.subcategory == "house" and words[start:start + 2] == ["بيت", "شعر"]:
+                    continue
+                if head.subcategory == "house" and not find_cities(normalized) and _property_transaction(normalized) is None:
                     continue
                 if head.subcategory == "electrician" and phrase in _ELECTRIC_WORDS and _electric_adjective(words, start):
                     continue

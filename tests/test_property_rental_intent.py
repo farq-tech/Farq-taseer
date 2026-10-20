@@ -39,6 +39,33 @@ def test_daily_chalet_search_retains_daily_rental_qualifier():
     assert intent.location_city.value == "جده"
 
 
+def test_residential_house_rental_is_understood_and_keeps_rent_and_city():
+    intent = analyze("أبي بيت للإيجار في جدة")
+
+    assert intent.understood is True
+    assert intent.type.value == "property"
+    assert intent.subcategory.value == "house"
+    assert intent.location_city.value == "جده"
+    assert "للإيجار" in intent.need
+    assert "بيت للإيجار جدة" in intent.search_terms[0]
+    assert any("للإيجار" in group for group in intent.eligibility_groups)
+
+
+def test_house_without_transaction_does_not_invent_a_rent_or_sale_filter():
+    intent = analyze("أبي بيت في جدة")
+
+    assert intent.subcategory.value == "house"
+    assert intent.missing_decision_information == []
+    assert intent.clarification_question is None
+    assert not any("للإيجار" in group or "للبيع" in group for group in intent.eligibility_groups)
+
+
+def test_house_intent_does_not_match_tent():
+    intent = analyze("أبي بيت شعر للإيجار في جدة")
+
+    assert intent.subcategory is None or intent.subcategory.value != "house"
+
+
 def test_weekend_chalet_search_is_classified_as_rental():
     intent = analyze("أبي شاليه بالويكند في جدة")
 
