@@ -44,6 +44,49 @@ def test_painting_service_results_reject_paint_supply_ads():
     assert decide(intent, painter, seller)[0] is True
 
 
+def test_clear_water_leak_repair_request_is_routed_to_a_plumber():
+    intent = analyze("عندي تسرب ماء في السقف من يصلحه بالرياض")
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "plumber"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert "تسرب ماء الرياض" in intent.need
+    assert any("تسرب ماء" in term for term in intent.search_terms)
+    assert any("سباك" in term for term in intent.search_terms)
+    seller = Seller(id="seller", name="بائع", city="الرياض")
+    product = Ad(id="detector", title="جهاز كشف تسرب مياه للبيع", seller=seller, city="الرياض")
+    plumber = Ad(id="plumber", title="سباك يصلح تسربات المياه", seller=seller, city="الرياض")
+    assert decide(intent, product, seller)[0] is False
+    assert decide(intent, plumber, seller)[0] is True
+
+
+def test_appliance_repair_request_is_not_sent_to_product_ads():
+    intent = analyze("فني يصلح غسالة أوتوماتيك بالرياض")
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "appliance_repair"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert any("غساله" in group for group in intent.eligibility_groups)
+    assert any("أوتوماتيك" in term or "اوتوماتيك" in term for term in intent.search_terms)
+    seller = Seller(id="seller", name="بائع", city="الرياض")
+    product = Ad(id="washer", title="غسالة أوتوماتيك للبيع", seller=seller, city="الرياض")
+    repair_service = Ad(id="repair", title="فني صيانة غسالات أوتوماتيك", seller=seller, city="الرياض")
+    assert decide(intent, product, seller)[0] is False
+    assert decide(intent, repair_service, seller)[0] is True
+
+
+def test_water_leak_product_search_is_not_misread_as_a_plumbing_job():
+    intent = analyze("جهاز كشف تسرب مياه للبيع بالرياض")
+
+    assert intent.understood is True
+    assert intent.type.value != "service"
+    assert intent.result_unit.value == "ad"
+
+
 def test_iphone_generation_and_storage_survive_natural_query_wording():
     intent = analyze("أبي ايفون 15 برو ماكس 256 جيجا بالرياض")
 
