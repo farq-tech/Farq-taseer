@@ -3,6 +3,7 @@
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.live_haraj import haraj_queries
 
 
 def test_painting_an_apartment_is_a_service_request_not_a_property_search():
@@ -79,3 +80,12 @@ def test_iphone_storage_capacity_is_used_to_reject_a_different_capacity():
 
     assert accepted is False
     assert "spec_mismatch:storage_gb" in reasons
+
+
+def test_unmodeled_product_specs_are_kept_in_the_actual_haraj_queries():
+    intent = analyze("غسالة 10 كيلو بالرياض")
+    queries = haraj_queries(intent.search_terms, intent.location_city.value)
+
+    assert intent.understood is True
+    assert "غسالة 10 كيلو بالرياض" in intent.segment_text
+    assert any("10 كيلو" in query for query in queries[:6])

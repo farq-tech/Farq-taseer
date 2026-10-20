@@ -766,6 +766,12 @@ def analyze(query: str) -> IntentResponse:
         search_label = f"{query_label} {shown_city}".strip()
         expansions = (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
+    asked_numbers = set(re.findall(r"\d+", to_ascii_digits(segment or "")))
+    represented_numbers = set(re.findall(r"\d+", to_ascii_digits(search_label)))
+    if segment and asked_numbers - represented_numbers:
+        exact_segment = " ".join(segment.split())
+        if exact_segment not in intent.search_terms:
+            intent.search_terms.insert(1, exact_segment)
     return intent
 
 
