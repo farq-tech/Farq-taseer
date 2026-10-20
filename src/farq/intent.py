@@ -305,7 +305,7 @@ _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت"
 
 HEADS: tuple[Head, ...] = (
     _head(type="product", category="baby_products", subcategory="stroller_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("فرش عربية يويو", "مفرش عربية يويو", "مظلة عربية يويو", "مقبض عربية يويو", "مقعد عربية يويو", "هيكل عربية يويو", "مهد عربية يويو", "سرير عربية يويو", "كارسيت يويو", "ملحقات عربية يويو", "ملحقات يويو", "stroller accessories"), label="ملحقات عربة يويو", label_from_match=True, eligibility=(("فرش", "مفرش", "مظلة", "مقبض", "مقعد", "هيكل", "مهد", "سرير", "كارسيت", "ملحقات", "accessories"), ("يويو", "yoyo", "عربية", "عربة")), expansions=("ملحقات عربية يويو", "فرش عربية يويو", "مظلة عربية يويو", "مقعد عربية يويو", "مقبض عربية يويو", "Babyzen YOYO accessories")),
-    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبيزن يويو", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller", "يويو 2", "يويو 3", "yoyo2", "yoyo3", "babyzen yoyo2", "babyzen yoyo3"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "عربية يويو", "عربة يويو", "Babyzen YOYO", "YOYO stroller")),
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "عربية يويو", "عربة يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
@@ -446,6 +446,21 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
                 best = HeadMatch(12, head, 0, len(words), None)
         if best is not None:
             found.append(best)
+    # Sellers and buyers put the model and product in either order («يويو عربة أطفال»).
+    # Require both a stroller word and a YOYO/Babyzen marker so a toy search for «يويو»
+    # cannot turn into a stroller request. Accessories keep their dedicated intent.
+    if not any(item.head.subcategory == "stroller_accessories" for item in found):
+        stroller_head = next((head for head in HEADS if head.subcategory == "strollers" and head.model == "YOYO"), None)
+        if stroller_head is not None:
+            words = normalized.split()
+            stroller_at = next((i for i, word in enumerate(words) if any(form in {"عربيه", "عربه", "عربيات", "عربات", "stroller", "strollers", "pushchair"} for form in prefix_variants(word))), None)
+            yoyo_at = next((i for i, word in enumerate(words) if any(form in {"يويو", "yoyo", "babyzen", "بيبيزن", "بيبيزين"} for form in prefix_variants(word)) or re.fullmatch(r"yoyo[23]", word)), None)
+            if stroller_at is None:
+                stroller_at = next((i for i in range(len(words) - 1) if _phrase_at(words, i, "عربية أطفال") or _phrase_at(words, i, "عربة أطفال")), None)
+            if yoyo_at is None:
+                yoyo_at = next((i for i in range(len(words) - 1) if _phrase_at(words, i, "بيبي زين") or _phrase_at(words, i, "بيبي زن")), None)
+            if stroller_at is not None and yoyo_at is not None and not any(item.head is stroller_head for item in found):
+                found.append(HeadMatch(100, stroller_head, min(stroller_at, yoyo_at), max(stroller_at, yoyo_at) + 1, None))
     return found
 
 
@@ -671,7 +686,7 @@ def analyze(query: str) -> IntentResponse:
             variant = yoyo_variant.group(1)
             intent.model = known(f"YOYO {variant}", 0.95, "explicit-model-variant")
             intent.need = f"{intent.need} {variant}"
-    if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبيزن")):
+    if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبي زن", "بيبيزن", "بيبيزين")):
         intent.brand = known("Babyzen", 0.95, "explicit-brand")
     intent.result_unit = head.result_unit
     if _service_request(normalized):

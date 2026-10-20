@@ -16,6 +16,8 @@ from farq.taxonomy import read_business
         "عربية يويو",
         "عربة يويو",
         "بيبيزن يويو",
+        "عربية أطفال بيبي زن يويو",
+        "يويو بيبي زين عربية أطفال",
         "Babyzen YOYO stroller",
     ],
 )
@@ -90,6 +92,14 @@ def test_yoyo_lookalike_is_not_exact_but_can_be_a_labeled_near_match():
 def test_babyzen_brand_is_only_set_when_the_query_names_it():
     assert not analyze("عربية أطفال يويو").brand.known
     assert analyze("Babyzen YOYO stroller").brand.value == "Babyzen"
+    assert analyze("عربية أطفال بيبي زن يويو").brand.value == "Babyzen"
+
+
+def test_bare_yoyo_toy_query_does_not_become_a_stroller():
+    intent = analyze("يويو 3")
+
+    assert intent.subcategory.value != "strollers"
+    assert intent.model.value != "YOYO 3"
 
 
 @pytest.mark.parametrize(
