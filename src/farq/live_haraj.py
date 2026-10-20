@@ -96,11 +96,17 @@ _PRICE_NUMBER = re.compile(r"\d[\d,٬]*(?:\.\d+)?")
 # the number is a placeholder, not a price, and it must not feed "you save 99%".
 PRICE_FLOOR = 50
 _PRICE_AMBIGUOUS_CUES = (
-    "السوم", "مزايده", "مزاد", "يفتح الباب", "فتح الباب",
+    "السوم", "مزايده", "مزاد", "يفتح الباب", "فتح الباب", "يبدا من",
+    "ابتداء من", "بدايه المزاد", "سعر البدايه", "starting at",
     "للحبه", "للقطعه", "للوحده", "للمتر", "لليوم", "للساعه",
     "للكيلو", "للطن", "للكرتون", "بالحبه", "بالقطعه", "بالوحده",
     "بالمتر", "باليوم", "بالساعه", "بالكيلو", "بالطن", "بالكرتون",
     "per unit", "per piece", "per meter", "per day", "per hour", "per kg", "per ton",
+)
+_PRICE_RATE = re.compile(
+    r"(?:/|\bper\b|لكل)\s*(?:m(?:eter)?|kg|ton|unit|piece|day|hour|"
+    r"حبه|قطعه|وحده|متر|يوم|ساعه|كيلو|طن|كرتون)(?![\w])",
+    re.IGNORECASE,
 )
 
 
@@ -118,7 +124,7 @@ def _price(raw: dict | None) -> float | None:
     for text in texts:
         value = text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
         normalized = normalize(value)
-        if any(cue in normalized for cue in _PRICE_AMBIGUOUS_CUES):
+        if any(cue in normalized for cue in _PRICE_AMBIGUOUS_CUES) or _PRICE_RATE.search(value):
             return None
         matches = list(_PRICE_NUMBER.finditer(value))
         # A range, bid ladder, or several sizes has no single asking price. Never
