@@ -281,10 +281,10 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     intent.search_terms = terms[:MAX_TERMS * 2]
     if read["hiring"]:
         intent.result_unit = ResultUnit.SERVICE_PROVIDER
+        intent.location_sensitivity = LocationSensitivity.REQUIRED
         if not intent.type.known:
             intent.type = known("service", 0.6, "intent-model")
         if not intent.location_city.known:
-            intent.location_sensitivity = LocationSensitivity.REQUIRED
             if "location_city" not in intent.missing_decision_information:
                 intent.missing_decision_information.append("location_city")
             intent.clarification_question = "في أي مدينة؟"

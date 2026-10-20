@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 import farq.api as api_module
 from farq.api import create_app
-from farq.contracts import IntentResponse
+from farq.contracts import IntentResponse, known
 from farq.config import SearchConfig
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
@@ -180,6 +180,36 @@ def test_model_rescue_of_unknown_service_still_asks_for_city(tmp_path, monkeypat
     assert body["intent"]["result_unit"] == "service_provider"
     assert body["state"] == "CLARIFICATION_REQUIRED"
     assert body["clarification_question"] == "في أي مدينة؟"
+
+
+def test_model_rescued_service_with_city_requires_local_results(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي فني يعاير جهاز قياس الأكسجين في الرياض"
+    rule_intent = _unrecognized_intent(query)
+    rule_intent.location_city = known("الرياض", 0.95, "query-text")
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+    monkeypatch.setattr(
+        api_module.understand,
+        "read_query",
+        lambda _query: [{
+            "need": "معايرة جهاز قياس أكسجين",
+            "hiring": True,
+            "must_include": [["معايرة", "معايره"], ["جهاز"], ["أكسجين", "اكسجين"]],
+            "search_terms": ["فني معايرة جهاز أكسجين"],
+        }],
+    )
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["result_unit"] == "service_provider"
+    assert body["intent"]["location_city"]["value"] == "الرياض"
+    assert body["intent"]["location_sensitivity"] == "required"
+    assert body["state"] is None
 
 
 def test_unavailable_model_keeps_unrecognized_request_unrecognized(tmp_path, monkeypatch):
