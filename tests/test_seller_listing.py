@@ -60,6 +60,7 @@ def test_listing_details_read_the_public_ad_page():
     assert details["state"] == "available"
     assert details["title"] == "هارديسك توشيبا 1 تيرا"
     assert details["price_amount"] == 300 and details["price_currency"] == "SAR"
+    assert details["price_evidence"]["kind"] == "asking_price_in_field"
     assert details["city"]
     assert details["posted_at"].startswith("2026-10-")
     assert details["description"].startswith("هارديسك خارجي & نظيف")
@@ -78,6 +79,31 @@ def test_listing_details_drop_a_placeholder_price():
     html = _AD_PAGE.replace('"price":300', '"price":1')
     details = listing_details("https://haraj.com.sa/11190601015/x/", opener=_page(html), now=1.0)
     assert details["price_amount"] is None and details["price_currency"] is None
+
+
+def test_listing_details_do_not_present_a_down_payment_as_the_full_price():
+    html = _AD_PAGE.replace('"price":300', '"price":50000').replace(
+        'هارديسك خارجي &amp; نظيف\\nسعر البيع 300',
+        'مقدم 5,000 ريال والباقي كاش',
+    )
+    details = listing_details("https://haraj.com.sa/11190601020/x/", opener=_page(html), now=1.0)
+
+    assert details["price_amount"] is None
+    assert details["price_currency"] is None
+    assert details["price_evidence"]["kind"] == "partial_payment"
+    assert details["description"] == "مقدم 5,000 ريال والباقي كاش"
+
+
+def test_listing_details_preserve_an_estimated_price_as_estimated():
+    html = _AD_PAGE.replace('"price":300', '"price":900').replace(
+        'هارديسك خارجي &amp; نظيف\\nسعر البيع 300',
+        'السعر تقريبا 900 ريال',
+    )
+    details = listing_details("https://haraj.com.sa/11190601021/x/", opener=_page(html), now=1.0)
+
+    assert details["price_amount"] == 900
+    assert details["price_evidence"]["kind"] == "estimated_price"
+    assert details["price_evidence"]["estimated"] is True
 
 
 def test_a_deleted_or_unreachable_ad_is_unavailable_not_guessed():

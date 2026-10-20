@@ -377,10 +377,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         console = any(contains_term(title, word) for word in ("جهاز", "سوني", "بلايستيشن"))
         if game and not console:
             return False, ["game_not_console"]
-    if ad is not None and ad.price_amount is not None:
-        if intent.price_max.known and ad.price_amount > float(intent.price_max.value):
+    comparable_price = ad.comparable_price_amount if ad is not None else None
+    if comparable_price is not None:
+        if intent.price_max.known and comparable_price > float(intent.price_max.value):
             return False, ["over_price_max"]
-        if intent.price_min.known and ad.price_amount < float(intent.price_min.value):
+        if intent.price_min.known and comparable_price < float(intent.price_min.value):
             return False, ["under_price_min"]
     provider = intent.result_unit.value != "ad" or intent.type.value == "service"
     if provider and title:
