@@ -213,6 +213,8 @@ _PROPERTY_TRANSACTION_MARKERS = {
     "للتمليك",
     "تمليك",
 }
+_PROPERTY_RENT_CUES = ("ايجار", "للايجار", "تاجير", "للتاجير", "استئجار")
+_PROPERTY_SALE_CUES = ("بيع", "للبيع", "شراء", "للشراء", "تمليك", "للتمليك")
 _RENT_PERIODS = {
     "daily": ("يومي", "يوميا", "يومية", "باليوم"),
     "overnight": ("ليلي", "ليليا", "ليلة", "بالليلة", "لليلة"),
@@ -346,6 +348,18 @@ def _rent_period(text: str) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _property_transaction(text: str) -> str | None:
+    renting = has_word(text, _PROPERTY_RENT_CUES) is not None
+    selling = has_word(text, _PROPERTY_SALE_CUES) is not None
+    if renting and selling:
+        return "ambiguous"
+    if renting:
+        return "rent"
+    if selling:
+        return "sale"
+    return None
+
+
 # The rules a near match may fail. Everything else - a deleted or sold listing, another
 # city, another model or size, a wanted-ad, a price outside the asked range - still rejects.
 SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike", "yoyo_variant_mismatch")
@@ -374,6 +388,15 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     if not normalize(text):
         return False, ["no_evidence_text"]
     title = ad.title if ad is not None else ""
+    if intent.type.value == "property":
+        requested_transaction = _property_transaction(intent.original_query)
+        listing_transaction = _property_transaction(title) or _property_transaction(text)
+        if (
+            requested_transaction in {"rent", "sale"}
+            and listing_transaction in {"rent", "sale"}
+            and requested_transaction != listing_transaction
+        ):
+            return False, ["property_transaction_mismatch"]
     if ad is not None and title and intent.location_district.known and intent.location_district.value in _SIDES:
         # «أرض شمال الرياض»: a listing that says «شرق الرياض», or names «حي الروضة» on the
         # east side, is on another side of the city. One that names no side is not judged.

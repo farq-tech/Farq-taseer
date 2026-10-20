@@ -138,7 +138,7 @@ def test_property_sale_and_rental_queries_reject_the_opposite_transaction():
 
 def test_property_near_match_does_not_relax_requested_transaction():
     rent_intent = analyze("استراحة للإيجار بجدة")
-    sale = _listing("استراحة للبيع", "موقعها مميز", city="جده")
+    sale = _listing("استراحة للبيع", "موقعها مميز متاحة للإيجار", city="جده")
 
     assert decide(rent_intent, sale, sale.seller, relaxed=True)[0] is False
 
