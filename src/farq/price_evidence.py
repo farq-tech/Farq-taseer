@@ -180,6 +180,13 @@ def infer_price_evidence(
     if _contains_any(all_text, _CONTACT):
         return PriceEvidence(kind="contact_for_price")
 
+    # Descriptions can be long, so the historical wording may be far from the
+    # explicit price label. Do not trust a current asking-price claim when the
+    # same ad also discusses a past purchase price or a former price. The field
+    # price path applies the same conservative rule above.
+    if explicit and _contains_any(all_text, _HISTORICAL):
+        return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1])
+
     if explicit:
         text_values = {
             (normalize(match.group(1)), normalize(match.group(2)))
