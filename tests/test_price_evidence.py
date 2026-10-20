@@ -101,6 +101,27 @@ from farq.price_evidence import infer_price_evidence
             300,
         ),
         (
+            "سلعة مستعملة",
+            "السعر المطلوب 400-500 ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "للبيع ب 300 أو 400 ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "كان السعر المطلوب 400 ريال",
+            None,
+            "ambiguous_amount",
+            None,
+        ),
+        (
             "سيارة للبيع",
             "السعر 900 ريال والتوصيل 50 ريال",
             None,
