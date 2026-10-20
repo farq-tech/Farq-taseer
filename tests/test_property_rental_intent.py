@@ -105,6 +105,14 @@ def test_property_nouns_do_not_override_service_requests(query):
     assert intent.result_unit == ResultUnit.SERVICE_PROVIDER
 
 
+def test_school_used_as_a_location_does_not_turn_a_house_search_into_a_service():
+    intent = analyze("شقة للإيجار قرب مدرسة بالرياض")
+
+    assert intent.type.value == "property"
+    assert intent.subcategory.value == "apartment"
+    assert "قرب" in intent.need
+
+
 def test_weekend_chalet_search_is_classified_as_rental():
     intent = analyze("أبي شاليه بالويكند في جدة")
 

@@ -262,8 +262,15 @@ _SERVICE_AGENTS = {
 
 
 def _service_request(normalized: str) -> bool:
-    words = set(normalized.split())
-    return bool(words & _SERVICE_VERBS) or bool(words & _SERVICE_AGENTS)
+    words = normalized.split()
+    service_agents = set(words) & _SERVICE_AGENTS
+    nearby_markers = {"قرب", "جنب", "بجانب", "بجوار", "حول", "قريب", "قريبة", "بالقرب"}
+    if "مدرسه" in service_agents:
+        school_at = words.index("مدرسه")
+        preceding = set(words[max(0, school_at - 2) : school_at])
+        if preceding & nearby_markers or preceding == {"من", "بالقرب"}:
+            service_agents.discard("مدرسه")
+    return bool(set(words) & _SERVICE_VERBS) or bool(service_agents)
 
 
 @dataclass(frozen=True)
