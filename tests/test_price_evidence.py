@@ -122,6 +122,27 @@ from farq.price_evidence import infer_price_evidence
             None,
         ),
         (
+            "سلعة مستعملة",
+            "السعر المطلوب 300 ألف - 400 ألف ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "للبيع ب 300 الف - 400 الف ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "السعر من 300 ألف إلى 400 ألف ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
             "سيارة للبيع",
             "السعر 900 ريال والتوصيل 50 ريال",
             None,
@@ -193,6 +214,14 @@ def test_unit_prices_named_as_price_of_unit_are_not_listing_totals(description):
     evidence = infer_price_evidence("عقار أو سلعة", description, None)
 
     assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
+@pytest.mark.parametrize("price_text", ["300 ألف - 400 ألف", "300 ألف إلى 400 ألف"])
+def test_scaled_ranges_in_price_field_are_not_single_listing_prices(price_text):
+    evidence = infer_price_evidence("سلعة مستعملة", None, None, price_text)
+
+    assert evidence.kind == "price_range"
     assert evidence.amount is None
 
 
