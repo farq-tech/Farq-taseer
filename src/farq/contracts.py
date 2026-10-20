@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
@@ -112,6 +112,24 @@ class Seller(ContractModel):
     specialty_evidence: list[str] = Field(default_factory=list)
 
 
+class PriceEvidence(ContractModel):
+    """What an ad says about price; this is evidence, not a verified deal price."""
+
+    kind: Literal[
+        "asking_price_in_field",
+        "explicit_text_price",
+        "auction_without_price",
+        "contact_for_price",
+        "price_range",
+        "unit_or_installment_price",
+        "historical_price",
+        "ambiguous_amount",
+        "no_price_signal",
+    ] = "no_price_signal"
+    amount: float | None = None
+    source: Literal["price_field", "title", "description"] | None = None
+
+
 class Ad(ContractModel):
     id: str
     title: str
@@ -121,6 +139,7 @@ class Ad(ContractModel):
     district: str | None = None
     price_amount: float | None = None
     price_currency: str | None = None
+    price_evidence: PriceEvidence = Field(default_factory=PriceEvidence)
     posted_at: str | None = None
     image_ref: str | None = None
     image_urls: list[str] = Field(default_factory=list)
