@@ -92,6 +92,32 @@ def test_babyzen_brand_is_only_set_when_the_query_names_it():
     assert analyze("Babyzen YOYO stroller").brand.value == "Babyzen"
 
 
+@pytest.mark.parametrize(
+    "query,model",
+    [
+        ("عربية أطفال يويو 2", "YOYO 2"),
+        ("عربة اطفال يويـو ٣", "YOYO 3"),
+        ("Babyzen YOYO3 stroller", "YOYO 3"),
+    ],
+)
+def test_explicit_yoyo_generation_is_preserved_in_intent_and_search(query, model):
+    intent = analyze(query)
+
+    assert intent.model.value == model
+    assert any(model.split()[-1] in term and ("يويو" in term or "YOYO" in term) for term in intent.search_terms)
+
+
+def test_yoyo_generations_do_not_match_each_other_as_exact_results():
+    intent = analyze("عربية أطفال يويو 2")
+    seller = Seller(id="seller-1", name="معلن")
+    yoyo3 = Ad(id="ad-3", title="عربية أطفال يويو 3 أصلية", seller=seller)
+    unspecified = Ad(id="ad-unknown", title="عربة أطفال يويو للبيع", seller=seller)
+
+    assert decide(intent, yoyo3, seller) == (False, ["yoyo_variant_mismatch"])
+    assert decide(intent, yoyo3, seller, relaxed=True)[0] is True
+    assert decide(intent, unspecified, seller)[0] is True
+
+
 def test_stroller_accessory_search_is_separate_from_complete_stroller_search():
     intent = analyze("مفرش عربية يويو")
 

@@ -26,6 +26,7 @@ _LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
 _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
 _MODEL_LOOKALIKE = ("مستوحى", "مستوحاة", "شبيه", "شبيهه", "مشابه", "مشابهه", "تقليد", "على شكل", "inspired", "lookalike", "similar to")
+_YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 # A listing that leads with the accessory sells the accessory, not the device; one that leads
 # with another thing («كاميرا مراقبة بطارية طاقة شمسية», «كشاف طاقة شمسية») sells that thing,
 # whatever it mentions inside. Specific nouns only: «جهاز بلايستيشن» still leads with the device.
@@ -317,7 +318,7 @@ def _explicit_condition(text: str) -> str | None:
 
 # The rules a near match may fail. Everything else - a deleted or sold listing, another
 # city, another model or size, a wanted-ad, a price outside the asked range - still rejects.
-SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike")
+SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike", "yoyo_variant_mismatch")
 
 
 def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed: bool = False) -> tuple[bool, list[str]]:
@@ -420,8 +421,13 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["leftovers_not_provider"]
     if title and has_word(title, _GONE):
         return False, ["already_sold"]
-    if intent.subcategory.value == "strollers" and intent.model.value == "YOYO" and not relaxed and has_word(text, _MODEL_LOOKALIKE):
+    if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO") and not relaxed and has_word(text, _MODEL_LOOKALIKE):
         return False, ["model_lookalike"]
+    if intent.subcategory.value == "strollers" and intent.model.value in {"YOYO 2", "YOYO 3"} and not relaxed:
+        asked_variant = str(intent.model.value[-1])
+        stated_variants = set(_YOYO_VARIANT.findall(to_ascii_digits(normalize(text))))
+        if stated_variants and asked_variant not in stated_variants:
+            return False, ["yoyo_variant_mismatch"]
     if intent.result_unit.value == "ad" and title:
         words = tokens(title)
         if intent.type.value == "vehicle" and any(word in normalize(title) for word in _SCRAPPED_CAR):

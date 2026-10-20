@@ -36,6 +36,7 @@ _WANT_WORDS = {
     "i",
 }
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
+_YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
 _PRICE_MAX = re.compile(r"(?:اقل من|تحت|بحد اقصى|اقل|ما يتعدى|ما يزيد عن)\s+(\d{3,7})")
 _PRICE_MIN = re.compile(r"(?:اكثر من|فوق|يبدا من)\s+(\d{3,7})")
@@ -304,7 +305,7 @@ _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت"
 
 HEADS: tuple[Head, ...] = (
     _head(type="product", category="baby_products", subcategory="stroller_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("فرش عربية يويو", "مفرش عربية يويو", "مظلة عربية يويو", "مقبض عربية يويو", "مقعد عربية يويو", "هيكل عربية يويو", "مهد عربية يويو", "سرير عربية يويو", "كارسيت يويو", "ملحقات عربية يويو", "ملحقات يويو", "stroller accessories"), label="ملحقات عربة يويو", label_from_match=True, eligibility=(("فرش", "مفرش", "مظلة", "مقبض", "مقعد", "هيكل", "مهد", "سرير", "كارسيت", "ملحقات", "accessories"), ("يويو", "yoyo", "عربية", "عربة")), expansions=("ملحقات عربية يويو", "فرش عربية يويو", "مظلة عربية يويو", "مقعد عربية يويو", "مقبض عربية يويو", "Babyzen YOYO accessories")),
-    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبيزن يويو", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "عربية يويو", "عربة يويو", "Babyzen YOYO", "YOYO stroller")),
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبيزن يويو", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller", "يويو 2", "يويو 3", "yoyo2", "yoyo3", "babyzen yoyo2", "babyzen yoyo3"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "عربية يويو", "عربة يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
@@ -664,6 +665,12 @@ def analyze(query: str) -> IntentResponse:
         intent.brand = known(head.brand, 0.8, head.phrases[0])
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
+    if head.subcategory == "strollers":
+        yoyo_variant = _YOYO_VARIANT.search(to_ascii_digits(normalized))
+        if yoyo_variant and ("يويو" in normalized or "yoyo" in normalized):
+            variant = yoyo_variant.group(1)
+            intent.model = known(f"YOYO {variant}", 0.95, "explicit-model-variant")
+            intent.need = f"{intent.need} {variant}"
     if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبيزن")):
         intent.brand = known("Babyzen", 0.95, "explicit-brand")
     intent.result_unit = head.result_unit
@@ -708,6 +715,10 @@ def analyze(query: str) -> IntentResponse:
     intent.title_groups = [list(group) for group in head.title_groups]
     search_label = f"{query_label} {shown_city}".strip()
     expansions = head.expansions
+    if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
+        variant = intent.model.value[-1]
+        expansions = tuple(f"{term} {variant}" if "yoyo" in normalize(term) or "يويو" in normalize(term) else term for term in expansions)
+        expansions = (*expansions, f"Babyzen YOYO {variant}", f"YOYO {variant} stroller")
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
     part = _car_part(normalized) if head.type == "vehicle" and head.subcategory == "cars" else None
