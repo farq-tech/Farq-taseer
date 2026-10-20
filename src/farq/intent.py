@@ -36,6 +36,7 @@ _WANT_WORDS = {
     "i",
 }
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
+_YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
 _PRICE_MAX = re.compile(r"(?:اقل من|تحت|بحد اقصى|اقل|ما يتعدى|ما يزيد عن)\s+(\d{3,7})")
 _PRICE_MIN = re.compile(r"(?:اكثر من|فوق|يبدا من)\s+(\d{3,7})")
@@ -302,7 +303,47 @@ _CARPENTRY = ("نجار", "نجاره", "منجره", "تفصيل دواليب",
 _CARPENTER_QUERIES = ("نجار", "نجار موبيليا", "منجرة", "تفصيل خزائن", "نجار ابواب", "نجاره", "نجار مسلح")
 _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت", "سوكريت", "سكرت", "شاور", "شاورات", "شورات", "واجهات", "واجهة", "قاطع", "قواطع")
 
+def _stroller_accessory_heads() -> tuple[Head, ...]:
+    """Keep accessory searches specific to the requested part and stroller family."""
+    heads = []
+    for label, noun_forms in (
+        ("فرش", ("فرش", "مفرش")),
+        ("مظلة", ("مظلة", "مظلات")),
+        ("مقبض", ("مقبض", "مقابض")),
+        ("مقعد", ("مقعد", "مقاعد")),
+        ("هيكل", ("هيكل", "هياكل")),
+        ("مهد", ("مهد", "مهاد", "سرير")),
+        ("كارسيت", ("كارسيت",)),
+        ("ملحقات", ("ملحقات", "accessories")),
+    ):
+        phrases = tuple(
+            f"{noun} {vehicle} يويو"
+            for noun in noun_forms
+            for vehicle in ("عربية", "عربة")
+        ) + tuple(f"يويو {noun} {vehicle}" for noun in noun_forms for vehicle in ("عربية", "عربة"))
+        heads.append(_head(
+            type="product", category="baby_products", subcategory="stroller_accessories",
+            result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+            phrases=phrases, label=f"{label} عربة يويو", label_from_match=True,
+            eligibility=(noun_forms, ("يويو", "yoyo", "babyzen"), ("عربية", "عربيه", "عربة", "عربه", "stroller", "strollers", "pushchair")),
+            expansions=tuple(phrases[:4]) + (f"Babyzen YOYO {label}",),
+        ))
+    heads.append(_head(
+        type="product", category="baby_products", subcategory="stroller_accessories",
+        result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+        phrases=("stroller accessories", "stroller accessory", "ملحقات عربات الأطفال", "ملحقات عربات اطفال"),
+        label="ملحقات عربة أطفال", label_from_match=True,
+        eligibility=(("accessories", "accessory", "ملحقات"), ("stroller", "strollers", "عربية", "عربيه", "عربة", "عربه", "pushchair")),
+        expansions=("stroller accessories", "stroller accessory", "ملحقات عربات الأطفال"),
+    ))
+    return tuple(heads)
+
+_STROLLER_ACCESSORY_HEADS = _stroller_accessory_heads()
+
 HEADS: tuple[Head, ...] = (
+    *_STROLLER_ACCESSORY_HEADS,
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون برو ماكس", "iphone pro max"), brand="Apple", model="iPhone Pro Max", eligibility=(("ايفون", "iphone"), ("برو ماكس", "pro max")), expansions=("ايفون برو ماكس", "iphone pro max")),
@@ -442,6 +483,21 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
                 best = HeadMatch(12, head, 0, len(words), None)
         if best is not None:
             found.append(best)
+    # Sellers and buyers put the model and product in either order («يويو عربة أطفال»).
+    # Require both a stroller word and a YOYO/Babyzen marker so a toy search for «يويو»
+    # cannot turn into a stroller request. Accessories keep their dedicated intent.
+    if not any(item.head.subcategory == "stroller_accessories" for item in found):
+        stroller_head = next((head for head in HEADS if head.subcategory == "strollers" and head.model == "YOYO"), None)
+        if stroller_head is not None:
+            words = normalized.split()
+            stroller_at = next((i for i, word in enumerate(words) if any(form in {"عربيه", "عربه", "عربيات", "عربات", "stroller", "strollers", "pushchair"} for form in prefix_variants(word))), None)
+            yoyo_at = next((i for i, word in enumerate(words) if any(form in {"يويو", "yoyo", "babyzen", "بيبيزن", "بيبيزين"} for form in prefix_variants(word)) or re.fullmatch(r"(?:yoyo|يويو)[23]", word)), None)
+            if stroller_at is None:
+                stroller_at = next((i for i in range(len(words) - 1) if _phrase_at(words, i, "عربية أطفال") or _phrase_at(words, i, "عربة أطفال")), None)
+            if yoyo_at is None:
+                yoyo_at = next((i for i in range(len(words) - 1) if _phrase_at(words, i, "بيبي زين") or _phrase_at(words, i, "بيبي زن")), None)
+            if stroller_at is not None and yoyo_at is not None and not any(item.head is stroller_head for item in found):
+                found.append(HeadMatch(100, stroller_head, min(stroller_at, yoyo_at), max(stroller_at, yoyo_at) + 1, None))
     return found
 
 
@@ -652,6 +708,8 @@ def analyze(query: str) -> IntentResponse:
         intent.need = f"{query_label} من {city_label(route[0])} إلى {city_label(route[1])}"
     else:
         intent.need = f"{query_label} {shown_city}".strip()
+    if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
+        intent.need = f"{intent.need} {intent.model.value[-1]}"
     intent.type = known(head.type, 0.8 if head.category else 0.45, head.phrases[0])
     if head.category:
         intent.category = known(head.category, 0.75, head.phrases[0])
@@ -661,6 +719,14 @@ def analyze(query: str) -> IntentResponse:
         intent.brand = known(head.brand, 0.8, head.phrases[0])
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
+    if head.subcategory == "strollers":
+        yoyo_variant = _YOYO_VARIANT.search(to_ascii_digits(normalized))
+        if yoyo_variant and ("يويو" in normalized or "yoyo" in normalized):
+            variant = yoyo_variant.group(1)
+            intent.model = known(f"YOYO {variant}", 0.95, "explicit-model-variant")
+            intent.need = f"{intent.need} {variant}"
+    if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبي زن", "بيبيزن", "بيبيزين")):
+        intent.brand = known("Babyzen", 0.95, "explicit-brand")
     intent.result_unit = head.result_unit
     if _service_request(normalized):
         # Hiring, not buying. A known head that could go either way (hybrid) resolves to the
@@ -702,7 +768,18 @@ def analyze(query: str) -> IntentResponse:
         intent.eligibility_min = len(head.eligibility) - len(head.eligibility) // 3
     intent.title_groups = [list(group) for group in head.title_groups]
     search_label = f"{query_label} {shown_city}".strip()
+    if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
+        search_label = f"{search_label} {intent.model.value[-1]}"
     expansions = head.expansions
+    if head.subcategory == "strollers" and head.model == "YOYO":
+        expansions = (*expansions, "يويو عربة أطفال")
+        # The live Haraj request budget is six distinct phrases. Keep the English
+        # Babyzen/YOYO searches inside that budget instead of spending it on a fourth
+        # Arabic word-order/number variant.
+        expansions = tuple(term for term in expansions if normalize(term) != normalize("عربات أطفال يويو"))
+    if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
+        variant = intent.model.value[-1]
+        expansions = tuple(re.sub(r"(يويو|yoyo)", lambda match: f"{match.group(1)} {variant}", term, count=1, flags=re.IGNORECASE) for term in expansions)
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
     part = _car_part(normalized) if head.type == "vehicle" and head.subcategory == "cars" else None
