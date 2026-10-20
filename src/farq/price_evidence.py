@@ -14,7 +14,7 @@ from farq.text import normalize, to_ascii_digits
 PRICE_FLOOR = 50
 
 _EXPLICIT_PRICE = re.compile(
-    r"(?:سعر\s+البيع|السعر|بسعر|سعر)\s*(?:هو\s*)?[:：=]?\s*"
+    r"(?:سعر\s+البيع|السعر(?:\s+المطلوب)?|بسعر|سعر|للبيع\s+ب)\s*(?:هو\s*)?[:：=]?\s*"
     r"([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?",
     re.IGNORECASE,
 )

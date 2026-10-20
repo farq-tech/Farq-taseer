@@ -87,6 +87,20 @@ from farq.price_evidence import infer_price_evidence
             900,
         ),
         (
+            "جهاز للمشي بحالة ممتاز للبيع",
+            "السعر المطلوب 400 ريال غير قابل للتفاوض",
+            None,
+            "explicit_text_price",
+            400,
+        ),
+        (
+            "كنب اصفر للبيع ب 300 ريال",
+            None,
+            None,
+            "explicit_text_price",
+            300,
+        ),
+        (
             "سيارة للبيع",
             "السعر 900 ريال والتوصيل 50 ريال",
             None,
