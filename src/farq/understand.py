@@ -240,15 +240,32 @@ def read_query(query: str) -> list[dict] | None:
 
 
 def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
-    intent.need = read["need"]
-    intent.eligibility_groups = [list(group) for group in read["must_include"]]
+    preserve_identity = intent.model.known or intent.brand.known
+    rule_need = intent.need
+    rule_groups = [list(group) for group in intent.eligibility_groups]
+    rule_terms = list(intent.search_terms)
+    intent.need = rule_need if preserve_identity and rule_need else read["need"]
+    read_groups = [list(group) for group in read["must_include"]]
+    if preserve_identity:
+        merged_groups: list[list[str]] = []
+        seen_groups: set[tuple[str, ...]] = set()
+        for group in (*rule_groups, *read_groups):
+            key = tuple(sorted(normalize(word) for word in group))
+            if key not in seen_groups:
+                seen_groups.add(key)
+                merged_groups.append(group)
+        intent.eligibility_groups = merged_groups
+    else:
+        intent.eligibility_groups = read_groups
     # Every group must hit. The rules relax this for their long tail because they only have
     # the customer's raw words; the model returns the words that matter, so all of them do.
     intent.eligibility_min = None
     city = intent.location_city.value if isinstance(intent.location_city.value, str) else ""
     terms: list[str] = []
-    for term in read["search_terms"]:
-        for candidate in (term, f"{term} {city}".strip() if city else ""):
+    search_terms = [*rule_terms, *read["search_terms"]] if preserve_identity else read["search_terms"]
+    for term in search_terms:
+        candidates = (term,) if preserve_identity else (term, f"{term} {city}".strip() if city else "")
+        for candidate in candidates:
             if candidate and candidate not in terms:
                 terms.append(candidate)
     intent.search_terms = terms[:MAX_TERMS * 2]
