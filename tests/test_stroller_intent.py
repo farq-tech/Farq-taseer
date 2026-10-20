@@ -3,6 +3,7 @@ import pytest
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.live_haraj import haraj_queries
 from farq.taxonomy import read_business
 
 
@@ -115,6 +116,22 @@ def test_explicit_yoyo_generation_is_preserved_in_intent_and_search(query, model
 
     assert intent.model.value == model
     assert any(model.split()[-1] in term and ("يويو" in term or "YOYO" in term) for term in intent.search_terms)
+
+
+@pytest.mark.parametrize("query", ["عربية أطفال يويو", "عربية أطفال يويو 2"])
+def test_haraj_query_budget_keeps_arabic_and_english_yoyo_searches(query):
+    intent = analyze(query)
+
+    # Production searches the first six unique phrases. Keep both English forms
+    # inside that budget so Arabic synonyms do not crowd them out.
+    searched = haraj_queries(intent.search_terms, None)[:6]
+
+    assert len(searched) == 6
+    assert any("Babyzen YOYO" in term for term in searched)
+    assert any("YOYO" in term and "stroller" in term for term in searched)
+    if intent.model.value == "YOYO 2":
+        assert any("YOYO 2" in term and "stroller" in term for term in searched)
+        assert all("2" in term for term in searched)
 
 
 def test_yoyo_generations_do_not_match_each_other_as_exact_results():
