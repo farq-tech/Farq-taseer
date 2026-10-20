@@ -78,6 +78,15 @@ def test_stroller_with_included_accessories_is_still_a_stroller_listing():
     assert decide(intent, bundle, seller)[0] is True
 
 
+def test_yoyo_lookalike_is_not_exact_but_can_be_a_labeled_near_match():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    inspired = Ad(id="ad-1", title="عربية أطفال بتصميم مستوحى من يويو", seller=seller)
+
+    assert decide(intent, inspired, seller) == (False, ["model_lookalike"])
+    assert decide(intent, inspired, seller, relaxed=True)[0] is True
+
+
 def test_babyzen_brand_is_only_set_when_the_query_names_it():
     assert not analyze("عربية أطفال يويو").brand.known
     assert analyze("Babyzen YOYO stroller").brand.value == "Babyzen"
