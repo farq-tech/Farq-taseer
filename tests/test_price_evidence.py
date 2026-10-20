@@ -32,6 +32,27 @@ from farq.price_evidence import infer_price_evidence
         ),
         (
             "سيارة للبيع",
+            "مقدم 10,000 والباقي كاش",
+            50000,
+            "partial_payment",
+            None,
+        ),
+        (
+            "سيارة للبيع",
+            "10,000 مقدم والباقي كاش",
+            50000,
+            "partial_payment",
+            None,
+        ),
+        (
+            "سيارة للبيع",
+            "دفعة 10,000 والباقي أقساط",
+            50000,
+            "partial_payment",
+            None,
+        ),
+        (
+            "سيارة للبيع",
             "السعر 50,000 ريال، دفعة تحت الحساب 5,000 ريال والباقي كاش",
             50000,
             "partial_payment",
@@ -135,3 +156,14 @@ def test_down_payment_is_never_used_as_a_comparable_listing_price():
 
     assert evidence.kind == "partial_payment"
     assert ad.comparable_price_amount is None
+
+
+def test_seller_greeting_with_the_word_muqaddam_is_not_a_deposit():
+    evidence = infer_price_evidence(
+        "سيارة للبيع",
+        "مقدم لكم أحدث الموديلات لعام 2025",
+        50000,
+    )
+
+    assert evidence.kind == "asking_price_in_field"
+    assert evidence.amount == 50000

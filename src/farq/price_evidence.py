@@ -50,6 +50,9 @@ _PARTIAL_PAYMENT = (
     "عربون", "دفعة اولى", "الدفعة الاولى", "دفعة مقدمه", "الدفعة المقدمه",
     "مبلغ الحجز", "رسوم الحجز", "دفعة حجز", "دفعة تحت الحساب", "مبلغ تحت الحساب",
 )
+_BARE_AMOUNT = re.compile(r"(?<![\w])([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?![\w])")
+_DEPOSIT_BEFORE_AMOUNT = re.compile(r"(?:^|\s)(?:مبلغ\s+)?(?:مقدم|مقدمه|عربون)(?:\s+(?:مبلغ|قدره))?\s*[:=]?\s*$")
+_DEPOSIT_AFTER_AMOUNT = re.compile(r"^\s*(?:مقدم|مقدمه|عربون)(?!\s+لكم)(?:\s+(?:مبلغ|قدره))?(?:\s|$)")
 _CURRENCY_AMOUNT = re.compile(
     r"(?<![\w])([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.?\s*س|ر\.س|﷼|⃁|SAR|SR)(?![\w])",
     re.IGNORECASE,
@@ -118,13 +121,18 @@ def _has_separate_additional_charge(text: str) -> bool:
 def _has_partial_payment(text: str) -> bool:
     if _contains_any(text, _PARTIAL_PAYMENT):
         return True
-    # Sellers often write only «مقدم 5,000 ريال والباقي كاش». Treat «مقدم» as a
-    # deposit signal only when a currency amount is nearby, to avoid matching
-    # unrelated wording such as «مقدم لكم» in the ad description.
+    # Sellers often omit the currency after the deposit («مقدم 5,000 والباقي كاش»).
+    # Treat a numeric amount near a deposit cue as partial payment even without «ريال».
+    # «مقدم لكم» is common seller prose, so it only counts when the amount follows the
+    # cue directly rather than appearing later in that phrase.
     normalized = normalize(text)
-    for amount in _CURRENCY_AMOUNT.finditer(normalized):
-        nearby = normalized[max(0, amount.start() - 36): min(len(normalized), amount.end() + 36)]
-        if _contains_any(nearby, ("مقدم", "مقدمه")):
+    for amount in _BARE_AMOUNT.finditer(normalized):
+        before = normalized[max(0, amount.start() - 24):amount.start()].rstrip()
+        after = normalized[amount.end():min(len(normalized), amount.end() + 48)].lstrip()
+        around = f"{before} {amount.group(1)} {after}"
+        if _DEPOSIT_BEFORE_AMOUNT.search(before[-40:]) or _DEPOSIT_AFTER_AMOUNT.search(after[:32]):
+            return True
+        if _contains_any(around, ("دفعة", "دفعه")) and _contains_any(around, ("الباقي", "باقي", "المتبقي", "يتبقى", "قسط", "اقساط", "شهري")):
             return True
     return False
 
