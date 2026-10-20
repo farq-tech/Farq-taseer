@@ -26,7 +26,7 @@ from collections import OrderedDict
 
 import httpx
 
-from farq.contracts import IntentResponse, ResultUnit
+from farq.contracts import IntentResponse, LocationSensitivity, ResultUnit, known
 from farq.text import normalize
 
 log = logging.getLogger("farq.understand")
@@ -46,6 +46,7 @@ PROMPT = """أنت تقرأ طلب عميل سعودي يريد تسعيرة، �
 قد يكتب بالعربية الفصحى أو باللهجة أو بالإنجليزية أو يمزج بينها، وقد يخطئ في كتابة اسم
 الماركة أو الموديل. لا تعتبر اللغة أو اختلاف الكتابة سببًا لرفض طلب مفهوم؛ استخدم الصيغ
 الشائعة في إعلانات حراج ضمن المرادفات وعبارات البحث، ولا تخترع تفاصيل غير مذكورة.
+إذا لم يحدد الطلب سلعة أو خدمة بعينها، أو كان غير مفهوم، أخرج {"needs": []} بدل تخمين ما يريده.
 
 أخرج JSON فقط، بهذا الشكل بالضبط:
 {"needs": [{"need": "...", "hiring": true, "must_include": [["..."]], "search_terms": ["..."]}]}
@@ -248,6 +249,7 @@ def read_query(query: str) -> list[dict] | None:
 
 
 def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
+    was_ununderstood = not intent.understood
     preserve_identity = intent.model.known or intent.brand.known
     rule_need = intent.need
     rule_groups = [list(group) for group in intent.eligibility_groups]
@@ -279,9 +281,28 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     intent.search_terms = terms[:MAX_TERMS * 2]
     if read["hiring"]:
         intent.result_unit = ResultUnit.SERVICE_PROVIDER
+        if not intent.type.known:
+            intent.type = known("service", 0.6, "intent-model")
+        if not intent.location_city.known:
+            intent.location_sensitivity = LocationSensitivity.REQUIRED
+            if "location_city" not in intent.missing_decision_information:
+                intent.missing_decision_information.append("location_city")
+            intent.clarification_question = "في أي مدينة؟"
     elif intent.result_unit == ResultUnit.SERVICE_PROVIDER:
         # He is buying a thing; do not let the rules' hiring guess stand.
         intent.result_unit = ResultUnit.AD
+        if not intent.type.known:
+            intent.type = known("product", 0.6, "intent-model")
+    elif not intent.type.known:
+        intent.type = known("product", 0.6, "intent-model")
+    if was_ununderstood:
+        # A valid model reading resolved the rules' generic "what do you need?" prompt.
+        # Keep the city question above for service requests when no city was provided.
+        intent.missing_decision_information = [
+            field for field in intent.missing_decision_information if field != "need"
+        ]
+        if "location_city" not in intent.missing_decision_information:
+            intent.clarification_question = None
     intent.understood = True
     return intent
 

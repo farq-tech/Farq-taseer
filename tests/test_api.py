@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import farq.api as api_module
 from farq.api import create_app
+from farq.contracts import IntentResponse
 from farq.config import SearchConfig
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
@@ -108,6 +110,95 @@ def test_search_trace_is_stored(tmp_path: Path):
     assert trace.json()["state"] == "CLARIFICATION_REQUIRED"
     # Only the account that searched can read the trace.
     assert api.get(f"/v1/search/{trace_id}/trace", headers=signed_in(api)).status_code == 404
+
+
+def _unrecognized_intent(query: str) -> IntentResponse:
+    return IntentResponse(
+        original_query=query,
+        understood=False,
+        missing_decision_information=["need"],
+        clarification_question="وش الخدمة أو الغرض اللي تبيه؟",
+    )
+
+
+def test_intent_endpoint_uses_inline_model_reading_for_unknown_clear_need(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي جهاز قياس الأكسجين المنزلي"
+    rule_intent = _unrecognized_intent(query)
+    reads = []
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+
+    def read_query(_query):
+        reads.append(_query)
+        return [{
+            "need": "جهاز قياس أكسجين",
+            "hiring": False,
+            "must_include": [["جهاز"], ["أكسجين", "اكسجين"]],
+            "search_terms": ["جهاز قياس أكسجين", "جهاز أكسجين منزلي"],
+        }]
+
+    monkeypatch.setattr(api_module.understand, "read_query", read_query)
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] is None
+    assert body["intent"]["understood"] is True
+    assert body["intent"]["type"]["value"] == "product"
+    assert body["intent"]["need"] == "جهاز قياس أكسجين"
+    assert body["clarification_question"] is None
+    assert reads == [query]
+
+
+def test_model_rescue_of_unknown_service_still_asks_for_city(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي فني يعاير جهاز قياس الأكسجين"
+    rule_intent = _unrecognized_intent(query)
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+    monkeypatch.setattr(
+        api_module.understand,
+        "read_query",
+        lambda _query: [{
+            "need": "معايرة جهاز قياس أكسجين",
+            "hiring": True,
+            "must_include": [["معايرة", "معايره"], ["جهاز"], ["أكسجين", "اكسجين"]],
+            "search_terms": ["فني معايرة جهاز أكسجين"],
+        }],
+    )
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["understood"] is True
+    assert body["intent"]["result_unit"] == "service_provider"
+    assert body["state"] == "CLARIFICATION_REQUIRED"
+    assert body["clarification_question"] == "في أي مدينة؟"
+
+
+def test_unavailable_model_keeps_unrecognized_request_unrecognized(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي جهاز قياس الأكسجين المنزلي"
+    rule_intent = _unrecognized_intent(query)
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+    monkeypatch.setattr(api_module.understand, "read_query", lambda _query: None)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["understood"] is False
+    assert body["state"] == "NOT_UNDERSTOOD"
+    assert body["clarification_question"] == "وش الخدمة أو الغرض اللي تبيه؟"
 
 
 def test_guest_request_seller_price_and_activity(tmp_path: Path):
