@@ -48,7 +48,7 @@ _UNIT_OR_INSTALLMENT = (
 )
 _PARTIAL_PAYMENT = (
     "عربون", "دفعة اولى", "الدفعة الاولى", "دفعة مقدمه", "الدفعة المقدمه",
-    "مبلغ الحجز", "رسوم الحجز", "دفعة حجز",
+    "مبلغ الحجز", "رسوم الحجز", "دفعة حجز", "دفعة تحت الحساب", "مبلغ تحت الحساب",
 )
 _CURRENCY_AMOUNT = re.compile(
     r"(?<![\w])([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.?\s*س|ر\.س|﷼|⃁|SAR|SR)(?![\w])",
@@ -98,6 +98,20 @@ def _has_alternate_prices(text: str) -> bool:
         if _is_additional_charge_at(text, match.start("second"), match.end("second")):
             continue
         return True
+    return False
+
+
+def _has_partial_payment(text: str) -> bool:
+    if _contains_any(text, _PARTIAL_PAYMENT):
+        return True
+    # Sellers often write only «مقدم 5,000 ريال والباقي كاش». Treat «مقدم» as a
+    # deposit signal only when a currency amount is nearby, to avoid matching
+    # unrelated wording such as «مقدم لكم» in the ad description.
+    normalized = normalize(text)
+    for amount in _CURRENCY_AMOUNT.finditer(normalized):
+        nearby = normalized[max(0, amount.start() - 36): min(len(normalized), amount.end() + 36)]
+        if _contains_any(nearby, ("مقدم", "مقدمه")):
+            return True
     return False
 
 
@@ -155,6 +169,9 @@ def infer_price_evidence(
                 return PriceEvidence(kind="ambiguous_amount", amount=low_or_field_amount, source="price_field")
 
     if field_amount is not None:
+        if _has_partial_payment(all_text):
+            source = "title" if _has_partial_payment(title_text) else "description"
+            return PriceEvidence(kind="partial_payment", source=source)
         # A separate currency-marked amount can be a former price, installment,
         # delivery charge, or a second option. Do not silently prefer the field.
         conflicting_currency_amounts = []
@@ -165,7 +182,7 @@ def infer_price_evidence(
             if _is_additional_charge_at(all_text, currency_match.start(1), currency_match.end(1)):
                 continue
             conflicting_currency_amounts.append(amount)
-        if explicit and _contains_any(all_text, _PARTIAL_PAYMENT):
+        if explicit and _has_partial_payment(all_text):
             return PriceEvidence(kind="partial_payment", source=explicit[0][1])
         if conflicting_currency_amounts:
             return PriceEvidence(kind="ambiguous_amount", source="price_field")
@@ -203,7 +220,7 @@ def infer_price_evidence(
     if _contains_any(all_text, _CONTACT):
         return PriceEvidence(kind="contact_for_price")
 
-    if _contains_any(all_text, _PARTIAL_PAYMENT) and _CURRENCY_AMOUNT.search(all_text):
+    if _has_partial_payment(all_text) and _CURRENCY_AMOUNT.search(all_text):
         source = "title" if _CURRENCY_AMOUNT.search(title_text) else "description"
         return PriceEvidence(kind="partial_payment", source=source)
 
@@ -213,7 +230,7 @@ def infer_price_evidence(
     # price path applies the same conservative rule above.
     if explicit and _contains_any(all_text, _HISTORICAL):
         return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1])
-    if explicit and _contains_any(all_text, _PARTIAL_PAYMENT):
+    if explicit and _has_partial_payment(all_text):
         return PriceEvidence(kind="partial_payment", source=explicit[0][1])
     if explicit and _contains_any(all_text, _UNIT_OR_INSTALLMENT):
         return PriceEvidence(kind="unit_or_installment_price", source=explicit[0][1])

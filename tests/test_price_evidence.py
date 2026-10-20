@@ -2,6 +2,7 @@
 
 import pytest
 
+from farq.contracts import Ad, PriceEvidence, Seller
 from farq.price_evidence import infer_price_evidence
 
 
@@ -12,6 +13,27 @@ from farq.price_evidence import infer_price_evidence
             "سيارة للبيع",
             "السعر 1200 ريال عربون والباقي عند الاستلام",
             None,
+            "partial_payment",
+            None,
+        ),
+        (
+            "سيارة للبيع",
+            "مقدم 5,000 ريال والباقي كاش",
+            None,
+            "partial_payment",
+            None,
+        ),
+        (
+            "سيارة للبيع",
+            "مقدم 5,000 ريال والباقي كاش",
+            50000,
+            "partial_payment",
+            None,
+        ),
+        (
+            "سيارة للبيع",
+            "السعر 50,000 ريال، دفعة تحت الحساب 5,000 ريال والباقي كاش",
+            50000,
             "partial_payment",
             None,
         ),
@@ -73,3 +95,22 @@ def test_listing_price_evidence_handles_misleading_amounts(
 
     assert evidence.kind == kind
     assert evidence.amount == amount
+
+
+def test_down_payment_is_never_used_as_a_comparable_listing_price():
+    evidence = infer_price_evidence(
+        "سيارة للبيع",
+        "مقدم 5,000 ريال والباقي كاش",
+        50000,
+    )
+    ad = Ad(
+        id="ad-1",
+        title="سيارة للبيع",
+        description="مقدم 5,000 ريال والباقي كاش",
+        price_amount=50000,
+        price_evidence=evidence,
+        seller=Seller(id="seller-1", name="بائع"),
+    )
+
+    assert evidence.kind == "partial_payment"
+    assert ad.comparable_price_amount is None
