@@ -425,7 +425,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         return False, ["model_lookalike"]
     if intent.subcategory.value == "strollers" and intent.model.value in {"YOYO 2", "YOYO 3"} and not relaxed:
         asked_variant = str(intent.model.value[-1])
-        stated_variants = set(_YOYO_VARIANT.findall(to_ascii_digits(normalize(text))))
+        # Prefer the model stated in the ad title. Descriptions may mention a different
+        # generation only as a comparison or compatibility note (e.g. an accessory fit).
+        stated_variants = set(_YOYO_VARIANT.findall(to_ascii_digits(normalize(title))))
+        if not stated_variants:
+            stated_variants = set(_YOYO_VARIANT.findall(to_ascii_digits(normalize(text))))
         if stated_variants and asked_variant not in stated_variants:
             return False, ["yoyo_variant_mismatch"]
     if intent.result_unit.value == "ad" and title:
