@@ -34,6 +34,10 @@ _WANT_WORDS = {
     "need",
     "want",
     "i",
+    "ادور",
+    "ابحث",
+    "ابحثلي",
+    "دورلي",
 }
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
@@ -109,6 +113,7 @@ _STOP = {
     "نحتاج",
     "في",
     "من",
+    "عن",
     "على",
     "الي",
     "الى",
@@ -142,6 +147,10 @@ _STOP = {
     "ضروري",
     "عاجل",
     "بسرعه",
+    "ادور",
+    "ابحث",
+    "ابحثلي",
+    "دورلي",
     "اليوم",
     "بكره",
     "الحين",
@@ -201,6 +210,33 @@ _STOP = {
 }
 
 _DIRECTIONS = {"شمال", "جنوب", "شرق", "غرب"}
+_PROPERTY_RENT_CUES = (
+    "للإيجار", "إيجار", "تأجير", "استئجار", "باليوم", "يومي", "يوميا", "يومية", "ليلي", "ليليا",
+    "ليلة", "بالليلة", "لليلة", "بالأسبوع", "اسبوعي", "اسبوعيا", "اسبوعية", "بالويكند", "ويكند",
+    "weekend", "بالشهر", "شهري", "شهريا", "شهرية", "بالسنة", "سنوي", "سنويا", "سنوية",
+)
+_PROPERTY_SALE_CUES = ("للبيع", "بيع", "للتمليك", "تمليك", "للشراء", "شراء")
+_PROPERTY_TRANSACTION_WORDS = {normalize(word) for word in (*_PROPERTY_RENT_CUES, *_PROPERTY_SALE_CUES)}
+_PROPERTY_RENT_GROUP = _PROPERTY_RENT_CUES
+_PROPERTY_SALE_GROUP = ("للبيع", "بيع", "للتمليك", "تمليك")
+
+
+def _property_transaction(normalized: str) -> str | None:
+    words = normalize(normalized).split()
+
+    def has_cue(cues: tuple[str, ...]) -> bool:
+        cue_forms = {normalize(cue) for cue in cues}
+        return any(cue_forms.intersection(prefix_variants(word)) for word in words)
+
+    rent = has_cue(_PROPERTY_RENT_CUES)
+    sale = has_cue(_PROPERTY_SALE_CUES)
+    if rent and sale:
+        return "ambiguous"
+    if rent:
+        return "rent"
+    if sale:
+        return "sale"
+    return None
 
 # The filler verbs above are dropped from the need, but before they go they answer the
 # question the need alone cannot: is the customer buying a thing, or hiring someone to do
@@ -226,8 +262,15 @@ _SERVICE_AGENTS = {
 
 
 def _service_request(normalized: str) -> bool:
-    words = set(normalized.split())
-    return bool(words & _SERVICE_VERBS) or bool(words & _SERVICE_AGENTS)
+    words = normalized.split()
+    service_agents = set(words) & _SERVICE_AGENTS
+    nearby_markers = {"قرب", "جنب", "بجانب", "بجوار", "حول", "قريب", "قريبة", "بالقرب"}
+    if "مدرسه" in service_agents:
+        school_at = words.index("مدرسه")
+        preceding = set(words[max(0, school_at - 2) : school_at])
+        if preceding & nearby_markers or preceding == {"من", "بالقرب"}:
+            service_agents.discard("مدرسه")
+    return bool(set(words) & _SERVICE_VERBS) or bool(service_agents)
 
 
 @dataclass(frozen=True)
@@ -349,7 +392,11 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون برو ماكس", "iphone pro max"), brand="Apple", model="iPhone Pro Max", eligibility=(("ايفون", "iphone"), ("برو ماكس", "pro max")), expansions=("ايفون برو ماكس", "iphone pro max")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لاندكروزر", "land cruiser"), brand="Toyota", model="Land Cruiser", eligibility=(("لاندكروزر", "لاند كروزر", "land cruiser"),), expansions=("لاندكروزر",)),
+    _head(type="property", category="property", subcategory="farms", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مزرعة للاستراحة", "مزرعة", "مزرعه", "مزارع", "farm", "farms"), label="مزرعة", label_from_match=True, eligibility=(("مزرعة", "مزرعه", "مزارع", "farm"),), title_groups=(("مزرعة", "مزرعه", "مزارع", "farm"),), expansions=("مزارع", "مزرعة للإيجار", "مزرعة استراحة")),
+    _head(type="property", category="property", subcategory="resthouses", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("استراحة", "استراحه", "استراحات"), label="استراحة", label_from_match=True, eligibility=(("استراحة", "استراحه", "استراحات"),), title_groups=(("استراحة", "استراحه", "استراحات"),), expansions=("استراحات", "استراحة يومية", "استراحة للإيجار")),
+    _head(type="property", category="property", subcategory="chalets", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شاليه", "شاليهات", "chalet", "chalets"), label="شاليه", label_from_match=True, eligibility=(("شاليه", "شاليهات", "chalet"),), title_groups=(("شاليه", "شاليهات", "chalet"),), expansions=("شاليهات", "شاليه يومي", "شاليه للإيجار")),
     _head(type="property", category="property", subcategory="apartment", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شقة", "شقه", "شقق"), eligibility=(("شقه", "شقق"),), expansions=("شقة", "شقق")),
+    _head(type="property", category="property", subcategory="house", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("بيت سكني", "بيوت سكنية", "بيت", "بيوت", "منزل", "منازل"), label="بيت", label_from_match=True, eligibility=(("بيت", "بيوت", "منزل", "منازل"),), title_groups=(("بيت", "بيوت", "منزل", "منازل"),), expansions=("بيوت", "منازل", "بيت")),
     _head(type="property", category="property", subcategory="land", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ارض", "أرض"), eligibility=(("ارض",),), expansions=("ارض", "أراضي")),
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا",), eligibility=(("فيلا",),), expansions=("فيلا",)),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
@@ -460,6 +507,17 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             parts = phrase.split()
             for start in range(len(words)):
                 if not _phrase_at(words, start, phrase):
+                    continue
+                if head.type == "property" and _service_request(normalized):
+                    continue
+                if head.subcategory == "house" and words[start : start + 2] in (
+                    ["بيت", "شعر"],
+                    ["بيت", "الشعر"],
+                    ["بيوت", "شعر"],
+                    ["بيوت", "الشعر"],
+                ):
+                    continue
+                if head.subcategory == "house" and not find_cities(normalized) and _property_transaction(normalized) is None:
                     continue
                 if head.subcategory == "electrician" and phrase in _ELECTRIC_WORDS and _electric_adjective(words, start):
                     continue
@@ -697,6 +755,7 @@ def analyze(query: str) -> IntentResponse:
             intent.clarification_question = "وش الخدمة أو الغرض اللي تبيه؟ مثال: سباك، نقل عفش، مكيف سبليت."
             return intent
     intent.understood = True
+    property_transaction = _property_transaction(normalized) if head.type == "property" else None
     label = _label(head, match, original)
     intent.material = _material(normalized)
     city_value = intent.location_city.value if isinstance(intent.location_city.value, str) else None
@@ -750,7 +809,14 @@ def analyze(query: str) -> IntentResponse:
     price_min = _PRICE_MIN.search(normalized)
     if price_min:
         intent.price_min = known(int(price_min.group(1)), 0.75, price_min.group(0))
-    if head.ambiguous:
+    if property_transaction == "ambiguous":
+        intent.missing_decision_information.append("transaction_type")
+        if head.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
+            intent.missing_decision_information.append("location_city")
+            intent.clarification_question = "هل تبحث عن العقار للبيع أم للإيجار، وفي أي مدينة؟"
+        else:
+            intent.clarification_question = "هل تبحث عن العقار للبيع أم للإيجار؟"
+    elif head.ambiguous:
         intent.missing_decision_information.append("need_specificity")
         intent.clarification_question = "وضّح المطلوب أكثر. المثال: درابزين، باب حديد، أو حديد تسليح."
     elif head.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
@@ -759,6 +825,10 @@ def analyze(query: str) -> IntentResponse:
     if intent.model.known and intent.model.value == "iPhone Pro Max":
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if property_transaction == "rent":
+        groups.append(list(_PROPERTY_RENT_GROUP))
+    elif property_transaction == "sale":
+        groups.append(list(_PROPERTY_SALE_GROUP))
     if intent.material.known and not any(intent.material.value in group for group in groups):
         groups.append([intent.material.value])
     intent.eligibility_groups = groups
@@ -770,6 +840,26 @@ def analyze(query: str) -> IntentResponse:
     search_label = f"{query_label} {shown_city}".strip()
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
+    if head.type == "property" and match is not None:
+        matched_words = set(head.phrases[match.phrase_index].split()) if match.phrase_index is not None else set()
+        city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
+        qualifiers = []
+        for raw_word in original.split():
+            folded = normalize(raw_word).strip("،,.؟?!؛;:")
+            bare_forms = set(prefix_variants(folded))
+            transaction_word = bool(bare_forms & _PROPERTY_TRANSACTION_WORDS)
+            if (
+                not folded
+                or bare_forms & matched_words
+                or (folded in _STOP and not transaction_word)
+                or folded in _WANT_WORDS
+                or folded in city_words
+            ):
+                continue
+            qualifiers.append(raw_word.strip("،,.؟?!؛;:"))
+        if qualifiers:
+            search_label = f"{query_label} {' '.join(qualifiers)} {shown_city}".strip()
+            intent.need = search_label
     expansions = head.expansions
     if head.subcategory == "strollers" and head.model == "YOYO":
         expansions = (*expansions, "يويو عربة أطفال")
