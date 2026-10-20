@@ -15,27 +15,49 @@ PRICE_FLOOR = 50
 
 _EXPLICIT_PRICE = re.compile(
     r"(?:سعر\s+البيع|السعر|بسعر|سعر)\s*(?:هو\s*)?[:：=]?\s*"
-    r"([0-9][0-9,٬]*(?:\.[0-9]+)?)(?:\s*(ألف|الف|مليون))?",
+    r"([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?",
     re.IGNORECASE,
 )
-_FIELD_VALUE = re.compile(r"^\s*([0-9][0-9,٬]*(?:\.[0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*$")
+_FIELD_VALUE = re.compile(r"^\s*([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*$")
 _RANGE = re.compile(r"\bمن\s*[0-9][0-9,٬]*\s*(?:إلى|الى|لين|حتى)\s*[0-9][0-9,٬]*\b")
+_FIELD_RANGE = re.compile(r"^\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?\s*[-–—]\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?\s*$")
+_FIELD_MULTIPLE = re.compile(
+    r"[0-9][0-9,٬]*(?:[.٫][0-9]+)?[^\n]{0,12}(?:او|أو|/|،|,\s+)[^\n]{0,8}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+)
+_HYPHEN_RANGE = re.compile(
+    r"(?:السعر|سعر\s+البيع|بسعر|سعر)\s*[:：=]?\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?\s*[-–—]\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+)
+_ALTERNATE_PRICES = re.compile(
+    r"(?:السعر|سعر\s+البيع|بسعر|سعر)[^\n]{0,35}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+    r"[^\n]{0,25}(?:او|أو|و|/|،|,\s+)[^\n]{0,15}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
+)
 _AUCTION = ("على السوم", "السوم", "يسوم", "مزايده", "مزايدة")
 _CONTACT = ("للاستفسار عن السعر", "السعر على الخاص", "السعر بالخاص", "تواصل لمعرفة السعر", "السعر عند التواصل")
-_HISTORICAL = ("اشتريته", "شريته", "اشتريتها", "شريتها", "كان سعره", "كان سعرها", "سعر الشراء", "سعره السابق")
+_HISTORICAL = (
+    "اشتريته", "شريته", "اشتريتها", "شريتها", "كان سعره", "كان سعرها", "سعر الشراء", "سعره السابق",
+    "سعره وقت الشراء", "سعرها وقت الشراء", "سعره وهو جديد", "سعرها وهي جديدة", "سعره جديد تقريبا",
+)
 _PRICE_CONTEXT = ("السعر", "سعر", "ريال", "ر.س", "للبيع")
+_ESTIMATED = ("تقريبا", "حوالي", "حدود", "بحدود", "ما يقارب", "يقارب", "يبدأ من", "يبدا من", "ابتداء من", "تبدأ من")
+_NEGOTIABLE = ("قابل للتفاوض", "قابل للمساومه", "للتفاوض بالمعقول")
+_NOT_NEGOTIABLE = ("غير قابل للتفاوض", "لا يقبل التفاوض", "نهائي غير قابل للتفاوض")
 _UNIT_OR_INSTALLMENT = (
-    "للحبه", "للقطعه", "للمتر", "للكيلو", "للوحده", "شهري", "شهريا", "سنوي", "سنويا",
-    "قسط", "اقساط", "تقسيط", "دفعتين", "دفعات", "لليوم", "لليله",
+    "للحبه", "للقطعه", "للمتر", "للكيلو", "للوحده", "للشخص", "للفرد", "للزوجين",
+    "للثلاثه", "للاربعه", "شهري", "شهريا", "للشهر", "في الشهر", "سنوي", "سنويا",
+    "في السنه", "قسط", "اقساط", "تقسيط", "دفعتين", "دفعات", "دفعه واحده", "لليوم", "لليله",
 )
 _CURRENCY_AMOUNT = re.compile(
-    r"(?<![\w])([0-9][0-9,٬]*(?:\.[0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.\s*س|ر\.س)(?![\w])",
+    r"(?<![\w])([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.?\s*س|ر\.س|﷼|⃁|SAR|SR)(?![\w])",
     re.IGNORECASE,
 )
+_DOTTED_THOUSANDS = re.compile(r"(?<![0-9])[0-9]{1,3}[.٫][0-9]{3}(?![0-9])")
+_CURRENCY_SUFFIX = re.compile(r"^\s*(?:ريال|ر\s*\.?\s*س|﷼|⃁|SAR|SR)(?![\w])", re.IGNORECASE)
 
 
-def _amount(number: str, multiplier: str | None) -> float | None:
-    compact = number.replace(",", "").replace("٬", "")
+def _amount(number: str, multiplier: str | None, minimum: float = PRICE_FLOOR) -> float | None:
+    if _DOTTED_THOUSANDS.fullmatch(number):
+        return None
+    compact = number.replace(",", "").replace("٬", "").replace("٫", ".")
     if len(compact.split(".", 1)[0]) >= 9:
         return None
     try:
@@ -44,12 +66,25 @@ def _amount(number: str, multiplier: str | None) -> float | None:
         return None
     if multiplier and normalize(multiplier) in {"الف", "مليون"}:
         value *= 1_000 if normalize(multiplier) == "الف" else 1_000_000
-    return value if value >= PRICE_FLOOR else None
+    return value if value >= minimum else None
 
 
 def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
     normalized = f" {normalize(text)} "
     return any(f" {normalize(phrase)} " in normalized for phrase in phrases)
+
+
+def _is_negotiable(text: str) -> bool:
+    return _contains_any(text, _NEGOTIABLE) and not _contains_any(text, _NOT_NEGOTIABLE)
+
+
+def _currency_amounts(text: str) -> list[float]:
+    values = []
+    for match in _CURRENCY_AMOUNT.finditer(text):
+        amount = _amount(match.group(1), match.group(2), minimum=0.01)
+        if amount is not None:
+            values.append(amount)
+    return values
 
 
 def _window(text: str, start: int, end: int, extra: int = 45) -> str:
@@ -76,12 +111,14 @@ def infer_price_evidence(
 
     explicit: list[tuple[int, str, re.Match[str]]] = []
     for source, text, offset in (("title", title_text, 0), ("description", body_text, len(title_text) + 1)):
-        match = _EXPLICIT_PRICE.search(text)
-        if match:
-            explicit.append((offset + match.start(), source, match))
+        explicit.extend((offset + match.start(), source, match) for match in _EXPLICIT_PRICE.finditer(text))
     explicit.sort(key=lambda item: item[0])
 
-    if _RANGE.search(field_text):
+    if _DOTTED_THOUSANDS.search(field_text):
+        return PriceEvidence(kind="ambiguous_amount", source="price_field")
+    if _FIELD_MULTIPLE.search(field_text):
+        return PriceEvidence(kind="ambiguous_amount", source="price_field")
+    if _RANGE.search(field_text) or _FIELD_RANGE.fullmatch(field_text):
         return PriceEvidence(kind="price_range", source="price_field")
     if _contains_any(field_text, _AUCTION):
         return PriceEvidence(kind="auction_without_price", source="price_field")
@@ -92,19 +129,51 @@ def infer_price_evidence(
     field_value = _FIELD_VALUE.fullmatch(field_text)
     field_text_amount = _amount(field_value.group(1), field_value.group(2)) if field_value else None
     field_amount = field_text_amount if field_text_amount is not None else price_field_amount
+    if field_amount is None and field_value:
+        low_amount = _amount(field_value.group(1), field_value.group(2), minimum=0.01)
+        if low_amount is not None:
+            return PriceEvidence(kind="ambiguous_amount", amount=low_amount, source="price_field")
+    if field_amount is None:
+        field_currency = _CURRENCY_AMOUNT.search(field_text)
+        if field_currency:
+            low_or_field_amount = _amount(field_currency.group(1), field_currency.group(2), minimum=0.01)
+            if low_or_field_amount is not None:
+                return PriceEvidence(kind="ambiguous_amount", amount=low_or_field_amount, source="price_field")
 
     if field_amount is not None:
-        has_other_text_price = explicit and _amount(explicit[0][2].group(1), explicit[0][2].group(2)) not in (None, field_amount)
+        # A separate currency-marked amount can be a former price, installment,
+        # delivery charge, or a second option. Do not silently prefer the field.
+        currency_amounts = _currency_amounts(all_text)
+        if any(amount != field_amount for amount in currency_amounts):
+            return PriceEvidence(kind="ambiguous_amount", source="price_field")
+        is_estimated = _contains_any(field_text, _ESTIMATED) or _contains_any(all_text, _ESTIMATED)
+        is_negotiable = _is_negotiable(all_text)
+        text_values = {
+            _amount(match.group(1), match.group(2), minimum=0.01 if _CURRENCY_AMOUNT.search(match.group(0) + text[match.end():match.end() + 15]) else PRICE_FLOOR)
+            for _, source, match in explicit
+            for text in [title_text if source == "title" else body_text]
+        }
+        has_other_text_price = bool(text_values - {None, field_amount}) or (None in text_values and bool(text_values))
         if (
             _contains_any(all_text, _AUCTION + _CONTACT + _HISTORICAL)
             or has_other_text_price
             or (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
+            or _HYPHEN_RANGE.search(all_text)
+            or _ALTERNATE_PRICES.search(all_text)
             or (_contains_any(all_text, _UNIT_OR_INSTALLMENT) and _contains_any(all_text, _PRICE_CONTEXT))
         ):
             return PriceEvidence(kind="ambiguous_amount", source="price_field")
+        if is_estimated:
+            return PriceEvidence(kind="estimated_price", amount=field_amount, source="price_field", estimated=True, negotiable=is_negotiable)
+        if is_negotiable:
+            return PriceEvidence(kind="asking_price_in_field", amount=field_amount, source="price_field", negotiable=True)
         return PriceEvidence(kind="asking_price_in_field", amount=field_amount, source="price_field")
 
-    if _RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT):
+    if (
+        (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
+        or _HYPHEN_RANGE.search(all_text)
+        or _ALTERNATE_PRICES.search(all_text)
+    ):
         return PriceEvidence(kind="price_range")
     if _contains_any(all_text, _AUCTION):
         return PriceEvidence(kind="auction_without_price")
@@ -112,6 +181,12 @@ def infer_price_evidence(
         return PriceEvidence(kind="contact_for_price")
 
     if explicit:
+        text_values = {
+            (normalize(match.group(1)), normalize(match.group(2)))
+            for _, _, match in explicit
+        }
+        if len(text_values) > 1:
+            return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1])
         _, source, match = explicit[0]
         text = title_text if source == "title" else body_text
         local = _window(text, match.start(), match.end())
@@ -119,15 +194,27 @@ def infer_price_evidence(
             return PriceEvidence(kind="historical_price", source=source)
         if _contains_any(local, _UNIT_OR_INSTALLMENT):
             return PriceEvidence(kind="unit_or_installment_price", source=source)
-        amount = _amount(match.group(1), match.group(2))
+        currency_nearby = bool(_CURRENCY_SUFFIX.match(text[match.end():match.end() + 16]))
+        amount = _amount(match.group(1), match.group(2), minimum=0.01 if currency_nearby else PRICE_FLOOR)
         if amount is None:
             return PriceEvidence(kind="ambiguous_amount", source=source)
-        return PriceEvidence(kind="explicit_text_price", amount=amount, source=source)
+        if _contains_any(local, _ESTIMATED):
+            return PriceEvidence(kind="estimated_price", amount=amount, source=source, estimated=True, negotiable=_is_negotiable(local))
+        return PriceEvidence(kind="explicit_text_price", amount=amount, source=source, negotiable=_is_negotiable(local))
 
     if _contains_any(all_text, _HISTORICAL):
         return PriceEvidence(kind="historical_price")
     if _contains_any(all_text, _UNIT_OR_INSTALLMENT):
         return PriceEvidence(kind="unit_or_installment_price")
+    if _contains_any(all_text, _ESTIMATED):
+        currency_match = _CURRENCY_AMOUNT.search(all_text)
+        if currency_match:
+            amount = _amount(currency_match.group(1), currency_match.group(2), minimum=0.01)
+            if amount is not None:
+                source = "title" if currency_match.start() < len(title_text) else "description"
+                return PriceEvidence(kind="estimated_price", amount=amount, source=source, estimated=True)
+        if _contains_any(all_text, _PRICE_CONTEXT):
+            return PriceEvidence(kind="estimated_price", estimated=True)
     if _CURRENCY_AMOUNT.search(all_text):
-        return PriceEvidence(kind="ambiguous_amount")
+        return PriceEvidence(kind="ambiguous_amount", negotiable=_is_negotiable(all_text))
     return PriceEvidence(kind="no_price_signal")

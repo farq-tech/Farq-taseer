@@ -118,6 +118,7 @@ class PriceEvidence(ContractModel):
     kind: Literal[
         "asking_price_in_field",
         "explicit_text_price",
+        "estimated_price",
         "auction_without_price",
         "contact_for_price",
         "price_range",
@@ -128,6 +129,8 @@ class PriceEvidence(ContractModel):
     ] = "no_price_signal"
     amount: float | None = None
     source: Literal["price_field", "title", "description"] | None = None
+    negotiable: bool = False
+    estimated: bool = False
 
 
 class Ad(ContractModel):
