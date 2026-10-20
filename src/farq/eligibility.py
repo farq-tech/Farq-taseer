@@ -32,7 +32,8 @@ _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 # whatever it mentions inside. Specific nouns only: «جهاز بلايستيشن» still leads with the device.
 _ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه",
                    "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره",
-                   "فرش", "مفرش", "مظله", "مقبض", "مقعد", "هيكل", "مهد", "سرير", "كارسيت", "ملحق", "غطاء", "لبس")
+                   "فرش", "مفرش", "مظله", "مقبض", "مقعد", "هيكل", "مهد", "مهاد", "سرير", "كرسي", "كونكت",
+                   "seat", "seats", "carseat", "carseats", "connector", "connectors", "كارسيت", "ملحق", "غطاء", "لبس")
 # «S23», «A54», «PS5», «R18»: a letter or two glued to a number is a model code. A listing that
 # states the same letters with only other numbers («S26 Ultra», «اس 22», «S10») is another
 # model. Asked glued, as customers type it; read with a space and in Arabic («اس 23»).
