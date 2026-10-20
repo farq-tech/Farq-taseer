@@ -33,6 +33,11 @@ _WANT_WORDS = {
     "نحتاج",
     "need",
     "want",
+    "ادور",
+    "دور",
+    "ابحث",
+    "ابحثلي",
+    "دورلي",
     "i",
 }
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
@@ -118,6 +123,7 @@ _STOP = {
     "شيء",
     "عند",
     "مع",
+    "عن",
     "بعد",
     "قبل",
     "لو",
@@ -141,6 +147,11 @@ _STOP = {
     "ضروري",
     "عاجل",
     "بسرعه",
+    "ادور",
+    "دور",
+    "ابحث",
+    "ابحثلي",
+    "دورلي",
     "اليوم",
     "بكره",
     "الحين",
@@ -304,6 +315,9 @@ _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت"
 
 HEADS: tuple[Head, ...] = (
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
+    _head(type="product", category="electronics", subcategory="gaming_laptops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لابتوب ألعاب", "لابتوبات ألعاب", "لابتوب قيمنق", "لابتوبات قيمنق", "لابتوب قيمنج", "gaming laptop"), eligibility=(("لابتوب", "لابتوبات", "لاب توب", "laptop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("لابتوب ألعاب", "لابتوبات قيمنق", "gaming laptop"), attributes=("gaming",)),
+    _head(type="product", category="electronics", subcategory="gaming_desktops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كمبيوتر ألعاب مكتبي", "كمبيوتر قيمنق مكتبي", "كمبيوتر قيمنج مكتبي", "كمبيوتر ألعاب", "كمبيوتر قيمنق", "كمبيوتر قيمنج", "gaming desktop", "gaming pc"), eligibility=(("كمبيوتر", "pc", "desktop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("كمبيوتر ألعاب مكتبي", "كمبيوتر قيمنق", "gaming pc"), attributes=("gaming",)),
+    _head(type="service", category="services", subcategory="computer_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة لابتوب", "تصليح لابتوب", "صيانة كمبيوتر", "تصليح كمبيوتر", "فني لابتوب", "فني كمبيوتر", "computer repair", "laptop repair"), eligibility=(("صيانة", "تصليح", "اصلاح", "فني"), ("لابتوب", "كمبيوتر", "لاب توب", "computer", "laptop")), expansions=("صيانة لابتوب", "تصليح كمبيوتر", "فني كمبيوتر"), verbs=("يصلح", "يصلحها", "اصلح", "صيانة", "تصليح", "اصلاح"), objects=("لابتوب", "كمبيوتر", "لاب توب", "computer", "laptop")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون برو ماكس", "iphone pro max"), brand="Apple", model="iPhone Pro Max", eligibility=(("ايفون", "iphone"), ("برو ماكس", "pro max")), expansions=("ايفون برو ماكس", "iphone pro max")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
@@ -702,6 +716,17 @@ def analyze(query: str) -> IntentResponse:
         intent.eligibility_min = len(head.eligibility) - len(head.eligibility) // 3
     intent.title_groups = [list(group) for group in head.title_groups]
     search_label = f"{query_label} {shown_city}".strip()
+    if head.subcategory in {"gaming_laptops", "gaming_desktops"}:
+        matched_words = set(head.phrases[match.phrase_index].split()) if match and match.phrase_index is not None else set()
+        city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
+        qualifiers = []
+        for raw_word in original.split():
+            folded = normalize(raw_word).strip("،,.؟?!؛;:")
+            if not folded or folded in matched_words or folded in _STOP or folded in _WANT_WORDS or folded in city_words:
+                continue
+            qualifiers.append(raw_word.strip("،,.؟?!؛;:"))
+        if qualifiers:
+            search_label = f"{query_label} {' '.join(qualifiers)} {shown_city}".strip()
     expansions = head.expansions
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
