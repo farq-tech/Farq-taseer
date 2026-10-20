@@ -87,6 +87,62 @@ from farq.price_evidence import infer_price_evidence
             900,
         ),
         (
+            "جهاز للمشي بحالة ممتاز للبيع",
+            "السعر المطلوب 400 ريال غير قابل للتفاوض",
+            None,
+            "explicit_text_price",
+            400,
+        ),
+        (
+            "كنب اصفر للبيع ب 300 ريال",
+            None,
+            None,
+            "explicit_text_price",
+            300,
+        ),
+        (
+            "سلعة مستعملة",
+            "السعر المطلوب 400-500 ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "للبيع ب 300 أو 400 ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "كان السعر المطلوب 400 ريال",
+            None,
+            "ambiguous_amount",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "السعر المطلوب 300 ألف - 400 ألف ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "للبيع ب 300 الف - 400 الف ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
+            "سلعة مستعملة",
+            "السعر من 300 ألف إلى 400 ألف ريال",
+            None,
+            "price_range",
+            None,
+        ),
+        (
             "سيارة للبيع",
             "السعر 900 ريال والتوصيل 50 ريال",
             None,
@@ -144,6 +200,28 @@ def test_unit_price_field_is_labeled_as_a_unit_rate(price_text):
     evidence = infer_price_evidence("خدمة", None, None, price_text)
 
     assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "سعر المتر يبدأ من 1,200 ريال",
+        "سعر الوحدة 300 ريال",
+    ],
+)
+def test_unit_prices_named_as_price_of_unit_are_not_listing_totals(description):
+    evidence = infer_price_evidence("عقار أو سلعة", description, None)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
+@pytest.mark.parametrize("price_text", ["300 ألف - 400 ألف", "300 ألف إلى 400 ألف"])
+def test_scaled_ranges_in_price_field_are_not_single_listing_prices(price_text):
+    evidence = infer_price_evidence("سلعة مستعملة", None, None, price_text)
+
+    assert evidence.kind == "price_range"
     assert evidence.amount is None
 
 
