@@ -41,6 +41,7 @@ DEFAULT_FRAME_ANCESTORS = (
 DEFAULT_CORS_ORIGINS = (
     "https://farq.sa",
     "https://www.farq.sa",
+    "https://farq-git-codex-taseer-search-ad-fidelity-farq.vercel.app",
     "https://localhost",
     "capacitor://localhost",
     "http://localhost:5173",
