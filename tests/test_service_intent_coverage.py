@@ -60,6 +60,41 @@ from farq.taxonomy import read_business
             "عوامة سباحة للبيع",
             "مدرب سباحة",
         ),
+        (
+            "أحتاج خياطة فستان زواج بالدمام",
+            "tailoring",
+            "خياطة فستان زفاف وتعديل ملابس",
+            "فستان زواج للبيع",
+            "خياطة فستان",
+        ),
+        (
+            "أبي مربية أطفال بالساعة في الرياض",
+            "childcare",
+            "مربية أطفال بالساعة",
+            "ألعاب أطفال للبيع",
+            "مربية اطفال",
+        ),
+        (
+            "أبي بيطري يعالج قطتي بالرياض",
+            "veterinary",
+            "طبيب بيطري للقطط والحيوانات المنزلية",
+            "طعام قطط للبيع",
+            "بيطري",
+        ),
+        (
+            "أحتاج حلاق منزلي بجدة",
+            "home_barber",
+            "حلاق منزلي يجي للبيت",
+            "ماكينة حلاقة للبيع",
+            "حلاق منزلي",
+        ),
+        (
+            "أحتاج مغسلة سيارات متنقلة بالدمام",
+            "mobile_car_wash",
+            "مغسلة سيارات متنقلة",
+            "معدات مغسلة سيارات للبيع",
+            "مغسلة سيارات متنقلة",
+        ),
     ],
 )
 def test_common_services_match_providers_without_returning_related_products(
@@ -79,5 +114,8 @@ def test_common_services_match_providers_without_returning_related_products(
     assert intent.location_city.known
     assert detail in intent.need
     assert any(item["key"] == subcategory for item in read_business(good_title)["services"])
+    assert not any(item["key"] == subcategory for item in read_business(product_title)["services"])
+    if subcategory in {"tutoring", "driving_services", "event_planning", "sports_coaching", "tailoring", "childcare", "veterinary"}:
+        assert intent.segment_text in intent.search_terms
     assert decide(intent, provider, seller)[0] is True
     assert decide(intent, product, seller)[0] is False
