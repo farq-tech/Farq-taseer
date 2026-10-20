@@ -24,6 +24,11 @@ _FIELD_RANGE = re.compile(r"^\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?\s*[-–—]\s*[0-
 _FIELD_MULTIPLE = re.compile(
     r"[0-9][0-9,٬]*(?:[.٫][0-9]+)?[^\n]{0,12}(?:او|أو|/|،|,\s+)[^\n]{0,8}[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
 )
+_FIELD_UNIT_RATE = re.compile(
+    r"(?:/|لكل|\bper\b)\s*(?:حبه|حبة|قطعه|قطعة|وحده|وحدة|متر|ساعه|ساعة|يوم|كيلو|طن|كرتون|دقيقه|دقيقة|رحله|رحلة|"
+    r"piece|unit|meter|hour|day|kg|ton)(?![a-z0-9])",
+    re.IGNORECASE,
+)
 _HYPHEN_RANGE = re.compile(
     r"(?:السعر|سعر\s+البيع|بسعر|سعر)\s*[:：=]?\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?\s*[-–—]\s*[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
 )
@@ -47,6 +52,7 @@ _UNIT_OR_INSTALLMENT = (
     "في السنه", "قسط", "اقساط", "تقسيط", "دفعتين", "دفعات", "دفعه واحده", "لليوم", "لليله",
     "بالحبه", "بالقطعه", "بالمتر", "بالكيلو", "بالوحده", "بالشخص", "بالفرد", "باليوم",
     "بالليله", "بالشهر", "بالسنه", "بالساعه", "بالطن", "بالكرتون", "بالدقيقه", "بالرحله",
+    "لكل حبه", "لكل قطعه", "لكل وحده", "لكل متر", "لكل ساعه", "لكل يوم", "لكل كيلو", "لكل طن",
 )
 _PARTIAL_PAYMENT = (
     "عربون", "دفعة اولى", "الدفعة الاولى", "دفعة مقدمه", "الدفعة المقدمه",
@@ -176,7 +182,7 @@ def infer_price_evidence(
         return PriceEvidence(kind="auction_without_price", source="price_field")
     if _contains_any(field_text, _CONTACT):
         return PriceEvidence(kind="contact_for_price", source="price_field")
-    if _contains_any(field_text, _UNIT_OR_INSTALLMENT):
+    if _contains_any(field_text, _UNIT_OR_INSTALLMENT) or _FIELD_UNIT_RATE.search(field_text):
         return PriceEvidence(kind="unit_or_installment_price", source="price_field")
     field_value = _FIELD_VALUE.fullmatch(field_text)
     field_text_amount = _amount(field_value.group(1), field_value.group(2)) if field_value else None

@@ -105,7 +105,7 @@ _PRICE_AMBIGUOUS_CUES = (
 )
 _PRICE_RATE = re.compile(
     r"(?:/|\bper\b|لكل)\s*(?:m(?:eter)?|kg|ton|unit|piece|day|hour|"
-    r"حبه|قطعه|وحده|متر|يوم|ساعه|كيلو|طن|كرتون)(?![\w])",
+    r"حبه|حبة|قطعه|قطعة|وحده|وحدة|متر|يوم|ساعه|ساعة|كيلو|طن|كرتون)(?![\w])",
     re.IGNORECASE,
 )
 
