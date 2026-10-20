@@ -193,5 +193,10 @@ def test_m02_uses_a_reading_already_at_hand_but_never_waits_for_one(monkeypatch)
     assert same is intents and not calls
     understand._remember(understand.normalize("أبي صدام كامري 2019"), [{"need": "صدام كامري أمامي", "hiring": False, "must_include": [["صدام"], ["كامري"]], "search_terms": ["صدام كامري 2019"]}])
     read = understand.refine_if_ready("أبي صدام كامري 2019", analyze_needs("أبي صدام كامري 2019"))
-    assert read[0].need == "صدام كامري أمامي" and not calls
+    # The cached reading is applied to search terms, but it must not invent a
+    # specific bumper side or replace the vehicle model recognized by the rules.
+    assert read[0].need == "صدام كامري"
+    assert read[0].model.value == "Camry"
+    assert "صدام كامري 2019" in read[0].search_terms
+    assert not calls
     understand._cache.clear()

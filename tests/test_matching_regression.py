@@ -268,6 +268,25 @@ def test_ambiguous_price_text_is_preserved_without_numeric_amount():
     assert ad.price_amount is None
     assert ad.price_currency is None
     assert ad.price_text == text
+    assert ad.price_evidence.kind == "unit_or_installment_price"
+
+
+def test_description_down_payment_is_not_a_comparable_total():
+    ad = ad_from_item(
+        {
+            "id": "12346",
+            "title": "سيارة للبيع",
+            "bodyTEXT": "مقدم 5,000 ريال والباقي كاش",
+            "authorId": "seller-1",
+            "authorUsername": "seller",
+            "price": {"inputPrice": "50000", "formattedPrice": "50000 ريال"},
+        }
+    )
+
+    assert ad.price_amount == 50000
+    assert ad.price_text == "50000 ريال"
+    assert ad.price_evidence.kind == "partial_payment"
+    assert ad.comparable_price_amount is None
 
 
 # TSR-050: a stated budget filters priced ads.

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from farq.cities import canonical_city, find_cities, haraj_listing_city, strip_city_words
 from farq.config import SearchConfig
 from farq.contracts import Ad, Seller
+from farq.price_evidence import PRICE_FLOOR, infer_price_evidence
 from farq.text import normalize
 
 ENDPOINT = "https://graphql.haraj.com.sa/?queryName=Search&version=N0.0.1"
@@ -94,7 +95,6 @@ def image_urls_for(image_ref: str | None) -> list[str]:
 _PRICE_NUMBER = re.compile(r"\d[\d,٬]*(?:\.\d+)?")
 # Haraj sellers type 1, 2, 9, 20 ... to mean "call me". Below this many riyals
 # the number is a placeholder, not a price, and it must not feed "you save 99%".
-PRICE_FLOOR = 50
 _PRICE_AMBIGUOUS_CUES = (
     "السوم", "مزايده", "مزاد", "يفتح الباب", "فتح الباب", "يبدا من",
     "ابتداء من", "بدايه المزاد", "سعر البدايه", "starting at",
@@ -180,6 +180,12 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
         price_amount=price,
         price_currency="SAR" if price is not None else None,
         price_text=str(raw_price_text) if raw_price_text is not None else None,
+        price_evidence=infer_price_evidence(
+            item.get("title"),
+            item.get("bodyTEXT"),
+            price,
+            (item.get("price") or {}).get("formattedPrice") or (item.get("price") or {}).get("inputPrice"),
+        ),
         posted_at=posted,
         image_ref=item.get("thumbURL") or None,
         image_urls=image_urls_for(item.get("thumbURL")),

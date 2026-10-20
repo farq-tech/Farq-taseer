@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 
 from farq.cities import canonical_city
 from farq.live_haraj import _price, image_urls_for
+from farq.price_evidence import infer_price_evidence
 
 _LISTING = re.compile(r"^https://haraj\.com\.sa/\S+$")
 _IMAGE = re.compile(r"https://(?:thumbcdn|postcdn|mimg\d*cdn)\.haraj\.com\.sa/[^\s\"'<>]+", re.I)
@@ -139,6 +140,16 @@ def listing_details(url: str, opener=None, now: float | None = None) -> dict:
     raw_price = offer.get("price")
     amount = _price({"inputPrice": str(raw_price)}) if raw_price not in (None, "") else None
     price_text = html_lib.unescape(str(raw_price)).strip() if raw_price not in (None, "") else None
+    description = product.get("description")
+    description_text = html_lib.unescape(description).strip() if isinstance(description, str) and description.strip() else None
+    evidence = infer_price_evidence(
+        str(product["name"]),
+        description_text,
+        amount,
+        str(raw_price) if raw_price not in (None, "") else None,
+    )
+    displayable_price_kinds = {"asking_price_in_field", "explicit_text_price", "estimated_price"}
+    displayed_amount = evidence.amount if evidence.kind in displayable_price_kinds else None
     posted = None
     stamp = _POST_DATE.search(html)
     if stamp:
@@ -152,12 +163,18 @@ def listing_details(url: str, opener=None, now: float | None = None) -> dict:
         "state": "available",
         "url": url,
         "title": html_lib.unescape(str(product["name"])).strip(),
-        "price_amount": amount,
-        "price_currency": (offer.get("priceCurrency") or "SAR") if amount is not None else None,
+        "price_amount": displayed_amount,
+        "price_currency": (offer.get("priceCurrency") or "SAR") if displayed_amount is not None else None,
         "price_text": price_text,
+        "price_evidence": {
+            "kind": evidence.kind,
+            "source": evidence.source,
+            "estimated": evidence.estimated,
+            "negotiable": evidence.negotiable,
+        },
         "city": canonical_city(place.get("name")) if place.get("name") else None,
         "posted_at": posted,
-        "description": html_lib.unescape(description).strip() if isinstance(description, str) and description.strip() else None,
+        "description": description_text,
         "images": images,
     }
     _DETAILS[url] = (moment, details)
