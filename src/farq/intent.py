@@ -304,6 +304,12 @@ _GLAZING_WORDS = ("سيكوريت", "سكريت", "سيكورت", "سكوريت"
 
 HEADS: tuple[Head, ...] = (
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
+    _head(type="product", category="camping", subcategory="royal_tents", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("خيمة ملكية عائلية", "خيام ملكية", "خيمة ملكية", "royal tent"), label="خيمة ملكية", label_from_match=True, eligibility=(("خيمة", "خيام", "خيم", "tent"), ("ملكية", "ملكي", "royal")), title_groups=(("خيمة", "خيام", "خيم", "tent"),), expansions=("خيمة ملكية", "خيام ملكية", "خيمة ملكية عائلية")),
+    _head(type="product", category="camping", subcategory="traditional_tents", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بيوت شعر", "بيت شعر", "traditional tent"), label="بيت شعر", label_from_match=True, eligibility=(("بيت شعر", "بيوت شعر", "traditional tent"),), title_groups=(("بيت شعر", "بيوت شعر", "traditional tent"),), expansions=("بيت شعر", "بيوت شعر", "بيوت شعر للبيع")),
+    _head(type="product", category="camping", subcategory="camping_tents", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("خيمة عائلية", "خيام عائلية", "خيام", "خيمة", "خيم", "tent", "tents"), label="خيمة", label_from_match=True, eligibility=(("خيمة", "خيام", "خيم", "tent"),), title_groups=(("خيمة", "خيام", "خيم", "tent"),), expansions=("خيام", "خيمة عائلية", "خيمة للبيع")),
+    _head(type="product", category="camping", subcategory="camping_chairs", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كرسي رحلات", "كراسي رحلات", "كرسي تخييم", "كرسي كشتة", "كرسي بر", "camping chair"), label="كرسي رحلات", label_from_match=True, eligibility=(("كرسي", "كراسي", "chair"), ("رحلات", "تخييم", "كشتة", "بر", "camping")), title_groups=(("كرسي", "كراسي", "chair"),), expansions=("كرسي رحلات", "كراسي رحلات", "كرسي بر")),
+    _head(type="product", category="camping", subcategory="camping_tables", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طاولة رحلات", "طاولات رحلات", "طاولة تخييم", "طاولة بر", "طاولة كشتة", "camping table"), label="طاولة رحلات", label_from_match=True, eligibility=(("طاولة", "طاولات", "table"), ("رحلات", "تخييم", "كشتة", "بر", "camping")), title_groups=(("طاولة", "طاولات", "table"),), expansions=("طاولة رحلات", "طاولات رحلات", "طاولة بر")),
+    _head(type="service", category="services", subcategory="tent_setup", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تركيب خيام", "تركيب خيمة", "تركيب بيوت شعر", "تركيب بيت شعر", "فك وتركيب خيمة"), label="تركيب خيام", eligibility=(("تركيب", "تفصيل", "فك"), ("خيمة", "خيام", "بيت شعر", "بيوت شعر")), title_groups=(("تركيب", "تفصيل", "فك"),), expansions=("تركيب خيام", "تركيب بيوت شعر", "تفصيل بيت شعر"), verbs=("يركب", "تركيب", "يفصل", "تفصيل", "يفك"), objects=("خيمة", "خيام", "بيت", "بيوت")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون برو ماكس", "iphone pro max"), brand="Apple", model="iPhone Pro Max", eligibility=(("ايفون", "iphone"), ("برو ماكس", "pro max")), expansions=("ايفون برو ماكس", "iphone pro max")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
@@ -702,6 +708,24 @@ def analyze(query: str) -> IntentResponse:
         intent.eligibility_min = len(head.eligibility) - len(head.eligibility) // 3
     intent.title_groups = [list(group) for group in head.title_groups]
     search_label = f"{query_label} {shown_city}".strip()
+    if head.type == "product" and match is not None:
+        matched_words = set(head.phrases[match.phrase_index].split()) if match.phrase_index is not None else set()
+        city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
+        qualifiers = []
+        for raw_word in original.split():
+            folded = normalize(raw_word).strip("،,.؟?!؛;:")
+            bare_forms = set(prefix_variants(folded))
+            if (
+                not folded
+                or bare_forms & matched_words
+                or folded in _STOP
+                or folded in _WANT_WORDS
+                or folded in city_words
+            ):
+                continue
+            qualifiers.append(raw_word.strip("،,.؟?!؛;:"))
+        if qualifiers:
+            search_label = f"{query_label} {' '.join(qualifiers)} {shown_city}".strip()
     expansions = head.expansions
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
