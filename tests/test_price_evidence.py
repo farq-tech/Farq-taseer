@@ -139,6 +139,14 @@ def test_listing_price_evidence_handles_misleading_amounts(
     assert evidence.amount == amount
 
 
+@pytest.mark.parametrize("price_text", ["100 ريال / قطعة", "100 ريال لكل ساعة"])
+def test_unit_price_field_is_labeled_as_a_unit_rate(price_text):
+    evidence = infer_price_evidence("خدمة", None, None, price_text)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
 def test_down_payment_is_never_used_as_a_comparable_listing_price():
     evidence = infer_price_evidence(
         "سيارة للبيع",

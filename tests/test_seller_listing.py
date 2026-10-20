@@ -60,6 +60,7 @@ def test_listing_details_read_the_public_ad_page():
     assert details["state"] == "available"
     assert details["title"] == "هارديسك توشيبا 1 تيرا"
     assert details["price_amount"] == 300 and details["price_currency"] == "SAR"
+    assert details["price_text"] == "300"
     assert details["price_evidence"]["kind"] == "asking_price_in_field"
     assert details["city"]
     assert details["posted_at"].startswith("2026-10-")
@@ -90,6 +91,7 @@ def test_listing_details_do_not_present_a_down_payment_as_the_full_price():
 
     assert details["price_amount"] is None
     assert details["price_currency"] is None
+    assert details["price_text"] == "50000"
     assert details["price_evidence"]["kind"] == "partial_payment"
     assert details["description"] == "مقدم 5,000 ريال والباقي كاش"
 
