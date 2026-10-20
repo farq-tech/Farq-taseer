@@ -122,6 +122,18 @@ def _price(raw: dict | None) -> float | None:
     return amount
 
 
+def _price_text(raw: dict | None) -> str | None:
+    """Preserve Haraj display text separately from the parsed numeric amount."""
+    if not raw:
+        return None
+    formatted = raw.get("formattedPrice")
+    source = formatted if isinstance(formatted, str) and formatted.strip() else raw.get("inputPrice")
+    if source is None:
+        return None
+    text = str(source).strip()
+    return text or None
+
+
 def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
     """`filtered_city` is the city Haraj was asked to filter by. Haraj labels many
     listings with their region ("الشرقيه" for a Dammam search); see haraj_listing_city."""
@@ -149,6 +161,7 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
         url=url,
         city=city,
         district=item.get("geoNeighborhood"),
+        price_text=_price_text(item.get("price")),
         price_amount=price,
         price_currency="SAR" if price is not None else None,
         posted_at=posted,

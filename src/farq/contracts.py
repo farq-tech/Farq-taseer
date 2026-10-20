@@ -119,6 +119,7 @@ class Ad(ContractModel):
     url: str | None = None
     city: str | None = None
     district: str | None = None
+    price_text: str | None = None
     price_amount: float | None = None
     price_currency: str | None = None
     posted_at: str | None = None
