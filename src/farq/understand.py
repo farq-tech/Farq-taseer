@@ -233,8 +233,10 @@ def read_query(query: str) -> list[dict] | None:
         log.warning("understand unavailable", exc_info=True)
         return None
     read = _parse(body)
-    # A refusal is not cached; a reading is, so the same query costs one call.
-    _remember(folded, read)
+    # An unusable model response must not poison this warm instance's cache. Only a
+    # reading can be reused; if parsing failed, let the next request try again.
+    if read:
+        _remember(folded, read)
     _shared_put(folded, read)
     return read
 
