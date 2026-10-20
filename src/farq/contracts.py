@@ -150,6 +150,19 @@ class Ad(ContractModel):
     listing_state: str = "unknown"
     seller: Seller
 
+    @property
+    def comparable_price_amount(self) -> float | None:
+        """Return only a stated amount safe for budget matching and price ranking.
+
+        Preserve non-Haraj ads that have no evidence classification, while keeping
+        ambiguous, estimated, historical, and unit amounts out of price decisions.
+        """
+        if self.price_evidence.kind in {"asking_price_in_field", "explicit_text_price"}:
+            return self.price_evidence.amount if self.price_evidence.amount is not None else self.price_amount
+        if self.price_evidence.kind == "no_price_signal" and self.price_evidence.source is None:
+            return self.price_amount
+        return None
+
 
 class SearchResult(ContractModel):
     result_unit: ResultUnit
