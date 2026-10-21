@@ -177,12 +177,14 @@ def test_partial_failure_retries_current_window_without_skipping(tmp_path, monke
     assert result["next_page"] == 1
 
 
-def test_legacy_cached_search_cannot_advertise_or_crash_continuation(tmp_path,monkeypatch):
-    api,_=make_api(tmp_path,monkeypatch)
+def test_cached_search_keeps_its_continuation_and_owner(tmp_path,monkeypatch):
+    api,pages=make_api(tmp_path,monkeypatch)
     first=api.post('/v1/search',json={'query':'سباك بالرياض'}).json()
     cached=api.post('/v1/search',json={'query':'سباك بالرياض'}).json()
-    assert first['next_page'] is None and cached['next_page'] is None
+    assert first['next_page'] == 4 and cached['next_page'] == 4
     body={'query':'سباك بالرياض','page':4,'continuation_trace':cached['trace_id']}
-    assert api.post('/v1/search',json=body).status_code==404
-    assert api.post('/v1/search/stream',json=body).status_code==404
-    assert api.get('/v1/search/'+cached['trace_id']+'/availability').status_code==404
+    next_page=api.post('/v1/search',json=body)
+    assert next_page.status_code == 200
+    assert next_page.json()['next_page'] == 7
+    assert pages == [1,2,3,4,5,6]
+    assert api.get('/v1/search/'+cached['trace_id']+'/availability').status_code==200

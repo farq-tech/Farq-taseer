@@ -867,8 +867,14 @@ def create_app(
 
     def _serve_cached(response, query: str, user_id: str | None):
         trace_id = uuid4().hex
-        response = response.model_copy(update={"trace_id": trace_id, "next_page": None})
-        store.record_journey(trace_id, user_id, query, response.state.value, [{"stage": "cache"}])
+        response = response.model_copy(update={"trace_id": trace_id})
+        trace = {
+            "stage": "cache",
+            "pagination_owner": user_id,
+            "pagination_query": query,
+            "next_page": response.next_page,
+        }
+        store.record_journey(trace_id, user_id, query, response.state.value, trace)
         _remember_sellers(trace_id, user_id, _response_results(response))
         _remember_listings(trace_id, user_id, _response_pairs(response))
         return response
@@ -976,8 +982,6 @@ def create_app(
         return body.continuation_trace
 
     def pagination_trace(trace: dict, body: SearchBody, user_id: str | None, response, search_client=None) -> None:
-        if body.page is None:
-            response.next_page = None
         trace.update(pagination_owner=user_id, pagination_query=body.query, next_page=response.next_page)
         trace["harvest_jobs"] = sorted(getattr(search_client, "jobs", []))
 
