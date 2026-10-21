@@ -2546,8 +2546,8 @@ class Store:
         )
         self._connection.commit()
 
-    def record_inbound(self, thread: dict, inbound: InboundMessage) -> Message | None:
-        """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
+    def record_inbound(self, thread: dict, inbound: InboundMessage, *, allow_offer: bool = True) -> Message | None:
+        """Attach a Haraj reply to its request/item and seller; optionally withhold quote extraction."""
         if self._connection.execute("select 1 from messages where haraj_message_id = ?", (inbound.haraj_message_id,)).fetchone():
             self._connection.execute(
                 _ADVANCE_THREAD.replace("%s", "?").replace("greatest(", "max("),
@@ -2563,7 +2563,7 @@ class Store:
         offer = None
         attrs=self._connection.execute("select attributes_json from requests where id=?",(request_id,)).fetchone()
         personal=bool(attrs and json.loads(attrs["attributes_json"]).get("_haraj_consent"))
-        quote = extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)
+        quote = (extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)) if allow_offer else None
         price = None if quote is None else quote.total
         awarded = self._connection.execute("select awarded_seller_id from requests where id = ?", (request_id,)).fetchone()["awarded_seller_id"]
         # After the award, a price from anyone but the winner is kept as a message, not an offer.
