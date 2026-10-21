@@ -231,3 +231,93 @@ def test_search_imperative_dor_li_does_not_become_a_product_qualifier():
     assert "دور" not in intent.need
     assert "أطفال" in intent.need
     assert "خشب" in intent.need
+
+
+def test_common_home_goods_are_separated_and_keep_requested_specifications():
+    television = analyze("أبي تلفزيون سامسونج 65 بوصة")
+    dishwasher = analyze("أحتاج غسالة صحون 12 طقم")
+    washer = analyze("أحتاج غسالة ملابس")
+    tyres = analyze("أبي طقم كفرات 265/65R17")
+    seller = Seller(id="seller", name="معلن")
+
+    assert (television.type.value, television.category.value, television.subcategory.value) == (
+        "product",
+        "electronics",
+        "televisions",
+    )
+    assert "65" in television.need
+    assert decide(television, Ad(id="tv65", title="تلفزيون سامسونج 65 بوصة", seller=seller), seller)[0]
+    assert decide(television, Ad(id="tv55", title="تلفزيون سامسونج 55 بوصة", seller=seller), seller) == (
+        False,
+        ["spec_mismatch:بوصه"],
+    )
+
+    assert dishwasher.subcategory.value == "dishwashers"
+    assert washer.subcategory.value == "washing_machines"
+    assert "12" in dishwasher.need
+    assert decide(
+        dishwasher,
+        Ad(id="dishwasher", title="غسالة صحون 12 طقم", seller=seller),
+        seller,
+    )[0]
+    assert decide(
+        dishwasher,
+        Ad(id="washer", title="غسالة ملابس 12 كيلو", seller=seller),
+        seller,
+    )[0] is False
+
+    assert (tyres.category.value, tyres.subcategory.value) == ("parts", "tyres")
+    assert "265/65R17" in tyres.need
+    assert "طقم كفرات 265/65R17" in tyres.search_terms
+    assert decide(tyres, Ad(id="right-size", title="كفرات 265/65 R17 جديدة", seller=seller), seller)[0]
+    assert decide(
+        tyres,
+        Ad(id="wrong-size", title="كفرات 245/65 R17 جديدة", seller=seller),
+        seller,
+    ) == (False, ["tyre_size_mismatch"])
+
+
+def test_varied_home_product_requests_get_their_own_search_intents():
+    expected = {
+        "أحتاج شبك حماية للنوافذ": "window_security_grilles",
+        "أبحث عن أبواب PVC وWPC": "pvc_wpc_doors",
+        "أبي رخام مطبخ": "marble",
+        "أبي ستارة رول": "roller_blinds",
+    }
+    for query, subcategory in expected.items():
+        intent = analyze(query)
+        assert intent.type.value == "product"
+        assert intent.subcategory.value == subcategory
+        assert intent.need
+        assert query.removeprefix("أحتاج ").removeprefix("أبحث عن ").removeprefix("أبي ") in " ".join(intent.search_terms)
+
+
+def test_common_local_services_and_rentals_require_city_and_keep_the_customer_phrase():
+    expected = {
+        "أحتاج مكتب هندسي لاستخراج رخصة": "engineering_offices",
+        "أحتاج مصور زواج": "photography",
+        "أبي مربية منزلية بالشهر": "childcare",
+        "أحتاج إيجار سيارة أسبوع": "car_rental",
+        "أبي استقدام عاملة": "domestic_worker_recruitment",
+        "أبي عمالة منزلية نقل كفالة": "domestic_worker_recruitment",
+        "أحتاج وايت ماء يوصل للبيت": "water_delivery",
+    }
+    for query, subcategory in expected.items():
+        intent = analyze(query)
+        assert intent.type.value == "service"
+        assert intent.subcategory.value == subcategory
+        assert intent.clarification_question == "في أي مدينة؟"
+        assert intent.segment_text in intent.search_terms
+
+
+def test_car_rental_keeps_the_requested_period_and_rejects_conflicting_terms():
+    weekly = analyze("أحتاج إيجار سيارة أسبوع في الرياض")
+    seller = Seller(id="seller", name="مكتب تأجير سيارات", city="الرياض")
+    weekly_ad = Ad(id="weekly", title="تأجير سيارات أسبوعي", seller=seller)
+    monthly_ad = Ad(id="monthly", title="تأجير سيارات شهري", seller=seller)
+
+    assert weekly.subcategory.value == "car_rental"
+    assert "أسبوع" in weekly.need
+    assert weekly.location_city.value == "الرياض"
+    assert decide(weekly, weekly_ad, seller)[0]
+    assert decide(weekly, monthly_ad, seller) == (False, ["rent_term_mismatch"])

@@ -221,7 +221,7 @@ _ELECTRIC_WORK = (
 )
 # A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
 _NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
-_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار")
+_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار", "استئجار", "استاجر")
 _PROPERTY_TRANSACTION_MARKERS = {
     "للايجار",
     "ايجار",
@@ -238,7 +238,7 @@ _PROPERTY_SALE_CUES = ("بيع", "للبيع", "شراء", "للشراء", "تم
 _RENT_PERIODS = {
     "daily": ("يومي", "يوميا", "يومية", "باليوم"),
     "overnight": ("ليلي", "ليليا", "ليلة", "بالليلة", "لليلة"),
-    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "بالاسبوع"),
+    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "اسبوع", "اسبوعين", "اسبوعان", "بالاسبوع", "week"),
     "weekend": ("ويكند", "weekend", "بالويكند"),
     "monthly": ("شهري", "شهريا", "شهرية", "بالشهر"),
     "yearly": ("سنوي", "سنويا", "سنوية", "بالسنة", "بالسنه"),
@@ -429,6 +429,16 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             and requested_transaction != listing_transaction
         ):
             return False, ["property_transaction_mismatch"]
+    if intent.subcategory.value == "car_rental" and title:
+        asked_period = _rent_period(intent.original_query)
+        title_periods = {
+            period for period, cues in _RENT_PERIODS.items() if has_word(title, cues)
+        }
+        stated_periods = title_periods or {
+            period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+        }
+        if asked_period and stated_periods and asked_period not in stated_periods:
+            return False, ["rent_term_mismatch"]
     if ad is not None and title and intent.location_district.known and intent.location_district.value in _SIDES:
         # «أرض شمال الرياض»: a listing that says «شرق الرياض», or names «حي الروضة» on the
         # east side, is on another side of the city. One that names no side is not judged.
