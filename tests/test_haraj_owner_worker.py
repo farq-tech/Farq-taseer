@@ -3,7 +3,7 @@ import json
 from uuid import UUID
 import pytest
 from farq.store import Store
-from farq.haraj_chat import HarajChatUnavailable, InboundMessage, SentMessage, with_reference
+from farq.haraj_chat import HarajChatUnavailable, InboundMessage, SentMessage, find_references, with_reference
 from farq.contracts import RequestRecipient
 from farq.haraj_broker import UserHarajBroker, send_request_directly, sync_user_replies, owned_unmatched
 
@@ -25,7 +25,8 @@ def request(s, owner=A, need='25 باب PVC', consent=True, seller='haraj:seller
 def test_with_reference_uses_parsed_codes_not_substrings():
  body='استفسار عن الطلب T-1234567'
  sent=with_reference(body,'T-123456')
- assert sent.endswith('رقم الطلب: T-123456')
+ assert sent.endswith('فضلاً اذكر رقم الطلب عند الرد: T-123456')
+ assert find_references(sent) == ['T-123456']
  assert with_reference('سؤالي T-123456','T-123456')=='سؤالي T-123456'
 
 def test_exact_message_and_owner_come_from_owned_request_not_caller(store):
@@ -34,7 +35,7 @@ def test_exact_message_and_owner_come_from_owned_request_not_caller(store):
  broker=UserHarajBroker({},Mock()); broker.call=Mock(return_value={'status':'ACCEPTED','conversation_id':'p2p101_202','message_id':'p2p101_202:7','seq':7,'account_id':'101'})
  receipt=broker.send_delivery(store,item)
  _,owner,payload=broker.call.call_args.args
- assert owner==A and payload['text'].startswith('بكم الباب؟\n') and payload['text'].endswith(f"رقم الطلب: {item['ref_code']}") and payload['recipientId']=='202'
+ assert owner==A and payload['text'].startswith('بكم الباب؟\n') and payload['text'].endswith(f"فضلاً اذكر رقم الطلب عند الرد: {item['ref_code']}") and payload['recipientId']=='202'
  assert payload['rfqId']==str(UUID(rid)) and payload['deliveryId']==item['id']
  assert payload['itemId']=='25 باب PVC'
  assert payload['expectedAccountId']=='101' and payload['supplierId']=='haraj:seller:202'
