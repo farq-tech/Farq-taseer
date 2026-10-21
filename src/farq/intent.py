@@ -183,6 +183,7 @@ _STOP = {
     "الى",
     "لي",
     "لنا",
+    "موديل",
     "حق",
     "شي",
     "شيء",
@@ -286,6 +287,37 @@ _STOP = {
 }
 
 _DIRECTIONS = {"شمال", "جنوب", "شرق", "غرب"}
+_MOTORCYCLE_BRANDS = (
+    ("Honda", ("هوندا", "honda")),
+    ("Yamaha", ("ياماها", "yamaha")),
+    ("Suzuki", ("سوزوكي", "suzuki")),
+    ("Kawasaki", ("كاواساكي", "كواساكي", "kawasaki")),
+    ("KTM", ("كي تي ام", "ktm")),
+    ("Harley-Davidson", ("هارلي", "هارلي ديفيدسون", "harley", "harley davidson")),
+    ("BMW", ("بي ام دبليو", "bmw")),
+    ("Ducati", ("دوكاتي", "ducati")),
+    ("Triumph", ("ترايمف", "triumph")),
+)
+_MOTORCYCLE_PARTS = (
+    "كفر", "كفرات", "اطار", "اطارات", "جنط", "جنوط", "مكينه", "فرامل", "بريك", "بطاريه",
+    "سلسله", "مساعد", "مرايه", "شمعة", "شمعه", "كشاف",
+)
+
+
+def _motorcycle_brand(normalized: str) -> tuple[str, tuple[str, ...], str] | None:
+    padded = f" {normalized} "
+    for brand, aliases in _MOTORCYCLE_BRANDS:
+        for alias in aliases:
+            folded = normalize(alias)
+            if f" {folded} " in padded:
+                return brand, tuple(normalize(item) for item in aliases), folded
+    return None
+
+
+def _motorcycle_part(normalized: str) -> str | None:
+    return has_word(normalized, _MOTORCYCLE_PARTS)
+
+
 _PROPERTY_RENT_CUES = (
     "للإيجار", "إيجار", "تأجير", "استئجار", "باليوم", "يومي", "يوميا", "يومية", "ليلي", "ليليا",
     "ليلة", "بالليلة", "لليلة", "بالأسبوع", "اسبوعي", "اسبوعيا", "اسبوعية", "بالويكند", "ويكند",
@@ -526,6 +558,14 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="appliances", subcategory="washing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("غسالة أوتوماتيك", "غسالة اتوماتيك", "غسالات أوتوماتيك", "غسالة", "غسالات"), label="غسالة", label_from_match=True, eligibility=(("غسالة", "غسالات"),), expansions=("غسالة", "غسالة أوتوماتيك", "غسالات")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لاندكروزر", "land cruiser"), brand="Toyota", model="Land Cruiser", eligibility=(("لاندكروزر", "لاند كروزر", "land cruiser"),), expansions=("لاندكروزر",)),
+    _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("هايلكس", "هايلوكس", "hilux", "hi lux", "تويوتا هايلكس", "تويوتا هايلوكس"), brand="Toyota", model="Hilux", label="هايلكس", eligibility=(("هايلكس", "هايلوكس", "hilux", "hi lux"),), expansions=("هايلكس", "تويوتا هايلكس", "hilux")),
+    _head(type="vehicle", category="vehicles", subcategory="motorcycles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دباب هوندا", "دبابات هوندا", "هوندا دباب", "هوندا دبابات", "honda motorcycle", "honda motorbike", "motorcycle honda", "motorbike honda"), brand="Honda", label="دباب هوندا", eligibility=(("دباب", "دبابات", "motorcycle", "motorbike"), ("هوندا", "honda")), expansions=("دباب هوندا", "هوندا دباب", "دبابات هوندا", "honda motorcycle")),
+    _head(type="vehicle", category="vehicles", subcategory="motorcycles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دباب ياماها", "دبابات ياماها", "ياماها دباب", "ياماها دبابات", "yamaha motorcycle", "yamaha motorbike"), brand="Yamaha", label="دباب ياماها", eligibility=(("دباب", "دبابات", "motorcycle", "motorbike"), ("ياماها", "yamaha")), expansions=("دباب ياماها", "ياماها دباب", "دبابات ياماها", "yamaha motorcycle")),
+    _head(type="vehicle", category="vehicles", subcategory="motorcycles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دباب", "دبابات", "دراجة نارية", "دراجه ناريه", "دراجات نارية", "motorcycle", "motorbike"), label="دباب", label_from_match=True, eligibility=(("دباب", "دبابات", "دراجة نارية", "دراجه ناريه", "دراجات نارية", "motorcycle", "motorbike"),), expansions=("دباب", "دبابات", "دراجة نارية", "motorcycle")),
+    _head(type="vehicle", category="vehicles", subcategory="watercraft", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جت سكي ياماها", "جيت سكي ياماها", "ياماها جت سكي", "yamaha jet ski", "yamaha jetski"), brand="Yamaha", label="جت سكي ياماها", eligibility=(("جت سكي", "جيت سكي", "جتسكي", "جيتسكي", "jet ski", "jetski"), ("ياماها", "yamaha")), expansions=("جت سكي ياماها", "ياماها جت سكي", "yamaha jet ski")),
+    _head(type="vehicle", category="vehicles", subcategory="watercraft", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جت سكي", "جيت سكي", "جتسكي", "جيتسكي", "دباب بحري", "دبابات بحرية", "jet ski", "jetski", "personal watercraft", "pwc"), label="جت سكي", label_from_match=True, eligibility=(("جت سكي", "جيت سكي", "جتسكي", "جيتسكي", "دباب بحري", "دبابات بحرية", "jet ski", "jetski", "personal watercraft", "pwc"),), expansions=("جت سكي", "دباب بحري", "jet ski")),
+    _head(type="vehicle", category="vehicles", subcategory="electric_scooters", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سكوتر كهربائي شاومي", "سكوتر شاومي", "شاومي سكوتر كهربائي", "شاومي سكوتر", "xiaomi electric scooter"), brand="Xiaomi", label="سكوتر كهربائي شاومي", eligibility=(("سكوتر", "سكوترات", "scooter"), ("شاومي", "شياومي", "xiaomi")), expansions=("سكوتر كهربائي شاومي", "سكوتر شاومي", "xiaomi electric scooter")),
+    _head(type="vehicle", category="vehicles", subcategory="electric_scooters", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سكوتر كهربائي", "سكوترات كهربائية", "electric scooter", "electric scooters"), label="سكوتر كهربائي", label_from_match=True, eligibility=(("سكوتر", "سكوترات", "scooter", "scooters"), ("كهربائي", "كهربائية", "electric")), expansions=("سكوتر كهربائي", "سكوترات كهربائية", "electric scooter")),
     _head(type="property", category="property", subcategory="farms", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مزرعة للاستراحة", "مزرعة", "مزرعه", "مزارع", "farm", "farms"), label="مزرعة", label_from_match=True, eligibility=(("مزرعة", "مزرعه", "مزارع", "farm"),), title_groups=(("مزرعة", "مزرعه", "مزارع", "farm"),), expansions=("مزارع", "مزرعة للإيجار", "مزرعة استراحة")),
     _head(type="property", category="property", subcategory="resthouses", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("استراحة", "استراحه", "استراحات"), label="استراحة", label_from_match=True, eligibility=(("استراحة", "استراحه", "استراحات"),), title_groups=(("استراحة", "استراحه", "استراحات"),), expansions=("استراحات", "استراحة يومية", "استراحة للإيجار")),
     _head(type="property", category="property", subcategory="chalets", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شاليه", "شاليهات", "chalet", "chalets"), label="شاليه", label_from_match=True, eligibility=(("شاليه", "شاليهات", "chalet"),), title_groups=(("شاليه", "شاليهات", "chalet"),), expansions=("شاليهات", "شاليه يومي", "شاليه للإيجار")),
@@ -1064,6 +1104,7 @@ def analyze(query: str) -> IntentResponse:
             intent.missing_decision_information = ["need"]
             intent.clarification_question = "وش الخدمة أو الغرض اللي تبيه؟ مثال: سباك، نقل عفش، مكيف سبليت."
             return intent
+    motorcycle_brand = _motorcycle_brand(normalized) if head.subcategory == "motorcycles" else None
     intent.understood = True
     property_transaction = _property_transaction(normalized) if head.type == "property" else None
     label = _label(head, match, original)
@@ -1157,6 +1198,8 @@ def analyze(query: str) -> IntentResponse:
         intent.subcategory = known(head.subcategory, 0.7, head.phrases[0])
     if head.brand:
         intent.brand = known(head.brand, 0.8, head.phrases[0])
+    elif motorcycle_brand:
+        intent.brand = known(motorcycle_brand[0], 0.85, motorcycle_brand[2])
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
     if iphone_model:
@@ -1297,6 +1340,8 @@ def analyze(query: str) -> IntentResponse:
             if has_word(normalized, cues):
                 groups.append(list(cues))
                 break
+    if motorcycle_brand and not head.brand:
+        groups.append(list(motorcycle_brand[1]))
     if head.subcategory == "tutoring":
         if any(term in normalized.split() for term in ("رياضيات", "math", "mathematics")):
             groups.append(["رياضيات", "math", "mathematics"])
@@ -1356,8 +1401,13 @@ def analyze(query: str) -> IntentResponse:
         search_label = intent.need
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
-    if head.type in {"product", "property"} and match is not None:
-        matched_words = set(normalize(query_label).split())
+    if (head.type in {"product", "property"} or head.category == "vehicles") and match is not None:
+        matched_words = (
+            set(head.phrases[match.phrase_index].split())
+            if match.phrase_index is not None
+            else set()
+        )
+        matched_words.update(normalize(query_label).split())
         search_imperative = normalize(original).startswith(("دور لي ", "دور على ", "دوري على "))
         seller_search_phrase = any(
             normalize(word) in {"يبيع", "تبيع", "يبيعون", "تبيعون"}
@@ -1436,7 +1486,8 @@ def analyze(query: str) -> IntentResponse:
         expansions = tuple(re.sub(r"(يويو|yoyo)", lambda match: f"{match.group(1)} {variant}", term, count=1, flags=re.IGNORECASE) for term in expansions)
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
-    part = _car_part(normalized) if head.type == "vehicle" and head.subcategory == "cars" else None
+    part = _car_part(normalized) if head.type == "vehicle" and head.subcategory in {"cars", "pickups"} else None
+    motorcycle_part = _motorcycle_part(normalized) if head.subcategory == "motorcycles" else None
     if part:
         # «صدام كامري 2019» asks for a part of that car, not the car. Read as a car, the
         # search returned whole Camrys at 65,000 riyals whose body text mentioned a bumper,
@@ -1470,6 +1521,24 @@ def analyze(query: str) -> IntentResponse:
             if is_tyre
             else (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
         )
+    elif motorcycle_part:
+        intent.type = known("product", 0.8, motorcycle_part)
+        intent.category = known("parts", 0.75, motorcycle_part)
+        intent.subcategory = known("motorcycle_parts", 0.7, motorcycle_part)
+        intent.result_unit = ResultUnit.AD
+        part_shown = _display_word(original, motorcycle_part)
+        context_words = [
+            word for word in intent.need.split()
+            if not has_word(word.strip("،,.؟?!؛;:"), (motorcycle_part,))
+        ] if intent.need else []
+        context = " ".join(context_words)
+        query_label = f"{part_shown} {context}".strip()
+        intent.need = query_label
+        groups = [[motorcycle_part], *groups]
+        intent.eligibility_groups = groups
+        intent.title_groups = [[motorcycle_part], *intent.title_groups]
+        search_label = query_label
+        expansions = (query_label, f"قطع غيار {context or 'دباب'}", f"{part_shown} دباب")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
     if segment and not stroller_alternatives:
         # Preserve meaningful qualifiers omitted by a canonical head (brand, model,
