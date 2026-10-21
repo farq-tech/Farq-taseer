@@ -267,6 +267,31 @@ def test_intent_endpoint_classifies_refrigerated_freight_and_preserves_route(
     )
 
 
+@pytest.mark.parametrize(
+    "query,city",
+    [
+        ("أحتاج قاعة زواج في الرياض", "الرياض"),
+        ("أبغى استئجار قاعة أفراح بالرياض", "الرياض"),
+        ("أبي قصر أفراح في جدة", "جده"),
+    ],
+)
+def test_intent_endpoint_classifies_wedding_venue_requests(
+    tmp_path: Path, query, city
+):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["subcategory"]["value"] == "event_venues"
+    assert intent["result_unit"] == "service_provider"
+    assert intent["location_city"]["value"] == city
+    assert any("قاعة" in term or "قصر" in term for term in intent["search_terms"])
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,

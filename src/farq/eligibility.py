@@ -666,6 +666,19 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["no_trade_signal"]
     if intent.subcategory.value == "glazing" and title and has_word(title, _GLAZING_NOT):
         return False, ["not_glazing_work"]
+    if intent.subcategory.value == "event_venues" and title:
+        # Require the title to offer a venue directly. Event decorators and caterers
+        # often mention halls and weddings in descriptions or seller profiles.
+        if tokens(title)[:1] and tokens(title)[0] in {"ضيافه", "ضيافة", "بوفيه", "بوفيهات"}:
+            return False, ["title_not_offering_event_venue"]
+        venue_offer_phrases = (
+            "قاعة زواج", "قاعات زواج", "قاعة افراح", "قاعة أفراح",
+            "قاعات افراح", "قاعات أفراح", "قاعة مناسبات", "قاعات مناسبات",
+            "قصر افراح", "قصر أفراح", "قصور افراح", "قصور أفراح",
+            "wedding venue", "event venue", "wedding hall", "event hall",
+        )
+        if not any(contains_term(title, phrase) for phrase in venue_offer_phrases):
+            return False, ["title_not_offering_event_venue"]
     if intent.subcategory.value == "pvc_wpc_doors" and title:
         # A door search is for the item. Do not count an installer-only ad as a door listing,
         # while keeping supplier ads that mention installation, warranty, or price as context.

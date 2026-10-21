@@ -578,6 +578,67 @@ def test_airport_transfer_category_is_available_to_service_providers():
 
 
 @pytest.mark.parametrize(
+    "query,listing_title",
+    [
+        ("أحتاج قاعة زواج في الرياض", "قاعة أفراح ومناسبات للحجز في الرياض"),
+        ("أبغى استئجار قاعة أفراح بالرياض", "قاعات أفراح للإيجار في الرياض"),
+        ("أبي قصر أفراح في جدة", "قصر أفراح ومناسبات للحجز في جدة"),
+    ],
+)
+def test_wedding_venue_searches_find_bookable_venues_not_planners_or_sale_ads(
+    query, listing_title
+):
+    intent = analyze(query)
+    city = intent.location_city.value
+    seller = Seller(id="venue", name="قاعة أفراح ومناسبات", city=city)
+    venue = Ad(id="venue-ad", title=listing_title, city=city, seller=seller)
+    planner = Ad(
+        id="planner-ad",
+        title="منسق حفلات وتنظيم زواجات ومناسبات",
+        city=city,
+        seller=Seller(id="planner", name="منظم حفلات", city=city),
+    )
+    sale = Ad(
+        id="sale-ad",
+        title="قاعة أفراح للبيع",
+        city=city,
+        seller=Seller(id="property-seller", name="عقارات للبيع", city=city),
+    )
+    decorator = Ad(
+        id="decorator-ad",
+        title="كوش أفراح وتنسيق حفلات وتنظيم قاعات",
+        city=city,
+        seller=Seller(id="decorator", name="تنسيق حفلات", city=city),
+    )
+    caterer = Ad(
+        id="caterer-ad",
+        title="ضيافة للمناسبات والبحث عن تعاقد مع قاعات أفراح",
+        city=city,
+        seller=Seller(id="caterer", name="ضيافة مناسبات", city=city),
+    )
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "event_venues"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.known
+    assert decide(intent, venue, seller)[0] is True
+    assert decide(intent, planner, planner.seller)[0] is False
+    assert decide(intent, sale, sale.seller)[0] is False
+    assert decide(intent, decorator, decorator.seller)[0] is False
+    assert decide(intent, caterer, caterer.seller)[0] is False
+    assert any(item["key"] == "event_venues" for item in read_business(listing_title)["services"])
+
+
+def test_wedding_venues_stay_separate_from_event_planning_services():
+    venue = analyze("أبي قاعة زواج بالرياض")
+    planner = analyze("أبي منسق حفلات زواج بالرياض")
+
+    assert venue.subcategory.value == "event_venues"
+    assert planner.subcategory.value == "event_planning"
+
+
+@pytest.mark.parametrize(
     "query,subcategory,listing_title,unrelated_title",
     [
         (
