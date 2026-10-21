@@ -801,12 +801,15 @@ def test_working_refrigerator_for_sale_is_not_misclassified_as_a_repair_request(
         {
             "need": "صيانة أجهزة",
             "hiring": True,
-            "must_include": [["ثلاجة"]],
-            "search_terms": ["صيانة أجهزة"],
+            "must_include": [["صيانة"]],
+            "search_terms": ["فني صيانة أجهزة"],
         },
     )
     assert refined.type.value == "product"
     assert refined.result_unit.value == "ad"
+    assert refined.need == intent.need
+    assert refined.eligibility_groups == intent.eligibility_groups
+    assert refined.search_terms == intent.search_terms
 
     repair = analyze("ثلاجة تحتاج صيانة بالرياض")
     assert repair.subcategory.value == "appliance_repair"
