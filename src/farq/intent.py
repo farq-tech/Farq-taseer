@@ -18,7 +18,11 @@ from farq.eligibility import _CAR_PARTS, has_word
 from farq.expansion import expand
 from farq.text import normalize, prefix_variants, to_ascii_digits, tokens
 
-_WANT_WORDS = {
+def _normalized_words(words: set[str]) -> set[str]:
+    return {normalize(word) for word in words}
+
+
+_WANT_WORDS = _normalized_words({
     "ابي",
     "ابغى",
     "ابغي",
@@ -46,7 +50,8 @@ _WANT_WORDS = {
     "لاقي",
     "علي",
     "i",
-}
+})
+_REQUEST_PREPOSITIONS = {normalize(word) for word in ("على", "عن", "إلى")}
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
@@ -161,7 +166,7 @@ _NOT_A_UNIT = {
     "كيلوهرتز",
 }
 
-_STOP = {
+_STOP = _normalized_words({
     "ابي",
     "ابغى",
     "ابغي",
@@ -284,7 +289,7 @@ _STOP = {
     "in",
     "for",
     "please",
-}
+})
 
 _DIRECTIONS = {"شمال", "جنوب", "شرق", "غرب"}
 _MOTORCYCLE_BRANDS = (
@@ -990,7 +995,7 @@ def _price_bound(pattern: re.Pattern[str], normalized: str) -> re.Match[str] | N
 
 
 def _segment_text(original: str) -> str:
-    """The need as typed, minus a leading "أبي/أبغى"."""
+    """The need as typed, minus a request opener and its grammatical connector."""
 
     raw = " ".join(original.split())
     words = raw.split()
@@ -1000,8 +1005,18 @@ def _segment_text(original: str) -> str:
         and normalize(words[1]) in {"لي", "على", "عن"}
     ):
         words = words[2:]
-    while words and normalize(words[0]) in _WANT_WORDS:
-        words = words[1:]
+    after_request_opener = False
+    while words:
+        first = normalize(words[0])
+        if first in _WANT_WORDS:
+            words = words[1:]
+            after_request_opener = True
+            continue
+        if after_request_opener and first in _REQUEST_PREPOSITIONS:
+            words = words[1:]
+            after_request_opener = False
+            continue
+        break
     if (
         len(words) >= 2
         and normalize(words[0]) in {"محل", "محلات", "متجر", "متاجر"}
