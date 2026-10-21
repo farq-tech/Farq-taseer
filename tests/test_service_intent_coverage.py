@@ -342,6 +342,55 @@ def test_vehicle_transport_category_is_available_to_service_providers():
     assert any(item["key"] == "vehicle_transport" for item in services)
 
 
+@pytest.mark.parametrize(
+    "query, listing_title",
+    [
+        ("أبي أوبر من الرياض إلى جدة", "أوبر توصيل ركاب من الرياض إلى جدة"),
+        ("أبغى سواق من الرياض لجدة", "سواق مشاوير من الرياض إلى جدة"),
+        ("أبي تاكسي من الرياض إلى جدة", "تاكسي بين الرياض وجدة"),
+        ("أحتاج سيارة أجرة من الرياض لجدة", "أوبر وسيارة أجرة من الرياض إلى جدة"),
+        ("توصيل ركاب من الرياض لجدة", "توصيل ركاب من الرياض إلى جدة"),
+    ],
+)
+def test_intercity_passenger_transport_phrases_keep_the_route_and_match_rides(query, listing_title):
+    intent = analyze(query)
+    seller = Seller(id="driver", name="سائق مشاوير", city="الرياض")
+    ride = Ad(id="ride", title=listing_title, city="الرياض", seller=seller)
+    wrong_route = Ad(
+        id="wrong-route",
+        title="أوبر توصيل ركاب من الرياض إلى الدمام",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "passenger_transport"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert normalize(intent.destination_city.value) == normalize("جدة")
+    assert any(
+        "الرياض" in term and "جدة" in term
+        for term in haraj_queries(intent.search_terms, intent.location_city.value)
+    )
+    assert decide(intent, ride, seller)[0] is True
+    assert decide(intent, wrong_route, seller) == (False, ["route_mismatch"])
+
+
+def test_airport_transfer_and_vehicle_towing_stay_distinct_from_passenger_rides():
+    airport = analyze("أبي سيارة أجرة توصيل مطار الرياض")
+    towing = analyze("أبي سطحة من الرياض إلى جدة")
+
+    assert airport.subcategory.value == "airport_transfer"
+    assert towing.subcategory.value == "vehicle_transport"
+
+
+def test_passenger_transport_category_is_available_to_service_providers():
+    services = read_business("أوبر وتاكسي ومشاوير بين المدن")['services']
+
+    assert any(item["key"] == "passenger_transport" for item in services)
+
+
 def test_car_repair_category_is_available_to_service_providers():
     services = read_business("ميكانيكي سيارات وفحص كمبيوتر")['services']
 

@@ -419,6 +419,22 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             named = find_cities(ad.title, strict=True)
             if named and intent.location_city.value not in named:
                 return False, ["location_mismatch"]
+    if (
+        ad is not None
+        and intent.subcategory.value == "passenger_transport"
+        and intent.destination_city.known
+        and isinstance(intent.location_city.value, str)
+    ):
+        required_route_cities = {
+            normalize(intent.location_city.value),
+            normalize(str(intent.destination_city.value)),
+        }
+        listing_cities = {
+            normalize(city)
+            for city in find_cities(f"{ad.city or ''} {ad.title} {ad.description or ''}")
+        }
+        if not required_route_cities <= listing_cities:
+            return False, ["route_mismatch"]
     text = evidence_text(ad, seller)
     if not normalize(text):
         return False, ["no_evidence_text"]

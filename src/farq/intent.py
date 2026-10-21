@@ -711,7 +711,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="translation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مترجم", "مترجمة", "مترجم انجليزي", "ترجمة معتمدة", "ترجمة وثائق", "خدمات ترجمة", "translator"), label="ترجمة", label_from_match=True, eligibility=(("مترجم", "مترجمة", "ترجمة", "translator"),), expansions=("مترجم إنجليزي", "ترجمة معتمدة", "ترجمة وثائق", "خدمات ترجمة")),
     _head(type="service", category="services", subcategory="legal_services", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("محامي", "محامية", "محامي عقاري", "محامي شركات", "استشارات قانونية", "مستشار قانوني", "lawyer"), label="خدمات قانونية", label_from_match=True, eligibility=(("محامي", "محامية", "مستشار قانوني", "استشارات قانونية", "lawyer"),), expansions=("محامي عقاري", "محامي شركات", "استشارات قانونية", "مستشار قانوني")),
     _head(type="service", category="services", subcategory="driving_services", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سائق خاص", "سائق بالشهر", "سائق مشاوير", "توصيل مشاوير", "سواق يوصل", "سواق مدارس", "سواق توصيل طلاب", "توصيل طلاب مدارس", "سائق يوصل للمدرسة", "private driver"), label="سائق خاص", label_from_match=True, eligibility=(("سائق خاص", "سائق بالشهر", "سائق مشاوير", "توصيل مشاوير", "سواق يوصل", "سواق مدارس", "سواق توصيل طلاب", "توصيل طلاب مدارس", "سائق يوصل للمدرسة", "private driver"),), expansions=("سائق خاص", "سائق بالشهر", "سائق مشاوير", "توصيل مشاوير", "سواق مدارس", "توصيل طلاب مدارس")),
-    _head(type="service", category="services", subcategory="airport_transfer", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل مطار", "توصيل المطار", "سيارة أجرة", "سيارة اجره", "مشاوير مطار", "مشاوير المطار", "سائق مطار", "توصيل للمطار", "استقبال مطار", "airport transfer", "airport pickup"), label="توصيل مطار", label_from_match=True, eligibility=(("توصيل", "مشاوير", "سائق", "سيارة أجرة", "سيارة اجره", "استقبال", "airport transfer", "airport pickup"), ("مطار", "المطار", "airport")), expansions=("توصيل المطار", "مشاوير مطار", "استقبال مطار", "airport transfer", "airport pickup")),
+    _head(type="service", category="services", subcategory="passenger_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("أوبر", "اوبر", "uber", "تاكسي", "تكسي", "taxi", "سيارة أجرة", "سيارة اجره", "مشوار", "مشاوير", "نقل ركاب", "توصيل ركاب", "سواق", "سائق", "ليموزين", "limousine"), label="مشاوير", label_from_match=True, eligibility=(("أوبر", "اوبر", "uber", "تاكسي", "تكسي", "taxi", "سيارة أجرة", "سيارة اجره", "مشوار", "مشاوير", "نقل ركاب", "توصيل ركاب", "سواق", "سائق", "ليموزين", "limousine"),), expansions=("أوبر", "تاكسي", "مشاوير بين المدن", "نقل ركاب", "توصيل ركاب", "limousine")),
+    _head(type="service", category="services", subcategory="airport_transfer", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل مطار", "توصيل المطار", "مشاوير مطار", "مشاوير المطار", "سائق مطار", "توصيل للمطار", "استقبال مطار", "airport transfer", "airport pickup"), label="توصيل مطار", label_from_match=True, eligibility=(("توصيل", "مشاوير", "سائق", "استقبال", "airport transfer", "airport pickup"), ("مطار", "المطار", "airport")), expansions=("توصيل المطار", "مشاوير مطار", "استقبال مطار", "airport transfer", "airport pickup")),
     _head(type="service", category="services", subcategory="event_planning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"), label="تنسيق مناسبات", label_from_match=True, eligibility=(("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"),), expansions=("منسق حفلات", "تنسيق مناسبات", "منسق زهور", "تجهيز حفلات")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"), label="مدرب سباحة", label_from_match=True, eligibility=(("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"),), expansions=("مدرب سباحة", "تعليم سباحة", "مدربة سباحة")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب شخصي", "مدربة شخصية", "personal trainer"), label="مدرب شخصي", label_from_match=True, eligibility=(("مدرب شخصي", "مدربة شخصية", "personal trainer"),), expansions=("مدرب شخصي", "مدربة شخصية", "personal trainer")),
@@ -981,6 +982,13 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
         and item.head.model is None
         for item in product
     )
+    passenger_services = [item for item in service if item.head.subcategory == "passenger_transport"]
+    airport_services = [item for item in service if item.head.subcategory == "airport_transfer"]
+    airport_context = bool(normalized and any(cue in normalized.split() for cue in ("مطار", "المطار", "airport")))
+    if airport_context and airport_services:
+        service = airport_services
+    elif find_route(normalized or "") and passenger_services:
+        service = passenger_services
     if generic_vehicle_product and _service_request(normalized) and not service and not product_cue:
         # «يسوي لي مظلة سيارات» mentions the use of the service, not a car for sale.
         return None
@@ -1812,7 +1820,7 @@ def analyze(query: str) -> IntentResponse:
             word for word in search_label.split() if normalize(word) not in price_words
         )
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
-    if route and head.subcategory in {"moving", "goods_transport", "vehicle_transport"}:
+    if route and head.subcategory in {"moving", "goods_transport", "vehicle_transport", "passenger_transport"}:
         route_term = f"{query_label} من {city_label(route[0])} إلى {city_label(route[1])}"
         intent.search_terms = list(dict.fromkeys((route_term, *intent.search_terms)))
     if segment and not stroller_alternatives:
