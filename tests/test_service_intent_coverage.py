@@ -465,6 +465,52 @@ def test_passenger_transport_category_is_available_to_service_providers():
 
 
 @pytest.mark.parametrize(
+    "query,listing_title",
+    [
+        (
+            "سيارة نقل مبرد من الدمام للرياض",
+            "نقل بضائع مبردة بسيارة من الدمام إلى الرياض",
+        ),
+        (
+            "أحتاج شحن بضائع مبردة من جدة إلى الرياض",
+            "شحن بضائع مبردة بين جدة والرياض",
+        ),
+        (
+            "أبي شاحنة مبردة للنقل من الدمام للرياض",
+            "نقل بضائع مبردة بالشاحنة من الدمام إلى الرياض",
+        ),
+    ],
+)
+def test_refrigerated_cargo_searches_keep_cargo_temperature_and_route(query, listing_title):
+    intent = analyze(query)
+    origin = intent.location_city.value
+    origin_label = "جدة" if origin == "جده" else origin
+    seller = Seller(id="refrigerated-carrier", name="شركة شحن", city=origin)
+    matching_ad = Ad(id="refrigerated", title=listing_title, city=origin, seller=seller)
+    furniture_ad = Ad(
+        id="furniture", title=f"نقل عفش من {origin_label} إلى الرياض", city=origin, seller=seller
+    )
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "goods_transport"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.destination_city.known
+    assert any("مبرد" in term or "مبردة" in term for term in intent.search_terms)
+    assert decide(intent, matching_ad, seller)[0] is True
+    assert decide(intent, furniture_ad, seller)[0] is False
+    assert any(item["key"] == "goods_transport" for item in read_business(listing_title)["services"])
+
+
+def test_refrigerated_vehicle_purchase_stays_separate_from_refrigerated_transport():
+    intent = analyze("سيارة ثلاجة للبيع")
+
+    assert intent.type.value == "vehicle"
+    assert intent.subcategory.value == "cars"
+    assert intent.result_unit.value == "ad"
+
+
+@pytest.mark.parametrize(
     "query,subcategory,listing_title,unrelated_title",
     [
         (
