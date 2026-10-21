@@ -85,8 +85,11 @@ _IPAD_FAMILY = re.compile(r"(?:ايباد|ipad)\s*(?:(pro|برو|air|اير|mini
 _IPAD_CHIP = re.compile(r"(?<![a-z0-9])m\s*([2-5])(?!\d)", re.IGNORECASE)
 _IPAD_SCREEN = re.compile(r"(?<!\d)(\d{1,2}(?:\.\d)?)\s*(?:انش|بوصه|inch(?:es)?)(?![a-z])", re.IGNORECASE)
 _IPAD_STORAGE = re.compile(r"(?<!\d)(16|32|64|128|256|512|1024|2048)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت)(?![\w])", re.IGNORECASE)
-_PRICE_MAX = re.compile(r"(?:اقل\s+من|تحت|بحد\s*(?:اقصى|اعلى)?|ما\s*(?:يتعدى|تتعدى|يتعدي|تتعدي|يزيد\s+عن|تزيد\s+عن)|لا\s*(?:يتجاوز|تتجاوز|يتعدي|تتعدي)|ميزانيتي|بميزانيه)\s*(\d{2,7})")
-_PRICE_MIN = re.compile(r"(?:اكثر من|فوق|يبدا من)\s+(\d{3,7})")
+_PRICE_AMOUNT = r"([0-9]+(?:(?:,|\s|٬)[0-9]{3})*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?"
+_PRICE_MAX = re.compile(
+    rf"(?:اقل\s+من|تحت|بحد(?:ود)?\s*(?:اقص[ىي]|اعل[ىي])?|ما\s*(?:يتعدى|تتعدى|يتعدي|تتعدي|يزيد\s+عن|تزيد\s+عن)|لا\s*(?:يتجاوز|تتجاوز|يتعدي|تتعدي)|ميزانيتي|بميزانيه)\s*{_PRICE_AMOUNT}"
+)
+_PRICE_MIN = re.compile(rf"(?:اكثر من|فوق|يبدا من)\s+{_PRICE_AMOUNT}")
 _CAT_BREEDS = (
     ("persian", ("شيرازي", "شرازي", "persian")),
     ("siamese", ("سيامي", "سياميه", "siamese")),
@@ -393,7 +396,7 @@ _ENGLISH_PRODUCT_CUES = {"part", "parts", "kit", "manual", "replacement", "acces
 # photographer, a tutor, a driver: people hired for an occasion, not things bought.
 _SERVICE_AGENTS = {
     "مقاول", "مقاولات", "فني", "فنيين", "معلم", "معلمين", "عامل", "عماله", "ورشه",
-    "حداد", "نجار", "سباك", "كهربائي", "كهربجي", "دهان", "مبلط", "بلاط", "لحام",
+    "حداد", "نجار", "سباك", "كهربائي", "كهربجي", "ميكانيكي", "دهان", "مبلط", "بلاط", "لحام",
     "شركه", "مؤسسه", "صنايعي", "استاذ",
     "طباخ", "طباخه", "مصور", "مصوره", "مدرس", "مدرسه", "سائق", "قهوجي", "مصمم", "خادمه", "شغاله", "خياطه", "خياط", "tailor",
 }
@@ -673,6 +676,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("يارس", "تويوتا يارس", "yaris", "toyota yaris"), brand="Toyota", model="Yaris", label="تويوتا يارس", label_from_match=True, eligibility=(("يارس", "yaris"),), expansions=("تويوتا يارس", "يارس", "Toyota Yaris", "Yaris")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لاندكروزر", "land cruiser"), brand="Toyota", model="Land Cruiser", eligibility=(("لاندكروزر", "لاند كروزر", "land cruiser"),), expansions=("لاندكروزر",)),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سيارة", "سيارات", "مركبة", "مركبات", "موتر", "car", "cars", "vehicle", "vehicles"), label="سيارة", label_from_match=True, eligibility=(("سيارة", "سيارات", "مركبة", "مركبات", "موتر", "car", "cars", "vehicle", "vehicles"),), expansions=("سيارات", "سيارة", "موتر", "cars", "vehicles")),
     _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("هايلكس", "هايلوكس", "hilux", "hi lux", "تويوتا هايلكس", "تويوتا هايلوكس"), brand="Toyota", model="Hilux", label="هايلكس", eligibility=(("هايلكس", "هايلوكس", "hilux", "hi lux"),), expansions=("هايلكس", "تويوتا هايلكس", "hilux")),
     _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ددسن غمارتين", "داتسن غمارتين", "داتسون غمارتين", "datsun double cab"), brand="Datsun", model="Datsun", label="ددسن غمارتين", label_from_match=True, eligibility=(("ددسن", "داتسن", "داتسون", "datsun"), ("غمارتين", "double cab")), expansions=("ددسن غمارتين", "داتسن غمارتين", "Datsun double cab")),
     _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ددسن", "داتسن", "داتسون", "datsun"), brand="Datsun", model="Datsun", label="ددسن", label_from_match=True, eligibility=(("ددسن", "داتسن", "داتسون", "datsun"),), expansions=("ددسن", "داتسن", "داتسون", "Datsun pickup")),
@@ -696,6 +700,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "توصيل عفش", "توصيل اثاث", "شحن عفش", "شحن اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل", "توصيل", "شحن"), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
     _head(type="service", category="services", subcategory="goods_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل أغراض", "توصيل اغراض", "نقل أغراض", "نقل اغراض", "شحن أغراض", "شحن اغراض", "نقل بضائع", "نقل بضاعة", "شحن بضائع", "شحن بضاعة", "توصيل بضائع", "نقل طرود", "نقل طرد", "شحن طرود", "شحن طرد", "شحن كراتين", "نقل كراتين", "توصيل كراتين", "شحن كرتون", "شحن بين المدن", "شركة شحن", "خدمات شحن", "cargo delivery", "freight transport"), label="نقل أغراض", label_from_match=True, eligibility=(("توصيل", "نقل", "شحن", "cargo", "freight"), ("أغراض", "اغراض", "بضائع", "بضاعة", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "صناديق", "ممتلكات", "goods", "freight")), expansions=("نقل أغراض", "توصيل بضائع", "شحن بضائع", "نقل بضائع", "نقل طرود", "شحن كراتين"), verbs=("يشحن", "شحن", "تنقل", "ينقل", "توصيل", "يوصل", "اوصّل", "اوصل"), objects=("اغراض", "بضائع", "بضاعة", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "صناديق", "صندوق", "ممتلكات")),
     _head(type="service", category="services", subcategory="vehicle_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل سيارة", "نقل سيارات", "نقل سيارتي", "نقل مركبة", "سطحة نقل", "سطحه نقل", "سطحة", "سطحه", "car towing", "vehicle transport"), label="نقل سيارة", eligibility=(("سطحة", "سطحه", "ونش", "car towing", "vehicle transport"), ("نقل", "تنقل", "توصيل", "سحب", "tow"), ("سيارة", "سيارتي", "سيارات", "مركبة", "مركبتي", "vehicles", "car")), expansions=("سطحة نقل سيارات", "سطحة نقل سيارة", "نقل سيارة بين المدن", "خدمة سطحة نقل")),
+    _head(type="service", category="services", subcategory="car_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ميكانيكي سيارات", "ميكانيكي", "ورشة ميكانيكا", "ورشة سيارات", "تصليح سيارات", "صيانة سيارات", "فحص سيارة", "فحص سيارات", "car repair", "auto mechanic"), label="ميكانيكي سيارات", label_from_match=True, eligibility=(("ميكانيكي", "ميكانيكا", "ورشة سيارات", "تصليح سيارات", "صيانة سيارات", "فحص سيارة", "car repair", "auto mechanic"),), expansions=("ميكانيكي سيارات", "ورشة ميكانيكا", "صيانة سيارات", "فحص سيارات", "car repair"), verbs=("يفحص", "فحص", "يصلح", "تصليح", "صيانة"), objects=("سيارة", "سيارات", "مركبة", "مركبات")),
     _head(type="service", category="services", subcategory="car_rental", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تأجير سيارات", "تأجير سيارة", "استئجار سيارة", "استأجر سيارة", "إيجار سيارة", "ايجار سيارة", "إيجار سيارات", "rent a car", "car rental"), label="تأجير سيارات", label_from_match=True, eligibility=(("تأجير", "ايجار", "استئجار", "استأجر", "rental", "rent"), ("سيارات", "سيارة", "car")), expansions=("تأجير سيارات", "إيجار سيارة", "استئجار سيارة", "car rental")),
     _head(type="service", category="services", subcategory="water_delivery", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("وايت ماء", "وايت مياه", "وايت يوصل ماء", "توصيل وايت ماء", "توصيل مياه", "water tanker"), label="توصيل وايت ماء", label_from_match=True, eligibility=(("وايت", "water tanker"), ("ماء", "مياه", "water")), expansions=("وايت ماء", "وايت مياه", "توصيل وايت ماء", "water tanker")),
     _head(type="service", category="services", subcategory="domestic_worker_recruitment", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("استقدام عاملة", "استقدام عاملات", "استقدام عمالة منزلية", "نقل كفالة عاملة", "نقل كفالة عاملات", "نقل كفالة عمالة منزلية", "عمالة منزلية نقل كفالة", "عاملات نقل كفالة", "domestic worker recruitment"), label="استقدام ونقل كفالة عمالة منزلية", label_from_match=True, eligibility=(("استقدام", "نقل كفالة", "recruitment", "transfer"), ("عاملة", "عاملات", "عمالة منزلية", "عاملة منزلية", "domestic worker")), expansions=("استقدام عاملة", "استقدام عاملات", "نقل كفالة عاملة", "نقل كفالة عمالة منزلية")),
@@ -706,6 +711,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="translation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مترجم", "مترجمة", "مترجم انجليزي", "ترجمة معتمدة", "ترجمة وثائق", "خدمات ترجمة", "translator"), label="ترجمة", label_from_match=True, eligibility=(("مترجم", "مترجمة", "ترجمة", "translator"),), expansions=("مترجم إنجليزي", "ترجمة معتمدة", "ترجمة وثائق", "خدمات ترجمة")),
     _head(type="service", category="services", subcategory="legal_services", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("محامي", "محامية", "محامي عقاري", "محامي شركات", "استشارات قانونية", "مستشار قانوني", "lawyer"), label="خدمات قانونية", label_from_match=True, eligibility=(("محامي", "محامية", "مستشار قانوني", "استشارات قانونية", "lawyer"),), expansions=("محامي عقاري", "محامي شركات", "استشارات قانونية", "مستشار قانوني")),
     _head(type="service", category="services", subcategory="driving_services", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سائق خاص", "سائق بالشهر", "سائق مشاوير", "توصيل مشاوير", "سواق يوصل", "سواق مدارس", "سواق توصيل طلاب", "توصيل طلاب مدارس", "سائق يوصل للمدرسة", "private driver"), label="سائق خاص", label_from_match=True, eligibility=(("سائق خاص", "سائق بالشهر", "سائق مشاوير", "توصيل مشاوير", "سواق يوصل", "سواق مدارس", "سواق توصيل طلاب", "توصيل طلاب مدارس", "سائق يوصل للمدرسة", "private driver"),), expansions=("سائق خاص", "سائق بالشهر", "سائق مشاوير", "توصيل مشاوير", "سواق مدارس", "توصيل طلاب مدارس")),
+    _head(type="service", category="services", subcategory="airport_transfer", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل مطار", "توصيل المطار", "سيارة أجرة", "سيارة اجره", "مشاوير مطار", "مشاوير المطار", "سائق مطار", "توصيل للمطار", "استقبال مطار", "airport transfer", "airport pickup"), label="توصيل مطار", label_from_match=True, eligibility=(("توصيل", "مشاوير", "سائق", "سيارة أجرة", "سيارة اجره", "استقبال", "airport transfer", "airport pickup"), ("مطار", "المطار", "airport")), expansions=("توصيل المطار", "مشاوير مطار", "استقبال مطار", "airport transfer", "airport pickup")),
     _head(type="service", category="services", subcategory="event_planning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"), label="تنسيق مناسبات", label_from_match=True, eligibility=(("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"),), expansions=("منسق حفلات", "تنسيق مناسبات", "منسق زهور", "تجهيز حفلات")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"), label="مدرب سباحة", label_from_match=True, eligibility=(("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"),), expansions=("مدرب سباحة", "تعليم سباحة", "مدربة سباحة")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب شخصي", "مدربة شخصية", "personal trainer"), label="مدرب شخصي", label_from_match=True, eligibility=(("مدرب شخصي", "مدربة شخصية", "personal trainer"),), expansions=("مدرب شخصي", "مدربة شخصية", "personal trainer")),
@@ -966,6 +972,22 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
             or (service and _english_service_request(normalized))
         )
     )
+    dedicated_vehicle_service = any(
+        item.head.subcategory in {"car_rental", "car_repair"} for item in service
+    )
+    generic_vehicle_product = any(
+        item.head.type == "vehicle"
+        and item.head.subcategory == "cars"
+        and item.head.model is None
+        for item in product
+    )
+    if generic_vehicle_product and _service_request(normalized) and not service and not product_cue:
+        # «يسوي لي مظلة سيارات» mentions the use of the service, not a car for sale.
+        return None
+    if service and generic_vehicle_product and not product_cue:
+        return max(service, key=lambda item: item.length)
+    if dedicated_vehicle_service and not product_cue:
+        return max(service, key=lambda item: item.length)
     if product and (not service or not explicit_service or product_cue):
         return max(product, key=lambda item: item.length)
     if service:
@@ -1089,8 +1111,16 @@ def _display_word(original: str, folded: str) -> str:
 
 
 def _quantity(normalized: str, original: str) -> tuple[FieldValue, str | None]:
+    price_amount_spans = [
+        (match.start(1), match.end(1))
+        for pattern in (_PRICE_MAX, _PRICE_MIN)
+        for match in pattern.finditer(normalized)
+    ]
     count = _QUANTITY_COUNT.search(normalized)
-    if count:
+    count_is_price = count and any(
+        start <= count.start(2) < end for start, end in price_amount_spans
+    )
+    if count and not count_is_price:
         value = int(count.group(2))
         noun = count.group(3) if count.group(3) and count.group(3) not in _NOT_A_UNIT else count.group(1)
         if noun in _STOP or noun in _NOT_A_UNIT:
@@ -1098,6 +1128,8 @@ def _quantity(normalized: str, original: str) -> tuple[FieldValue, str | None]:
         if 0 < value < 10000:
             return known(value, 0.85, count.group(0).strip()), (_display_word(original, noun) if noun else None)
     for match in _QUANTITY.finditer(normalized):
+        if any(start <= match.start(1) < end for start, end in price_amount_spans):
+            continue
         value = int(match.group(1))
         noun = match.group(2)
         if value <= 0 or noun in _NOT_A_UNIT or noun in _STOP:
@@ -1115,12 +1147,24 @@ def _price_bound(pattern: re.Pattern[str], normalized: str) -> re.Match[str] | N
         return None
     # Short limits are valid only when the customer explicitly gives a currency;
     # this keeps "أقل من 11 إنش" from becoming an 11-riyal budget.
-    amount = match.group(1)
-    if len(amount) < 3:
-        following = normalized[match.end(1):].lstrip()
-        if not re.match(r"(?:ريال|رس|sar|sr|ر\s*س)\b", following):
+    amount = match.group(1).replace(",", "").replace("٬", "").replace(" ", "")
+    multiplier = match.group(2)
+    if len(amount.split(".", 1)[0]) < 3 and not multiplier:
+        following = normalized[match.end(0):].lstrip()
+        if not re.match(r"(?:ريال|رس|sar|sr|ر\s*\.?\s*س)(?:\b|(?=\s|$))", following, re.IGNORECASE):
             return None
     return match
+
+
+def _price_bound_value(match: re.Match[str]) -> int:
+    amount = match.group(1).replace(",", "").replace("٬", "").replace(" ", "").replace("٫", ".")
+    value = float(amount)
+    multiplier = normalize(match.group(2) or "")
+    if multiplier == "الف":
+        value *= 1_000
+    elif multiplier == "مليون":
+        value *= 1_000_000
+    return int(value)
 
 
 def _segment_text(original: str) -> str:
@@ -1446,10 +1490,10 @@ def analyze(query: str) -> IntentResponse:
     intent.quantity, intent.quantity_unit = _quantity(normalized, original)
     price_max = _price_bound(_PRICE_MAX, normalized)
     if price_max:
-        intent.price_max = known(int(price_max.group(1)), 0.75, price_max.group(0))
+        intent.price_max = known(_price_bound_value(price_max), 0.75, price_max.group(0))
     price_min = _price_bound(_PRICE_MIN, normalized)
     if price_min:
-        intent.price_min = known(int(price_min.group(1)), 0.75, price_min.group(0))
+        intent.price_min = known(_price_bound_value(price_min), 0.75, price_min.group(0))
     if property_transaction == "ambiguous":
         intent.missing_decision_information.append("transaction_type")
         if head.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
@@ -1755,6 +1799,18 @@ def analyze(query: str) -> IntentResponse:
         intent.title_groups = [[motorcycle_part], *intent.title_groups]
         search_label = query_label
         expansions = (query_label, f"قطع غيار {context or 'دباب'}", f"{part_shown} دباب")
+    price_bound_matches = [price for price in (price_min, price_max) if price]
+    price_words = {
+        word
+        for price in price_bound_matches
+        for word in normalize(price.group(0)).split()
+    }
+    if price_words:
+        # Use the explicit budget for eligibility; sending «بحدود 50 ألف» to Haraj
+        # makes it search that text instead of the vehicle words and loses matching ads.
+        search_label = " ".join(
+            word for word in search_label.split() if normalize(word) not in price_words
+        )
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
     if route and head.subcategory in {"moving", "goods_transport", "vehicle_transport"}:
         route_term = f"{query_label} من {city_label(route[0])} إلى {city_label(route[1])}"
@@ -1764,6 +1820,8 @@ def analyze(query: str) -> IntentResponse:
         # comfort, or the requested material) without sending search framing such as
         # «وين ألقى» and «محل يبيع» to the provider.
         segment_tokens = _content_tokens(normalize(segment))
+        if price_words:
+            segment_tokens = [token for token in segment_tokens if token not in price_words]
         label_tokens = set(_content_tokens(normalize(query_label)))
         if set(segment_tokens) - label_tokens:
             exact_segment = (
@@ -1775,6 +1833,11 @@ def analyze(query: str) -> IntentResponse:
                 intent.search_terms.insert(1, exact_segment)
     asked_numbers = set(re.findall(r"\d+", to_ascii_digits(segment or "")))
     represented_numbers = set(re.findall(r"\d+", to_ascii_digits(search_label)))
+    represented_numbers.update(
+        number
+        for price in price_bound_matches
+        for number in re.findall(r"\d+", to_ascii_digits(price.group(1)))
+    )
     if segment and asked_numbers - represented_numbers:
         exact_segment = " ".join(segment.split())
         if exact_segment not in intent.search_terms:

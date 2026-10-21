@@ -342,6 +342,18 @@ def test_vehicle_transport_category_is_available_to_service_providers():
     assert any(item["key"] == "vehicle_transport" for item in services)
 
 
+def test_car_repair_category_is_available_to_service_providers():
+    services = read_business("ميكانيكي سيارات وفحص كمبيوتر")['services']
+
+    assert any(item["key"] == "car_repair" for item in services)
+
+
+def test_airport_transfer_category_is_available_to_service_providers():
+    services = read_business("توصيل مطار واستقبال مسافرين")['services']
+
+    assert any(item["key"] == "airport_transfer" for item in services)
+
+
 @pytest.mark.parametrize(
     "query,subcategory,listing_title,unrelated_title",
     [

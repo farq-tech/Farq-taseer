@@ -14,6 +14,67 @@ def test_arabic_budget_cap_is_extracted_without_treating_dimensions_as_price():
     assert dimension.price_max.known is False
 
 
+@pytest.mark.parametrize(
+    "query, expected_budget",
+    [
+        ("أبي سيارة عائلية بحدود 50 ألف بالرياض", 50_000),
+        ("أدور على موتر نظيف ما يتعدى ٤٥ ألف", 45_000),
+        ("أبغى مركبة مستعملة بحد أقصى 30,000 ريال في جدة", 30_000),
+    ],
+)
+def test_generic_car_search_understands_vehicle_and_budget_formats(query, expected_budget):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "vehicle"
+    assert intent.category.value == "vehicles"
+    assert intent.subcategory.value == "cars"
+    assert intent.price_max.value == expected_budget
+    assert intent.quantity.known is False
+    assert not any("بحدود" in term or "ألف" in term for term in intent.search_terms)
+
+
+def test_generic_car_budget_filters_only_ads_with_comparable_asking_prices():
+    intent = analyze("أبي سيارة عائلية بحدود 50 ألف بالرياض")
+    seller = Seller(id="seller", name="معلن", city="الرياض")
+    within_budget = Ad(
+        id="within",
+        title="سيارة عائلية للبيع موديل 2021",
+        city="الرياض",
+        price_amount=48_000,
+        seller=seller,
+    )
+    above_budget = Ad(
+        id="above",
+        title="سيارة عائلية للبيع موديل 2021",
+        city="الرياض",
+        price_amount=55_000,
+        seller=seller,
+    )
+
+    assert decide(intent, within_budget, seller)[0] is True
+    assert decide(intent, above_budget, seller) == (False, ["over_price_max"])
+
+
+def test_generic_vehicle_terms_do_not_turn_maintenance_into_a_car_purchase():
+    intent = analyze("أحتاج ميكانيكي يفحص السيارة في الرياض")
+    seller = Seller(id="garage", name="ورشة سيارات", city="الرياض")
+    listing = Ad(id="garage-listing", title="ميكانيكي سيارات وفحص كمبيوتر", city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "car_repair"
+    assert decide(intent, listing, seller)[0] is True
+
+
+def test_vehicle_mentioned_as_a_service_target_is_not_parsed_as_a_vehicle_sale():
+    intent = analyze("أبي أحد يسوي لي مظلة سيارات")
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.result_unit.value == "service_provider"
+
+
 def test_ipad_identity_and_requested_specifications_reject_wrong_capacity():
     intent = analyze("آيباد برو ١١ انش M2 ٢٥٦ قيقا مستعمل نظيف جدة")
     seller = Seller(id="seller", name="معلن")
