@@ -822,8 +822,8 @@ def test_working_refrigerator_for_sale_is_not_misclassified_as_a_repair_request(
     [
         ("أبغى فني يصلح ثلاجتي بالرياض", "فني ثلاجات"),
         ("أحتاج تصليح غسالتي بالرياض", "تصليح غسالات"),
-        ("أحتاج صيانة نشافتي بجدة", "صيانة أجهزة منزلية"),
-        ("أبي فني يصلح جلايتي بمكة", "صيانة أجهزة منزلية"),
+        ("أحتاج صيانة نشافتي بجدة", "فني نشافات"),
+        ("أبي فني يصلح جلايتي بمكة", "فني جلايات"),
     ],
 )
 def test_appliance_repair_understands_possessive_device_names(query, expected_search_term):
