@@ -128,6 +128,8 @@ def test_iphone_generation_and_storage_survive_natural_query_wording():
     assert "storage" not in intent.missing_decision_information
     assert ["15"] in intent.eligibility_groups
     assert any("256" in group for group in intent.eligibility_groups)
+    assert intent.need == "ايفون 15 برو ماكس 256 جيجا الرياض"
+    assert intent.search_terms[0] == "ايفون 15 برو ماكس 256 جيجا الرياض"
     assert any("ايفون 15 برو ماكس" in term for term in intent.search_terms)
 
 

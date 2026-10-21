@@ -987,6 +987,9 @@ def analyze(query: str) -> IntentResponse:
         search_label = f"{search_label} {intent.model.value[-1]}"
     if head.type in {"product", "property"} and match is not None:
         matched_words = set(head.phrases[match.phrase_index].split()) if match.phrase_index is not None else set()
+        # Model and storage extraction can already add the customer's qualifiers to
+        # query_label. Do not append those same words a second time below.
+        matched_words.update(normalize(query_label).split())
         city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
         yoyo_variant = intent.model.value[-1] if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"} else None
         qualifiers = []
