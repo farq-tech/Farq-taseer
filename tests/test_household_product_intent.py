@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from farq.contracts import Ad, ResultUnit, Seller
@@ -41,6 +44,24 @@ def test_refresh_rate_is_not_misread_as_requested_quantity():
     intent = analyze("أحتاج شاشة 27 بوصة 144 هرتز بالرياض")
 
     assert intent.quantity.known is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "أدور على سرير طبي لكبار السن",
+        "أبحث عن سرير طبي لكبار السن",
+        "نبغى سرير طبي لكبار السن",
+    ],
+)
+def test_request_openers_and_connectors_preserve_the_actual_product_need(query):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "beds"
+    assert intent.segment_text == "سرير طبي لكبار السن"
+    assert intent.need == "سرير طبي لكبار السن"
+    assert intent.search_terms[0] == "سرير طبي لكبار السن"
 
 
 @pytest.mark.parametrize(
@@ -112,3 +133,92 @@ def test_upholstery_work_stays_a_service():
     listing = read_business("خدمات تنجيد كنب ومجالس")
 
     assert any(item["key"] == "upholstery" for item in listing["services"])
+
+
+@pytest.mark.parametrize(
+    "query,subcategory,qualifier",
+    [
+        ("أبي غرفة نوم كاملة", "bedroom_sets", "غرفة نوم كاملة"),
+        ("أحتاج طقم غرفة نوم بالرياض", "bedroom_sets", "طقم غرفة نوم"),
+        ("أبي غرفه نوم كامله", "bedroom_sets", "غرفة نوم كاملة"),
+        ("أبي ثلاجة بابين بالرياض", "refrigerators", "ثلاجة بابين"),
+        ("أبي ثلاجه بابان", "refrigerators", "ثلاجة بابين"),
+        ("أبغى ثلاجة صغيرة", "refrigerators", "ثلاجة صغيرة"),
+        ("أبي براد صغير", "refrigerators", "ثلاجة صغيرة"),
+        ("أحتاج ثلاجة عرض بابين", "refrigerators", "ثلاجة عرض"),
+        ("I need a fridge in Riyadh", "refrigerators", "fridge"),
+    ],
+)
+def test_bedroom_and_refrigerator_requests_are_specific_products(query, subcategory, qualifier):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "product"
+    assert intent.result_unit == ResultUnit.AD
+    assert intent.subcategory.value == subcategory
+    assert any(qualifier.lower() in term.lower() for term in intent.search_terms)
+
+
+def test_complete_bedroom_and_two_door_refrigerator_require_the_requested_variant():
+    seller = Seller(id="s1", name="")
+    complete_room = analyze("أبي غرفة نوم كاملة")
+    generic_room = analyze("أبي غرفة نوم")
+    two_door = analyze("أبي ثلاجة بابين")
+    complete_ad = Ad(id="1", title="غرفة نوم كاملة للبيع", seller=seller)
+    incomplete_ad = Ad(id="2", title="غرفة نوم للبيع", seller=seller)
+    wrong_fridge = Ad(id="3", title="ثلاجة باب واحد صغيرة", seller=seller)
+    matching_fridge = Ad(id="4", title="ثلاجة هام بابين", seller=seller)
+
+    assert decide(complete_room, complete_ad, seller)[0] is True
+    assert decide(complete_room, incomplete_ad, seller)[0] is False
+    assert decide(generic_room, incomplete_ad, seller)[0] is True
+    assert decide(two_door, matching_fridge, seller)[0] is True
+    assert decide(two_door, wrong_fridge, seller)[0] is False
+
+
+@pytest.mark.parametrize(
+    "query,subcategory",
+    [
+        ("تصليح ثلاجات بالرياض", "appliance_repair"),
+        ("صيانة ثلاجة بالرياض", "appliance_repair"),
+        ("تفصيل غرفة نوم بالرياض", "carpenter"),
+        ("نقل عفش غرف نوم بالرياض", "moving"),
+    ],
+)
+def test_household_service_requests_do_not_turn_into_products(query, subcategory):
+    intent = analyze(query)
+
+    assert intent.type.value == "service"
+    assert intent.result_unit == ResultUnit.SERVICE_PROVIDER
+    assert intent.subcategory.value == subcategory
+
+
+def test_historical_exact_bedroom_and_two_door_fridge_results_remain_eligible():
+    fixture_root = Path(__file__).parent / "fixtures"
+    fixture_queries = (
+        (fixture_root / "matching_live_prod_2026-09-26_b.json", "أبي غرفة نوم كاملة", "bedroom_sets"),
+        (fixture_root / "matching_live_prod_2026-09-26.json", "أبي ثلاجة بابين", "refrigerators"),
+    )
+    for fixture_path, query, subcategory in fixture_queries:
+        rows = [row for row in json.loads(fixture_path.read_text())["rows"] if row["query"] == query]
+        assert len(rows) == 12
+        intent = analyze(query)
+        assert intent.subcategory.value == subcategory
+        for row in rows:
+            seller = Seller(id=f"fixture-{row['rank']}", name="")
+            listing = Ad(
+                id=str(row["rank"]),
+                title=row["title"],
+                description=row.get("body", ""),
+                seller=seller,
+            )
+            assert decide(intent, listing, seller)[0] is True, row["title"]
+
+
+def test_supplier_taxonomy_recognizes_bedroom_sets_refrigerators_and_related_repairs():
+    listing = read_business("بيع غرف نوم كاملة وثلاجات بابين وصيانة ثلاجات وتفصيل غرفة نوم")
+    product_keys = {item["key"] for item in listing["products"]}
+    service_keys = {item["key"] for item in listing["services"]}
+
+    assert {"bedroom_sets", "refrigerators"} <= product_keys
+    assert {"appliance_repair", "carpentry"} <= service_keys

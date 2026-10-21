@@ -38,6 +38,7 @@ from farq.haraj_chat import (
     HarajSendUncertain,
     NotConnectedChat,
     conversation_account,
+    find_references,
     with_reference,
 )
 
@@ -120,6 +121,12 @@ def dispatch_pending(
                 log.warning("haraj canary %s (delivery %s) claimed for account %s", canary[0], item["id"], account or "-")
             # The invite names this seller's own listing, in wording that differs between sellers.
             body = render_invite(item["body"], item.get("ad_title"), seed=item["id"])
+            ref_code = item.get("ref_code")
+            if not isinstance(ref_code, str) or find_references(ref_code) != [ref_code]:
+                store.release_send_slot(slot, spacing)
+                store.finish_delivery(item["id"], error="HARAJ_REQUEST_REFERENCE_REQUIRED", retry=False)
+                log.error("refusing Haraj delivery %s without a valid request reference", item["id"])
+                continue
             if QUOTE_LINK in body:
                 if not item.get("reply_token"):
                     store.release_send_slot(slot, spacing)
@@ -127,7 +134,7 @@ def dispatch_pending(
                     continue
                 body = body.replace(QUOTE_LINK, f"{public_base_url()}/s/{item['reply_token']}")
             # The seller's one conversation with us is shared by every buyer: the reference tells his replies apart.
-            body = with_reference(body, item.get("ref_code"))
+            body = with_reference(body, ref_code)
             attachments = []
             for entry in item.get("media") or []:
                 stored = store.get_file(entry["file_id"]) if entry.get("file_id") else None
@@ -329,7 +336,7 @@ def sync_replies(
                 )
             if item.media:
                 item = replace(item, media=keep_media(store, thread["request_id"], item.media))
-            recorded = store.record_inbound(thread, item)
+            recorded = store.record_inbound(thread, item, allow_offer=thread.get("allow_offer", True))
             if recorded is not None:
                 received += 1
                 synced.add(thread["request_id"])

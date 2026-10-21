@@ -15,12 +15,13 @@ _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _UNIT_ALIASES = {
     "امبير": "امبير", "أمبير": "امبير", "ah": "امبير", "كراسي": "كراسي", "كرسي": "كراسي",
     "كيلو": "كيلو", "كيلوواط": "كيلو", "كيلو واط": "كيلو", "kva": "كيلو", "kw": "كيلو", "kg": "كيلو",
-    "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه",
+    "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه", "inch": "بوصه", "inches": "بوصه",
     "قدم": "قدم", "لتر": "لتر", "طن": "طن", "واط": "واط",
     "gb": "storage_gb", "جيجا": "storage_gb", "جيجابايت": "storage_gb", "جيجا بايت": "storage_gb",
+    "قيقا": "storage_gb", "قيقابايت": "storage_gb", "قيقا بايت": "storage_gb",
 }
 _DIMENSION_PAIR = re.compile(r"(?<!\d)(\d{1,2}(?:[.,]\d+)?)\s*(?:x|×|\*)\s*(\d{1,2}(?:[.,]\d+)?)(?!\d)", re.IGNORECASE)
-_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
+_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|inch(?:es)?|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|قيقا بايت|قيقابايت|قيقا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
 # A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
 # account, a pile of leftovers from a job.
 _GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
@@ -35,7 +36,10 @@ _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه",
                    "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره",
                    "فرش", "مفرش", "مظله", "مقبض", "مقعد", "هيكل", "مهد", "مهاد", "سرير", "كرسي", "كونكت",
+                   "شنطه", "شنط", "حقيبه", "حقائب",
                    "seat", "seats", "carseat", "carseats", "connector", "connectors", "كارسيت", "ملحق", "غطاء", "لبس")
+_STROLLER_COMPONENTS = ("هيكل", "شاصي", "شاسيه")
+_ONLY_COMPONENT_CUES = ("بس", "فقط", "لحاله", "لوحده")
 # «S23», «A54», «PS5», «R18»: a letter or two glued to a number is a model code. A listing that
 # states the same letters with only other numbers («S26 Ultra», «اس 22», «S10») is another
 # model. Asked glued, as customers type it; read with a space and in Arabic («اس 23»).
@@ -90,6 +94,11 @@ def _model_codes(text: str, asked: bool) -> dict[str, set[int]]:
 def _tyre_sizes(text: str) -> set[tuple[str, ...]]:
     return {tuple(sorted(match)) for match in _TYRE_SIZE.findall(to_ascii_digits(normalize(text)))}
 _CAR_PARTS = (
+    "كفرات",
+    "اطارات",
+    "كاوتش",
+    "بطارية",
+    "بطاريات",
     "اطار",
     "كفر",
     "جنط",
@@ -225,7 +234,7 @@ _ELECTRIC_WORK = (
 )
 # A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
 _NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
-_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار")
+_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار", "استئجار", "استاجر")
 _PROPERTY_TRANSACTION_MARKERS = {
     "للايجار",
     "ايجار",
@@ -242,7 +251,7 @@ _PROPERTY_SALE_CUES = ("بيع", "للبيع", "شراء", "للشراء", "تم
 _RENT_PERIODS = {
     "daily": ("يومي", "يوميا", "يومية", "باليوم"),
     "overnight": ("ليلي", "ليليا", "ليلة", "بالليلة", "لليلة"),
-    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "بالاسبوع"),
+    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "اسبوع", "اسبوعين", "اسبوعان", "بالاسبوع", "week"),
     "weekend": ("ويكند", "weekend", "بالويكند"),
     "monthly": ("شهري", "شهريا", "شهرية", "بالشهر"),
     "yearly": ("سنوي", "سنويا", "سنوية", "بالسنة", "بالسنه"),
@@ -412,6 +421,18 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     if not normalize(text):
         return False, ["no_evidence_text"]
     title = ad.title if ad is not None else ""
+    if intent.subcategory.value == "cats" and title and re.search(
+        r"(?:^|\s)(?:cat|caterpillar)\s+\d{3,4}[a-z]?(?:\s|$)", normalize(title), re.IGNORECASE
+    ):
+        return False, ["equipment_brand_collision"]
+    if intent.subcategory.value == "cats" and any(attribute.value == "age_months:1" for attribute in intent.attributes):
+        normalized_text = normalize(to_ascii_digits(text))
+        if has_word(text, ("شهرين", "شهران", "two months")) or re.search(
+            r"(?:عمر(?:ه|ها)?|age)\s*(?:2|two)\s*(?:شهر|شهور|اشهر|month|months)\b",
+            normalized_text,
+            re.IGNORECASE,
+        ):
+            return False, ["age_mismatch"]
     if intent.type.value == "property":
         requested_transaction = _property_transaction(intent.original_query)
         listing_transaction = _property_transaction(title) or _property_transaction(text)
@@ -421,6 +442,16 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             and requested_transaction != listing_transaction
         ):
             return False, ["property_transaction_mismatch"]
+    if intent.subcategory.value == "car_rental" and title:
+        asked_period = _rent_period(intent.original_query)
+        title_periods = {
+            period for period, cues in _RENT_PERIODS.items() if has_word(title, cues)
+        }
+        stated_periods = title_periods or {
+            period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+        }
+        if asked_period and stated_periods and asked_period not in stated_periods:
+            return False, ["rent_term_mismatch"]
     if ad is not None and title and intent.location_district.known and intent.location_district.value in _SIDES:
         # «أرض شمال الرياض»: a listing that says «شرق الرياض», or names «حي الروضة» on the
         # east side, is on another side of the city. One that names no side is not judged.
@@ -533,6 +564,10 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["locked_device"]
         if intent.subcategory.value == "strollers" and intent.eligibility_groups:
             group = intent.eligibility_groups[0]
+            # «عربية يويو هيكل بس» names the stroller as context, but offers only a
+            # component. Keep this a hard rejection even in the near-match pass.
+            if has_word(title, _STROLLER_COMPONENTS) and has_word(title, _ONLY_COMPONENT_CUES):
+                return False, ["stroller_component_only"]
             stroller_at = next((i for i, word in enumerate(words) if _group_hit(word, group)), None)
             accessory_at = next((i for i, word in enumerate(words) if any(_word_is(word, term) for term in _ACCESSORY_LEAD)), None)
             if accessory_at is not None and (stroller_at is None or accessory_at < stroller_at):
@@ -643,6 +678,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         # Relaxed matching may waive a secondary detail, never the requested YOYO identity.
         if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO"):
             needed = max(needed, 2)
+        # An explicit abaya size or color is a hard constraint, including in the near-match pass.
+        if intent.subcategory.value == "abayas" and any(
+            str(attribute.value).startswith(("size:", "color:")) for attribute in intent.attributes
+        ):
+            needed = max(needed, len(intent.eligibility_groups))
     if missing and len(matched) < needed:
         return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched

@@ -1447,7 +1447,11 @@ class PgStore:
                 " due as (select haraj_conversation_id, bool_and(checked_at is not null) as read_before, min(retry_at) as due_at"
                 " from threads where (retry_at is null or retry_at <= coalesce(to_timestamp(%s), now()))"
                 " group by haraj_conversation_id order by read_before, due_at, haraj_conversation_id limit %s)"
-                " select t.*, r.attributes as consent_attributes, r.created_at as request_created_at, r.deal_outcome,"
+                " select t.*, r.ref_code,"
+                " (select string_agg(source.ref_code, ',') from requests source"
+                "  where source.attributes->>'merged_into_request_id' = r.id and source.owner_user_id = r.owner_user_id"
+                "   and source.ref_code is not null) as source_ref_codes,"
+                " r.attributes as consent_attributes, r.created_at as request_created_at, r.deal_outcome,"
                 " (select max(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
                 " and d.need = t.need and d.delivery_status = 'sent') as last_sent_at from due"
                 " join threads t on t.haraj_conversation_id = due.haraj_conversation_id join requests r on r.id = t.request_id"
@@ -1503,6 +1507,8 @@ class PgStore:
     def _inbound_candidates(self, conn, conversation_id: str) -> list[dict]:
         rows = conn.execute(
             "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at,"
+            " (select string_agg(source.ref_code, ',') from requests source"
+            "  where source.attributes->>'merged_into_request_id' = r.id and source.ref_code is not null) as source_ref_codes,"
             " coalesce((select array_agg(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
             " and d.need = t.need and d.delivery_status = 'sent' and d.sent_at is not null), '{}') as sends"
             " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s or t.legacy_conversation_id = %s",
@@ -1715,8 +1721,8 @@ class PgStore:
                 (key, value),
             )
 
-    def record_inbound(self, thread: dict, inbound: InboundMessage) -> Message | None:
-        """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
+    def record_inbound(self, thread: dict, inbound: InboundMessage, *, allow_offer: bool = True) -> Message | None:
+        """Attach a Haraj reply to its request/item and seller; optionally withhold quote extraction."""
         request_id, seller_id, need = thread["request_id"], thread["seller_id"], thread["need"] or None
         with self._pool.connection() as conn:
             # A poll may have loaded the old batch immediately before the consolidation.
@@ -1742,7 +1748,7 @@ class PgStore:
             offer = None
             attrs=conn.execute("select attributes from requests where id=%s",(request_id,)).fetchone()
             personal=bool(attrs and (attrs["attributes"] or {}).get("_haraj_consent"))
-            quote = extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)
+            quote = (extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)) if allow_offer else None
             price = None if quote is None else quote.total
             awarded = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
             # After the award, a price from anyone but the winner is kept as a message, not an offer.
