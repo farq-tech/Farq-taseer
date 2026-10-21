@@ -102,6 +102,12 @@ def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise(
     generic = analyze("دراجة نارية")
     assert generic.subcategory.value == "motorcycles"
 
+    yamaha = analyze("أبي دباب ياماها 2022")
+    assert yamaha.subcategory.value == "motorcycles"
+    assert yamaha.brand.value == "Yamaha"
+    assert yamaha.year.value == 2022
+    assert "دباب ياماها 2022" in yamaha.search_terms
+
 
 # TSR-007: a service verb with a product noun is the service.
 def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
