@@ -88,6 +88,24 @@ def test_arabic_shopping_phrases_keep_the_item_and_drop_search_filler():
 
 
 @pytest.mark.parametrize(
+    "query",
+    ["عندي طلب عربية أطفال يويو", "عندي طلبية عربية أطفال يويو"],
+)
+def test_customer_request_preface_is_removed_from_need_and_search_terms(query):
+    intent = analyze(query)
+
+    assert (intent.type.value, intent.subcategory.value) == ("product", "strollers")
+    assert intent.need == "عربية أطفال يويو"
+    assert all("عندي طلب" not in term and "عندي طلبية" not in term for term in intent.search_terms)
+
+
+def test_seller_style_wording_is_not_stripped_as_a_customer_request_preface():
+    intent = analyze("عندي عربية أطفال للبيع")
+
+    assert "عندي" in intent.need.split()
+
+
+@pytest.mark.parametrize(
     ("query", "item"),
     [
         ("أبي مكتب مستعمل صغير", "مكتب مستعمل صغير"),

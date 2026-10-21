@@ -72,6 +72,9 @@ _WANT_WORDS = _normalized_words({
     "عندكم",
 })
 _REQUEST_PREPOSITIONS = {normalize(word) for word in ("على", "عن", "إلى")}
+_REQUEST_PREFACES = {
+    (normalize("عندي"), normalize(phrase)) for phrase in ("طلب", "طلبية")
+}
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
@@ -1113,6 +1116,13 @@ def _segment_text(original: str) -> str:
     after_request_opener = False
     while words:
         first = normalize(words[0])
+        if (
+            len(words) >= 2
+            and (first, normalize(words[1])) in _REQUEST_PREFACES
+        ):
+            words = words[2:]
+            after_request_opener = True
+            continue
         if first in _WANT_WORDS:
             words = words[1:]
             after_request_opener = True
@@ -1129,6 +1139,30 @@ def _segment_text(original: str) -> str:
     ):
         words = words[2:]
     return " ".join(words) or raw
+
+
+def _leading_request_preface_words(original: str) -> set[str]:
+    """Return words in a known request preface after ordinary request openers."""
+
+    words = original.split()
+    index = 0
+    after_request_opener = False
+    while index < len(words):
+        current = normalize(words[index])
+        if current in _WANT_WORDS:
+            index += 1
+            after_request_opener = True
+            continue
+        if after_request_opener and current in _REQUEST_PREPOSITIONS:
+            index += 1
+            after_request_opener = False
+            continue
+        break
+    if index + 1 < len(words):
+        preface = (normalize(words[index]), normalize(words[index + 1]))
+        if preface in _REQUEST_PREFACES:
+            return set(preface)
+    return set()
 
 
 def _content_tokens(normalized: str) -> list[str]:
@@ -1556,6 +1590,7 @@ def analyze(query: str) -> IntentResponse:
         )
         city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
         yoyo_variant = intent.model.value[-1] if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"} else None
+        request_preface_words = _leading_request_preface_words(original)
         qualifiers = []
         for raw_word in original.split():
             folded = normalize(raw_word).strip("،,.؟?!؛;:")
@@ -1566,6 +1601,7 @@ def analyze(query: str) -> IntentResponse:
                 or bare_forms & matched_words
                 or (folded in _STOP and not transaction_word)
                 or folded in _WANT_WORDS
+                or folded in request_preface_words
                 or folded in city_words
                 or folded == yoyo_variant
                 or (search_imperative and folded == "دور")
