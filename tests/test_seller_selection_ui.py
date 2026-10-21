@@ -78,3 +78,13 @@ def test_search_cards_and_details_show_the_ad_price_disclosure_and_original_list
     assert 'class="fq-ad-original"' in source
     assert 'عرض الإعلان الأصلي في حراج' in source
     assert 'ليس عرضًا نهائيًا على طلبك' in source
+
+
+def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    assert 'data-action="load-more"' in source
+    assert 'حمّل إعلانات أكثر' in source
+    assert 'json: { query: asked, page, continuation_trace: traceId }' in source
+    assert 'state.nextPage = event.next_page ?? null;' in source
+    assert 'state.searchId !== searchId || state.traceId !== traceId' in source
+    assert '// Keep the page cursor and current cards so the customer can safely retry.' in source

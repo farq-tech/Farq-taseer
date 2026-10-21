@@ -14,6 +14,8 @@ const state = {
   searchState: "",
   clarification: "",
   results: [],
+  nextPage: null,
+  loadingMore: false,
   partial: false,
   notice: "",
   selected: new Map(),
@@ -1514,6 +1516,7 @@ function renderFlow() {
     ${state.notice && !showEmpty ? `<p class="fq-meta" role="status" aria-live="polite">${esc(state.notice)}${!live && !asking && state.results.length && state.searchState === "PARTIAL_RESULTS" ? ` <button class="fq-link" type="button" data-action="retry-search">ابحث مرة ثانية</button>` : ""}</p>` : ""}
     ${showEmpty ? emptyState() : ""}
     ${shown.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), shown.map(renderCard).join(""))}</div>` : ""}
+    ${state.nextPage != null ? `<button class="fq-btn ghost" type="button" data-action="load-more" style="width:100%;margin-top:12px" ${state.loadingMore ? 'disabled aria-busy="true"' : ""}>${state.loadingMore ? "نحمّل إعلانات أكثر…" : "حمّل إعلانات أكثر"}</button>` : ""}
     ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة مع ${esc(suppliers(count))}</button></div>` : ""}
   </section>
   ${state.view === "detail" ? detailSheet() : ""}
@@ -4539,6 +4542,7 @@ async function readNdjson(response, onEvent) {
 
 function applyDone(event) {
   if (event.trace_id) state.traceId = event.trace_id;
+  state.nextPage = event.next_page ?? null;
   state.intent = event.intent;
   state.results = event.results || [];
   rememberGroups(event.groups);
@@ -4587,6 +4591,8 @@ async function runSearch(text, city = "") {
     state.view = "city-ask";
     state.cityMode = "request";
     state.results = [];
+    state.nextPage = null;
+    state.loadingMore = false;
     state.intent = null;
     state.searching = false;
     render();
@@ -4603,6 +4609,8 @@ async function runSearch(text, city = "") {
   state.shownCount = 0;
   state.searchState = "";
   state.results = [];
+  state.nextPage = null;
+  state.loadingMore = false;
   state.resultNeeds = new Map();
   state.streamNeeds = [];
   state.needFilter = "";
@@ -4711,6 +4719,54 @@ async function runSearch(text, city = "") {
     clearTimeout(timer);
     clearTimeout(slowTimer);
     if (mine()) state.slowSearch = false;
+  }
+}
+
+async function loadMoreSearch() {
+  if (state.nextPage == null || state.loadingMore || !state.traceId) return;
+  const page = state.nextPage;
+  const traceId = state.traceId;
+  const searchId = state.searchId;
+  const query = state.searchText || state.originalText || state.query;
+  const asked = state.city && !cityInText(query) ? `${query} ${cityLabel(state.city)}` : query;
+  state.loadingMore = true;
+  state.notice = "نبحث عن إعلانات أكثر…";
+  render();
+  try {
+    const response = await api("/v1/search", {
+      method: "POST",
+      json: { query: asked, page, continuation_trace: traceId },
+      quiet: true,
+    });
+    if (state.searchId !== searchId || state.traceId !== traceId) return;
+    const seen = new Set(state.results.map(resultKey));
+    let added = 0;
+    for (const result of response.results || []) {
+      const key = resultKey(result);
+      if (!seen.has(key)) {
+        seen.add(key);
+        state.results.push(result);
+        added += 1;
+      }
+    }
+    rememberGroups(response.groups);
+    state.nextPage = response.next_page ?? null;
+    state.searchState = response.state || state.searchState;
+    state.partial = false;
+    state.notice = added
+      ? `أضفنا ${plural(added, ["إعلانًا واحدًا", "إعلانين", "إعلانات", "إعلان"])} إلى النتائج.`
+      : state.nextPage != null
+        ? "ما ظهرت إعلانات جديدة في هذه الصفحة. تقدر تتابع البحث."
+        : "ما لقينا إعلانات إضافية لهذا الطلب.";
+  } catch (_error) {
+    // Keep the page cursor and current cards so the customer can safely retry.
+    if (state.searchId !== searchId || state.traceId !== traceId) return;
+    state.notice = "ما قدرنا نحمل إعلانات أكثر. حاول مرة ثانية.";
+  } finally {
+    if (state.searchId === searchId && state.traceId === traceId) {
+      state.loadingMore = false;
+      render();
+    }
   }
 }
 
@@ -5783,6 +5839,7 @@ document.addEventListener("click", (event) => {
     document.getElementById("composer-query")?.focus();
   } else if (action === "retry-intent") startPricing(state.originalText || state.query, { fresh: false });
   else if (action === "retry-search") runSearch(state.searchText || state.originalText || state.query, state.city);
+  else if (action === "load-more") loadMoreSearch();
   else if (action === "add-need") {
     state.editing = (state.needs || []).length;
     render();
