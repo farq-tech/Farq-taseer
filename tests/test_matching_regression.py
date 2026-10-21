@@ -19,7 +19,7 @@ from farq.corpus import MemoryCorpus
 from farq.dedup import deduplicate
 from farq.eligibility import contains_term, decide, has_word
 from farq.intent import analyze, analyze_needs
-from farq.live_haraj import LiveBatch, _price
+from farq.live_haraj import LiveBatch, _price, ad_from_item
 from farq.orchestrator import run_search
 from farq.text import normalize
 
@@ -220,13 +220,75 @@ def test_transfers_and_map_listings_are_not_providers():
 
 
 # TSR-085 / TSR-069: placeholder and glued prices.
-def test_prices_are_first_number_and_above_the_floor():
+def test_prices_must_be_unambiguous_and_above_the_floor():
     assert _price({"inputPrice": "9"}) is None
     assert _price({"inputPrice": "20"}) is None
-    assert _price({"formattedPrice": "من 100 الى 200"}) == 100
+    assert _price({"formattedPrice": "من 100 الى 200"}) is None
     assert _price({"formattedPrice": "0555555555"}) is None
     assert _price({"formattedPrice": "123456789"}) is None
     assert _price({"formattedPrice": "2,800 ريال"}) == 2800
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "100 ريال بالحبة",
+        "١٠٠ ريال بالقطعة",
+        "100 ريال بالمتر",
+        "100 ريال / متر",
+        "100 ريال لكل متر",
+        "100 ريال بالساعة",
+        "500 يفتح باب السوم",
+        "المزاد يبدأ 500 ريال",
+        "يبدأ من 500 ريال",
+        "ابتداء من 500 ريال",
+        "100 ريال / قطعة",
+        "100 ريال لكل ساعة",
+        "من 100 إلى 200 ريال",
+    ],
+)
+def test_ambiguous_or_per_unit_price_is_not_a_comparable_total(text):
+    assert _price({"inputPrice": text, "formattedPrice": text}) is None
+
+
+def test_disagreeing_haraj_price_fields_are_not_numeric():
+    assert _price({"inputPrice": "100", "formattedPrice": "200 ريال"}) is None
+
+
+def test_ambiguous_price_text_is_preserved_without_numeric_amount():
+    text = "100 ريال بالمتر"
+    ad = ad_from_item(
+        {
+            "id": "12345",
+            "title": "تركيب مظلة",
+            "authorId": "seller-1",
+            "authorUsername": "seller",
+            "price": {"inputPrice": text, "formattedPrice": text},
+        }
+    )
+
+    assert ad.price_amount is None
+    assert ad.price_currency is None
+    assert ad.price_text == text
+    assert ad.price_evidence.kind == "unit_or_installment_price"
+
+
+def test_description_down_payment_is_not_a_comparable_total():
+    ad = ad_from_item(
+        {
+            "id": "12346",
+            "title": "سيارة للبيع",
+            "bodyTEXT": "مقدم 5,000 ريال والباقي كاش",
+            "authorId": "seller-1",
+            "authorUsername": "seller",
+            "price": {"inputPrice": "50000", "formattedPrice": "50000 ريال"},
+        }
+    )
+
+    assert ad.price_amount == 50000
+    assert ad.price_text == "50000 ريال"
+    assert ad.price_evidence.kind == "partial_payment"
+    assert ad.comparable_price_amount is None
 
 
 # TSR-050: a stated budget filters priced ads.

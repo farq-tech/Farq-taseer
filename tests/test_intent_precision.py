@@ -44,6 +44,14 @@ def test_painting_service_results_reject_paint_supply_ads():
     assert decide(intent, painter, seller)[0] is True
 
 
+def test_paint_supply_title_without_sale_word_is_not_a_painter():
+    intent = analyze("دهان شقة بالرياض")
+    seller = Seller(id="seller", name="بائع", city="الرياض")
+    paint_supply = Ad(id="paint", title="دهانات جوتن أصلية", seller=seller, city="الرياض")
+
+    assert decide(intent, paint_supply, seller)[0] is False
+
+
 def test_clear_water_leak_repair_request_is_routed_to_a_plumber():
     intent = analyze("عندي تسرب ماء في السقف من يصلحه بالرياض")
 
@@ -87,6 +95,20 @@ def test_water_leak_product_search_is_not_misread_as_a_plumbing_job():
     assert intent.result_unit.value == "ad"
 
 
+def test_plain_washer_purchase_is_not_misread_as_repair():
+    intent = analyze("أبي غسالة أوتوماتيك بالرياض")
+
+    assert intent.type.value == "product"
+    assert intent.result_unit.value == "ad"
+
+
+def test_leak_detector_product_without_sale_word_is_not_a_service():
+    intent = analyze("أبي جهاز كشف تسرب مياه بالرياض")
+
+    assert intent.subcategory.value == "leak_detector"
+    assert intent.result_unit.value == "ad"
+
+
 def test_iphone_generation_and_storage_survive_natural_query_wording():
     intent = analyze("أبي ايفون 15 برو ماكس 256 جيجا بالرياض")
 
@@ -123,6 +145,30 @@ def test_iphone_storage_capacity_is_used_to_reject_a_different_capacity():
 
     assert accepted is False
     assert "spec_mismatch:storage_gb" in reasons
+
+
+def test_price_limit_is_not_mistaken_for_iphone_storage_capacity():
+    intent = analyze("ايفون 15 برو ماكس أقل من 512 ريال")
+
+    assert "storage" in intent.missing_decision_information
+    assert not any("512" in group for group in intent.eligibility_groups)
+
+
+def test_iphone_one_tb_is_normalized_to_1024_gb():
+    intent = analyze("iPhone 15 Pro Max 1TB")
+
+    assert any("1024" in group for group in intent.eligibility_groups)
+
+
+def test_iphone_generation_does_not_match_a_different_model_with_unrelated_number():
+    intent = analyze("ايفون 15")
+    seller = Seller(id="seller", name="متجر الجوالات")
+    wrong_model = Ad(id="wrong-model", title="ايفون 14، استخدام 15 يوم", seller=seller)
+
+    accepted, reasons = decide(intent, wrong_model, seller)
+
+    assert accepted is False
+    assert "model_mismatch:iphone_generation" in reasons
 
 
 def test_unmodeled_product_specs_are_kept_in_the_actual_haraj_queries():

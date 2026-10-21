@@ -73,13 +73,21 @@ CATEGORIES: tuple[Category, ...] = (
     _c("shades", "مظلات وسواتر", "service", "نقل وخدمات", "مظلات", "سواتر", "هناجر", "برجولات"),
     _c("swimming_pools", "مسابح", "service", "نقل وخدمات", "مسبح", "صيانة مسابح"),
     _c("solar", "طاقة شمسية", "service", "نقل وخدمات", "الواح شمسية", "solar"),
-    _c("upholstery", "تنجيد", "service", "نقل وخدمات", "تنجيد كنب", "كنب", "مجالس", "ستائر"),
+    _c("upholstery", "تنجيد", "service", "نقل وخدمات", "تنجيد كنب", "تنجيد مجالس", "تنجيد أثاث", "ستائر"),
     # -- مواد ومنتجات --------------------------------------------------------
     _c("sanitary_ware", "أدوات صحية", "product", "مواد ومنتجات", "ادوات صحيه", "مغاسل", "كراسي حمام", "خلاطات", "بانيو", "sanitary"),
     _c("building_materials", "مواد بناء", "product", "مواد ومنتجات", "بلوك", "اسمنت", "رمل", "طوب", "خرسانة", "حديد تسليح", "building materials"),
     _c("furniture", "أثاث", "product", "مواد ومنتجات", "اثاث", "مفروشات", "غرف نوم", "دواليب", "دولاب", "طاولات", "furniture"),
-    _c("appliances", "أجهزة منزلية", "product", "مواد ومنتجات", "اجهزة", "غسالات", "ثلاجات", "افران", "شاشات", "appliances"),
+    _c("sofas", "كنب", "product", "مواد ومنتجات", "كنبات", "كنبة", "كنب زاوية", "كنب حرف ال", "sofa", "sectional sofa"),
+    _c("dining_tables", "طاولات طعام", "product", "مواد ومنتجات", "طاولة طعام", "طاولات طعام", "سفرة", "طاولة سفرة", "طاولات سفرة", "dining table"),
+    _c("beds", "أسرة", "product", "مواد ومنتجات", "سرير نفرين", "سرير مزدوج", "سرير", "اسرة", "bed", "double bed"),
+    _c("screens", "شاشات", "product", "مواد ومنتجات", "شاشة كمبيوتر", "شاشة ألعاب", "شاشة", "شاشات", "monitor", "computer monitor"),
+    _c("routers", "أجهزة راوتر", "product", "مواد ومنتجات", "راوتر", "راوترات", "جهاز راوتر", "router"),
+    _c("printers", "طابعات", "product", "مواد ومنتجات", "طابعة ليزر", "طابعات ليزر", "طابعة", "طابعات", "printer"),
+    _c("appliances", "أجهزة منزلية", "product", "مواد ومنتجات", "اجهزة", "غسالات", "ثلاجات", "افران", "appliances"),
     _c("electronics", "إلكترونيات", "product", "مواد ومنتجات", "جوالات", "ايفون", "لابتوب", "بلايستيشن", "electronics"),
+    _c("strollers", "عربات أطفال", "product", "أطفال ورضّع", "عربية أطفال", "عربيات أطفال", "عربة أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"),
+    _c("stroller_accessories", "ملحقات عربات الأطفال", "product", "أطفال ورضّع", "فرش عربية أطفال", "فرش عربة أطفال", "مفرش عربية أطفال", "مفرش عربة أطفال", "مظلة عربية أطفال", "مظلة عربة أطفال", "مظلات عربيات أطفال", "مظلات عربات أطفال", "مقبض عربة أطفال", "مقابض عربات أطفال", "مقابض عربيات أطفال", "مقابض عربيات الاطفال", "مقعد عربة أطفال", "مقاعد عربات أطفال", "هيكل عربة أطفال", "هياكل عربات أطفال", "مهد عربة أطفال", "مهاد عربات أطفال", "ملحقات عربيات أطفال", "ملحقات عربات أطفال", "baby stroller accessories", "stroller accessories"),
     _c("paint_supplies", "مواد دهان", "product", "مواد ومنتجات", "بويات", "دهانات جوتن", "معجون"),
     _c("electrical_supplies", "مستلزمات كهرباء", "product", "مواد ومنتجات", "كوابل", "اسلاك", "قواطع", "لمبات", "انارة", "اضاءة"),
     _c("tools", "عدد وأدوات", "product", "مواد ومنتجات", "عدد يدوية", "معدات", "tools"),
@@ -157,7 +165,11 @@ def read_business(description: str | None, activity: str | None = None) -> dict:
     wanted = {"services": "service", "products": "product"}.get(activity or "")
     categories = []
     seen: set[str] = set()
+    stroller_accessory_present = any(item.key == "stroller_accessories" for _start, _end, item in spans)
     for _start, _end, item in spans:
+        # «مظلات» in a stroller-parts list is a product, not a shades contractor.
+        if item.key == "shades" and stroller_accessory_present:
+            continue
         if item.key in seen or (wanted and item.kind != wanted):
             continue
         seen.add(item.key)

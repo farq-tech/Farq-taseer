@@ -26,11 +26,15 @@ _GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
 _LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
 _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
+_MODEL_LOOKALIKE = ("مستوحى", "مستوحاة", "شبيه", "شبيهه", "تقليد", "على شكل", "inspired", "lookalike", "similar to yoyo", "similar to babyzen", "مشابه ليويو")
+_YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 # A listing that leads with the accessory sells the accessory, not the device; one that leads
 # with another thing («كاميرا مراقبة بطارية طاقة شمسية», «كشاف طاقة شمسية») sells that thing,
 # whatever it mentions inside. Specific nouns only: «جهاز بلايستيشن» still leads with the device.
 _ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه",
-                   "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره")
+                   "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره",
+                   "فرش", "مفرش", "مظله", "مقبض", "مقعد", "هيكل", "مهد", "مهاد", "سرير", "كرسي", "كونكت",
+                   "seat", "seats", "carseat", "carseats", "connector", "connectors", "كارسيت", "ملحق", "غطاء", "لبس")
 # «S23», «A54», «PS5», «R18»: a letter or two glued to a number is a model code. A listing that
 # states the same letters with only other numbers («S26 Ultra», «اس 22», «S10») is another
 # model. Asked glued, as customers type it; read with a space and in Arabic («اس 23»).
@@ -204,6 +208,27 @@ _ELECTRIC_WORK = (
 # A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
 _NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
 _RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار")
+_PROPERTY_TRANSACTION_MARKERS = {
+    "للايجار",
+    "ايجار",
+    "تاجير",
+    "استئجار",
+    "للاستئجار",
+    "للبيع",
+    "بيع",
+    "للتمليك",
+    "تمليك",
+}
+_PROPERTY_RENT_CUES = ("ايجار", "للايجار", "تاجير", "للتاجير", "استئجار")
+_PROPERTY_SALE_CUES = ("بيع", "للبيع", "شراء", "للشراء", "تمليك", "للتمليك")
+_RENT_PERIODS = {
+    "daily": ("يومي", "يوميا", "يومية", "باليوم"),
+    "overnight": ("ليلي", "ليليا", "ليلة", "بالليلة", "لليلة"),
+    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "بالاسبوع"),
+    "weekend": ("ويكند", "weekend", "بالويكند"),
+    "monthly": ("شهري", "شهريا", "شهرية", "بالشهر"),
+    "yearly": ("سنوي", "سنويا", "سنوية", "بالسنة", "بالسنه"),
+}
 _CAR = ("سياره", "سيارات", "السيارات")
 _MAP_LISTING = ("جوجل", "قوقل", "google")
 _MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
@@ -318,9 +343,32 @@ def _explicit_condition(text: str) -> str | None:
     return None
 
 
+def _property_transaction_group(group: list[str]) -> bool:
+    return bool({normalize(term) for term in group} & _PROPERTY_TRANSACTION_MARKERS)
+
+
+def _rent_period(text: str) -> str | None:
+    matches = [
+        period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _property_transaction(text: str) -> str | None:
+    renting = has_word(text, _PROPERTY_RENT_CUES) is not None
+    selling = has_word(text, _PROPERTY_SALE_CUES) is not None
+    if renting and selling:
+        return "ambiguous"
+    if renting:
+        return "rent"
+    if selling:
+        return "sale"
+    return None
+
+
 # The rules a near match may fail. Everything else - a deleted or sold listing, another
 # city, another model or size, a wanted-ad, a price outside the asked range - still rejects.
-SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:")
+SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike", "yoyo_variant_mismatch")
 
 
 def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed: bool = False) -> tuple[bool, list[str]]:
@@ -346,6 +394,15 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     if not normalize(text):
         return False, ["no_evidence_text"]
     title = ad.title if ad is not None else ""
+    if intent.type.value == "property":
+        requested_transaction = _property_transaction(intent.original_query)
+        listing_transaction = _property_transaction(title) or _property_transaction(text)
+        if (
+            requested_transaction in {"rent", "sale"}
+            and listing_transaction in {"rent", "sale"}
+            and requested_transaction != listing_transaction
+        ):
+            return False, ["property_transaction_mismatch"]
     if ad is not None and title and intent.location_district.known and intent.location_district.value in _SIDES:
         # «أرض شمال الرياض»: a listing that says «شرق الرياض», or names «حي الروضة» on the
         # east side, is on another side of the city. One that names no side is not judged.
@@ -379,10 +436,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         console = any(contains_term(title, word) for word in ("جهاز", "سوني", "بلايستيشن"))
         if game and not console:
             return False, ["game_not_console"]
-    if ad is not None and ad.price_amount is not None:
-        if intent.price_max.known and ad.price_amount > float(intent.price_max.value):
+    comparable_price = ad.comparable_price_amount if ad is not None else None
+    if comparable_price is not None:
+        if intent.price_max.known and comparable_price > float(intent.price_max.value):
             return False, ["over_price_max"]
-        if intent.price_min.known and ad.price_amount < float(intent.price_min.value):
+        if intent.price_min.known and comparable_price < float(intent.price_min.value):
             return False, ["under_price_min"]
     provider = intent.result_unit.value != "ad" or intent.type.value == "service"
     if provider and title:
@@ -412,6 +470,8 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     if intent.subcategory.value in {"electrician", "plumber", "carpenter", "painter"} and title:
         if has_word(title, _PRODUCT_NOT_TRADE) and not _trade_names_the_work(intent, title):
             return False, ["product_not_trade"]
+        if intent.subcategory.value == "painter" and tokens(title) and tokens(title)[0] in {"دهانات", "بويات", "بويه", "جوتن"}:
+            return False, ["paint_supply_not_painter"]
     if provider and title:
         # «غسالة تحتاج صيانة», «غسالة 9 ك بها عطل»: a listing that leads with the appliance
         # sells the appliance; the technician leads with «صيانة» or «فني».
@@ -423,12 +483,29 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["leftovers_not_provider"]
     if title and has_word(title, _GONE):
         return False, ["already_sold"]
+    if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO") and not relaxed and _yoyo_lookalike_claim(text):
+        return False, ["model_lookalike"]
+    if intent.subcategory.value == "strollers" and intent.model.value in {"YOYO 2", "YOYO 3"} and not relaxed:
+        asked_variant = str(intent.model.value[-1])
+        # Prefer the model stated in the ad title. Descriptions may mention a different
+        # generation only as a comparison or compatibility note (e.g. an accessory fit).
+        stated_variants = set(_YOYO_VARIANT.findall(to_ascii_digits(normalize(title))))
+        if not stated_variants:
+            stated_variants = set(_YOYO_VARIANT.findall(to_ascii_digits(normalize(text))))
+        if stated_variants and asked_variant not in stated_variants:
+            return False, ["yoyo_variant_mismatch"]
     if intent.result_unit.value == "ad" and title:
         words = tokens(title)
         if intent.type.value == "vehicle" and any(word in normalize(title) for word in _SCRAPPED_CAR):
             return False, ["scrapped_not_vehicle"]
         if has_word(title, _LOCKED_PHONE):
             return False, ["locked_device"]
+        if intent.subcategory.value == "strollers" and intent.eligibility_groups:
+            group = intent.eligibility_groups[0]
+            stroller_at = next((i for i, word in enumerate(words) if _group_hit(word, group)), None)
+            accessory_at = next((i for i, word in enumerate(words) if any(_word_is(word, term) for term in _ACCESSORY_LEAD)), None)
+            if accessory_at is not None and (stroller_at is None or accessory_at < stroller_at):
+                return False, ["accessory_not_device"]
         if intent.eligibility_groups:
             head = intent.eligibility_groups[0]
             # The thing asked for is named early in a listing that sells it: «Hisense QLED E7 55
@@ -464,8 +541,19 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             for letters, numbers in asked_codes.items():
                 if letters in stated_codes and not numbers & stated_codes[letters]:
                     return False, [f"model_mismatch:{letters}"]
-        asked = normalize(intent.original_query)
-        if "سنوي" in asked.split() and has_word(title, ("شهري", "يومي")) and not has_word(title, ("سنوي",)):
+        if intent.brand.value == "Apple" and intent.model.known and title:
+            requested_generation = re.search(r"\biPhone\s+(\d{1,2})\b", str(intent.model.value), re.IGNORECASE)
+            listed_model = re.search(r"(?:ايفون|iphone)\s*(\d{1,2})\b", normalize(title), re.IGNORECASE)
+            if requested_generation and listed_model and requested_generation.group(1) != listed_model.group(1):
+                return False, ["model_mismatch:iphone_generation"]
+        asked_period = _rent_period(intent.original_query)
+        title_periods = {
+            period for period, cues in _RENT_PERIODS.items() if has_word(title, cues)
+        }
+        stated_periods = title_periods or {
+            period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+        }
+        if asked_period and stated_periods and asked_period not in stated_periods:
             return False, ["rent_term_mismatch"]
     if intent.subcategory.value == "electrician" and ad is not None and title:
         if not _electric_trade(title, seller, text):
@@ -491,15 +579,34 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     for group in intent.eligibility_groups:
         hit = _group_hit(text, group)
         if hit is None:
+            if relaxed and intent.type.value == "property" and _property_transaction_group(group):
+                return False, ["property_transaction_mismatch"]
             missing.append(group)
             continue
         matched.append(hit)
     needed = intent.eligibility_min or len(intent.eligibility_groups)
     if relaxed and len(intent.eligibility_groups) >= 2:
         needed = max(1, needed - 1)
+        # Relaxed matching may waive a secondary detail, never the requested YOYO identity.
+        if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO"):
+            needed = max(needed, 2)
     if missing and len(matched) < needed:
         return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched
+
+
+def _yoyo_lookalike_claim(text: str) -> bool:
+    """Only treat likeness wording near a YOYO name as a clone claim."""
+    words = tokens(text)
+    cues = {normalize(item) for item in _MODEL_LOOKALIKE}
+    model = {"يويو", "yoyo", "babyzen"}
+    for index, word in enumerate(words):
+        window = words[max(0, index - 4) : index + 5]
+        if not any(has_word(" ".join(window), (cue,)) for cue in cues):
+            continue
+        if any(set(prefix_variants(candidate)) & model for candidate in window):
+            return True
+    return False
 
 
 def _electric_trade(title: str, seller: Seller | None, text: str) -> bool:
