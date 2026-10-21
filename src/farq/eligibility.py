@@ -608,6 +608,14 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
                 if before and not _group_hit(before, head) and _group_hit(after, head):
                     return False, ["included_not_sold"]
     if ad is not None and title:
+        if (
+            relaxed
+            and intent.subcategory.value == "laptops"
+            and intent.brand.value in {"Dell", "HP"}
+            and intent.eligibility_groups
+            and _group_hit(title, intent.eligibility_groups[0]) is None
+        ):
+            return False, ["laptop_model_mismatch"]
         wanted = _specs(intent.original_query)
         if wanted:
             stated = _specs(title)
