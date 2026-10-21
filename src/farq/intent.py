@@ -37,6 +37,14 @@ _WANT_WORDS = {
     "ابحث",
     "ابحثلي",
     "دورلي",
+    "اشتري",
+    "اشتريلي",
+    "وين",
+    "اين",
+    "القي",
+    "الاقي",
+    "لاقي",
+    "علي",
     "i",
 }
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
@@ -62,6 +70,7 @@ _CAT_SEXES = (
     ("male", ("ذكر", "male", "boy")),
     ("female", ("انثى", "انثي", "female", "girl")),
 )
+_TYRE_PARTS = {"كفر", "كفرات", "اطار", "اطارات", "كاوتش"}
 _CAT_AGE_NUMBER = re.compile(r"(?:عمر(?:ه|ها)?|age)\s*(\d{1,2})\s*(شهر|شهور|اشهر|month|months)\b", re.IGNORECASE)
 _CAT_AGE_WORD = re.compile(r"(?:عمر(?:ه|ها)?|age)\s*(شهرين|شهران|شهر|two months|one month)\b", re.IGNORECASE)
 _APPAREL_SIZE = re.compile(r"(?:مقاس|size)\s*(\d{1,3})\b", re.IGNORECASE)
@@ -169,6 +178,7 @@ _STOP = {
     "من",
     "عن",
     "على",
+    "علي",
     "الي",
     "الى",
     "لي",
@@ -206,6 +216,17 @@ _STOP = {
     "ابحث",
     "ابحثلي",
     "دورلي",
+    "اشتري",
+    "اشتريلي",
+    "وين",
+    "اين",
+    "القي",
+    "الاقي",
+    "لاقي",
+    "يبيع",
+    "تبيع",
+    "يبيعون",
+    "تبيعون",
     "اليوم",
     "بكره",
     "الحين",
@@ -440,13 +461,18 @@ _STROLLER_ACCESSORY_HEADS = _stroller_accessory_heads()
 
 HEADS: tuple[Head, ...] = (
     _head(type="product", category="tools", subcategory="leak_detector", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز كشف تسرب", "جهاز كشف تسربات", "كاشف تسرب", "كاشف تسربات"), label="جهاز كشف تسرب", eligibility=(("جهاز", "كاشف"), ("تسرب", "تسريب")), expansions=("جهاز كشف تسرب مياه", "كاشف تسرب مياه")),
+    _head(type="product", category="tools", subcategory="metal_cutting_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ماكينة قص حديد", "مكينة قص حديد", "ماكينة قطع حديد", "مكينة قطع حديد"), label="ماكينة قص حديد", label_from_match=True, eligibility=(("ماكينة", "مكينة"), ("قص", "قطع"), ("حديد",)), expansions=("ماكينة قص حديد", "ماكينة قطع حديد", "منشار حديد")),
+    _head(type="product", category="medical_devices", subcategory="glucose_meters", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز قياس سكر", "جهاز قياس السكر", "جهاز قياس سكر منزلي", "جهاز قياس السكر المنزلي", "جهاز سكر منزلي", "glucose meter", "blood glucose meter"), label="جهاز قياس سكر", label_from_match=True, eligibility=(("جهاز", "meter"), ("قياس السكر", "سكر", "جلوكوز", "glucose")), expansions=("جهاز قياس سكر", "جهاز قياس السكر المنزلي", "جهاز قياس جلوكوز", "glucose meter", "blood glucose meter")),
+    _head(type="product", category="building_materials", subcategory="wallcoverings", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ورق جدران", "ورق جدار", "ورق حائط", "wallpaper"), label="ورق جدران", label_from_match=True, eligibility=(("ورق", "wallpaper"), ("جدران", "جدار", "حائط", "wallpaper")), expansions=("ورق جدران", "ورق حائط", "ورق جدار", "ورق جدران لاصق", "wallpaper")),
     *_STROLLER_ACCESSORY_HEADS,
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عرباية أطفال يويو", "عرباية اطفال يويو", "عربايه اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عرباية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عرباية أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عرباية أطفال", "عرباية اطفال", "عربايه اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عرباية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عرباية أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="gaming_laptops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لابتوب ألعاب", "لابتوبات ألعاب", "لابتوب قيمنق", "لابتوبات قيمنق", "لابتوب قيمنج", "gaming laptop"), eligibility=(("لابتوب", "لابتوبات", "لاب توب", "laptop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("لابتوب ألعاب", "لابتوبات قيمنق", "gaming laptop"), attributes=("gaming",)),
+    _head(type="product", category="electronics", subcategory="laptops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لابتوب", "لابتوبات", "لاب توب"), label="لابتوب", label_from_match=True, eligibility=(("لابتوب", "لابتوبات", "لاب توب", "laptop", "laptops"),), expansions=("لابتوب", "لاب توب", "laptop", "laptops")),
     _head(type="product", category="electronics", subcategory="gaming_desktops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كمبيوتر ألعاب مكتبي", "كمبيوتر قيمنق مكتبي", "كمبيوتر قيمنج مكتبي", "كمبيوترات ألعاب", "كمبيوترات قيمنق", "كمبيوترات قيمنج", "كمبيوتر ألعاب", "كمبيوتر قيمنق", "كمبيوتر قيمنج", "gaming desktop", "gaming pc"), eligibility=(("كمبيوتر", "كمبيوترات", "pc", "desktop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("كمبيوتر ألعاب مكتبي", "كمبيوترات قيمنق", "gaming pc"), attributes=("gaming",)),
     _head(type="service", category="services", subcategory="computer_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة لابتوب", "تصليح لابتوب", "صيانة كمبيوتر", "تصليح كمبيوتر", "فني لابتوب", "فني كمبيوتر", "computer repair", "laptop repair"), eligibility=(("صيانة", "تصليح", "اصلاح", "فني", "repair"), ("لابتوب", "كمبيوتر", "لاب توب", "computer", "laptop")), expansions=("صيانة لابتوب", "تصليح كمبيوتر", "فني كمبيوتر"), verbs=("يصلح", "يصلحها", "اصلح", "صيانة", "تصليح", "اصلاح"), objects=("لابتوب", "كمبيوتر", "لاب توب", "computer", "laptop")),
+    _head(type="product", category="furniture", subcategory="office_chairs", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كرسي مكتب", "كرسي مكتبي", "كراسي مكتب", "office chair", "office chairs"), label="كرسي مكتب", label_from_match=True, eligibility=(("كرسي", "كراسي", "chair", "chairs"), ("مكتب", "مكتبي", "office")), expansions=("كرسي مكتب", "كرسي مكتبي", "كراسي مكتب", "office chair", "office chairs")),
     _head(type="product", category="furniture", subcategory="corner_sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب زاوية", "كنبة زاوية", "كنب زاويه", "كنب حرف L", "كنب حرف ال", "كنب على شكل L", "sectional sofa"), label="كنب زاوية", label_from_match=True, eligibility=(("كنب", "كنبة", "كنبات", "sofa", "sectional"), ("زاوية", "زاويه", "ركنة", "ركنه", "حرف l", "حرف ال", "على شكل l", "sectional")), expansions=("كنب زاوية", "كنب حرف L", "كنب ركنة"), attributes=("corner",)),
     _head(type="product", category="clothing", subcategory="abayas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عباءة", "عباية", "عباءات", "عبايات", "عباءة رأس", "عباية رأس", "عباءة كتف", "عباية كتف", "abaya", "abayas"), label="عباءة", label_from_match=True, eligibility=(("عباءة", "عباءه", "عباية", "عبايه", "عباءات", "عبايات", "abaya", "abayas"),), expansions=("عباءة", "عباية", "عبايات", "عباءات", "abaya", "abayas")),
     _head(type="product", category="furniture", subcategory="sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب", "كنبة", "كنبات", "sofa"), label="كنب", eligibility=(("كنب", "كنبة", "كنبات", "sofa"),), expansions=("كنب", "كنبات", "sofa")),
@@ -472,7 +498,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="apartment", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شقة", "شقه", "شقق"), eligibility=(("شقه", "شقق"),), expansions=("شقة", "شقق")),
     _head(type="property", category="property", subcategory="house", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("بيت سكني", "بيوت سكنية", "بيت", "بيوت", "منزل", "منازل"), label="بيت", label_from_match=True, eligibility=(("بيت", "بيوت", "منزل", "منازل"),), title_groups=(("بيت", "بيوت", "منزل", "منازل"),), expansions=("بيوت", "منازل", "بيت")),
     _head(type="property", category="property", subcategory="land", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ارض", "أرض"), eligibility=(("ارض",),), expansions=("ارض", "أراضي")),
-    _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا",), eligibility=(("فيلا",),), expansions=("فيلا",)),
+    _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا", "فلل", "villa", "villas"), label="فيلا", label_from_match=True, eligibility=(("فيلا", "فلل", "villa", "villas"),), expansions=("فيلا", "فلل", "فيلا للإيجار", "villas")),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
     _head(type="service", category="services", subcategory="tutoring", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرس خصوصي", "مدرسة خصوصية", "معلم خصوصي", "معلمة خصوصية", "معلم تأسيس", "معلمة تأسيس", "مدرس تأسيس", "مدرسة تأسيس قراءة", "مدرس تأسيس قراءة", "معلمة قراءة", "دروس خصوصية", "مدرس رياضيات", "معلم رياضيات", "مدرس انجليزي", "مدرس لغة انجليزية"), label="دروس خصوصية", label_from_match=True, eligibility=(("مدرس خصوصي", "مدرسة خصوصية", "معلم خصوصي", "معلمة خصوصية", "معلم تأسيس", "معلمة تأسيس", "مدرس تأسيس", "مدرسة تأسيس قراءة", "مدرس تأسيس قراءة", "معلمة قراءة", "دروس خصوصية", "مدرس رياضيات", "معلم رياضيات", "مدرس انجليزي", "مدرس لغة انجليزية", "teacher"),), expansions=("دروس خصوصية", "معلم خصوصي", "مدرس خصوصي", "معلمة تأسيس", "تدريس ابتدائي")),
     _head(type="service", category="services", subcategory="photography", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مصور حفلات", "مصورة حفلات", "تصوير حفلات", "تصوير مناسبات", "تصوير اعراس", "مصور منتجات", "تصوير منتجات", "مصور فوتوغرافي", "مصورة مواليد", "تصوير مواليد", "photographer"), label="تصوير مناسبات", label_from_match=True, eligibility=(("مصور حفلات", "مصورة حفلات", "تصوير حفلات", "تصوير مناسبات", "تصوير اعراس", "مصور منتجات", "تصوير منتجات", "مصور فوتوغرافي", "مصورة مواليد", "تصوير مواليد", "photographer"),), expansions=("مصور حفلات", "تصوير مناسبات", "تصوير أعراس", "تصوير منتجات", "تصوير مواليد")),
@@ -509,6 +535,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="leak_detection", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كشف تسربات", "كشف تسرب", "كشف تسريب", "كشف تسريبات", "كشف تسربات المياه", "كشف تسريب مياه"), label="كشف تسربات", verbs=("كشف", "فحص"), objects=("تسرب", "تسريب"), eligibility=(("كشف", "فحص"), ("تسرب", "تسريب")), expansions=("كشف تسربات المياه", "كشف تسريب مياه", "كشف تسربات")),
     _head(type="service", category="services", subcategory="cctv", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كاميرات مراقبة", "كاميرات مراقبه", "كاميرا مراقبة", "كاميرا مراقبه", "cctv"), label="كاميرات مراقبة", verbs=("تركيب",), objects=("كاميرا", "كاميرات"), eligibility=(("كاميرا", "كاميرات"), ("مراقبه", "مراقبة", "cctv")), expansions=("كاميرات مراقبة", "تركيب كاميرات مراقبة")),
     _head(type="service", category="services", subcategory="cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تنظيف منازل", "تنظيف شقق", "تنظيف فلل", "تنظيف خزانات", "تنظيف كنب", "تنظيف سجاد", "تنظيف مجالس", "تنظيف واجهات", "شركة تنظيف", "عاملة نظافة", "عامل نظافة", "عاملة تنظيف", "عامل تنظيف", "عمالة نظافة", "تنظيف بالساعة"), label="تنظيف منازل", label_from_match=True, verbs=("تنظيف",), objects=("منزل", "منازل", "شقه", "شقق", "فله", "فلل", "خزان", "خزانات", "كنب", "سجاد", "موكيت", "مجالس", "واجهات", "بيت"), eligibility=(("تنظيف", "نظافه"),), title_groups=(("تنظيف", "نظافه"),), expansions=("شركة تنظيف", "تنظيف منازل", "عاملة نظافة بالساعة")),
+    _head(type="product", category="appliances", subcategory="ac_parts", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("قطع غيار مكيف", "قطع غيار مكيفات", "قطع غيار تكييف", "سبير مكيف", "سبير مكيفات", "ac spare parts", "air conditioner parts", "air conditioner spare parts"), label="قطع غيار مكيف", label_from_match=True, eligibility=(("مكيف", "مكيفات", "تكييف", "ac", "air conditioner"), ("قطع غيار", "سبير", "spare parts", "spare part", "parts", "كمبروسر", "كومبروسر", "كرت", "مروحة", "فلتر", "حساس", "ريموت")), title_groups=(("قطع غيار", "سبير", "spare parts", "spare part", "parts", "كمبروسر", "كومبروسر", "كرت", "مروحة", "فلتر", "حساس", "ريموت"),), expansions=("قطع غيار مكيف", "قطع غيار مكيفات", "سبير مكيف", "ac spare parts", "air conditioner parts")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف سبليت", "مكيف اسبليت", "سبليت"), eligibility=(("مكيف", "سبليت"),), expansions=("مكيف سبليت", "مكيف اسبليت")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف",), eligibility=(("مكيف",),), expansions=("مكيف", "مكيف سبليت")),
     _head(type="product", category="animals", subcategory="cat_food", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طعام قطط", "أكل قطط", "غذاء قطط", "cat food", "kitten food"), label="طعام قطط", label_from_match=True, eligibility=(("طعام", "أكل", "اكل", "غذاء", "food"), ("قط", "قطة", "قطط", "قطه", "cat", "kitten")), expansions=("طعام قطط", "أكل قطط", "غذاء قطط", "cat food", "kitten food")),
@@ -846,13 +873,24 @@ def _segment_text(original: str) -> str:
     words = raw.split()
     while words and normalize(words[0]) in _WANT_WORDS:
         words = words[1:]
+    if (
+        len(words) >= 2
+        and normalize(words[0]) in {"محل", "محلات", "متجر", "متاجر"}
+        and normalize(words[1]) in {"يبيع", "تبيع", "يبيعون", "تبيعون"}
+    ):
+        words = words[2:]
     return " ".join(words) or raw
 
 
 def _content_tokens(normalized: str) -> list[str]:
     content = []
+    shop_seller_phrase = any(
+        token in normalized.split() for token in ("يبيع", "تبيع", "يبيعون", "تبيعون")
+    )
     for token in tokens(normalized):
         if token in _STOP or token.isdigit() or token in _DIRECTIONS:
+            continue
+        if shop_seller_phrase and token in {"محل", "محلات", "متجر", "متاجر"}:
             continue
         if any(form in _STOP for form in prefix_variants(token)[1:] if len(form) >= 3):
             continue
@@ -882,7 +920,7 @@ def _long_tail(normalized: str) -> Head | None:
         return None
     if not any("؀" <= char <= "ۿ" for token in content for char in token):
         return None
-    words = tuple(content[:4])
+    words = tuple(content[:8])
     phrase = " ".join(words)
     expansions = [phrase]
     if len(words) > 2:
@@ -1237,7 +1275,11 @@ def analyze(query: str) -> IntentResponse:
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
     if head.type in {"product", "property"} and match is not None:
-        matched_words = set(head.phrases[match.phrase_index].split()) if match.phrase_index is not None else set()
+        matched_words = set(normalize(query_label).split())
+        seller_search_phrase = any(
+            normalize(word) in {"يبيع", "تبيع", "يبيعون", "تبيعون"}
+            for word in original.split()
+        )
         city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
         yoyo_variant = intent.model.value[-1] if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"} else None
         qualifiers = []
@@ -1252,6 +1294,10 @@ def analyze(query: str) -> IntentResponse:
                 or folded in _WANT_WORDS
                 or folded in city_words
                 or folded == yoyo_variant
+                or (
+                    seller_search_phrase
+                    and folded in {"محل", "محلات", "متجر", "متاجر"}
+                )
             ):
                 continue
             qualifiers.append(raw_word.strip("،,.؟?!؛;:"))
@@ -1315,27 +1361,45 @@ def analyze(query: str) -> IntentResponse:
         # the qualifier.
         intent.type = known("product", 0.8, part)
         intent.category = known("parts", 0.75, part)
-        intent.subcategory = known("car_parts", 0.7, part)
+        is_tyre = part in _TYRE_PARTS
+        intent.subcategory = known("tyres" if is_tyre else "car_parts", 0.7, part)
         intent.result_unit = ResultUnit.AD
         part_shown = _display_word(original, part)
         query_label = f"{part_shown} {label}"
-        intent.need = f"{query_label} {shown_city}".strip()
-        groups = [[part], *groups]
+        matched_part_tokens = set(_content_tokens(normalize(query_label)))
+        part_qualifiers = [
+            word
+            for word in _content_tokens(normalize(segment or ""))
+            if word not in matched_part_tokens
+        ]
+        part_need = [*part_qualifiers, part_shown, label]
+        if shown_city:
+            part_need.append(shown_city)
+        intent.need = " ".join(part_need)
+        part_terms = sorted(_TYRE_PARTS) if is_tyre else [part]
+        groups = [part_terms, *groups]
         intent.eligibility_groups = groups
-        intent.title_groups = [[part], *intent.title_groups]
-        search_label = f"{query_label} {shown_city}".strip()
-        expansions = (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
+        intent.title_groups = [part_terms, *intent.title_groups]
+        search_label = intent.need
+        expansions = (
+            (f"كفرات {label}", f"إطارات {label}", f"كفرات تويوتا {label}")
+            if is_tyre
+            else (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
+        )
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
-    if segment and intent.result_unit == ResultUnit.SERVICE_PROVIDER:
-        # Canonical service labels can drop useful qualifiers such as «بالساعة»,
-        # «بالشهر», grade levels, or a named repair target. Keep the customer's
-        # complete wording as one search query whenever the label omitted a
-        # meaningful term; the category expansions still remain available too.
-        segment_tokens = set(_content_tokens(normalize(segment)))
+    if segment and not stroller_alternatives:
+        # Preserve meaningful qualifiers omitted by a canonical head (brand, model,
+        # comfort, or the requested material) without sending search framing such as
+        # «وين ألقى» and «محل يبيع» to the provider.
+        segment_tokens = _content_tokens(normalize(segment))
         label_tokens = set(_content_tokens(normalize(query_label)))
-        if segment_tokens - label_tokens:
-            exact_segment = " ".join(segment.split())
-            if exact_segment not in intent.search_terms:
+        if set(segment_tokens) - label_tokens:
+            exact_segment = (
+                intent.segment_text
+                if intent.result_unit == ResultUnit.SERVICE_PROVIDER
+                else " ".join(_display_word(original, word) for word in segment_tokens)
+            )
+            if exact_segment and exact_segment not in intent.search_terms:
                 intent.search_terms.insert(1, exact_segment)
     asked_numbers = set(re.findall(r"\d+", to_ascii_digits(segment or "")))
     represented_numbers = set(re.findall(r"\d+", to_ascii_digits(search_label)))

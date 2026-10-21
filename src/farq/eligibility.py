@@ -81,6 +81,9 @@ def _model_codes(text: str, asked: bool) -> dict[str, set[int]]:
 def _tyre_sizes(text: str) -> set[tuple[str, ...]]:
     return {tuple(sorted(match)) for match in _TYRE_SIZE.findall(to_ascii_digits(normalize(text)))}
 _CAR_PARTS = (
+    "كفرات",
+    "اطارات",
+    "كاوتش",
     "اطار",
     "كفر",
     "جنط",
