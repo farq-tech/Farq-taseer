@@ -19,3 +19,55 @@ assert.equal(sellerCap(), 6);
 assert.equal(6 >= sellerCap(), true);
 '''
     subprocess.run(['node', '-e', script], check=True)
+
+
+def test_listing_price_disclosure_preserves_evidence_without_turning_uncertain_amounts_into_prices():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    functions = []
+    for signature in (
+        'function unescapeOnce(text) {',
+        'function adOriginalText(text) {',
+        'function harajListingUrl(ad) {',
+        'function adPriceDisclosure(ad, showMissing = false) {',
+    ):
+        start = source.index(signature)
+        end = source.index('\n}', start) + 2
+        functions.append(source[start:end])
+    script = '''const assert = require('node:assert/strict');
+const money = (value) => `${value} ر.س`;
+const esc = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+''' + '\n'.join(functions) + '''
+let html = adPriceDisclosure({price_evidence:{kind:'asking_price_in_field',amount:2000,source:'price_field'}});
+assert.match(html, /السعر المذكور في خانة الإعلان: 2000 ر\\.س/);
+assert.match(html, /ليس عرضًا نهائيًا على طلبك/);
+html = adPriceDisclosure({price_evidence:{kind:'explicit_text_price',amount:1200,source:'description'}});
+assert.match(html, /سعر مذكور في الوصف: 1200 ر\\.س/);
+html = adPriceDisclosure({price_evidence:{kind:'estimated_price',amount:900,source:'description',estimated:true}});
+assert.match(html, /السعر التقديري المذكور: 900 ر\\.س/);
+assert.match(html, /ليس سعرًا مؤكدًا/);
+html = adPriceDisclosure({price_text:'900 - 1200',price_evidence:{kind:'price_range',source:'price_field'}});
+assert.match(html, /نطاق السعر في الإعلان: 900 - 1200/);
+assert.doesNotMatch(html, /900 ر\\.س/);
+html = adPriceDisclosure({price_text:'<img>',price_evidence:{kind:'ambiguous_amount',source:'price_field'}});
+assert.match(html, /&lt;img&gt;/);
+assert.doesNotMatch(html, /ر\\.س/);
+assert.match(adPriceDisclosure({price_evidence:{kind:'auction_without_price'}}), /على السوم/);
+assert.match(adPriceDisclosure({price_evidence:{kind:'contact_for_price'}}), /عند التواصل/);
+assert.equal(adPriceDisclosure({price_evidence:{kind:'no_price_signal'}}), '');
+assert.match(adPriceDisclosure({price_evidence:{kind:'no_price_signal'}}, true), /لم يذكر الإعلان سعرًا واضحًا/);
+assert.equal(harajListingUrl({url:'https://haraj.com.sa/123'}), 'https://haraj.com.sa/123');
+assert.equal(harajListingUrl({url:'javascript:alert(1)'}), '');
+assert.equal(adOriginalText('عربة أطفال يويو\\nالسعر: 700 ريال\\nللتواصل واتس'), 'عربة أطفال يويو\\nالسعر: 700 ريال\\nللتواصل واتس');
+'''
+    subprocess.run(['node', '-e', script], check=True)
+
+
+def test_search_cards_and_details_show_the_ad_price_disclosure_and_original_listing_link():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    assert 'const priceDisclosure = adPriceDisclosure(result.ad);' in source
+    assert 'const priceDisclosure = adPriceDisclosure(result.ad, true);' in source
+    assert 'const adTitle = adOriginalText(result.ad?.title);' in source
+    assert 'const adDescription = adOriginalText(result.ad?.description);' in source
+    assert 'class="fq-ad-original"' in source
+    assert 'عرض الإعلان الأصلي في حراج' in source
+    assert 'ليس عرضًا نهائيًا على طلبك' in source

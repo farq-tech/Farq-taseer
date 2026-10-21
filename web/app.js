@@ -1464,6 +1464,7 @@ function renderCard(result) {
   const where = cityLabel(result.ad?.city || seller.city || "");
   const detail = snip(result);
   const matched = matchedWords(result);
+  const priceDisclosure = adPriceDisclosure(result.ad);
   const marks = offerMarks(result);
   const age = adAge(result.ad);
   const needName = multiNeed() ? needOf(result) : "";
@@ -1487,6 +1488,7 @@ function renderCard(result) {
       .map((word) => `<span class="fq-hit">${ic("check", 11)}<bdi>${esc(word)}</bdi></span>`)
       .join("")}</div>` : ""}
     ${detail ? `<p class="fq-small fq-offerbody"><bdi>${esc(detail)}</bdi></p>` : ""}
+    ${priceDisclosure}
     ${needName || age || marks.length ? `<div class="fq-cardtags">${needName ? `<span class="fq-tag deep"><bdi>${esc(needName)}</bdi></span>` : ""}${marks
       .map((mark) => `<span class="fq-tag">${esc(mark)}</span>`)
       .join("")}${age ? `<span class="fq-tag${age.old ? " warn" : ""}">${age.old ? "إعلان قديم · " : ""}${esc(age.label)}</span>` : ""}</div>` : ""}
@@ -1600,6 +1602,77 @@ function adStory(text) {
     .trim();
 }
 
+function adOriginalText(text) {
+  return unescapeOnce(unescapeOnce(text)).trim();
+}
+
+function harajListingUrl(ad) {
+  const url = String(ad?.url || "").trim();
+  return /^https:\/\/(?:www\.)?haraj\.com\.sa\//i.test(url) ? url : "";
+}
+
+// Show what the ad says about price, with its limits. A listing price is not a
+// confirmed quote for the customer's request, and uncertain amounts stay unpriced.
+function adPriceDisclosure(ad, showMissing = false) {
+  if (!ad) return "";
+  const evidence = ad.price_evidence || {};
+  const raw = String(ad.price_text || "").trim();
+  const amount = evidence.amount != null ? money(evidence.amount) : "";
+  let headline = "";
+  let note = "";
+  switch (evidence.kind) {
+    case "asking_price_in_field":
+      headline = amount ? `السعر المذكور في خانة الإعلان: ${amount}` : "سعر الطلب المذكور في خانة الإعلان";
+      note = "هذا سعر وارد في الإعلان، وليس عرضًا نهائيًا على طلبك.";
+      break;
+    case "explicit_text_price": {
+      const source = evidence.source === "description" ? "الوصف" : "نص الإعلان";
+      headline = amount ? `سعر مذكور في ${source}: ${amount}` : `سعر مذكور في ${source}`;
+      note = "قد يختلف عن السعر النهائي بعد التواصل مع البائع.";
+      break;
+    }
+    case "estimated_price":
+      headline = amount ? `السعر التقديري المذكور: ${amount}` : "الإعلان يذكر سعرًا تقديريًا";
+      note = "تقدير وارد في الإعلان، وليس سعرًا مؤكدًا.";
+      break;
+    case "auction_without_price":
+      headline = "الإعلان على السوم";
+      note = "لا يوجد مبلغ نهائي محدد.";
+      break;
+    case "contact_for_price":
+      headline = "السعر عند التواصل مع البائع";
+      note = "لم يُذكر مبلغ واضح في الإعلان.";
+      break;
+    case "price_range":
+      headline = raw ? `نطاق السعر في الإعلان: ${raw}` : "الإعلان يذكر نطاقًا سعريًا";
+      note = "لا نعامل النطاق كسعر واحد للمقارنة.";
+      break;
+    case "unit_or_installment_price":
+      headline = raw ? `المبلغ المذكور: ${raw}` : "المبلغ قد يكون سعر وحدة أو دفعة";
+      note = "قد لا يمثل إجمالي السعر.";
+      break;
+    case "partial_payment":
+      headline = raw ? `المبلغ في خانة السعر: ${raw}` : "الإعلان يذكر عربونًا أو دفعة جزئية";
+      note = "لم نعتبره سعرًا كاملًا.";
+      break;
+    case "historical_price":
+      headline = "الإعلان يذكر سعرًا سابقًا";
+      note = "لم نعرضه كسعر حالي.";
+      break;
+    case "ambiguous_amount":
+      headline = raw ? `نص خانة السعر: ${raw}` : "السعر غير واضح في الإعلان";
+      note = "لم نعتبر أي مبلغ منه سعرًا نهائيًا.";
+      break;
+    case "no_price_signal":
+    default:
+      if (!raw && !showMissing) return "";
+      headline = raw ? `نص خانة السعر: ${raw}` : "لم يذكر الإعلان سعرًا واضحًا";
+      if (raw) note = "تعذر تحديد معناه كسعر إجمالي.";
+      break;
+  }
+  return `<div class="fq-price-proof" role="note" aria-label="تفاصيل السعر"><strong>${esc(headline)}</strong>${note ? `<span>${esc(note)}</span>` : ""}</div>`;
+}
+
 // M06_SupplierDetailSheet — node 85:279. A sheet over the results, not its own screen.
 function detailSheet() {
   const result = state.active;
@@ -1611,7 +1684,10 @@ function detailSheet() {
   const gallery = state.gallery.length ? state.gallery : imageSources(result.ad);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  const story = adStory(result.ad?.description);
+  const adTitle = adOriginalText(result.ad?.title);
+  const adDescription = adOriginalText(result.ad?.description);
+  const priceDisclosure = adPriceDisclosure(result.ad, true);
+  const originalUrl = harajListingUrl(result.ad);
   return `<div class="fq-scrim" data-action="close-sheet">
     <div class="fq-sheet" role="dialog" aria-modal="true" aria-label="${esc(name)}">
       <span class="fq-grab" aria-hidden="true"></span>
@@ -1625,14 +1701,17 @@ function detailSheet() {
         </span>
       </div>
       <hr class="fq-line">
-      <h2 style="font-size:15px">عن المورد والخدمة</h2>
-      ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">ما فيه وصف إضافي من المورد.</p>`}
+      <h2 style="font-size:15px">تفاصيل الإعلان</h2>
+      ${priceDisclosure}
+      ${adTitle ? `<h3 class="fq-ad-title"><bdi>${esc(adTitle)}</bdi></h3>` : ""}
+      ${adDescription ? `<p class="fq-ad-original"><bdi>${esc(adDescription)}</bdi></p>` : `<p class="fq-meta">لا يوجد وصف إضافي لهذا الإعلان.</p>`}
       ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)
           .join("")}</div>` : ""}
       ${result.ad?.listing_state === "deleted" ? `<p class="fq-small" style="color:#b3402a">هذا الإعلان محذوف.</p>` : ""}
       <div class="fq-actions">
+        ${originalUrl ? `<a class="fq-btn ghost sm" href="${esc(originalUrl)}" target="_blank" rel="noopener noreferrer">عرض الإعلان الأصلي في حراج</a>` : ""}
         <button class="fq-btn sm" type="button" data-action="quote" data-key="${esc(key)}">${selected ? "تم اختياره" : "اختيار هذا المورد"}</button>
         <button class="fq-btn quiet" type="button" data-action="close-sheet">إلغاء</button>
       </div>
