@@ -88,6 +88,16 @@ def test_yoyo_stroller_with_colloquial_arabiya_title_is_eligible():
     assert decide(intent, listing, seller)[0] is True
 
 
+@pytest.mark.parametrize("typo", ["يوييو", "ييويو", "يويوو"])
+def test_repeated_letter_yoyo_typos_still_find_the_stroller(typo):
+    intent = analyze(f"عرباية {typo}")
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "strollers"
+    assert intent.model.value == "YOYO"
+    assert "عرباية يويو" in intent.search_terms
+
+
 def test_yoyo_expansion_spends_a_search_slot_on_colloquial_arabiya():
     intent = analyze("عربية اطفال يويو")
     searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
