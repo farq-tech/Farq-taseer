@@ -481,6 +481,10 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             and tokens(title)[0] in {"دهانات", "بويات", "بويه", "جوتن"}
         ):
             return False, ["paint_supply_not_painter"]
+    if intent.subcategory.value == "photography" and title:
+        lead = tokens(title)[:2]
+        if lead and any(has_word(word, ("كاميرا", "كاميرات", "camera", "cameras")) for word in lead):
+            return False, ["camera_not_photographer"]
     if provider and title:
         # «غسالة تحتاج صيانة», «غسالة 9 ك بها عطل»: a listing that leads with the appliance
         # sells the appliance; the technician leads with «صيانة» or «فني».
