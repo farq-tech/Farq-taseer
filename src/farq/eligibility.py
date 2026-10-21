@@ -734,6 +734,10 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             str(attribute.value).startswith(("size:", "color:")) for attribute in intent.attributes
         ):
             needed = max(needed, len(intent.eligibility_groups))
+        # A near match may omit optional laptop details, but never a requested Dell/HP
+        # model, RAM size, or SSD capacity.
+        if intent.subcategory.value == "laptops" and intent.brand.value in {"Dell", "HP"}:
+            needed = max(needed, len(intent.eligibility_groups))
     if missing and len(matched) < needed:
         return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched

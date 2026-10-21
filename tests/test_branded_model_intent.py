@@ -99,20 +99,24 @@ def test_branded_laptop_ram_and_storage_must_both_match_listing():
     assert decide(intent, exact, seller)[0]
     assert not decide(intent, wrong_storage, seller)[0]
     assert not decide(intent, wrong_ram, seller)[0]
+    assert not decide(intent, wrong_storage, seller, relaxed=True)[0]
+    assert not decide(intent, wrong_ram, seller, relaxed=True)[0]
 
 
 def test_branded_laptop_accessory_and_english_repair_queries_are_not_laptop_ads():
-    for query in (
-        "Dell XPS 13 keyboard",
-        "Dell XPS 13 repair",
-        "HP Spectre x360 fix",
-    ):
+    accessory = analyze("Dell XPS 13 keyboard")
+    assert not (
+        accessory.understood
+        and accessory.type.value == "product"
+        and accessory.subcategory.value == "laptops"
+    )
+
+    for query in ("Dell XPS 13 repair", "HP Spectre x360 fix"):
         intent = analyze(query)
-        assert not (
-            intent.understood
-            and intent.type.value == "product"
-            and intent.subcategory.value == "laptops"
-        ), (query, intent)
+        assert intent.understood is True
+        assert (intent.type.value, intent.subcategory.value) == ("service", "computer_repair")
+        assert intent.result_unit.value == "service_provider"
+        assert intent.location_city.known is False
 
 
 def test_dyson_vacuum_query_is_classified_and_keeps_model():
