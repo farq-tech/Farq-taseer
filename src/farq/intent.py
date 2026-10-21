@@ -124,6 +124,7 @@ _STOP = {
     "الى",
     "لي",
     "لنا",
+    "موديل",
     "حق",
     "شي",
     "شيء",
@@ -414,6 +415,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="appliances", subcategory="washing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("غسالة أوتوماتيك", "غسالة اتوماتيك", "غسالات أوتوماتيك", "غسالة", "غسالات"), label="غسالة", label_from_match=True, eligibility=(("غسالة", "غسالات"),), expansions=("غسالة", "غسالة أوتوماتيك", "غسالات")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لاندكروزر", "land cruiser"), brand="Toyota", model="Land Cruiser", eligibility=(("لاندكروزر", "لاند كروزر", "land cruiser"),), expansions=("لاندكروزر",)),
+    _head(type="vehicle", category="vehicles", subcategory="motorcycles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دباب هوندا", "دبابات هوندا", "هوندا دباب", "هوندا دبابات"), brand="Honda", label="دباب هوندا", eligibility=(("دباب", "دبابات"), ("هوندا", "honda")), expansions=("دباب هوندا", "هوندا دباب", "دبابات هوندا")),
+    _head(type="vehicle", category="vehicles", subcategory="motorcycles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دباب", "دبابات", "دراجة نارية", "دراجه ناريه", "دراجات نارية", "موتور", "motorcycle", "motorbike"), label="دباب", label_from_match=True, eligibility=(("دباب", "دبابات", "دراجة نارية", "دراجه ناريه", "دراجات نارية", "موتور", "motorcycle", "motorbike"),), expansions=("دباب", "دبابات", "دراجة نارية", "motorcycle")),
     _head(type="property", category="property", subcategory="farms", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مزرعة للاستراحة", "مزرعة", "مزرعه", "مزارع", "farm", "farms"), label="مزرعة", label_from_match=True, eligibility=(("مزرعة", "مزرعه", "مزارع", "farm"),), title_groups=(("مزرعة", "مزرعه", "مزارع", "farm"),), expansions=("مزارع", "مزرعة للإيجار", "مزرعة استراحة")),
     _head(type="property", category="property", subcategory="resthouses", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("استراحة", "استراحه", "استراحات"), label="استراحة", label_from_match=True, eligibility=(("استراحة", "استراحه", "استراحات"),), title_groups=(("استراحة", "استراحه", "استراحات"),), expansions=("استراحات", "استراحة يومية", "استراحة للإيجار")),
     _head(type="property", category="property", subcategory="chalets", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شاليه", "شاليهات", "chalet", "chalets"), label="شاليه", label_from_match=True, eligibility=(("شاليه", "شاليهات", "chalet"),), title_groups=(("شاليه", "شاليهات", "chalet"),), expansions=("شاليهات", "شاليه يومي", "شاليه للإيجار")),
@@ -985,7 +988,7 @@ def analyze(query: str) -> IntentResponse:
     search_label = f"{query_label} {shown_city}".strip()
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
-    if head.type in {"product", "property"} and match is not None:
+    if (head.type in {"product", "property"} or head.subcategory == "motorcycles") and match is not None:
         matched_words = set(head.phrases[match.phrase_index].split()) if match.phrase_index is not None else set()
         city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
         yoyo_variant = intent.model.value[-1] if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"} else None

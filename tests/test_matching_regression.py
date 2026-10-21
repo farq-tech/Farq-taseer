@@ -82,6 +82,27 @@ def test_electric_adjective_in_the_request_is_a_product():
     assert analyze("تركيب أفياش كهرباء بالرياض").subcategory.value == "electrician"
 
 
+def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise():
+    intent = analyze("أبحث عن دباب هوندا موديل 2020")
+    assert intent.understood is True
+    assert intent.type.value == "vehicle"
+    assert intent.category.value == "vehicles"
+    assert intent.subcategory.value == "motorcycles"
+    assert intent.brand.value == "Honda"
+    assert intent.model.value is None  # Make is known; a specific motorcycle model was not given.
+    assert intent.year.value == 2020
+    assert "دباب هوندا 2020" in intent.search_terms
+    assert all("موديل" not in term for term in intent.search_terms)
+    assert all(not term.startswith("عن ") for term in intent.search_terms)
+
+    assert decide(intent, _ad("دباب هوندا موديل 2020"), None)[0] is True
+    assert decide(intent, _ad("سيارة هوندا 2020"), None)[0] is False
+    assert decide(intent, _ad("دباب ياماها 2020"), None)[0] is False
+
+    generic = analyze("دراجة نارية")
+    assert generic.subcategory.value == "motorcycles"
+
+
 # TSR-007: a service verb with a product noun is the service.
 def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
     intent = analyze("تنظيف مكيف بالرياض")
