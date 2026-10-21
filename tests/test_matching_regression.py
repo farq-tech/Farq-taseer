@@ -98,6 +98,20 @@ def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
     assert analyze("مكيف سبليت").type.value == "product"
 
 
+def test_ac_install_verb_does_not_turn_a_technician_request_into_repair():
+    install = analyze("محتاج فني يركب مكيفين شباك بالدمام")
+    repair = analyze("محتاج فني يصلح مكيفين شباك بالدمام")
+    install_listing = _ad("فني تركيب مكيفات شباك", city="الدمام")
+    repair_listing = _ad("فني صيانة مكيفات شباك", city="الدمام")
+
+    assert install.subcategory.value == "ac_install"
+    assert install.segment_text == "فني يركب مكيفين شباك بالدمام"
+    assert install.segment_text in install.search_terms
+    assert decide(install, install_listing, install_listing.seller)[0] is True
+    assert decide(install, repair_listing, repair_listing.seller)[0] is False
+    assert repair.subcategory.value == "ac_repair"
+
+
 # TSR-004: joined "و" + a second service is a second need, each with its own words.
 def test_joined_services_are_each_kept():
     intents = analyze_needs("أبي سباك يصلح التسريب وكهربائي يركب 3 أفياش بالرياض")
