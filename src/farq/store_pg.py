@@ -1715,8 +1715,8 @@ class PgStore:
                 (key, value),
             )
 
-    def record_inbound(self, thread: dict, inbound: InboundMessage) -> Message | None:
-        """Attach a Haraj reply to its item and seller. Returns None when it was already recorded."""
+    def record_inbound(self, thread: dict, inbound: InboundMessage, *, allow_offer: bool = True) -> Message | None:
+        """Attach a Haraj reply to its request/item and seller; optionally withhold quote extraction."""
         request_id, seller_id, need = thread["request_id"], thread["seller_id"], thread["need"] or None
         with self._pool.connection() as conn:
             # A poll may have loaded the old batch immediately before the consolidation.
@@ -1742,7 +1742,7 @@ class PgStore:
             offer = None
             attrs=conn.execute("select attributes from requests where id=%s",(request_id,)).fetchone()
             personal=bool(attrs and (attrs["attributes"] or {}).get("_haraj_consent"))
-            quote = extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)
+            quote = (extract_user_quote(inbound.body,need or '') if personal else extract_quote(inbound.body)) if allow_offer else None
             price = None if quote is None else quote.total
             awarded = conn.execute("select awarded_seller_id from requests where id = %s", (request_id,)).fetchone()["awarded_seller_id"]
             # After the award, a price from anyone but the winner is kept as a message, not an offer.

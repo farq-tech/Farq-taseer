@@ -167,19 +167,29 @@ def sync_user_replies(store, budget_seconds, clock):
             for thread in threads:
                 store.thread_checked(thread,failure_code='HARAJ_PROTOCOL_UNRESOLVED',retry_seconds=60,now=clock())
             continue
-        # Editable buyer messages carry no artificial reference footer. Multiple active RFQs
-        # in one conversation cannot be assigned from wording/time guesses.
+        # Haraj reuses one seller/account conversation across RFQs and exposes no reply-to
+        # request id. When every thread in the conversation belongs to one request and seller,
+        # preserve the seller's messages on that request without guessing which item they price.
+        # A single thread still has an exact item and can use normal quote extraction.
+        request_ids = {thread['request_id'] for thread in threads}
+        seller_ids = {thread['seller_id'] for thread in threads}
+        request_scoped = len(request_ids) == 1 and len(seller_ids) == 1
         high_water=max((item.seq for item in messages),default=0)
         for item in messages:
             if store.has_haraj_message(item.haraj_message_id):
                 continue
-            if len(threads)!=1:
+            if not request_scoped:
                 store.record_unmatched_inbound(conversation,threads[0]['seller_id'],item,farq_user_id=owner)
                 continue
             thread=threads[0]
             if store.farq_user_for_request(thread['request_id'])!=owner:
                 raise HarajChatUnavailable('HARAJ_CONVERSATION_OWNERSHIP')
-            recorded=store.record_inbound(thread,item)
+            exact_item = len(threads) == 1
+            recorded=store.record_inbound(
+                thread if exact_item else {**thread, 'need': None},
+                item,
+                allow_offer=exact_item,
+            )
             if recorded is not None:
                 received+=1
                 from farq.push import notify_reply
@@ -187,9 +197,9 @@ def sync_user_replies(store, budget_seconds, clock):
         # Unique provider-owner connections make this update owner-exclusive. Preserve original
         # messages and use existing quote extraction / per-user read persistence.
         for thread in threads:
-            store.thread_checked(thread,retry_seconds=30,now=clock(),high_water=high_water,failure_code='HARAJ_ITEM_ASSIGNMENT_REQUIRED' if len(threads)!=1 and messages else None)
-            if len(threads)==1:
-                store.mark_synced(thread['request_id'])
+            store.thread_checked(thread,retry_seconds=30,now=clock(),high_water=high_water,failure_code='HARAJ_ITEM_ASSIGNMENT_REQUIRED' if not request_scoped and messages else None)
+        if request_scoped:
+            store.mark_synced(next(iter(request_ids)))
     return received
 
 

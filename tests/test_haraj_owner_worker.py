@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 import json
+from uuid import UUID
 import pytest
 from farq.store import Store
 from farq.haraj_chat import HarajChatUnavailable, InboundMessage, SentMessage
@@ -28,6 +29,8 @@ def test_exact_message_and_owner_come_from_owned_request_not_caller(store):
  receipt=broker.send_delivery(store,item)
  _,owner,payload=broker.call.call_args.args
  assert owner==A and payload['text']=='بكم الباب؟' and payload['recipientId']=='202'
+ assert payload['rfqId']==str(UUID(rid)) and payload['deliveryId']==item['id']
+ assert payload['itemId']=='25 باب PVC'
  assert payload['expectedAccountId']=='101' and payload['supplierId']=='haraj:seller:202'
  assert receipt.account_id=='101'
 
@@ -78,6 +81,32 @@ def test_ambiguous_reply_stays_visible_to_its_owner_only_and_is_not_guessed(stor
  assert len(owned_unmatched(store,localA))==1
  assert owned_unmatched(store,localB)==[]
  assert all(not store.get_request(rid,localA).offers for rid in ids)
+
+def test_multiple_items_in_one_request_route_replies_to_request_without_guessing_quote_line(store,monkeypatch):
+ local=store._connection.execute('select id from users where farq_user_id=?',(A,)).fetchone()['id']
+ needs=['عربية اطفال يويو اصلية','عربية اطفال yoyo','عربية اطفال يويو الحي: الربيع']
+ rid=store.create_request(
+  local,'عربية اطفال يويو','عربية اطفال يويو',None,'الرياض',
+  {'_haraj_consent':{'owner':A,'at':'2026-10-06T19:00:00Z','account':'101','recipients':['haraj:seller:202']}},
+  [RequestRecipient(seller_id='haraj:seller:202',seller_name='synthetic',need=need) for need in needs],
+  supplier_message='متوفر عندك؟',
+ )
+ for index,item in enumerate(store.claim_deliveries(limit=3,request_id=rid),start=7):
+  store.finish_delivery(item['id'],sent=SentMessage('p2p101_202',f'p2p101_202:{index}',index,'101'))
+ replies=[
+  InboundMessage('p2p101_202:10','متوفره اخوي','2026-10-06T19:30:00Z',10),
+  InboundMessage('p2p101_202:11','بالرياض','2026-10-06T19:31:00Z',11),
+  InboundMessage('p2p101_202:12','٧٠٠','2026-10-06T19:32:00Z',12),
+ ]
+ mock=Mock(configured=True);mock.read_thread.return_value=replies
+ monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:mock)
+
+ assert sync_user_replies(store,10,lambda:2000000000)==3
+ record=store.get_request(rid,local)
+ assert [message.body for message in record.messages if message.sender_role=='seller']==[reply.body for reply in replies]
+ assert all(message.need is None for message in record.messages if message.sender_role=='seller')
+ assert not record.offers
+ assert owned_unmatched(store,local)==[]
 
 def test_farq_mapping_cannot_be_reassigned_and_worker_rejects_forged_consent_owner(store):
  rid=request(store)
