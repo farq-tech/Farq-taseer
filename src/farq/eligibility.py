@@ -261,10 +261,12 @@ _MAP_LISTING = ("جوجل", "قوقل", "google")
 _MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
 _SALE_WORDS = ("للبيع", "بيع", "البيع")
 _GLAZING_NOT = ("تنظيف", "غسيل", "غرفه نوم", "طاوله", "مرايه", "سياره", "عطر", "جوال", "شاشه", "نظاره")
-_LEAD_IN = {"للبيع", "بيع", "تويوتا", "toyota", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد"}
+_LEAD_IN = {"للبيع", "بيع", "تويوتا", "toyota", "نيسان", "nissan", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد"}
 _MODEL_TOKENS = {
     "Camry": ("كامري", "camry"),
     "Land Cruiser": ("لاندكروزر", "لاند كروزر", "land cruiser"),
+    "Yaris": ("يارس", "yaris"),
+    "Datsun": ("ددسن", "داتسن", "داتسون", "datsun"),
 }
 
 
@@ -466,12 +468,12 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["year_mismatch"]
         if stated and int(intent.year.value) not in stated:
             return False, ["year_mismatch"]
-    if intent.type.value == "vehicle" and intent.subcategory.value == "cars" and title:
+    if intent.type.value == "vehicle" and intent.subcategory.value in {"cars", "pickups"} and title:
         names = _MODEL_TOKENS.get(intent.model.value or "", ())
         leading = [token for token in tokens(title) if token not in _LEAD_IN and not token.isdigit()]
         if names and not any(contains_term(" ".join(leading[:1]), name) for name in names):
             return False, ["part_not_vehicle"]
-        if any(contains_term(title, part) for part in _CAR_PARTS):
+        if intent.subcategory.value == "cars" and any(contains_term(title, part) for part in _CAR_PARTS):
             return False, ["part_not_vehicle"]
     if title:
         # Another buyer's wanted-ad, in any section. "ارغب في مقاول يبني لي شقه صغيره" is a
