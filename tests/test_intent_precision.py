@@ -52,6 +52,14 @@ def test_paint_supply_title_without_sale_word_is_not_a_painter():
     assert decide(intent, paint_supply, seller)[0] is False
 
 
+def test_paint_teacher_title_with_supply_word_still_identifies_a_provider():
+    intent = analyze("دهان شقة بالرياض")
+    seller = Seller(id="seller", name="معلم دهانات")
+    provider = Ad(id="painter", title="معلم دهانات داخلية وخارجية", seller=seller, city="الرياض")
+
+    assert decide(intent, provider, seller)[0] is True
+
+
 def test_clear_water_leak_repair_request_is_routed_to_a_plumber():
     intent = analyze("عندي تسرب ماء في السقف من يصلحه بالرياض")
 
@@ -169,6 +177,47 @@ def test_iphone_generation_does_not_match_a_different_model_with_unrelated_numbe
 
     assert accepted is False
     assert "model_mismatch:iphone_generation" in reasons
+
+
+def test_iphone_generation_and_variant_are_not_relaxed_away():
+    intent = analyze("ايفون 15 برو ماكس")
+    seller = Seller(id="seller", name="متجر الجوالات")
+    wrong_model = Ad(id="wrong-model", title="ايفون 14 استخدام 15 يوم", seller=seller)
+
+    accepted, reasons = decide(intent, wrong_model, seller, relaxed=True)
+
+    assert accepted is False
+    assert reasons == ["model_mismatch:iphone_generation"]
+
+
+def test_explicit_iphone_storage_is_required_even_in_near_match_results():
+    intent = analyze("ايفون 15 برو ماكس 256 جيجا")
+    seller = Seller(id="seller", name="متجر الجوالات")
+    no_storage = Ad(id="no-storage", title="ايفون 15 برو ماكس بحالة ممتازة", seller=seller)
+
+    accepted, reasons = decide(intent, no_storage, seller, relaxed=True)
+
+    assert accepted is False
+    assert reasons == ["spec_missing:storage_gb"]
+
+
+def test_iphone_model_qualifier_keeps_charger_search_on_accessories():
+    intent = analyze("شاحن ايفون 15")
+    seller = Seller(id="seller", name="متجر جوالات")
+    charger = Ad(id="charger", title="شاحن ايفون 15 سريع", seller=seller)
+    phone = Ad(id="phone", title="ايفون 15 برو ماكس 256 جيجا", seller=seller)
+
+    assert intent.subcategory.value == "phone_accessories"
+    assert intent.model.value == "iPhone 15"
+    assert decide(intent, charger, seller)[0] is True
+    assert decide(intent, phone, seller)[0] is False
+
+
+def test_iphone_model_qualifier_keeps_case_search_on_accessories():
+    intent = analyze("كفر ايفون 15")
+
+    assert intent.subcategory.value == "phone_accessories"
+    assert intent.model.value == "iPhone 15"
 
 
 def test_unmodeled_product_specs_are_kept_in_the_actual_haraj_queries():
