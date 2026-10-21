@@ -15,6 +15,7 @@ Every table in the taseer schema is emptied between tests.
 
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -308,6 +309,72 @@ def test_sync_account_projection_on_postgres(pg_store, tmp_path):
     store.finish_delivery(delivery['id'], sent=SentMessage('p2p101_202','p2p101_202:7',7,'101'))
     rows = store.threads_to_sync()
     assert len(rows) == 1 and rows[0]['haraj_account_id'] == '101'
+
+
+def test_merged_source_reference_routes_to_consolidated_target_on_postgres(pg_store, tmp_path, monkeypatch):
+    from psycopg.types.json import Jsonb
+
+    from farq.contracts import RequestRecipient
+    from farq.haraj_broker import sync_user_replies
+    from farq.haraj_chat import InboundMessage, SentMessage
+
+    store = pg_store(upload_dir=tmp_path / 'uploads')
+    local_user = store.start_guest()['user_id']
+    owner = '11111111-1111-4111-8111-111111111111'
+    assert store.link_farq(local_user, owner)
+
+    def create(need, seller):
+        attributes = {'_haraj_consent': {
+            'owner': owner, 'at': '2026-10-06T19:00:00Z', 'account': '101',
+            'recipients': [seller],
+        }}
+        return store.create_request(
+            local_user, need, need, None, 'الرياض', attributes,
+            [RequestRecipient(seller_id=seller, seller_name='synthetic', need=need)],
+            supplier_message='بكم؟',
+        )
+
+    source = create('source item', '202')
+    target = create('combined request', '303')
+    with store._pool.connection() as conn:
+        source_row = conn.execute('select ref_code, attributes from requests where id=%s', (source,)).fetchone()
+        source_ref = source_row['ref_code']
+        source_attributes = source_row['attributes']
+        target_row = conn.execute('select attributes from requests where id=%s', (target,)).fetchone()
+        target_attributes = target_row['attributes']
+
+    for delivery in store.claim_deliveries(limit=2):
+        seller = delivery['seller_id']
+        store.finish_delivery(
+            delivery['id'],
+            sent=SentMessage(f'p2p101_{seller}', f'p2p101_{seller}:7', 7, '101'),
+        )
+
+    source_attributes['merged_into_request_id'] = target
+    target_attributes['_merge_recipient_consents'] = {
+        '202': source_attributes['_haraj_consent'],
+        '303': target_attributes['_haraj_consent'],
+    }
+    with store._pool.connection() as conn:
+        conn.execute('update requests set attributes=%s where id=%s', (Jsonb(source_attributes), source))
+        conn.execute('update requests set attributes=%s where id=%s', (Jsonb(target_attributes), target))
+        for table in ('haraj_threads', 'message_deliveries', 'messages', 'request_recipients'):
+            conn.execute(f'update {table} set request_id=%s where request_id=%s', (target, source))
+
+    reply = InboundMessage('p2p101_202:8', f'{source_ref} متوفر بـ ٧٠٠ ريال', '2026-10-06T19:30:00Z', 8)
+    threads = store.threads_to_sync()
+    source_thread = next(row for row in threads if row['haraj_conversation_id'] == 'p2p101_202')
+    assert source_ref in source_thread['source_ref_codes']
+
+    broker = Mock(configured=True)
+    broker.read_thread.side_effect = lambda _store, thread, _after: [reply] if thread['haraj_conversation_id'] == 'p2p101_202' else []
+    monkeypatch.setattr('farq.haraj_broker.UserHarajBroker', lambda: broker)
+
+    assert sync_user_replies(store, 10, lambda: 2_000_000_000) == 1
+    record = store.get_request(target, local_user)
+    assert any(message.body == reply.body for message in record.messages)
+    assert record.offers and record.offers[0].amount == 700
+    assert store.unmatched_inbound() == []
 
 
 def test_checked_thread_does_not_clear_legacy_failures(pg_store, tmp_path):

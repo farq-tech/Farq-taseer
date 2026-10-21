@@ -132,6 +132,12 @@ def send_request_directly(store, request_id, local_owner, *, sleep=time.sleep, c
             next_send_at = clock() + 30.0
 
 
+def _thread_references(thread: dict) -> set[str]:
+    references = {thread.get('ref_code')}
+    references.update((thread.get('source_ref_codes') or '').split(','))
+    return references - {None, ''}
+
+
 def sync_user_replies(store, budget_seconds, clock):
     broker = UserHarajBroker()
     if not broker.configured:
@@ -188,7 +194,7 @@ def sync_user_replies(store, budget_seconds, clock):
                 targets = {
                     (thread['request_id'], thread['seller_id'])
                     for thread in threads
-                    if thread.get('ref_code') in references
+                    if references.intersection(_thread_references(thread))
                 }
                 target = next(iter(targets)) if len(targets) == 1 else None
             elif request_scoped:

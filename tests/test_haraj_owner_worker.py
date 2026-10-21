@@ -3,7 +3,7 @@ import json
 from uuid import UUID
 import pytest
 from farq.store import Store
-from farq.haraj_chat import HarajChatUnavailable, InboundMessage, SentMessage
+from farq.haraj_chat import HarajChatUnavailable, InboundMessage, SentMessage, with_reference
 from farq.contracts import RequestRecipient
 from farq.haraj_broker import UserHarajBroker, send_request_directly, sync_user_replies, owned_unmatched
 
@@ -17,10 +17,16 @@ def store(tmp_path):
  s.login_farq(B,'b@example.test','B',True)
  return s
 
-def request(s, owner=A, need='25 باب PVC', consent=True):
+def request(s, owner=A, need='25 باب PVC', consent=True, seller='haraj:seller:202'):
  local=s._connection.execute('select id from users where farq_user_id=?',(owner,)).fetchone()['id']
- attrs={'_haraj_consent':{'owner':owner,'at':'2026-10-06T19:00:00Z','account':'101','recipients':['haraj:seller:202']}} if consent else {}
- return s.create_request(local,need,need,None,'الرياض',attrs,[RequestRecipient(seller_id='haraj:seller:202',seller_name='synthetic',need=need)],supplier_message='بكم الباب؟')
+ attrs={'_haraj_consent':{'owner':owner,'at':'2026-10-06T19:00:00Z','account':'101','recipients':[seller]}} if consent else {}
+ return s.create_request(local,need,need,None,'الرياض',attrs,[RequestRecipient(seller_id=seller,seller_name='synthetic',need=need)],supplier_message='بكم الباب؟')
+
+def test_with_reference_uses_parsed_codes_not_substrings():
+ body='استفسار عن الطلب T-1234567'
+ sent=with_reference(body,'T-123456')
+ assert sent.endswith('رقم الطلب: T-123456')
+ assert with_reference('سؤالي T-123456','T-123456')=='سؤالي T-123456'
 
 def test_exact_message_and_owner_come_from_owned_request_not_caller(store):
  rid=request(store)
@@ -113,6 +119,45 @@ def test_reference_routes_reply_to_the_matching_request_in_a_shared_conversation
  assert target_record.offers and target_record.offers[0].amount==700
  assert not any(message.body==reply.body for message in other_record.messages)
  assert not other_record.offers
+ assert owned_unmatched(store,local)==[]
+
+def test_reference_from_merged_source_request_routes_to_consolidated_target(store,monkeypatch):
+ source=request(store,need='source item',seller='haraj:seller:202')
+ target=request(store,need='combined request',seller='haraj:seller:303')
+ source_ref=store._connection.execute('select ref_code from requests where id=?',(source,)).fetchone()['ref_code']
+ for item in store.claim_deliveries(limit=2):
+  seller=item['seller_id'].split(':')[-1]
+  store.finish_delivery(item['id'],sent=SentMessage(f'p2p101_{seller}',f'p2p101_{seller}:7',7,'101'))
+
+ source_row=store._connection.execute('select attributes_json from requests where id=?',(source,)).fetchone()
+ attrs=json.loads(source_row['attributes_json'])
+ attrs['merged_into_request_id']=target
+ store._connection.execute('update requests set attributes_json=? where id=?',(json.dumps(attrs),source))
+ target_row=store._connection.execute('select attributes_json from requests where id=?',(target,)).fetchone()
+ target_attrs=json.loads(target_row['attributes_json'])
+ target_attrs['_merge_recipient_consents']={
+  'haraj:seller:202':attrs['_haraj_consent'],
+  'haraj:seller:303':target_attrs['_haraj_consent'],
+ }
+ store._connection.execute('update requests set attributes_json=? where id=?',(json.dumps(target_attrs),target))
+ store._connection.execute('update haraj_threads set request_id=? where request_id=?',(target,source))
+ store._connection.execute('update request_recipients set request_id=? where request_id=?',(target,source))
+ store._connection.execute('update message_deliveries set request_id=? where request_id=?',(target,source))
+ store._connection.commit()
+
+ reply=InboundMessage('p2p101_202:8',f'{source_ref} متوفر بـ ٧٠٠ ريال','2026-10-06T19:30:00Z',8)
+ rows=store.threads_to_sync()
+ source_thread=next(row for row in rows if row['haraj_conversation_id']=='p2p101_202')
+ assert source_ref in source_thread['source_ref_codes']
+ mock=Mock(configured=True)
+ mock.read_thread.side_effect=lambda _store,thread,_after: [reply] if thread['haraj_conversation_id']=='p2p101_202' else []
+ monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:mock)
+
+ assert sync_user_replies(store,10,lambda:2000000000)==1
+ local=store.request_owner(target)
+ record=store.get_request(target,local)
+ assert any(message.body==reply.body for message in record.messages)
+ assert record.offers and record.offers[0].amount==700
  assert owned_unmatched(store,local)==[]
 
 def test_multiple_items_in_one_request_route_replies_to_request_without_guessing_quote_line(store,monkeypatch):
