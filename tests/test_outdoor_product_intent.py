@@ -56,9 +56,26 @@ def test_tent_installation_is_a_service_not_a_tent_for_sale():
     assert intent.result_unit == ResultUnit.SERVICE_PROVIDER
 
 
+def test_tent_setup_does_not_capture_other_work_done_at_home():
+    ac_install = analyze("فني تركيب مكيف بالبيت بالرياض")
+    carpentry = analyze("أحتاج نجار يركب دولاب للبيت بالرياض")
+
+    assert ac_install.subcategory.value == "ac_install"
+    assert ac_install.result_unit == ResultUnit.SERVICE_PROVIDER
+    assert carpentry.subcategory.value == "carpenter"
+    assert carpentry.result_unit == ResultUnit.SERVICE_PROVIDER
+
+
+def test_short_tent_alias_keeps_installation_as_a_service():
+    intent = analyze("أحتاج تركيب خيم بالرياض")
+
+    assert intent.subcategory.value == "tent_setup"
+    assert intent.result_unit == ResultUnit.SERVICE_PROVIDER
+
+
 def test_supplier_taxonomy_separates_camping_sales_from_setup_work():
     products = read_business("بيع خيام ملكية وبيوت شعر وكراسي رحلات وطاولات رحلات")
-    service = read_business("تركيب خيام وبيوت شعر")
+    service = read_business("تركيب خيام وخيم وبيوت شعر")
     product_keys = {item["key"] for item in products["products"]}
 
     assert product_keys >= {"royal_tents", "traditional_tents", "camping_chairs", "camping_tables"}
