@@ -4757,16 +4757,14 @@ async function loadMoreSearch() {
   state.loadingMore = true;
   state.notice = "نبحث عن إعلانات أكثر…";
   render();
-  try {
-    const response = await api("/v1/search", {
-      method: "POST",
-      json: { query: asked, page, continuation_trace: traceId },
-      quiet: true,
-    });
-    if (state.searchId !== searchId || state.traceId !== traceId) return;
-    const seen = new Set(state.results.map(resultKey));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  let finished = false;
+  let addedTotal = 0;
+  const seen = new Set(state.results.map(resultKey));
+  const addResults = (results) => {
     let added = 0;
-    for (const result of response.results || []) {
+    for (const result of results || []) {
       const key = resultKey(result);
       if (!seen.has(key)) {
         seen.add(key);
@@ -4774,20 +4772,58 @@ async function loadMoreSearch() {
         added += 1;
       }
     }
-    rememberGroups(response.groups);
-    state.nextPage = response.next_page ?? null;
-    state.searchState = response.state || state.searchState;
-    state.partial = false;
-    state.notice = added
-      ? `أضفنا ${plural(added, ["إعلانًا واحدًا", "إعلانين", "إعلانات", "إعلان"])} إلى النتائج.`
-      : state.nextPage != null
-        ? "ما ظهرت إعلانات جديدة في هذه الصفحة. تقدر تتابع البحث."
-        : "ما لقينا إعلانات إضافية لهذا الطلب.";
+    return added;
+  };
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (state.token) headers.Authorization = `Bearer ${state.token}`;
+    const response = await fetch("/v1/search/stream", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query: asked, page, continuation_trace: traceId }),
+      signal: controller.signal,
+    });
+    if (!response.ok || !response.body) {
+      const failure = new Error("search continuation failed");
+      failure.status = response.status;
+      throw failure;
+    }
+    await readNdjson(response, (event) => {
+      if (state.searchId !== searchId || state.traceId !== traceId) return;
+      if (event.type === "results") {
+        const added = addResults(event.results);
+        addedTotal += added;
+        rememberGroups(event.groups);
+        if (!added) return;
+        state.notice = `أضفنا ${plural(added, ["إعلانًا واحدًا", "إعلانين", "إعلانات", "إعلان"])} إلى النتائج، ونبحث عن المزيد.`;
+        if (!patchResults()) render();
+      } else if (event.type === "done") {
+        finished = true;
+        addedTotal += addResults(event.results);
+        rememberGroups(event.groups);
+        state.nextPage = event.next_page ?? null;
+        state.searchState = event.state || state.searchState;
+        state.partial = false;
+        state.notice = addedTotal
+          ? `أضفنا ${plural(addedTotal, ["إعلانًا واحدًا", "إعلانين", "إعلانات", "إعلان"])} إلى النتائج.`
+          : state.nextPage != null
+            ? "ما ظهرت إعلانات جديدة في هذه الصفحة. تقدر تتابع البحث."
+            : "ما لقينا إعلانات إضافية لهذا الطلب.";
+      }
+    });
+    if (!finished && state.searchId === searchId && state.traceId === traceId) {
+      state.notice = "توقف تحميل الإعلانات الإضافية قبل اكتماله. ظهرت النتائج التي وصلتنا؛ حاول مرة ثانية لإكمال البحث.";
+    }
   } catch (_error) {
     // Keep the page cursor and current cards so the customer can safely retry.
     if (state.searchId !== searchId || state.traceId !== traceId) return;
-    state.notice = "ما قدرنا نحمل إعلانات أكثر. حاول مرة ثانية.";
+    state.notice = controller.signal.aborted
+      ? "تأخر تحميل الإعلانات الإضافية. احتفظنا بالنتائج التي وصلت؛ حاول مرة ثانية لإكمال البحث."
+      : _error?.status === 429
+        ? "طلبات كثيرة خلال دقيقة. انتظر شوي ثم حاول مرة ثانية."
+        : "ما قدرنا نحمل إعلانات أكثر. احتفظنا بالنتائج التي وصلت؛ حاول مرة ثانية.";
   } finally {
+    clearTimeout(timer);
     if (state.searchId === searchId && state.traceId === traceId) {
       state.loadingMore = false;
       render();

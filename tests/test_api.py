@@ -237,6 +237,26 @@ def test_intent_endpoint_classifies_dina_transport_by_what_it_carries(
         assert any("الرياض" in term and "جدة" in term for term in intent["search_terms"])
 
 
+def test_intent_endpoint_understands_colloquial_request_to_transport_my_car(tmp_path: Path):
+    api = client(tmp_path)
+
+    response = api.post(
+        "/v1/intent",
+        json={"query": "ابغى احد ينقل سيارتي من الرياض لجدة"},
+    )
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["category"]["value"] == "services"
+    assert intent["subcategory"]["value"] == "vehicle_transport"
+    assert intent["result_unit"] == "service_provider"
+    assert intent["location_city"]["value"] == "الرياض"
+    assert intent["destination_city"]["value"] == "جده"
+    assert any("الرياض" in term and "جدة" in term for term in intent["search_terms"])
+
+
 @pytest.mark.parametrize(
     "query",
     [

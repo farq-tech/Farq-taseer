@@ -250,13 +250,23 @@ def read_query(query: str) -> list[dict] | None:
 
 def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     was_ununderstood = not intent.understood
+    preserve_service_route = (
+        intent.result_unit == ResultUnit.SERVICE_PROVIDER
+        and intent.subcategory.value
+        in {"vehicle_transport", "moving", "goods_transport", "passenger_transport"}
+        and intent.destination_city.known
+    )
     preserve_identity = (
         intent.model.known or intent.brand.known or bool(intent.identity_alternatives)
     )
     rule_need = intent.need
     rule_groups = [list(group) for group in intent.eligibility_groups]
     rule_terms = list(intent.search_terms)
-    intent.need = rule_need if preserve_identity and rule_need else read["need"]
+    intent.need = (
+        rule_need
+        if (preserve_identity or preserve_service_route) and rule_need
+        else read["need"]
+    )
     read_groups = [list(group) for group in read["must_include"]]
     if intent.identity_alternatives:
         # The rules already represent each explicitly requested alternative in one
@@ -271,6 +281,10 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
                 seen_groups.add(key)
                 merged_groups.append(group)
         intent.eligibility_groups = merged_groups
+    elif preserve_service_route:
+        # A rule-classified provider service is already a precise match. A generic
+        # model reading such as «سيارتي الرياض» must not erase its route or widen it.
+        intent.eligibility_groups = rule_groups
     else:
         intent.eligibility_groups = read_groups
     # Every group must hit. The rules relax this for their long tail because they only have
@@ -280,13 +294,17 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     terms: list[str] = []
     search_terms = (
         rule_terms
-        if intent.identity_alternatives
+        if intent.identity_alternatives or preserve_service_route
         else [*rule_terms, *read["search_terms"]]
-        if preserve_identity
+        if preserve_identity or preserve_service_route
         else read["search_terms"]
     )
     for term in search_terms:
-        candidates = (term,) if preserve_identity else (term, f"{term} {city}".strip() if city else "")
+        candidates = (
+            (term,)
+            if preserve_identity or preserve_service_route
+            else (term, f"{term} {city}".strip() if city else "")
+        )
         for candidate in candidates:
             if candidate and candidate not in terms:
                 terms.append(candidate)
@@ -300,7 +318,7 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
             if "location_city" not in intent.missing_decision_information:
                 intent.missing_decision_information.append("location_city")
             intent.clarification_question = "في أي مدينة؟"
-    elif intent.result_unit == ResultUnit.SERVICE_PROVIDER:
+    elif intent.result_unit == ResultUnit.SERVICE_PROVIDER and not preserve_service_route:
         # He is buying a thing; do not let the rules' hiring guess stand.
         intent.result_unit = ResultUnit.AD
         if not intent.type.known:

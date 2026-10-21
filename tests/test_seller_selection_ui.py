@@ -116,7 +116,10 @@ def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails()
     assert 'تابع البحث عن إعلانات أكثر' in source
     assert 'هذه دفعة من النتائج، وقد توجد إعلانات أخرى في الصفحات التالية.' in source
     assert source.index('data-action="load-more"') < source.index('shown.map(renderCard).join("")')
-    assert 'json: { query: asked, page, continuation_trace: traceId }' in source
+    assert 'body: JSON.stringify({ query: asked, page, continuation_trace: traceId })' in source
+    assert 'fetch("/v1/search/stream", {' in source
+    assert 'const added = addResults(event.results);' in source
+    assert 'توقف تحميل الإعلانات الإضافية قبل اكتماله.' in source
     assert 'state.nextPage = event.next_page ?? null;' in source
     assert 'state.searchId !== searchId || state.traceId !== traceId' in source
     assert '// Keep the page cursor and current cards so the customer can safely retry.' in source
