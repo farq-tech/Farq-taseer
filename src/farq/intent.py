@@ -391,13 +391,13 @@ def _stroller_accessory_heads() -> tuple[Head, ...]:
         phrases = tuple(
             f"{noun} {vehicle} يويو"
             for noun in noun_forms
-            for vehicle in ("عربية", "عربة")
-        ) + tuple(f"يويو {noun} {vehicle}" for noun in noun_forms for vehicle in ("عربية", "عربة"))
+            for vehicle in ("عربية", "عربة", "عرباية")
+        ) + tuple(f"يويو {noun} {vehicle}" for noun in noun_forms for vehicle in ("عربية", "عربة", "عرباية"))
         heads.append(_head(
             type="product", category="baby_products", subcategory="stroller_accessories",
             result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
             phrases=phrases, label=f"{label} عربة يويو", label_from_match=True,
-            eligibility=(noun_forms, ("يويو", "yoyo", "babyzen"), ("عربية", "عربيه", "عربة", "عربه", "stroller", "strollers", "pushchair")),
+            eligibility=(noun_forms, ("يويو", "yoyo", "babyzen"), ("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "stroller", "strollers", "pushchair")),
             expansions=tuple(phrases[:4]) + (f"Babyzen YOYO {label}",),
         ))
     heads.append(_head(
@@ -415,8 +415,8 @@ _STROLLER_ACCESSORY_HEADS = _stroller_accessory_heads()
 HEADS: tuple[Head, ...] = (
     _head(type="product", category="tools", subcategory="leak_detector", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز كشف تسرب", "جهاز كشف تسربات", "كاشف تسرب", "كاشف تسربات"), label="جهاز كشف تسرب", eligibility=(("جهاز", "كاشف"), ("تسرب", "تسريب")), expansions=("جهاز كشف تسرب مياه", "كاشف تسرب مياه")),
     *_STROLLER_ACCESSORY_HEADS,
-    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
-    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عرباية أطفال يويو", "عرباية اطفال يويو", "عربايه اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عرباية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عرباية أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
+    _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عرباية أطفال", "عرباية اطفال", "عربايه اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عرباية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عرباية أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="gaming_laptops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لابتوب ألعاب", "لابتوبات ألعاب", "لابتوب قيمنق", "لابتوبات قيمنق", "لابتوب قيمنج", "gaming laptop"), eligibility=(("لابتوب", "لابتوبات", "لاب توب", "laptop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("لابتوب ألعاب", "لابتوبات قيمنق", "gaming laptop"), attributes=("gaming",)),
     _head(type="product", category="electronics", subcategory="gaming_desktops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كمبيوتر ألعاب مكتبي", "كمبيوتر قيمنق مكتبي", "كمبيوتر قيمنج مكتبي", "كمبيوترات ألعاب", "كمبيوترات قيمنق", "كمبيوترات قيمنج", "كمبيوتر ألعاب", "كمبيوتر قيمنق", "كمبيوتر قيمنج", "gaming desktop", "gaming pc"), eligibility=(("كمبيوتر", "كمبيوترات", "pc", "desktop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("كمبيوتر ألعاب مكتبي", "كمبيوترات قيمنق", "gaming pc"), attributes=("gaming",)),
@@ -627,7 +627,7 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
         stroller_head = next((head for head in HEADS if head.subcategory == "strollers" and head.model == "YOYO"), None)
         if stroller_head is not None:
             words = normalized.split()
-            stroller_at = next((i for i, word in enumerate(words) if any(form in {"عربيه", "عربه", "عربيات", "عربات", "stroller", "strollers", "pushchair"} for form in prefix_variants(word))), None)
+            stroller_at = next((i for i, word in enumerate(words) if any(form in {"عربيه", "عربه", "عربايه", "عربيات", "عربات", "stroller", "strollers", "pushchair"} for form in prefix_variants(word))), None)
             yoyo_at = next((i for i, word in enumerate(words) if any(form in {"يويو", "yoyo", "babyzen", "بيبيزن", "بيبيزين"} for form in prefix_variants(word)) or re.fullmatch(r"(?:yoyo|يويو)[23]", word)), None)
             if stroller_at is None:
                 stroller_at = next((i for i in range(len(words) - 1) if _phrase_at(words, i, "عربية أطفال") or _phrase_at(words, i, "عربة أطفال")), None)
@@ -1108,9 +1108,8 @@ def analyze(query: str) -> IntentResponse:
     expansions = head.expansions
     if head.subcategory == "strollers" and head.model == "YOYO":
         expansions = (*expansions, "يويو عربة أطفال")
-        # The live Haraj request budget is six distinct phrases. Keep the English
-        # Babyzen/YOYO searches inside that budget instead of spending it on a fourth
-        # Arabic word-order/number variant.
+        # Sellers also call these «عرباية». Keep that observed dialect form in the
+        # six-query budget while retaining the English brand/model searches.
         expansions = tuple(term for term in expansions if normalize(term) != normalize("عربات أطفال يويو"))
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         variant = intent.model.value[-1]
