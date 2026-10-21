@@ -385,6 +385,34 @@ def test_airport_transfer_and_vehicle_towing_stay_distinct_from_passenger_rides(
     assert towing.subcategory.value == "vehicle_transport"
 
 
+@pytest.mark.parametrize(
+    "query, listing_title",
+    [
+        ("أبي سيارة توصلني للمطار بالرياض", "توصيل مشاوير من وإلى مطار الرياض"),
+        ("أحتاج مشوار للمطار في الرياض", "مشاوير مطار الرياض بسيارة خاصة"),
+        ("أبغى سواق يوديني للمطار بالرياض", "سائق يوصل للمطار في الرياض"),
+    ],
+)
+def test_colloquial_airport_ride_requests_are_not_car_purchase_searches(query, listing_title):
+    intent = analyze(query)
+    seller = Seller(id="driver", name="سائق مشاوير", city="الرياض")
+    provider = Ad(id="airport-ride", title=listing_title, city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "airport_transfer"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert decide(intent, provider, seller)[0] is True
+
+
+def test_airport_ride_detection_does_not_change_generic_car_searches():
+    car = analyze("أبي سيارة مستعملة بالرياض")
+
+    assert car.type.value == "vehicle"
+    assert car.subcategory.value == "cars"
+
+
 def test_passenger_transport_category_is_available_to_service_providers():
     services = read_business("أوبر وتاكسي ومشاوير بين المدن")['services']
 

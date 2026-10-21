@@ -165,6 +165,28 @@ def test_intent_endpoint_separates_espresso_repair_from_repair_kits(
     assert intent["location_sensitivity"] == location_sensitivity
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "أبي سيارة توصلني للمطار بالرياض",
+        "أحتاج مشوار للمطار في الرياض",
+        "أبغى سواق يوديني للمطار بالرياض",
+    ],
+)
+def test_intent_endpoint_classifies_colloquial_airport_rides_as_services(tmp_path: Path, query):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["subcategory"]["value"] == "airport_transfer"
+    assert intent["result_unit"] == "service_provider"
+    assert intent["location_city"]["value"] == "الرياض"
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,
