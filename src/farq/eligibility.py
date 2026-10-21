@@ -36,6 +36,8 @@ _ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل
                    "فرش", "مفرش", "مظله", "مقبض", "مقعد", "هيكل", "مهد", "مهاد", "سرير", "كرسي", "كونكت",
                    "شنطه", "شنط", "حقيبه", "حقائب",
                    "seat", "seats", "carseat", "carseats", "connector", "connectors", "كارسيت", "ملحق", "غطاء", "لبس")
+_STROLLER_COMPONENTS = ("هيكل", "شاصي", "شاسيه")
+_ONLY_COMPONENT_CUES = ("بس", "فقط", "لحاله", "لوحده")
 # «S23», «A54», «PS5», «R18»: a letter or two glued to a number is a model code. A listing that
 # states the same letters with only other numbers («S26 Ultra», «اس 22», «S10») is another
 # model. Asked glued, as customers type it; read with a space and in Arabic («اس 23»).
@@ -528,6 +530,10 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["locked_device"]
         if intent.subcategory.value == "strollers" and intent.eligibility_groups:
             group = intent.eligibility_groups[0]
+            # «عربية يويو هيكل بس» names the stroller as context, but offers only a
+            # component. Keep this a hard rejection even in the near-match pass.
+            if has_word(title, _STROLLER_COMPONENTS) and has_word(title, _ONLY_COMPONENT_CUES):
+                return False, ["stroller_component_only"]
             stroller_at = next((i for i, word in enumerate(words) if _group_hit(word, group)), None)
             accessory_at = next((i for i, word in enumerate(words) if any(_word_is(word, term) for term in _ACCESSORY_LEAD)), None)
             if accessory_at is not None and (stroller_at is None or accessory_at < stroller_at):

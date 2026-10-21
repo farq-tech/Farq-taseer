@@ -11,6 +11,8 @@ from farq.taxonomy import read_business
     "query",
     [
         "عربية اطفال يويو",
+        "عرباية اطفال يويو",
+        "عربايه أطفال يويو",
         "عربية أطفال يويو",
         "عربيات أطفال يويو",
         "عربة أطفال يويو",
@@ -55,10 +57,27 @@ def test_yoyo_model_does_not_match_an_unbranded_stroller_ad():
     assert decide(intent, yoyo, seller)[0] is True
 
 
+def test_yoyo_stroller_with_colloquial_arabiya_title_is_eligible():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    listing = Ad(id="ad-arabiya", title="طقم يويو 2 عرباية وباسينت بيج جديد", seller=seller)
+
+    assert decide(intent, listing, seller)[0] is True
+
+
+def test_yoyo_expansion_spends_a_search_slot_on_colloquial_arabiya():
+    intent = analyze("عربية اطفال يويو")
+    searched = haraj_queries(intent.search_terms, None)[:6]
+
+    assert "عرباية أطفال يويو" in searched
+    assert "Babyzen YOYO" in searched
+
+
 @pytest.mark.parametrize(
     "title",
     [
         "مفرش عربية يويو",
+        "مفرش عرباية يويو",
         "مظلة عربية يويو",
         "مقبض عربة يويو",
         "ستوك يويو مقعد عربة أطفال",
@@ -87,6 +106,16 @@ def test_stroller_with_included_accessories_is_still_a_stroller_listing():
     bundle = Ad(id="ad-1", title="عربية أطفال يويو مع مفرش ومظلة", seller=seller)
 
     assert decide(intent, bundle, seller)[0] is True
+
+
+@pytest.mark.parametrize("title", ["عربية يويو هيكل بس للبيع", "هيكل عربة يويو فقط"])
+def test_stroller_search_rejects_component_only_listings_even_as_near_matches(title):
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    listing = Ad(id="component-only", title=title, seller=seller)
+
+    assert decide(intent, listing, seller) == (False, ["stroller_component_only"])
+    assert decide(intent, listing, seller, relaxed=True) == (False, ["stroller_component_only"])
 
 
 def test_stroller_with_a_car_seat_bundle_is_still_a_stroller_listing():
@@ -187,8 +216,9 @@ def test_yoyo_generation_mismatch_remains_only_a_relaxed_match():
     assert decide(intent, yoyo3, seller, relaxed=True)[0] is True
 
 
-def test_stroller_accessory_search_is_separate_from_complete_stroller_search():
-    intent = analyze("مفرش عربية يويو")
+@pytest.mark.parametrize("query", ["مفرش عربية يويو", "مفرش عرباية يويو"])
+def test_stroller_accessory_search_is_separate_from_complete_stroller_search(query):
+    intent = analyze(query)
 
     assert intent.category.value == "baby_products"
     assert intent.subcategory.value == "stroller_accessories"
@@ -230,7 +260,7 @@ def test_stroller_sellers_are_classified_as_product_suppliers():
 
 
 def test_stroller_accessory_sellers_are_classified_separately():
-    result = read_business("بيع فرش ومظلات ومقابض عربيات الأطفال")
+    result = read_business("بيع فرش ومظلات ومقابض عربايات الأطفال")
 
     assert any(item["key"] == "stroller_accessories" for item in result["products"])
     assert not any(item["key"] == "shades" for item in result["services"])
