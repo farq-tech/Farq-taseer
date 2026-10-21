@@ -17,8 +17,9 @@ _UNIT_ALIASES = {
     "كيلو": "كيلو", "كيلوواط": "كيلو", "كيلو واط": "كيلو", "kva": "كيلو", "kw": "كيلو", "kg": "كيلو",
     "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه",
     "قدم": "قدم", "لتر": "لتر", "طن": "طن", "واط": "واط",
+    "gb": "storage_gb", "جيجا": "storage_gb", "جيجابايت": "storage_gb", "جيجا بايت": "storage_gb",
 }
-_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|كراسي|كرسي|kva|kw|kg|ah)(?![a-z\u0621-\u064a])")
+_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
 # A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
 # account, a pile of leftovers from a job.
 _GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
@@ -118,6 +119,10 @@ _PRODUCT_NOT_TRADE = (
     "صاعق",
     "بوتكاز",
     "غلايه",
+    "دهانات",
+    "بويات",
+    "بويه",
+    "جوتن",
     "مكنسه",
     "سياره",
     "مولد",
@@ -159,7 +164,12 @@ def _trade_names_the_work(intent: IntentResponse, title: str) -> bool:
     if not _group_hit(title, trade):
         return False
     first = tokens(title)[:1]
-    return bool(first and _group_hit(first[0], trade)) or bool(has_word(title, _SERVICE_VERBS))
+    provider_leads = {"معلم", "فني", "مقاول", "مقاولات", "شركة", "مؤسسة", "صنايعي"}
+    return (
+        bool(first and _group_hit(first[0], trade))
+        or bool(first and normalize(first[0]) in provider_leads)
+        or bool(has_word(title, _SERVICE_VERBS))
+    )
 
 
 # "كهربائي" is the trade when the title leads with it or names the work.
@@ -462,9 +472,15 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         # the asked trade, the mover is not the carpenter.
         if has_word(title, _MOVING) and not _group_hit(title, intent.eligibility_groups[0]):
             return False, ["mover_not_trade"]
-    if intent.subcategory.value in {"electrician", "plumber", "carpenter"} and title:
+    if intent.subcategory.value in {"electrician", "plumber", "carpenter", "painter"} and title:
         if has_word(title, _PRODUCT_NOT_TRADE) and not _trade_names_the_work(intent, title):
             return False, ["product_not_trade"]
+        if (
+            intent.subcategory.value == "painter"
+            and tokens(title)
+            and tokens(title)[0] in {"دهانات", "بويات", "بويه", "جوتن"}
+        ):
+            return False, ["paint_supply_not_painter"]
     if provider and title:
         # «غسالة تحتاج صيانة», «غسالة 9 ك بها عطل»: a listing that leads with the appliance
         # sells the appliance; the technician leads with «صيانة» or «فني».
@@ -534,6 +550,33 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             for letters, numbers in asked_codes.items():
                 if letters in stated_codes and not numbers & stated_codes[letters]:
                     return False, [f"model_mismatch:{letters}"]
+        if intent.brand.value == "Apple" and intent.model.known and title:
+            requested_model = normalize(str(intent.model.value))
+            requested_generation = re.search(r"iphone\s+(\d{1,2})\b", requested_model, re.IGNORECASE)
+            listed_model = re.search(r"(?:ايفون|iphone)\s*(\d{1,2})\b", normalize(title), re.IGNORECASE)
+            if requested_generation and listed_model and requested_generation.group(1) != listed_model.group(1):
+                return False, ["model_mismatch:iphone_generation"]
+            if "pro" in requested_model and not has_word(title, ("pro", "برو")):
+                return False, ["model_mismatch:iphone_variant"]
+            if "max" in requested_model and not has_word(title, ("max", "ماكس")):
+                return False, ["model_mismatch:iphone_variant"]
+            requested_storage = re.search(
+                r"(?<!\d)(1\s*(?:tb|تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت))(?![\w])",
+                normalize(to_ascii_digits(intent.original_query)),
+                re.IGNORECASE,
+            )
+            if requested_storage:
+                listed_storage = re.search(
+                    r"(?<!\d)(1\s*(?:tb|تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت))(?![\w])",
+                    normalize(to_ascii_digits(title)),
+                    re.IGNORECASE,
+                )
+                if listed_storage is None:
+                    return False, ["spec_missing:storage_gb"]
+                requested_value = "1024" if re.search(r"tb|تيرا", requested_storage.group(1)) else re.search(r"\d+", requested_storage.group(1)).group(0)
+                listed_value = "1024" if re.search(r"tb|تيرا", listed_storage.group(1)) else re.search(r"\d+", listed_storage.group(1)).group(0)
+                if requested_value != listed_value:
+                    return False, ["spec_mismatch:storage_gb"]
         asked_period = _rent_period(intent.original_query)
         title_periods = {
             period for period, cues in _RENT_PERIODS.items() if has_word(title, cues)

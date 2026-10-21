@@ -244,4 +244,3 @@ def test_english_plural_stroller_business_descriptions_are_classified():
     result = read_business("Babyzen YOYO strollers and baby strollers")
 
     assert any(item["key"] == "strollers" for item in result["products"])
-
