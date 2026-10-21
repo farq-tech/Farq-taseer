@@ -1602,6 +1602,10 @@ function adStory(text) {
     .trim();
 }
 
+function adOriginalText(text) {
+  return unescapeOnce(unescapeOnce(text)).trim();
+}
+
 function harajListingUrl(ad) {
   const url = String(ad?.url || "").trim();
   return /^https:\/\/(?:www\.)?haraj\.com\.sa\//i.test(url) ? url : "";
@@ -1680,7 +1684,8 @@ function detailSheet() {
   const gallery = state.gallery.length ? state.gallery : imageSources(result.ad);
   const key = resultKey(result);
   const selected = state.selected.has(key);
-  const story = adStory(result.ad?.description);
+  const adTitle = adOriginalText(result.ad?.title);
+  const adDescription = adOriginalText(result.ad?.description);
   const priceDisclosure = adPriceDisclosure(result.ad, true);
   const originalUrl = harajListingUrl(result.ad);
   return `<div class="fq-scrim" data-action="close-sheet">
@@ -1698,7 +1703,8 @@ function detailSheet() {
       <hr class="fq-line">
       <h2 style="font-size:15px">تفاصيل الإعلان</h2>
       ${priceDisclosure}
-      ${story ? `<p class="fq-small" style="line-height:1.7"><bdi>${esc(story)}</bdi></p>` : `<p class="fq-meta">لا يوجد وصف إضافي لهذا الإعلان.</p>`}
+      ${adTitle ? `<h3 class="fq-ad-title"><bdi>${esc(adTitle)}</bdi></h3>` : ""}
+      ${adDescription ? `<p class="fq-ad-original"><bdi>${esc(adDescription)}</bdi></p>` : `<p class="fq-meta">لا يوجد وصف إضافي لهذا الإعلان.</p>`}
       ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)

@@ -25,6 +25,8 @@ def test_listing_price_disclosure_preserves_evidence_without_turning_uncertain_a
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
     functions = []
     for signature in (
+        'function unescapeOnce(text) {',
+        'function adOriginalText(text) {',
         'function harajListingUrl(ad) {',
         'function adPriceDisclosure(ad, showMissing = false) {',
     ):
@@ -55,6 +57,7 @@ assert.equal(adPriceDisclosure({price_evidence:{kind:'no_price_signal'}}), '');
 assert.match(adPriceDisclosure({price_evidence:{kind:'no_price_signal'}}, true), /لم يذكر الإعلان سعرًا واضحًا/);
 assert.equal(harajListingUrl({url:'https://haraj.com.sa/123'}), 'https://haraj.com.sa/123');
 assert.equal(harajListingUrl({url:'javascript:alert(1)'}), '');
+assert.equal(adOriginalText('عربة أطفال يويو\\nالسعر: 700 ريال\\nللتواصل واتس'), 'عربة أطفال يويو\\nالسعر: 700 ريال\\nللتواصل واتس');
 '''
     subprocess.run(['node', '-e', script], check=True)
 
@@ -63,5 +66,8 @@ def test_search_cards_and_details_show_the_ad_price_disclosure_and_original_list
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
     assert 'const priceDisclosure = adPriceDisclosure(result.ad);' in source
     assert 'const priceDisclosure = adPriceDisclosure(result.ad, true);' in source
+    assert 'const adTitle = adOriginalText(result.ad?.title);' in source
+    assert 'const adDescription = adOriginalText(result.ad?.description);' in source
+    assert 'class="fq-ad-original"' in source
     assert 'عرض الإعلان الأصلي في حراج' in source
     assert 'ليس عرضًا نهائيًا على طلبك' in source

@@ -2098,6 +2098,8 @@ html.fq-embed .skip { display: none; }
   background: var(--fq-soft); color: var(--fq-deep); font-size: 12px; line-height: 1.55; }
 .fq-price-proof strong { font-size: 13px; font-weight: 700; }
 .fq-price-proof span { color: var(--fq-text-2); }
+.fq-ad-title { margin: 0; color: var(--fq-text); font-size: 16px; line-height: 1.5; }
+.fq-ad-original { margin: 0; color: var(--fq-text-2); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* His own words, given back to him: why this listing is in the list at all. */
 .fq-matched { display: flex; flex-wrap: wrap; gap: 6px; }
