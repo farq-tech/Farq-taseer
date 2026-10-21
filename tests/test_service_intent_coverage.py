@@ -399,3 +399,45 @@ def test_goods_delivery_without_an_intercity_route_is_understood():
     assert intent.subcategory.value == "goods_transport"
     assert intent.location_city.value == "الرياض"
     assert intent.destination_city.value is None
+
+
+@pytest.mark.parametrize(
+    "query,listing_title",
+    [
+        (
+            "أبي أحد يشحن لي كراتين من الرياض لجدة",
+            "شحن كراتين وبضائع بين الرياض وجدة",
+        ),
+        (
+            "أبغى دينا تنقل أغراض من الرياض إلى جدة",
+            "دينا نقل أغراض وبضائع بين المدن",
+        ),
+        (
+            "أبي أوصل أغراض من الرياض إلى جدة",
+            "توصيل أغراض وبضائع بين الرياض وجدة",
+        ),
+        (
+            "أبي شركة شحن من الرياض إلى جدة",
+            "شركة شحن طرود وبضائع بين المدن",
+        ),
+        (
+            "أبي شحن من الرياض لجدة",
+            "شركة شحن بضائع وطرود لجميع المدن",
+        ),
+    ],
+)
+def test_colloquial_intercity_cargo_requests_are_classified_and_match_cargo_services(
+    query, listing_title
+):
+    intent = analyze(query)
+    seller = Seller(id="seller", name="شركة نقل", city="الرياض")
+    listing = Ad(id="listing", title=listing_title, city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "goods_transport"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert normalize(intent.destination_city.value) == normalize("جدة")
+    assert any("الرياض" in term and "جدة" in term for term in haraj_queries(intent.search_terms, intent.location_city.value))
+    assert decide(intent, listing, seller)[0] is True

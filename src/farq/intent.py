@@ -693,8 +693,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="house", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("بيت سكني", "بيوت سكنية", "بيت", "بيوت", "منزل", "منازل"), label="بيت", label_from_match=True, eligibility=(("بيت", "بيوت", "منزل", "منازل"),), title_groups=(("بيت", "بيوت", "منزل", "منازل"),), expansions=("بيوت", "منازل", "بيت")),
     _head(type="property", category="property", subcategory="land", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ارض", "أرض"), eligibility=(("ارض",),), expansions=("ارض", "أراضي")),
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا", "فلل", "villa", "villas"), label="فيلا", label_from_match=True, eligibility=(("فيلا", "فلل", "villa", "villas"),), expansions=("فيلا", "فلل", "فيلا للإيجار", "villas")),
-    _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
-    _head(type="service", category="services", subcategory="goods_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل أغراض", "توصيل اغراض", "نقل أغراض", "نقل اغراض", "شحن أغراض", "شحن اغراض", "نقل بضائع", "شحن بضائع", "توصيل بضائع", "نقل طرود", "شحن طرود", "cargo delivery", "freight transport"), label="نقل أغراض", label_from_match=True, eligibility=(("توصيل", "نقل", "شحن", "cargo", "freight"), ("أغراض", "اغراض", "بضائع", "طرود", "ممتلكات", "goods", "freight")), expansions=("نقل أغراض", "توصيل بضائع", "شحن بضائع", "نقل بضائع", "نقل طرود")),
+    _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "توصيل عفش", "توصيل اثاث", "شحن عفش", "شحن اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل", "توصيل", "شحن"), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
+    _head(type="service", category="services", subcategory="goods_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل أغراض", "توصيل اغراض", "نقل أغراض", "نقل اغراض", "شحن أغراض", "شحن اغراض", "نقل بضائع", "نقل بضاعة", "شحن بضائع", "شحن بضاعة", "توصيل بضائع", "نقل طرود", "نقل طرد", "شحن طرود", "شحن طرد", "شحن كراتين", "نقل كراتين", "توصيل كراتين", "شحن كرتون", "شحن بين المدن", "شركة شحن", "خدمات شحن", "cargo delivery", "freight transport"), label="نقل أغراض", label_from_match=True, eligibility=(("توصيل", "نقل", "شحن", "cargo", "freight"), ("أغراض", "اغراض", "بضائع", "بضاعة", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "صناديق", "ممتلكات", "goods", "freight")), expansions=("نقل أغراض", "توصيل بضائع", "شحن بضائع", "نقل بضائع", "نقل طرود", "شحن كراتين"), verbs=("يشحن", "شحن", "تنقل", "ينقل", "توصيل", "يوصل", "اوصّل", "اوصل"), objects=("اغراض", "بضائع", "بضاعة", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "صناديق", "صندوق", "ممتلكات")),
     _head(type="service", category="services", subcategory="vehicle_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل سيارة", "نقل سيارات", "نقل سيارتي", "نقل مركبة", "سطحة نقل", "سطحه نقل", "سطحة", "سطحه", "car towing", "vehicle transport"), label="نقل سيارة", eligibility=(("سطحة", "سطحه", "ونش", "car towing", "vehicle transport"), ("نقل", "تنقل", "توصيل", "سحب", "tow"), ("سيارة", "سيارتي", "سيارات", "مركبة", "مركبتي", "vehicles", "car")), expansions=("سطحة نقل سيارات", "سطحة نقل سيارة", "نقل سيارة بين المدن", "خدمة سطحة نقل")),
     _head(type="service", category="services", subcategory="car_rental", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تأجير سيارات", "تأجير سيارة", "استئجار سيارة", "استأجر سيارة", "إيجار سيارة", "ايجار سيارة", "إيجار سيارات", "rent a car", "car rental"), label="تأجير سيارات", label_from_match=True, eligibility=(("تأجير", "ايجار", "استئجار", "استأجر", "rental", "rent"), ("سيارات", "سيارة", "car")), expansions=("تأجير سيارات", "إيجار سيارة", "استئجار سيارة", "car rental")),
     _head(type="service", category="services", subcategory="water_delivery", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("وايت ماء", "وايت مياه", "وايت يوصل ماء", "توصيل وايت ماء", "توصيل مياه", "water tanker"), label="توصيل وايت ماء", label_from_match=True, eligibility=(("وايت", "water tanker"), ("ماء", "مياه", "water")), expansions=("وايت ماء", "وايت مياه", "توصيل وايت ماء", "water tanker")),
@@ -890,6 +890,18 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
                 best = HeadMatch(end - start, head, start, end, 0)
         if best is not None:
             found.append(best)
+    route = find_route(normalized)
+    generic_shipping = route and any(cue in words for cue in ("شحن", "يشحن", "shipping"))
+    generic_dyna_transport = route and "دينا" in words and any(cue in words for cue in ("نقل", "ينقل", "تنقل"))
+    payload_specific = any(cue in words for cue in (
+        "سياره", "سيارتي", "سيارات", "مركبه", "عفش", "اثاث",
+    ))
+    if (generic_shipping or generic_dyna_transport) and not payload_specific and not any(
+        item.head.subcategory == "goods_transport" for item in found
+    ):
+        cargo_head = next((head for head in HEADS if head.subcategory == "goods_transport"), None)
+        if cargo_head is not None:
+            found.append(HeadMatch(1, cargo_head, 0, 1, None))
     # Sellers and buyers put the model and product in either order («يويو عربة أطفال»).
     # Require both a stroller word and a YOYO/Babyzen marker so a toy search for «يويو»
     # cannot turn into a stroller request. Accessories keep their dedicated intent.
@@ -1454,6 +1466,24 @@ def analyze(query: str) -> IntentResponse:
     if intent.model.known and "Pro Max" in str(intent.model.value) and not iphone_storage:
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if (
+        head.subcategory == "goods_transport"
+        and route
+        and any(cue in normalized.split() for cue in ("شحن", "يشحن", "shipping"))
+        and not any(cue in normalized.split() for cue in (
+            "اغراض", "بضائع", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "ممتلكات",
+        ))
+    ):
+        groups = [["شحن", "شركة شحن", "shipping"]]
+    elif (
+        head.subcategory == "goods_transport"
+        and route
+        and "دينا" in normalized.split()
+        and not any(cue in normalized.split() for cue in (
+            "اغراض", "بضائع", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "ممتلكات",
+        ))
+    ):
+        groups = [["دينا", "دينه"], ["نقل", "توصيل", "شحن"]]
     if stroller_alternatives:
         model_terms = [
             term
