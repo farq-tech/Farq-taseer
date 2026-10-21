@@ -289,7 +289,7 @@ def test_the_invite_names_the_sellers_listing_and_keeps_the_reference(tmp_path: 
         assert f"إعلانك «بركس غرفة متنقلة مقاس {n}x4»" in lines[0]
         assert lines[1].endswith(": بركسات في الرياض")
         assert lines[3].startswith("https://taseer.farq.sa/s/")
-        assert lines[-1] == f"رقم الطلب: {ref}"
+        assert lines[-1] == f"فضلاً اذكر رقم الطلب عند الرد: {ref}"
         assert len(body) < 260
         # No source names and no claims beyond the request itself.
         for word in ("حراج", "تسعير", "Taseer", "فرق", "مجان", "أرخص", "الأفضل"):

@@ -60,8 +60,8 @@ def test_every_message_to_a_seller_carries_its_request_reference(tmp_path: Path)
     assert alice["ref_code"].startswith("T-") and len(alice["ref_code"]) == 8
     sent = [body for conversation, _seller, body in market.haraj.sent if conversation == CONVERSATION]
     assert len(sent) == 2
-    assert sent[0].endswith(f"رقم الطلب: {alice['ref_code']}")
-    assert sent[1].endswith(f"رقم الطلب: {bob['ref_code']}")
+    assert sent[0].endswith(f"فضلاً اذكر رقم الطلب عند الرد: {alice['ref_code']}")
+    assert sent[1].endswith(f"فضلاً اذكر رقم الطلب عند الرد: {bob['ref_code']}")
 
 
 def test_a_reply_quoting_the_reference_reaches_that_buyer_only(tmp_path: Path):

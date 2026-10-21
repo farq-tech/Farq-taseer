@@ -534,7 +534,7 @@ def new_reference() -> str:
 
 
 def reference_line(code: str) -> str:
-    return f"{REFERENCE_LABEL}: {code}"
+    return f"فضلاً اذكر {REFERENCE_LABEL} عند الرد: {code}"
 
 
 def with_reference(body: str, code: str | None) -> str:
