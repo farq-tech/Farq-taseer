@@ -80,6 +80,36 @@ def test_search_cards_and_details_show_the_ad_price_disclosure_and_original_list
     assert 'ليس عرضًا نهائيًا على طلبك' in source
 
 
+def test_result_card_makes_the_complete_ad_details_obvious():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    start = source.index('function renderCard(result) {')
+    end = source.index('\n}', start) + 2
+    script = '''const assert = require('node:assert/strict');
+const state = {seenCards:new Set(), selected:new Set()};
+let newCardsInBatch = 0;
+const resultKey = () => 'ad-1';
+const sellerOf = () => ({id:'seller-1', name:'بائع'});
+const displayName = () => ({name:'بائع', handle:''});
+const needOf = () => '';
+const multiNeed = () => false;
+const cityLabel = (value) => value || '';
+const snip = () => 'وصف الإعلان';
+const matchedWords = () => [];
+const adPriceDisclosure = () => '';
+const offerMarks = () => [];
+const adAge = () => null;
+const imageSources = () => [];
+const esc = (value) => String(value);
+const ic = () => '';
+const withoutPrices = (value) => value;
+''' + source[start:end] + '''
+const html = renderCard({ad:{title:'عربية أطفال يويو', city:'الرياض'}, seller:{id:'seller-1'}});
+assert.match(html, /عرض تفاصيل الإعلان/);
+assert.match(html, /data-action="open"/);
+'''
+    subprocess.run(['node', '-e', script], check=True)
+
+
 def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails():
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
     assert 'data-action="load-more"' in source
