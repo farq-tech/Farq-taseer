@@ -42,6 +42,9 @@ _WANT_WORDS = {
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
+_IPHONE_MODEL = re.compile(r"(?:^|\s)(ايفون|iphone)\s+(\d{1,2})(?!\d)(?:\s+(pro|برو)(?:\s+(max|ماكس))?)?")
+_IPHONE_PRO_MAX_QUERY = re.compile(r"(?:^|\s)(?:ايفون|iphone)\s+\d{1,2}(?!\d)\s+(?:pro|برو)\s+(?:max|ماكس)(?:\s|$)")
+_IPHONE_STORAGE = re.compile(r"(?<!\d)((?:1\s*tb|1\s*تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت))(?![\w])", re.IGNORECASE)
 _PRICE_MAX = re.compile(r"(?:اقل من|تحت|بحد اقصى|اقل|ما يتعدى|ما يزيد عن)\s+(\d{3,7})")
 _PRICE_MIN = re.compile(r"(?:اكثر من|فوق|يبدا من)\s+(\d{3,7})")
 # "3 افياش", "4 ابواب", "تنظيف 5 مكيفات": a small number and the noun after it.
@@ -248,7 +251,7 @@ def _property_transaction(normalized: str) -> str | None:
 # A hit here turns the result unit into a provider, which is what switches on the
 # for_sale_not_service gate in eligibility.
 _SERVICE_VERBS = {
-    "يسوي", "يسويها", "يركب", "يركبها", "يصلح", "يصلحها", "يبني", "يفصل", "يفصلها",
+    "يسوي", "يسويها", "يركب", "يركبها", "يصلح", "يصلحه", "يصلحها", "يبني", "يفصل", "يفصلها",
     "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "ينظف", "يغسل", "يفك",
     "يضبط", "يشتغل", "يجي", "يجيني", "يعدل", "يحفر", "يزرع", "يشيك", "يصور",
     "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
@@ -387,6 +390,7 @@ def _stroller_accessory_heads() -> tuple[Head, ...]:
 _STROLLER_ACCESSORY_HEADS = _stroller_accessory_heads()
 
 HEADS: tuple[Head, ...] = (
+    _head(type="product", category="tools", subcategory="leak_detector", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز كشف تسرب", "جهاز كشف تسربات", "كاشف تسرب", "كاشف تسربات"), label="جهاز كشف تسرب", eligibility=(("جهاز", "كاشف"), ("تسرب", "تسريب")), expansions=("جهاز كشف تسرب مياه", "كاشف تسرب مياه")),
     *_STROLLER_ACCESSORY_HEADS,
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
@@ -401,6 +405,10 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="electronics", subcategory="printers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طابعة ليزر ملونة", "طابعة ليزر", "طابعة", "printer"), label="طابعة", label_from_match=True, eligibility=(("طابعة", "طابعه", "printer"),), expansions=("طابعة ليزر", "طابعة", "printer")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون برو ماكس", "iphone pro max"), brand="Apple", model="iPhone Pro Max", eligibility=(("ايفون", "iphone"), ("برو ماكس", "pro max")), expansions=("ايفون برو ماكس", "iphone pro max")),
+    _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون", "iphone"), brand="Apple", model="iPhone", eligibility=(("ايفون", "iphone"),), expansions=("ايفون", "iphone")),
+    _head(type="product", category="electronics", subcategory="phone_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("شاحن ايفون", "شاحن iphone", "ايفون شاحن", "iphone charger", "charger iphone"), brand="Apple", model="iPhone", label="شاحن ايفون", eligibility=(("شاحن", "شواحن", "charger"), ("ايفون", "iphone")), expansions=("شاحن ايفون", "شاحن iphone", "iphone charger")),
+    _head(type="product", category="electronics", subcategory="phone_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفر ايفون", "كفر iphone", "ايفون كفر", "iphone case", "case iphone", "جراب ايفون", "جراب iphone"), brand="Apple", model="iPhone", label="كفر ايفون", eligibility=(("كفر", "كفرات", "جراب", "جرابات", "case", "cases"), ("ايفون", "iphone")), expansions=("كفر ايفون", "جراب ايفون", "iphone case")),
+    _head(type="product", category="appliances", subcategory="washing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("غسالة أوتوماتيك", "غسالة اتوماتيك", "غسالات أوتوماتيك", "غسالة", "غسالات"), label="غسالة", label_from_match=True, eligibility=(("غسالة", "غسالات"),), expansions=("غسالة", "غسالة أوتوماتيك", "غسالات")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لاندكروزر", "land cruiser"), brand="Toyota", model="Land Cruiser", eligibility=(("لاندكروزر", "لاند كروزر", "land cruiser"),), expansions=("لاندكروزر",)),
     _head(type="property", category="property", subcategory="farms", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مزرعة للاستراحة", "مزرعة", "مزرعه", "مزارع", "farm", "farms"), label="مزرعة", label_from_match=True, eligibility=(("مزرعة", "مزرعه", "مزارع", "farm"),), title_groups=(("مزرعة", "مزرعه", "مزارع", "farm"),), expansions=("مزارع", "مزرعة للإيجار", "مزرعة استراحة")),
@@ -412,8 +420,10 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا",), eligibility=(("فيلا",),), expansions=("فيلا",)),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
     _head(type="service", category="trades", subcategory="carpenter", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نجار", "نجاره", "نجارة", "carpenter"), eligibility=(_CARPENTRY,), expansions=_CARPENTER_QUERIES),
-    _head(type="service", category="trades", subcategory="plumber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سباك", "سباكه", "سباكة", "plumber"), eligibility=(("سباك", "سباكه", "سباكة", "تسليك مجاري", "تمديدات صحيه"),), expansions=("سباك", "سباكة", "سباك صحي", "تسليك مجاري", "تمديدات صحية")),
+    _head(type="service", category="trades", subcategory="plumber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("سباك", "سباكه", "سباكة", "plumber"), verbs=("يصلح", "يصلحه", "تصليح", "اصلاح", "يعالج"), objects=("تسرب", "تسريب", "مواسير", "ماسوره"), eligibility=(("سباك", "سباكه", "سباكة", "تسليك مجاري", "تمديدات صحيه"),), expansions=("سباك", "سباكة", "سباك صحي", "تسليك مجاري", "تمديدات صحية")),
+    _head(type="service", category="services", subcategory="appliance_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة أجهزة", "صيانة غسالات", "تصليح غسالات", "فني غسالات", "تصليح ثلاجات", "صيانة أفران", "غسالة أوتوماتيك", "غسالة اتوماتيك", "غسالات أوتوماتيك"), label="صيانة أجهزة", label_from_match=True, verbs=("يصلح", "تصليح", "اصلاح", "صيانة", "يصين"), objects=("غساله", "غسالات", "ثلاجه", "ثلاجات", "فرن", "افران", "نشافه", "نشافات", "جلايه", "جلايات"), eligibility=(("فني", "صيانة", "تصليح", "إصلاح"), ("غسالة", "غسالات", "ثلاجة", "ثلاجات", "فرن", "أفران", "نشافة", "نشافات", "جلاية", "جلايات")), expansions=("صيانة أجهزة منزلية", "فني غسالات", "تصليح غسالات", "صيانة غسالات", "تصليح ثلاجات", "صيانة أفران", "تصليح غسالة أوتوماتيك")),
     _head(type="service", category="trades", subcategory="electrician", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كهربائي", "كهرباء", "كهربائي منازل", "فني كهرباء", "electrician"), label="كهربائي", eligibility=(("كهربائي", "كهرباء", "كهربا"),), expansions=("كهربائي", "كهربائي منازل", "فني كهرباء", "تمديد كهرباء")),
+    _head(type="service", category="trades", subcategory="painter", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("دهان", "صباغ", "صباغة", "painting", "painter"), label="دهان", label_from_match=True, eligibility=(("دهان", "صباغ", "صباغة", "painter", "painting"),)),
     _head(type="service", category="trades", subcategory="insulation", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("عزل سطح", "عزل اسطح", "عزل فوم", "مقاول عزل"), eligibility=(("عزل",), ("سطح", "اسطح", "فوم")), expansions=("عزل اسطح", "عزل فوم", "مقاول عزل")),
     _head(type="service", category="building_materials", subcategory="railings", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("درابزين",), eligibility=(("درابزين",),), expansions=("درابزين ستانلس", "درابزين درج", "درابزين سلالم", "تفصيل درابزين", "تركيب درابزين")),
     _head(type="service", category="trades", subcategory="glazing", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("زجاج سيكوريت", "زجاج سكريت", "سيكوريت", "سكريت", "تركيب واجهات", "واجهات زجاج", "شاور زجاج", "قاطع زجاج"), label_from_match=True, eligibility=(_GLAZING_WORDS,), expansions=("زجاج سيكوريت", "زجاج سكريت", "تركيب واجهات زجاج", "شاورات زجاج")),
@@ -550,6 +560,12 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             has_part = any(token in padded for token in ("كفر", "جنوط", "tyre"))
             if has_model and has_part:
                 best = HeadMatch(12, head, 0, len(words), None)
+        if best is None and head.model == "iPhone Pro Max":
+            variant = _IPHONE_PRO_MAX_QUERY.search(normalized)
+            if variant:
+                start = len(normalized[:variant.start()].split())
+                end = len(normalized[:variant.end()].split())
+                best = HeadMatch(end - start, head, start, end, 0)
         if best is not None:
             found.append(best)
     # Sellers and buyers put the model and product in either order («يويو عربة أطفال»).
@@ -570,10 +586,16 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
     return found
 
 
-def _select_match(matches: list[HeadMatch]) -> HeadMatch | None:
+def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> HeadMatch | None:
     if not matches:
         return None
     service = [item for item in matches if item.head.type == "service" and not item.head.ambiguous]
+    product = [item for item in matches if item.head.type in {"product", "vehicle", "property"}]
+    selling_a_leak_detector = any(item.head.subcategory == "leak_detector" for item in product)
+    explicit_service = bool(normalized and _service_request(normalized))
+    product_cue = bool(normalized and ("للبيع" in normalized or "جهاز كشف تسرب" in normalized or "كاشف تسرب" in normalized))
+    if product and (not service or not explicit_service or product_cue):
+        return max(product, key=lambda item: item.length)
     if service:
         # A job word next to a product ("تنظيف مكيف", "نجار ... دولاب") is the job.
         subcategories = {item.head.subcategory for item in service}
@@ -733,6 +755,20 @@ def _label(head: Head, match: HeadMatch | None, original: str) -> str:
     return head.label
 
 
+def _matched_service_object(head: Head, normalized: str, original: str) -> str | None:
+    """Keep a service's named object when verb/object matching supplies its trade."""
+    words = normalized.split()
+    objects = set(head.objects)
+    for index, word in enumerate(words):
+        if not any(form.startswith(item) for form in prefix_variants(word) for item in objects):
+            continue
+        phrase = [_display_word(original, word)]
+        if index + 1 < len(words) and words[index + 1] in {"ماء", "مياه", "الماء", "المياه"}:
+            phrase.append(_display_word(original, words[index + 1]))
+        return " ".join(phrase)
+    return None
+
+
 def analyze(query: str) -> IntentResponse:
     original = query.strip()
     normalized = normalize(original)
@@ -755,7 +791,7 @@ def analyze(query: str) -> IntentResponse:
     if route:
         intent.destination_city = known(route[1], 0.9, "route")
     all_matches = _head_matches(normalized)
-    match = _select_match(all_matches)
+    match = _select_match(all_matches, normalized)
     head = match.head if match else None
     matched = [item.head for item in all_matches]
     if head is None:
@@ -772,6 +808,8 @@ def analyze(query: str) -> IntentResponse:
     city_value = intent.location_city.value if isinstance(intent.location_city.value, str) else None
     shown_city = city_label(city_value) or ""
     query_label = label
+    if head.subcategory == "plumber" and match is not None and match.phrase_index is None:
+        query_label = _matched_service_object(head, normalized, original) or label
     screen_service_override = head.subcategory == "screens" and _service_request(normalized)
     if head.subcategory == "screens" and "gaming monitor" in normalized:
         query_label = "شاشة قيمنق"
@@ -779,6 +817,28 @@ def analyze(query: str) -> IntentResponse:
         query_label = "شاشة كمبيوتر"
     if intent.material.known and head.category and normalize(str(intent.material.value)) not in normalize(label):
         query_label = f"{label} {intent.material.value}"
+    iphone_model = _IPHONE_MODEL.search(normalized) if head.model in {"iPhone", "iPhone Pro Max"} else None
+    iphone_storage = _IPHONE_STORAGE.search(normalized) if iphone_model else None
+    if iphone_storage and _PRICE_MAX.search(normalized) and iphone_storage.start() == _PRICE_MAX.search(normalized).start(1):
+        iphone_storage = None
+    if iphone_model:
+        generation = iphone_model.group(2)
+        has_pro = iphone_model.group(3) is not None
+        has_max = iphone_model.group(4) is not None
+        model_name = f"iPhone {generation}"
+        query_parts = ["ايفون" if iphone_model.group(1) == "ايفون" else "iphone", generation]
+        if has_pro:
+            model_name += " Pro"
+            query_parts.append("برو" if iphone_model.group(1) == "ايفون" else "pro")
+        if has_max:
+            model_name += " Max"
+            query_parts.append("ماكس" if iphone_model.group(1) == "ايفون" else "max")
+        intent.model = known(model_name, 0.9, iphone_model.group(0).strip())
+        if iphone_storage:
+            raw_storage = normalize(iphone_storage.group(1))
+            storage = "1024" if "tb" in raw_storage or "تيرا" in raw_storage else re.search(r"\d+", raw_storage).group(0)
+            query_parts.append(f"{storage} جيجا" if iphone_model.group(1) == "ايفون" else f"{storage}GB")
+        query_label = " ".join(query_parts)
     if route:
         intent.need = f"{query_label} من {city_label(route[0])} إلى {city_label(route[1])}"
     else:
@@ -794,6 +854,8 @@ def analyze(query: str) -> IntentResponse:
         intent.brand = known(head.brand, 0.8, head.phrases[0])
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
+    if iphone_model:
+        intent.model = known(model_name, 0.9, iphone_model.group(0).strip())
     if head.subcategory == "strollers":
         yoyo_variant = _YOYO_VARIANT.search(to_ascii_digits(normalized))
         if yoyo_variant and ("يويو" in normalized or "yoyo" in normalized):
@@ -803,7 +865,12 @@ def analyze(query: str) -> IntentResponse:
     if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبي زن", "بيبيزن", "بيبيزين")):
         intent.brand = known("Babyzen", 0.95, "explicit-brand")
     intent.result_unit = head.result_unit
-    if _service_request(normalized):
+    explicit_work = _service_request(normalized)
+    if head.subcategory == "leak_detector" and "جهاز" in normalized.split() and not any(
+        verb in normalized.split() for verb in ("يركب", "يصلح", "يفحص", "تركيب", "تصليح")
+    ):
+        explicit_work = False
+    if explicit_work:
         # Hiring, not buying. A known head that could go either way (hybrid) resolves to the
         # tradesman, and a long tail we have no head for becomes a service instead of "other",
         # so sale listings stop counting as answers.
@@ -845,9 +912,19 @@ def analyze(query: str) -> IntentResponse:
     elif intent.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
         intent.missing_decision_information.append("location_city")
         intent.clarification_question = "في أي مدينة؟"
-    if intent.model.known and intent.model.value == "iPhone Pro Max":
+    if intent.model.known and "Pro Max" in str(intent.model.value) and not iphone_storage:
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if iphone_model:
+        groups.append([iphone_model.group(2)])
+        if iphone_model.group(3):
+            groups.append(["pro", "برو"])
+        if iphone_model.group(4):
+            groups.append(["max", "ماكس"])
+    if iphone_storage:
+        raw_storage = normalize(iphone_storage.group(1))
+        storage = "1024" if "tb" in raw_storage or "تيرا" in raw_storage else re.search(r"\d+", raw_storage).group(0)
+        groups.append([storage, f"{storage}gb", f"{storage} جيجا", f"{storage} جيجابايت"])
     if head.subcategory == "screens" and "gaming monitor" in normalized:
         groups.append(["قيمنق", "العاب", "gaming"])
     elif head.subcategory == "screens" and ("computer monitor" in normalized or "كمبيوتر" in normalized):
@@ -925,6 +1002,12 @@ def analyze(query: str) -> IntentResponse:
         search_label = f"{query_label} {shown_city}".strip()
         expansions = (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
+    asked_numbers = set(re.findall(r"\d+", to_ascii_digits(segment or "")))
+    represented_numbers = set(re.findall(r"\d+", to_ascii_digits(search_label)))
+    if segment and asked_numbers - represented_numbers:
+        exact_segment = " ".join(segment.split())
+        if exact_segment not in intent.search_terms:
+            intent.search_terms.insert(1, exact_segment)
     if screen_service_override:
         service_terms = [f"صيانة شاشة {shown_city}".strip(), f"تصليح شاشة {shown_city}".strip(), f"فني شاشات {shown_city}".strip()]
         intent.search_terms = list(dict.fromkeys([*service_terms, *intent.search_terms]))[:8]
