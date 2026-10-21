@@ -415,8 +415,18 @@ def _head(**kwargs) -> Head:
 
 _AC_OBJECTS = ("مكيف", "تكييف", "مكيفات")
 _AC_CLEAN_VERBS = ("تنظيف", "غسيل", "غسل")
-_AC_REPAIR_VERBS = ("صيانة", "تصليح", "اصلاح", "فني", "فريون", "تعبئة فريون")
-_AC_INSTALL_VERBS = ("تركيب", "فك")
+_AC_REPAIR_VERBS = (
+    "صيانة",
+    "تصليح",
+    "اصلاح",
+    "يصلح",
+    "يصلحه",
+    "يصلحها",
+    "فريون",
+    "تعبئة فريون",
+)
+_AC_REPAIR_SIGNALS = _AC_REPAIR_VERBS + ("فني",)
+_AC_INSTALL_VERBS = ("تركيب", "يركب", "فك")
 # Carpentry work named without the word «نجار»: a workshop («منجرة») or made-to-order
 # cupboards. Verb-first phrases only: «دولاب» or «ابواب خشب» alone is a thing for sale,
 # and «فك وتركيب غرف نوم» is in every furniture mover's title (measured 2026-10-15).
@@ -558,7 +568,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="building_materials", subcategory="railings", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("درابزين",), eligibility=(("درابزين",),), expansions=("درابزين ستانلس", "درابزين درج", "درابزين سلالم", "تفصيل درابزين", "تركيب درابزين")),
     _head(type="service", category="trades", subcategory="glazing", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("زجاج سيكوريت", "زجاج سكريت", "سيكوريت", "سكريت", "تركيب واجهات", "واجهات زجاج", "شاور زجاج", "قاطع زجاج"), label_from_match=True, eligibility=(_GLAZING_WORDS,), expansions=("زجاج سيكوريت", "زجاج سكريت", "تركيب واجهات زجاج", "شاورات زجاج")),
     _head(type="service", category="services", subcategory="ac_cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تنظيف مكيفات", "تنظيف مكيف", "غسيل مكيفات", "غسيل مكيف", "تنظيف المكيفات", "غسيل المكيفات", "ac cleaning"), label="تنظيف مكيفات", label_from_match=True, verbs=_AC_CLEAN_VERBS, objects=_AC_OBJECTS, eligibility=(_AC_CLEAN_VERBS + ("صيانة",), _AC_OBJECTS), title_groups=(_AC_CLEAN_VERBS + ("صيانة", "فني", "تكييف"),), expansions=("تنظيف مكيفات", "غسيل مكيفات", "صيانة مكيفات")),
-    _head(type="service", category="services", subcategory="ac_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة مكيفات", "صيانة مكيف", "تصليح مكيف", "تصليح مكيفات", "فني مكيفات", "فني تكييف", "تعبئة فريون", "ac repair", "ac maintenance"), label="صيانة مكيفات", label_from_match=True, verbs=_AC_REPAIR_VERBS, objects=_AC_OBJECTS, eligibility=(_AC_REPAIR_VERBS + _AC_CLEAN_VERBS, _AC_OBJECTS + ("فريون",)), title_groups=(_AC_REPAIR_VERBS + _AC_CLEAN_VERBS + ("تكييف",),), expansions=("صيانة مكيفات", "فني تكييف", "تعبئة فريون")),
+    _head(type="service", category="services", subcategory="ac_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة مكيفات", "صيانة مكيف", "تصليح مكيف", "تصليح مكيفات", "فني مكيفات", "فني تكييف", "تعبئة فريون", "ac repair", "ac maintenance"), label="صيانة مكيفات", label_from_match=True, verbs=_AC_REPAIR_VERBS, objects=_AC_OBJECTS, eligibility=(_AC_REPAIR_SIGNALS + _AC_CLEAN_VERBS, _AC_OBJECTS + ("فريون",)), title_groups=(_AC_REPAIR_SIGNALS + _AC_CLEAN_VERBS + ("تكييف",),), expansions=("صيانة مكيفات", "فني تكييف", "تعبئة فريون")),
     _head(type="service", category="services", subcategory="ac_install", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تركيب مكيفات", "تركيب مكيف", "فك وتركيب مكيفات", "فك مكيف", "فك مكيفات"), label="تركيب مكيفات", label_from_match=True, verbs=_AC_INSTALL_VERBS, objects=_AC_OBJECTS, eligibility=(_AC_INSTALL_VERBS, _AC_OBJECTS), title_groups=(_AC_INSTALL_VERBS + ("فني", "تكييف"),), expansions=("تركيب مكيفات", "فك وتركيب مكيفات", "فني تكييف")),
     _head(type="service", category="services", subcategory="leak_detection", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كشف تسربات", "كشف تسرب", "كشف تسريب", "كشف تسريبات", "كشف تسربات المياه", "كشف تسريب مياه"), label="كشف تسربات", verbs=("كشف", "فحص"), objects=("تسرب", "تسريب"), eligibility=(("كشف", "فحص"), ("تسرب", "تسريب")), expansions=("كشف تسربات المياه", "كشف تسريب مياه", "كشف تسربات")),
     _head(type="service", category="services", subcategory="cctv", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كاميرات مراقبة", "كاميرات مراقبه", "كاميرا مراقبة", "كاميرا مراقبه", "cctv"), label="كاميرات مراقبة", verbs=("تركيب",), objects=("كاميرا", "كاميرات"), eligibility=(("كاميرا", "كاميرات"), ("مراقبه", "مراقبة", "cctv")), expansions=("كاميرات مراقبة", "تركيب كاميرات مراقبة")),
