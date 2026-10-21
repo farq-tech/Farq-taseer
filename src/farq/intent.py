@@ -391,12 +391,12 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عربيات أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عربيات أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
-    _head(type="product", category="furniture", subcategory="corner_sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب زاوية", "كنبة زاوية", "كنب زاويه", "كنب حرف L", "كنب حرف ال", "كنب على شكل L", "sectional sofa"), label="كنب زاوية", label_from_match=True, eligibility=(("كنب", "كنبة", "كنبات", "sofa", "sectional"),), expansions=("كنب زاوية", "كنب حرف L", "كنب ركنة"), attributes=("corner",)),
+    _head(type="product", category="furniture", subcategory="corner_sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب زاوية", "كنبة زاوية", "كنب زاويه", "كنب حرف L", "كنب حرف ال", "كنب على شكل L", "sectional sofa"), label="كنب زاوية", label_from_match=True, eligibility=(("كنب", "كنبة", "كنبات", "sofa", "sectional"), ("زاوية", "زاويه", "ركنة", "ركنه", "حرف l", "حرف ال", "على شكل l", "sectional")), expansions=("كنب زاوية", "كنب حرف L", "كنب ركنة"), attributes=("corner",)),
     _head(type="product", category="furniture", subcategory="sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب", "كنبة", "كنبات", "sofa"), label="كنب", eligibility=(("كنب", "كنبة", "كنبات", "sofa"),), expansions=("كنب", "كنبات", "sofa")),
     _head(type="product", category="furniture", subcategory="dining_tables", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طاولة طعام", "طاوله طعام", "سفرة طعام", "سفره طعام", "سفرة", "سفره", "dining table"), label="طاولة طعام", label_from_match=True, eligibility=(("طاولة", "طاوله", "سفرة", "سفره", "dining table"),), expansions=("طاولة طعام", "سفرة", "طاولة سفرة")),
-    _head(type="product", category="furniture", subcategory="double_beds", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سرير نفرين", "سرير مزدوج", "double bed"), label="سرير نفرين", label_from_match=True, eligibility=(("سرير", "اسرة", "bed"),), expansions=("سرير نفرين", "سرير مزدوج", "double bed"), attributes=("double",)),
+    _head(type="product", category="furniture", subcategory="double_beds", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سرير نفرين", "سرير مزدوج", "double bed"), label="سرير نفرين", label_from_match=True, eligibility=(("سرير", "اسرة", "bed"), ("نفرين", "مزدوج", "زوجي", "double", "queen", "king")), expansions=("سرير نفرين", "سرير مزدوج", "double bed"), attributes=("double",)),
     _head(type="product", category="furniture", subcategory="beds", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سرير", "اسرة", "bed"), label="سرير", label_from_match=True, eligibility=(("سرير", "اسرة", "bed"),), expansions=("سرير", "اسرة", "bed")),
-    _head(type="product", category="electronics", subcategory="screens", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("شاشة كمبيوتر", "شاشة ألعاب", "شاشة قيمنق", "شاشة", "شاشات", "monitor", "computer monitor", "gaming monitor"), label="شاشة", label_from_match=True, eligibility=(("شاشة", "شاشات", "monitor"),), expansions=("شاشة كمبيوتر", "شاشة", "monitor")),
+    _head(type="product", category="electronics", subcategory="screens", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("شاشة كمبيوتر", "شاشة ألعاب", "شاشة قيمنق", "شاشة", "شاشات", "monitor", "computer monitor", "gaming monitor"), label="شاشة", label_from_match=True, eligibility=(("شاشة", "شاشات", "monitor"),), expansions=("شاشة كمبيوتر", "شاشة قيمنق", "شاشة ألعاب", "computer monitor", "gaming monitor", "monitor")),
     _head(type="product", category="electronics", subcategory="routers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز راوتر", "راوتر", "router"), label="راوتر", label_from_match=True, eligibility=(("راوتر", "router"),), expansions=("راوتر", "جهاز راوتر", "router")),
     _head(type="product", category="electronics", subcategory="printers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طابعة ليزر ملونة", "طابعة ليزر", "طابعة", "printer"), label="طابعة", label_from_match=True, eligibility=(("طابعة", "طابعه", "printer"),), expansions=("طابعة ليزر", "طابعة", "printer")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
@@ -772,6 +772,11 @@ def analyze(query: str) -> IntentResponse:
     city_value = intent.location_city.value if isinstance(intent.location_city.value, str) else None
     shown_city = city_label(city_value) or ""
     query_label = label
+    screen_service_override = head.subcategory == "screens" and _service_request(normalized)
+    if head.subcategory == "screens" and "gaming monitor" in normalized:
+        query_label = "شاشة قيمنق"
+    elif head.subcategory == "screens" and ("computer monitor" in normalized or "كمبيوتر" in normalized):
+        query_label = "شاشة كمبيوتر"
     if intent.material.known and head.category and normalize(str(intent.material.value)) not in normalize(label):
         query_label = f"{label} {intent.material.value}"
     if route:
@@ -807,7 +812,14 @@ def analyze(query: str) -> IntentResponse:
         elif head.category is None:
             intent.result_unit = ResultUnit.SERVICE_PROVIDER
             intent.type = known("service", 0.6, "طلب تنفيذ")
-    intent.location_sensitivity = head.location_sensitivity
+        elif head.type == "product":
+            intent.result_unit = ResultUnit.SERVICE_PROVIDER
+            intent.type = known("service", 0.7, "طلب صيانة أو تنفيذ")
+    intent.location_sensitivity = (
+        LocationSensitivity.REQUIRED
+        if screen_service_override
+        else head.location_sensitivity
+    )
     intent.condition = _condition(normalized)
     intent.year = _year(normalized, head.type)
     intent.attributes = _attributes(normalized, head)
@@ -830,12 +842,20 @@ def analyze(query: str) -> IntentResponse:
     elif head.ambiguous:
         intent.missing_decision_information.append("need_specificity")
         intent.clarification_question = "وضّح المطلوب أكثر. المثال: درابزين، باب حديد، أو حديد تسليح."
-    elif head.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
+    elif intent.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
         intent.missing_decision_information.append("location_city")
         intent.clarification_question = "في أي مدينة؟"
     if intent.model.known and intent.model.value == "iPhone Pro Max":
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if head.subcategory == "screens" and "gaming monitor" in normalized:
+        groups.append(["قيمنق", "العاب", "gaming"])
+    elif head.subcategory == "screens" and ("computer monitor" in normalized or "كمبيوتر" in normalized):
+        groups.append(["كمبيوتر", "computer", "pc"])
+    if head.subcategory == "corner_sofas":
+        groups.append(["زاوية", "زاويه", "ركنة", "ركنه", "حرف l", "حرف ال", "sectional"])
+    elif head.subcategory == "double_beds":
+        groups.append(["نفرين", "مزدوج", "زوجي", "double", "queen", "king"])
     if property_transaction == "rent":
         groups.append(list(_PROPERTY_RENT_GROUP))
     elif property_transaction == "sale":
@@ -905,6 +925,9 @@ def analyze(query: str) -> IntentResponse:
         search_label = f"{query_label} {shown_city}".strip()
         expansions = (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
+    if screen_service_override:
+        service_terms = [f"صيانة شاشة {shown_city}".strip(), f"تصليح شاشة {shown_city}".strip(), f"فني شاشات {shown_city}".strip()]
+        intent.search_terms = list(dict.fromkeys([*service_terms, *intent.search_terms]))[:8]
     return intent
 
 
