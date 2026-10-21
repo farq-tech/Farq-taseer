@@ -237,6 +237,36 @@ def test_intent_endpoint_classifies_dina_transport_by_what_it_carries(
         assert any("الرياض" in term and "جدة" in term for term in intent["search_terms"])
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "سيارة نقل مبرد من الدمام للرياض",
+        "أحتاج شحن بضائع مبردة من جدة إلى الرياض",
+        "أبي شاحنة مبردة للنقل من الدمام للرياض",
+    ],
+)
+def test_intent_endpoint_classifies_refrigerated_freight_and_preserves_route(
+    tmp_path: Path, query
+):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["subcategory"]["value"] == "goods_transport"
+    assert intent["result_unit"] == "service_provider"
+    assert intent["location_city"]["value"] in {"الدمام", "جده"}
+    assert intent["destination_city"]["value"] == "الرياض"
+    assert any("مبرد" in term or "مبردة" in term for term in intent["search_terms"])
+    assert any(
+        ("الدمام" in term or "جدة" in term) and "الرياض" in term
+        for term in intent["search_terms"]
+    )
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,
