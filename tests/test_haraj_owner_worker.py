@@ -94,7 +94,17 @@ def test_ambiguous_reply_stays_visible_to_its_owner_only_and_is_not_guessed(stor
  monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:mock)
  assert sync_user_replies(store,10,lambda:2000000000)==0
  localA=store.request_owner(ids[0]);localB=store._connection.execute('select id from users where farq_user_id=?',(B,)).fetchone()['id']
- assert len(owned_unmatched(store,localA))==1
+ unmatched=owned_unmatched(store,localA)
+ assert len(unmatched)==1
+ candidates={candidate['request_id']:candidate for candidate in unmatched[0]['candidates']}
+ assert set(candidates)==set(ids)
+ assert candidates[ids[0]]['need']=='25 باب PVC'
+ assert candidates[ids[1]]['need']=='10 شبابيك'
+ for candidate in candidates.values():
+  assert candidate['request_ref'].startswith('T-')
+  assert candidate['request_city']=='الرياض'
+  assert candidate['request_created_at']
+  assert candidate['seller_name']=='synthetic'
  assert owned_unmatched(store,localB)==[]
  assert all(not store.get_request(rid,localA).offers for rid in ids)
 

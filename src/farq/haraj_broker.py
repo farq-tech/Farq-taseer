@@ -249,6 +249,15 @@ def owned_unmatched(store, local_owner):
                 continue
             for recipient in record.recipients:
                 if recipient.seller_id == row['seller_id']:
-                    candidates.append({'request_id':request_id,'need':recipient.need or record.need or '', 'seller_id':recipient.seller_id})
+                    candidates.append({
+                        'request_id': request_id,
+                        'request_ref': record.ref_code,
+                        'request_city': record.city,
+                        'request_created_at': record.created_at,
+                        'need': recipient.need or record.need or '',
+                        'seller_id': recipient.seller_id,
+                        'seller_name': recipient.seller_name,
+                        'ad_title': recipient.ad_title,
+                    })
         result.append({'id':row['haraj_message_id'],'conversation_id':row['haraj_conversation_id'],'text':row['body'],'sent_at':str(row['sent_at']),'candidates':candidates})
     return result
