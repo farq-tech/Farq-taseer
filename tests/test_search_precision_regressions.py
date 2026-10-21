@@ -1,3 +1,5 @@
+import pytest
+
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
@@ -83,6 +85,27 @@ def test_arabic_shopping_phrases_keep_the_item_and_drop_search_filler():
         "laptops",
     )
     assert "لابتوب ديل i7" in laptop.search_terms
+
+
+@pytest.mark.parametrize(
+    ("query", "item"),
+    [
+        ("أبي مكتب مستعمل صغير", "مكتب مستعمل صغير"),
+        ("عندكم مكتب صغير للبيع؟", "مكتب صغير"),
+        ("وين ألقى طاولة كمبيوتر؟", "طاولة كمبيوتر"),
+        ("أبحث عن مكتب كمبيوتر", "مكتب كمبيوتر"),
+    ],
+)
+def test_everyday_office_desk_phrases_resolve_as_furniture_products(query, item):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert (intent.type.value, intent.category.value, intent.subcategory.value) == (
+        "product",
+        "furniture",
+        "office_desks",
+    )
+    assert item in intent.need
 
 
 def test_vehicle_and_ac_parts_are_not_misread_as_whole_products():
