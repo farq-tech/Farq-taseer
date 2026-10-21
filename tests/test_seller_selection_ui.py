@@ -122,6 +122,13 @@ def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails()
     assert '// Keep the page cursor and current cards so the customer can safely retry.' in source
 
 
+def test_a_cleanly_ended_search_stream_uses_the_plain_search_recovery_once():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    assert 'await recoverSearch(searchId, asked, started, new Error("stream closed before completion"), controller.signal.aborted);' in source
+    assert 'await recoverSearch(searchId, asked, started, _error, controller.signal.aborted);' in source
+    assert 'async function recoverSearch(searchId, asked, started, error, timedOut) {' in source
+
+
 def test_more_results_control_is_prominent_only_while_another_page_is_available():
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
     start = source.index('function renderFlow() {')
