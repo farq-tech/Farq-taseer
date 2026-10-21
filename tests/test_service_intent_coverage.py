@@ -6,6 +6,7 @@ from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
 from farq.taxonomy import catalog, read_business
+from farq.text import normalize
 
 
 @pytest.mark.parametrize(
@@ -196,7 +197,7 @@ def test_common_services_match_providers_without_returning_related_products(
     assert intent.subcategory.value == subcategory
     assert intent.result_unit.value == "service_provider"
     assert intent.location_city.known
-    assert detail in intent.need
+    assert normalize(detail) in normalize(intent.need)
     assert any(item["key"] == subcategory for item in read_business(good_title)["services"])
     assert not any(item["key"] == subcategory for item in read_business(product_title)["services"])
     if subcategory in {"tutoring", "driving_services", "event_planning", "sports_coaching", "tailoring", "childcare", "veterinary"}:

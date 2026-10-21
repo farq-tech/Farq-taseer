@@ -15,11 +15,12 @@ _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _UNIT_ALIASES = {
     "امبير": "امبير", "أمبير": "امبير", "ah": "امبير", "كراسي": "كراسي", "كرسي": "كراسي",
     "كيلو": "كيلو", "كيلوواط": "كيلو", "كيلو واط": "كيلو", "kva": "كيلو", "kw": "كيلو", "kg": "كيلو",
-    "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه",
+    "بوصه": "بوصه", "بوصة": "بوصه", "انش": "بوصه", "inch": "بوصه", "inches": "بوصه",
     "قدم": "قدم", "لتر": "لتر", "طن": "طن", "واط": "واط",
     "gb": "storage_gb", "جيجا": "storage_gb", "جيجابايت": "storage_gb", "جيجا بايت": "storage_gb",
+    "قيقا": "storage_gb", "قيقابايت": "storage_gb", "قيقا بايت": "storage_gb",
 }
-_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
+_UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|inch(?:es)?|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|قيقا بايت|قيقابايت|قيقا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
 # A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
 # account, a pile of leftovers from a job.
 _GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
@@ -80,6 +81,11 @@ def _model_codes(text: str, asked: bool) -> dict[str, set[int]]:
 def _tyre_sizes(text: str) -> set[tuple[str, ...]]:
     return {tuple(sorted(match)) for match in _TYRE_SIZE.findall(to_ascii_digits(normalize(text)))}
 _CAR_PARTS = (
+    "كفرات",
+    "اطارات",
+    "كاوتش",
+    "بطارية",
+    "بطاريات",
     "اطار",
     "كفر",
     "جنط",
@@ -215,7 +221,7 @@ _ELECTRIC_WORK = (
 )
 # A worker transfer, a sold account or a Google Maps pin is not someone doing the job.
 _NOT_A_PROVIDER = ("للتنازل", "تنازل", "نقل كفاله", "نقل خدمات عامل")
-_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار")
+_RENTAL = ("تاجير", "للتاجير", "لتاجير", "ايجار", "للايجار", "استئجار", "استاجر")
 _PROPERTY_TRANSACTION_MARKERS = {
     "للايجار",
     "ايجار",
@@ -232,7 +238,7 @@ _PROPERTY_SALE_CUES = ("بيع", "للبيع", "شراء", "للشراء", "تم
 _RENT_PERIODS = {
     "daily": ("يومي", "يوميا", "يومية", "باليوم"),
     "overnight": ("ليلي", "ليليا", "ليلة", "بالليلة", "لليلة"),
-    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "بالاسبوع"),
+    "weekly": ("اسبوعي", "اسبوعيا", "اسبوعية", "اسبوع", "اسبوعين", "اسبوعان", "بالاسبوع", "week"),
     "weekend": ("ويكند", "weekend", "بالويكند"),
     "monthly": ("شهري", "شهريا", "شهرية", "بالشهر"),
     "yearly": ("سنوي", "سنويا", "سنوية", "بالسنة", "بالسنه"),
@@ -423,6 +429,16 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             and requested_transaction != listing_transaction
         ):
             return False, ["property_transaction_mismatch"]
+    if intent.subcategory.value == "car_rental" and title:
+        asked_period = _rent_period(intent.original_query)
+        title_periods = {
+            period for period, cues in _RENT_PERIODS.items() if has_word(title, cues)
+        }
+        stated_periods = title_periods or {
+            period for period, cues in _RENT_PERIODS.items() if has_word(text, cues)
+        }
+        if asked_period and stated_periods and asked_period not in stated_periods:
+            return False, ["rent_term_mismatch"]
     if ad is not None and title and intent.location_district.known and intent.location_district.value in _SIDES:
         # «أرض شمال الرياض»: a listing that says «شرق الرياض», or names «حي الروضة» on the
         # east side, is on another side of the city. One that names no side is not judged.
