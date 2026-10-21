@@ -63,7 +63,7 @@ def score(
         value += 0.05
     else:
         value -= 0.15
-    if ad is not None and ad.price_amount is not None:
+    if ad is not None and ad.comparable_price_amount is not None:
         value += 0.03
     if ad is not None and ad.description:
         value += 0.04

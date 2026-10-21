@@ -20,7 +20,7 @@ from farq.corpus import MemoryCorpus, default_sample_path
 from farq.store import Store, offer_summary
 from farq.contracts import Offer
 from farq.worker import poll_once
-from test_api import Clock, FakeHaraj, signed_in
+from tests.test_api import Clock, FakeHaraj, signed_in
 
 
 @pytest.fixture(autouse=True)

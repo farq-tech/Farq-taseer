@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import farq.api as api_module
 from farq.api import create_app
+from farq.contracts import IntentResponse, known
 from farq.config import SearchConfig
 from farq.corpus import MemoryCorpus, default_sample_path
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
@@ -108,6 +110,178 @@ def test_search_trace_is_stored(tmp_path: Path):
     assert trace.json()["state"] == "CLARIFICATION_REQUIRED"
     # Only the account that searched can read the trace.
     assert api.get(f"/v1/search/{trace_id}/trace", headers=signed_in(api)).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "query,subcategory,brand",
+    [
+        ("أحتاج آلة قهوة ديلونجي بالرياض", "coffee_machines", "De'Longhi"),
+        ("أبي مكينة خياطة سنجر", "sewing_machines", "Singer"),
+        ("أبي ماكينة خياطة سنغر", "sewing_machines", "Singer"),
+        ("coffee machine DeLonghi", "coffee_machines", "De'Longhi"),
+        ("sewing machine Singer", "sewing_machines", "Singer"),
+    ],
+)
+def test_intent_endpoint_classifies_household_machines(tmp_path: Path, query, subcategory, brand):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "product"
+    assert intent["category"]["value"] == "appliances"
+    assert intent["subcategory"]["value"] == subcategory
+    assert intent["brand"]["value"] == brand
+    assert response.json()["state"] is None
+
+
+@pytest.mark.parametrize(
+    "query,kind,subcategory,result_unit,location_sensitivity",
+    [
+        ("صيانة مكينة اسبريسو بالرياض", "service", "appliance_repair", "service_provider", "required"),
+        ("صيانة آلة خياطة بالرياض", "service", "appliance_repair", "service_provider", "required"),
+        ("فني آلة اسبريسو بالرياض", "service", "appliance_repair", "service_provider", "required"),
+        ("espresso machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("coffee machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("sewing machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("sewing machine maintenance Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("espresso machine repair kit Riyadh", "product", "coffee_machines", "ad", "preferred"),
+    ],
+)
+def test_intent_endpoint_separates_espresso_repair_from_repair_kits(
+    tmp_path: Path, query, kind, subcategory, result_unit, location_sensitivity
+):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["type"]["value"] == kind
+    assert intent["subcategory"]["value"] == subcategory
+    assert intent["result_unit"] == result_unit
+    assert intent["location_sensitivity"] == location_sensitivity
+
+
+def _unrecognized_intent(query: str) -> IntentResponse:
+    return IntentResponse(
+        original_query=query,
+        understood=False,
+        missing_decision_information=["need"],
+        clarification_question="وش الخدمة أو الغرض اللي تبيه؟",
+    )
+
+
+def test_intent_endpoint_uses_inline_model_reading_for_unknown_clear_need(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي جهاز قياس الأكسجين المنزلي"
+    rule_intent = _unrecognized_intent(query)
+    reads = []
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+
+    def read_query(_query):
+        reads.append(_query)
+        return [{
+            "need": "جهاز قياس أكسجين",
+            "hiring": False,
+            "must_include": [["جهاز"], ["أكسجين", "اكسجين"]],
+            "search_terms": ["جهاز قياس أكسجين", "جهاز أكسجين منزلي"],
+        }]
+
+    monkeypatch.setattr(api_module.understand, "read_query", read_query)
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] is None
+    assert body["intent"]["understood"] is True
+    assert body["intent"]["type"]["value"] == "product"
+    assert body["intent"]["need"] == "جهاز قياس أكسجين"
+    assert body["clarification_question"] is None
+    assert reads == [query]
+
+
+def test_model_rescue_of_unknown_service_still_asks_for_city(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي فني يعاير جهاز قياس الأكسجين"
+    rule_intent = _unrecognized_intent(query)
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+    monkeypatch.setattr(
+        api_module.understand,
+        "read_query",
+        lambda _query: [{
+            "need": "معايرة جهاز قياس أكسجين",
+            "hiring": True,
+            "must_include": [["معايرة", "معايره"], ["جهاز"], ["أكسجين", "اكسجين"]],
+            "search_terms": ["فني معايرة جهاز أكسجين"],
+        }],
+    )
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["understood"] is True
+    assert body["intent"]["result_unit"] == "service_provider"
+    assert body["state"] == "CLARIFICATION_REQUIRED"
+    assert body["clarification_question"] == "في أي مدينة؟"
+
+
+def test_model_rescued_service_with_city_requires_local_results(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي فني يعاير جهاز قياس الأكسجين في الرياض"
+    rule_intent = _unrecognized_intent(query)
+    rule_intent.location_city = known("الرياض", 0.95, "query-text")
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+    monkeypatch.setattr(
+        api_module.understand,
+        "read_query",
+        lambda _query: [{
+            "need": "معايرة جهاز قياس أكسجين",
+            "hiring": True,
+            "must_include": [["معايرة", "معايره"], ["جهاز"], ["أكسجين", "اكسجين"]],
+            "search_terms": ["فني معايرة جهاز أكسجين"],
+        }],
+    )
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["result_unit"] == "service_provider"
+    assert body["intent"]["location_city"]["value"] == "الرياض"
+    assert body["intent"]["location_sensitivity"] == "required"
+    assert body["state"] is None
+
+
+def test_unavailable_model_keeps_unrecognized_request_unrecognized(tmp_path, monkeypatch):
+    api = client(tmp_path)
+    query = "أبي جهاز قياس الأكسجين المنزلي"
+    rule_intent = _unrecognized_intent(query)
+
+    monkeypatch.setattr(api_module, "analyze_needs", lambda _query: [rule_intent])
+    monkeypatch.setattr(api_module.understand, "enabled", lambda: True)
+    monkeypatch.setattr(api_module.understand, "refine_if_ready", lambda _query, intents: intents)
+    monkeypatch.setattr(api_module.understand, "read_query", lambda _query: None)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"]["understood"] is False
+    assert body["state"] == "NOT_UNDERSTOOD"
+    assert body["clarification_question"] == "وش الخدمة أو الغرض اللي تبيه؟"
 
 
 def test_guest_request_seller_price_and_activity(tmp_path: Path):
@@ -346,7 +520,7 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     run()
     tokens = {item["seller_id"]: item["reply_token"] for item in created["recipients"]}
     # Every message to a seller ends with the request's reference, which files his replies here.
-    tagged = lambda text: f"{text}\nرقم الطلب: {created['ref_code']}"
+    tagged = lambda text: f"{text}\nفضلاً اذكر رقم الطلب عند الرد: {created['ref_code']}"
 
     def invite(item, seller, body):
         # The invite (outreach.render_invite): an opener, the item and city, a link line, his own
@@ -527,12 +701,12 @@ def test_picked_suppliers_only_and_photos_reach_haraj(tmp_path: Path):
     assert api.post(url, headers=headers, json={"body": "", "seller_ids": ["11"]}).status_code == 422
     clock.sleep(60)
     run()
-    ref = f"\nرقم الطلب: {created['ref_code']}"
+    ref = f"\nفضلاً اذكر رقم الطلب عند الرد: {created['ref_code']}"
     assert [(seller, body) for _c, seller, body in haraj.sent] == [("11", "مثل هذا" + ref), ("13", "مثل هذا" + ref), ("11", "للكل" + ref), ("12", "للكل" + ref), ("13", "للكل" + ref)]
     assert haraj.attachments == [("11", "image/jpeg", b"jpeg"), ("13", "image/jpeg", b"jpeg")]
 
 
-def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tmp_path: Path, monkeypatch):
+def test_replies_follow_the_quoted_request_reference_and_media_is_kept(tmp_path: Path, monkeypatch):
     import farq.worker as worker
 
     monkeypatch.setattr(worker, "_download", lambda url: b"haraj-photo-bytes")
@@ -558,8 +732,8 @@ def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tm
     assert between < after
     # Haraj keeps one conversation per supplier, shared by both requests.
     haraj.inbox["p2p1_11"] = [
-        InboundMessage("p2p1_11:90", "عن السباكة", between, 90),
-        InboundMessage("p2p1_11:91", "", after, 91, ({"type": "image/jpeg", "url": "https://harajchat-media.example/a.jpg?X-Amz-Expires=86400"},)),
+        InboundMessage("p2p1_11:90", f"{first['ref_code']} عن السباكة", between, 90),
+        InboundMessage("p2p1_11:91", f"{second['ref_code']}", after, 91, ({"type": "image/jpeg", "url": "https://harajchat-media.example/a.jpg?X-Amz-Expires=86400"},)),
     ]
     clock.sleep(60)
     assert run() == (0, 2)
@@ -567,7 +741,7 @@ def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tm
     assert run() == (0, 0)
     one = api.get(f"/v1/requests/{first['id']}", headers=headers).json()
     two = api.get(f"/v1/requests/{second['id']}", headers=headers).json()
-    assert [m["body"] for m in one["messages"] if m["sender_role"] == "seller"] == ["عن السباكة"]
+    assert [m["body"] for m in one["messages"] if m["sender_role"] == "seller"] == [f"{first['ref_code']} عن السباكة"]
     photo = next(m for m in two["messages"] if m["sender_role"] == "seller")
     assert photo["media"][0]["url"].startswith("/v1/files/")
     assert api.get(photo["media"][0]["url"]).content == b"haraj-photo-bytes"

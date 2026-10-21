@@ -19,7 +19,7 @@ from farq.corpus import MemoryCorpus
 from farq.dedup import deduplicate
 from farq.eligibility import contains_term, decide, has_word
 from farq.intent import analyze, analyze_needs
-from farq.live_haraj import LiveBatch, _price
+from farq.live_haraj import LiveBatch, _price, ad_from_item
 from farq.orchestrator import run_search
 from farq.text import normalize
 
@@ -82,6 +82,83 @@ def test_electric_adjective_in_the_request_is_a_product():
     assert analyze("تركيب أفياش كهرباء بالرياض").subcategory.value == "electrician"
 
 
+def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise():
+    intent = analyze("أبحث عن دباب هوندا موديل 2020")
+    assert intent.understood is True
+    assert intent.type.value == "vehicle"
+    assert intent.category.value == "vehicles"
+    assert intent.subcategory.value == "motorcycles"
+    assert intent.brand.value == "Honda"
+    assert intent.model.value is None  # Make is known; a specific motorcycle model was not given.
+    assert intent.year.value == 2020
+    assert "دباب هوندا 2020" in intent.search_terms
+    assert all("موديل" not in term for term in intent.search_terms)
+    assert all(not term.startswith("عن ") for term in intent.search_terms)
+
+    assert decide(intent, _ad("دباب هوندا موديل 2020"), None)[0] is True
+    assert decide(intent, _ad("سيارة هوندا 2020"), None)[0] is False
+    assert decide(intent, _ad("دباب ياماها 2020"), None)[0] is False
+
+    generic = analyze("دراجة نارية")
+    assert generic.subcategory.value == "motorcycles"
+
+    yamaha = analyze("أبي دباب ياماها 2022")
+    assert yamaha.subcategory.value == "motorcycles"
+    assert yamaha.brand.value == "Yamaha"
+    assert yamaha.year.value == 2022
+    assert "دباب ياماها 2022" in yamaha.search_terms
+
+    jetski = analyze("أبي جت سكي ياماها 2021")
+    assert jetski.subcategory.value == "watercraft"
+    assert jetski.brand.value == "Yamaha"
+    assert jetski.year.value == 2021
+    assert "جت سكي ياماها 2021" in jetski.search_terms
+
+    scooter = analyze("أبحث عن سكوتر كهربائي شاومي")
+    assert scooter.subcategory.value == "electric_scooters"
+    assert scooter.brand.value == "Xiaomi"
+    assert "سكوتر كهربائي شاومي" in scooter.search_terms
+    assert analyze("أبي سكوتر كهربائي").subcategory.value == "electric_scooters"
+
+    hilux = analyze("أحتاج هايلكس 2019 دبل")
+    assert hilux.subcategory.value == "pickups"
+    assert hilux.brand.value == "Toyota"
+    assert hilux.model.value == "Hilux"
+    assert hilux.year.value == 2019
+    assert "هايلكس 2019 دبل" in hilux.search_terms
+
+    hilux_part = analyze("صدام هايلكس 2019")
+    assert hilux_part.category.value == "parts"
+    assert hilux_part.subcategory.value == "car_parts"
+    assert decide(hilux_part, _ad("صدام هايلكس 2019"), None)[0] is True
+    assert decide(hilux_part, _ad("هايلكس 2019"), None)[0] is False
+    assert analyze("موتور كهرباء").category.value != "vehicles"
+
+    english_honda = analyze("Honda motorcycle 2020")
+    assert english_honda.subcategory.value == "motorcycles"
+    assert english_honda.brand.value == "Honda"
+    assert decide(english_honda, _ad("Honda motorcycle 2020"), None)[0] is True
+    assert decide(english_honda, _ad("Yamaha motorcycle 2020"), None)[0] is False
+
+    kawasaki = analyze("دباب كاواساكي 2020")
+    assert kawasaki.brand.value == "Kawasaki"
+    assert decide(kawasaki, _ad("دباب كاواساكي 2020"), None)[0] is True
+    assert decide(kawasaki, _ad("دباب هوندا 2020"), None)[0] is False
+
+    engine = analyze("مكينة دباب هوندا")
+    assert engine.type.value == "product"
+    assert engine.category.value == "parts"
+    assert engine.subcategory.value == "motorcycle_parts"
+    assert engine.need == "مكينة دباب هوندا"
+    assert decide(engine, _ad("مكينة دباب هوندا"), None)[0] is True
+    assert decide(engine, _ad("دباب هوندا 2020"), None)[0] is False
+
+    tire = analyze("كفر دباب ياماها")
+    assert tire.subcategory.value == "motorcycle_parts"
+    assert decide(tire, _ad("كفر دباب ياماها"), None)[0] is True
+    assert decide(tire, _ad("دباب ياماها"), None)[0] is False
+
+
 # TSR-007: a service verb with a product noun is the service.
 def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
     intent = analyze("تنظيف مكيف بالرياض")
@@ -96,6 +173,20 @@ def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
     assert analyze("صيانة مكيفات بالرياض").subcategory.value == "ac_repair"
     assert analyze("فك وتركيب مكيفات بالرياض").subcategory.value == "ac_install"
     assert analyze("مكيف سبليت").type.value == "product"
+
+
+def test_ac_install_verb_does_not_turn_a_technician_request_into_repair():
+    install = analyze("محتاج فني يركب مكيفين شباك بالدمام")
+    repair = analyze("محتاج فني يصلح مكيفين شباك بالدمام")
+    install_listing = _ad("فني تركيب مكيفات شباك", city="الدمام")
+    repair_listing = _ad("فني صيانة مكيفات شباك", city="الدمام")
+
+    assert install.subcategory.value == "ac_install"
+    assert install.segment_text == "فني يركب مكيفين شباك بالدمام"
+    assert install.segment_text in install.search_terms
+    assert decide(install, install_listing, install_listing.seller)[0] is True
+    assert decide(install, repair_listing, repair_listing.seller)[0] is False
+    assert repair.subcategory.value == "ac_repair"
 
 
 # TSR-004: joined "و" + a second service is a second need, each with its own words.
@@ -220,13 +311,75 @@ def test_transfers_and_map_listings_are_not_providers():
 
 
 # TSR-085 / TSR-069: placeholder and glued prices.
-def test_prices_are_first_number_and_above_the_floor():
+def test_prices_must_be_unambiguous_and_above_the_floor():
     assert _price({"inputPrice": "9"}) is None
     assert _price({"inputPrice": "20"}) is None
-    assert _price({"formattedPrice": "من 100 الى 200"}) == 100
+    assert _price({"formattedPrice": "من 100 الى 200"}) is None
     assert _price({"formattedPrice": "0555555555"}) is None
     assert _price({"formattedPrice": "123456789"}) is None
     assert _price({"formattedPrice": "2,800 ريال"}) == 2800
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "100 ريال بالحبة",
+        "١٠٠ ريال بالقطعة",
+        "100 ريال بالمتر",
+        "100 ريال / متر",
+        "100 ريال لكل متر",
+        "100 ريال بالساعة",
+        "500 يفتح باب السوم",
+        "المزاد يبدأ 500 ريال",
+        "يبدأ من 500 ريال",
+        "ابتداء من 500 ريال",
+        "100 ريال / قطعة",
+        "100 ريال لكل ساعة",
+        "من 100 إلى 200 ريال",
+    ],
+)
+def test_ambiguous_or_per_unit_price_is_not_a_comparable_total(text):
+    assert _price({"inputPrice": text, "formattedPrice": text}) is None
+
+
+def test_disagreeing_haraj_price_fields_are_not_numeric():
+    assert _price({"inputPrice": "100", "formattedPrice": "200 ريال"}) is None
+
+
+def test_ambiguous_price_text_is_preserved_without_numeric_amount():
+    text = "100 ريال بالمتر"
+    ad = ad_from_item(
+        {
+            "id": "12345",
+            "title": "تركيب مظلة",
+            "authorId": "seller-1",
+            "authorUsername": "seller",
+            "price": {"inputPrice": text, "formattedPrice": text},
+        }
+    )
+
+    assert ad.price_amount is None
+    assert ad.price_currency is None
+    assert ad.price_text == text
+    assert ad.price_evidence.kind == "unit_or_installment_price"
+
+
+def test_description_down_payment_is_not_a_comparable_total():
+    ad = ad_from_item(
+        {
+            "id": "12346",
+            "title": "سيارة للبيع",
+            "bodyTEXT": "مقدم 5,000 ريال والباقي كاش",
+            "authorId": "seller-1",
+            "authorUsername": "seller",
+            "price": {"inputPrice": "50000", "formattedPrice": "50000 ريال"},
+        }
+    )
+
+    assert ad.price_amount == 50000
+    assert ad.price_text == "50000 ريال"
+    assert ad.price_evidence.kind == "partial_payment"
+    assert ad.comparable_price_amount is None
 
 
 # TSR-050: a stated budget filters priced ads.

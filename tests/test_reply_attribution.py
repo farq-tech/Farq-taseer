@@ -1,6 +1,6 @@
 """TSR-002: one Haraj account means one conversation per seller, shared by every buyer who asked him.
-A reply is filed by the request reference it quotes; without one it goes to the latest request we
-had sent him before he wrote (owner rule 2026-10-04), and that inference is logged."""
+A reply is filed by its request reference; without one it is assigned only when the conversation
+has exactly one request and seller candidate."""
 
 import time
 from pathlib import Path
@@ -60,8 +60,8 @@ def test_every_message_to_a_seller_carries_its_request_reference(tmp_path: Path)
     assert alice["ref_code"].startswith("T-") and len(alice["ref_code"]) == 8
     sent = [body for conversation, _seller, body in market.haraj.sent if conversation == CONVERSATION]
     assert len(sent) == 2
-    assert sent[0].endswith(f"رقم الطلب: {alice['ref_code']}")
-    assert sent[1].endswith(f"رقم الطلب: {bob['ref_code']}")
+    assert sent[0].endswith(f"فضلاً اذكر رقم الطلب عند الرد: {alice['ref_code']}")
+    assert sent[1].endswith(f"فضلاً اذكر رقم الطلب عند الرد: {bob['ref_code']}")
 
 
 def test_a_reply_quoting_the_reference_reaches_that_buyer_only(tmp_path: Path):
@@ -78,20 +78,19 @@ def test_a_reply_quoting_the_reference_reaches_that_buyer_only(tmp_path: Path):
     assert market.store.unmatched_inbound() == []
 
 
-def test_without_a_reference_a_reply_goes_to_the_latest_request_he_was_sent(tmp_path: Path, caplog):
-    """Owner rule (2026-10-04): a seller answers the last message he got. An unreferenced reply
-    across buyers is filed under the newest request we had sent him before he wrote, and logged."""
+def test_without_a_reference_a_reply_stays_unmatched_when_requests_share_a_conversation(tmp_path: Path, caplog):
+    """When multiple requests share Haraj's conversation, an unreferenced reply is ambiguous."""
     market = Market(tmp_path)
     alice = market.ask(market.alice, "كامري 2015")
     bob = market.ask(market.bob, "لاندكروزر")
     market.run()
     market.reply(100, "هلا")
     with caplog.at_level("WARNING", logger="farq.worker"):
-        assert market.run() == (0, 1)
-    assert market.seen_by(market.bob, bob) == (["هلا"], [])
+        assert market.run() == (0, 0)
+    assert market.seen_by(market.bob, bob) == ([], [])
     assert market.seen_by(market.alice, alice) == ([], [])
-    assert market.store.unmatched_inbound() == []
-    assert any("latest_send_across_buyers" in record.getMessage() and bob["id"] in record.getMessage() for record in caplog.records)
+    assert len(market.store.unmatched_inbound()) == 1
+    assert any("matches no single request" in record.getMessage() for record in caplog.records)
     # Read once: the next sync does not file it twice.
     assert market.run() == (0, 0)
     # A later reply that quotes Alice's reference still reaches Alice.
@@ -112,7 +111,7 @@ def test_two_references_from_two_buyers_are_still_kept_unmatched(tmp_path: Path)
     assert sorted(kept[0]["candidate_request_ids"]) == sorted([alice["id"], bob["id"]])
 
 
-def test_one_open_request_in_the_conversation_keeps_the_old_rule(tmp_path: Path):
+def test_one_request_in_the_conversation_can_receive_an_unreferenced_reply(tmp_path: Path):
     market = Market(tmp_path)
     alice = market.ask(market.alice, "كامري 2015")
     market.run()
@@ -123,7 +122,7 @@ def test_one_open_request_in_the_conversation_keeps_the_old_rule(tmp_path: Path)
     assert (offer["base_price"], offer["delivery_included"], offer["delivery_price"]) == (250.0, False, 50.0)
 
 
-def test_a_reply_written_before_the_second_buyer_asked_goes_to_the_first(tmp_path: Path):
+def test_a_reply_written_before_a_second_request_without_reference_stays_unmatched(tmp_path: Path):
     market = Market(tmp_path)
     alice = market.ask(market.alice, "كامري 2015")
     market.run()
@@ -132,11 +131,12 @@ def test_a_reply_written_before_the_second_buyer_asked_goes_to_the_first(tmp_pat
     time.sleep(0.01)
     bob = market.ask(market.bob, "لاندكروزر")
     market.run()
-    # The seller wrote before Bob's request reached him: only Alice's could be the subject.
+    # Timing alone is not an explicit request link.
     market.reply(100, "موجودة بـ 45000", sent_at=between)
-    assert market.run() == (0, 1)
-    assert market.seen_by(market.alice, alice)[0] == ["موجودة بـ 45000"]
+    assert market.run() == (0, 0)
+    assert market.seen_by(market.alice, alice)[0] == []
     assert market.seen_by(market.bob, bob) == ([], [])
+    assert len(market.store.unmatched_inbound()) == 1
 
 
 def _row(request_id, owner, ref, sends, awarded=None, seller="77", created="2026-09-01T00:00:00+00:00"):
@@ -158,24 +158,36 @@ def test_choose_thread_rules():
     bob = _row("b", "bob", "T-222222", ["2026-09-01T11:00:00+00:00"])
     alice_second = _row("a2", "alice", "T-333333", ["2026-09-01T12:00:00+00:00"])
     at = "2026-09-01T13:00:00+00:00"
-    # Across buyers, no reference: the latest request sent to him before he wrote, marked as inferred.
-    inferred = choose_thread([alice, bob], "السعر 500 ريال", at)
-    assert inferred["request_id"] == "b" and inferred["routed_by"] == "latest_send_across_buyers"
-    # ...but never one he had not been sent yet.
+    # Never guess based on the latest send, even when it appears likely.
+    assert choose_thread([alice, bob], "السعر 500 ريال", at) is None
     assert choose_thread([_row("a", "alice", "T-111111", []), _row("b", "bob", "T-222222", [])], "تمام", at) is None
     assert choose_thread([alice, bob], "رقم الطلب: T-111111 السعر 500 ريال", at)["request_id"] == "a"
     assert choose_thread([alice, bob], "رقم الطلب ٢٢٢٢٢٢", at)["request_id"] == "b"
-    # A reference for a request that is not in this conversation proves nothing: as if none.
-    assert choose_thread([alice, bob], "T-999999", at)["routed_by"] == "latest_send_across_buyers"
+    # A reference for a request that is not in this conversation proves nothing.
+    assert choose_thread([alice, bob], "T-999999", at) is None
     # Two references from two buyers: still unknown.
     assert choose_thread([alice, bob], "T-111111 و T-222222", at) is None
-    # Requests from one buyer: the latest one sent to him, as before.
-    assert choose_thread([alice, alice_second], "تمام", at)["request_id"] == "a2"
-    # A request already awarded to another seller is no longer open.
-    assert choose_thread([alice, _row("b", "bob", "T-222222", ["2026-09-01T11:00:00+00:00"], awarded="88")], "تمام", at)["request_id"] == "a"
-    # Only requests he had received when he wrote.
-    assert choose_thread([alice, bob], "تمام", "2026-09-01T10:30:00+00:00")["request_id"] == "a"
+    # Multiple requests from one buyer are still ambiguous without a reference.
+    assert choose_thread([alice, alice_second], "تمام", at) is None
+    # A unique request and seller is safe.
+    assert choose_thread([alice], "تمام", at)["request_id"] == "a"
     assert choose_thread([], "تمام", at) is None
+
+
+def test_a_reference_from_a_merged_request_still_matches_the_consolidated_request():
+    target = _row("canonical", "alice", "T-111111", [])
+    target["source_ref_codes"] = "T-333333,T-444444"
+    other = _row("other", "bob", "T-222222", [])
+    assert choose_thread([target, other], "بخصوص الطلب T-333333", "2026-09-01T13:00:00+00:00")["request_id"] == "canonical"
+
+
+def test_a_request_level_reply_is_not_assigned_to_one_of_its_multiple_items():
+    first = _row("a", "alice", "T-111111", [])
+    second = {**first, "need": "ثلاجة"}
+    chosen = choose_thread([first, second], "T-111111 متوفر", "2026-09-01T13:00:00+00:00")
+    assert chosen["request_id"] == "a"
+    assert chosen["need"] is None
+    assert chosen["allow_offer"] is False
 
 
 @pytest.mark.parametrize("body", ["t-111111", "T 111111", "ت-١١١١١١", "رقم الطلب: 111111", "T-111111 ✓"])

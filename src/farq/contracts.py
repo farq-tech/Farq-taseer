@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
@@ -86,6 +86,10 @@ class IntentResponse(ContractModel):
     price_min: FieldValue = Field(default_factory=unknown)
     price_max: FieldValue = Field(default_factory=unknown)
     attributes: list[FieldValue] = Field(default_factory=list)
+    # A single need may accept more than one explicitly requested product identity
+    # ("YOYO or Bugaboo"). Internal only: preserve the rule-built OR eligibility
+    # groups when the optional model reading is applied.
+    identity_alternatives: list[str] = Field(default_factory=list, exclude=True)
     location_city: FieldValue = Field(default_factory=unknown)
     location_district: FieldValue = Field(default_factory=unknown)
     # "نقل عفش من الرياض للدمام": location_city is the origin, this is where it goes.
@@ -112,6 +116,28 @@ class Seller(ContractModel):
     specialty_evidence: list[str] = Field(default_factory=list)
 
 
+class PriceEvidence(ContractModel):
+    """What an ad says about price; this is evidence, not a verified deal price."""
+
+    kind: Literal[
+        "asking_price_in_field",
+        "explicit_text_price",
+        "estimated_price",
+        "auction_without_price",
+        "contact_for_price",
+        "price_range",
+        "unit_or_installment_price",
+        "partial_payment",
+        "historical_price",
+        "ambiguous_amount",
+        "no_price_signal",
+    ] = "no_price_signal"
+    amount: float | None = None
+    source: Literal["price_field", "title", "description"] | None = None
+    negotiable: bool = False
+    estimated: bool = False
+
+
 class Ad(ContractModel):
     id: str
     title: str
@@ -122,12 +148,29 @@ class Ad(ContractModel):
     price_text: str | None = None
     price_amount: float | None = None
     price_currency: str | None = None
+    # Seller's original Haraj price-field text. This stays available when the
+    # field is a range, bid, or unit price and cannot safely become one amount.
+    price_text: str | None = None
+    price_evidence: PriceEvidence = Field(default_factory=PriceEvidence)
     posted_at: str | None = None
     image_ref: str | None = None
     image_urls: list[str] = Field(default_factory=list)
     category_tags: list[str] = Field(default_factory=list)
     listing_state: str = "unknown"
     seller: Seller
+
+    @property
+    def comparable_price_amount(self) -> float | None:
+        """Return only a stated amount safe for budget matching and price ranking.
+
+        Preserve non-Haraj ads that have no evidence classification, while keeping
+        ambiguous, estimated, historical, and unit amounts out of price decisions.
+        """
+        if self.price_evidence.kind in {"asking_price_in_field", "explicit_text_price"}:
+            return self.price_evidence.amount if self.price_evidence.amount is not None else self.price_amount
+        if self.price_evidence.kind == "no_price_signal" and self.price_evidence.source is None:
+            return self.price_amount
+        return None
 
 
 class SearchResult(ContractModel):

@@ -15,6 +15,7 @@ Every table in the taseer schema is emptied between tests.
 
 import os
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -75,7 +76,7 @@ def _run(module, name, tmp_path, monkeypatch, make):
         "test_unread_replies_and_phone_notifications",
         "test_every_customer_signs_in_and_sees_only_their_requests",
         "test_picked_suppliers_only_and_photos_reach_haraj",
-        "test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept",
+        "test_replies_follow_the_quoted_request_reference_and_media_is_kept",
     ],
 )
 def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
@@ -92,8 +93,9 @@ def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
         ("test_reply_attribution", "test_every_message_to_a_seller_carries_its_request_reference"),
         ("test_reply_attribution", "test_a_reply_quoting_the_reference_reaches_that_buyer_only"),
         ("test_reply_attribution", "test_two_references_from_two_buyers_are_still_kept_unmatched"),
-        ("test_reply_attribution", "test_one_open_request_in_the_conversation_keeps_the_old_rule"),
-        ("test_reply_attribution", "test_a_reply_written_before_the_second_buyer_asked_goes_to_the_first"),
+        ("test_reply_attribution", "test_without_a_reference_a_reply_stays_unmatched_when_requests_share_a_conversation"),
+        ("test_reply_attribution", "test_one_request_in_the_conversation_can_receive_an_unreferenced_reply"),
+        ("test_reply_attribution", "test_a_reply_written_before_a_second_request_without_reference_stays_unmatched"),
         ("test_limits", "test_recipients_must_come_from_the_customers_own_search"),
         ("test_limits", "test_streamed_and_signed_out_searches_count_when_named"),
         ("test_limits", "test_trial_caps_sellers_per_item_and_subscribers_have_a_ceiling"),
@@ -242,7 +244,7 @@ def test_unreferenced_reply_routing_on_postgres(tmp_path, monkeypatch, pg_store,
     import tests.test_reply_attribution as attribution
 
     monkeypatch.setattr(attribution, "Store", pg_store)
-    attribution.test_without_a_reference_a_reply_goes_to_the_latest_request_he_was_sent(tmp_path, caplog)
+    attribution.test_without_a_reference_a_reply_stays_unmatched_when_requests_share_a_conversation(tmp_path, caplog)
 
 
 def test_outreach_columns_on_postgres(pg_store):
@@ -263,6 +265,7 @@ def test_outreach_columns_on_postgres(pg_store):
         {"seller_id": "502", "ad_id": "9002", "ad_title": "مطبخ", "ad_city": "الرياض", "posted_at": None,
          "listing_state": "active", "match": "near", "title_match": False, "need": "بركسات"},
     ])
+    assert store.search_listing_ids("trace-1", owner) == {"9001", "9002"}
     since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     found = {row["ad_id"]: row for row in store.searched_listings(owner, None, since)}
     assert found["9001"]["seller_id"] == "501" and found["9001"]["title_match"] is True and found["9001"]["ad_title"] == "بركس للبيع"
@@ -309,6 +312,72 @@ def test_sync_account_projection_on_postgres(pg_store, tmp_path):
     assert len(rows) == 1 and rows[0]['haraj_account_id'] == '101'
 
 
+def test_merged_source_reference_routes_to_consolidated_target_on_postgres(pg_store, tmp_path, monkeypatch):
+    from psycopg.types.json import Jsonb
+
+    from farq.contracts import RequestRecipient
+    from farq.haraj_broker import sync_user_replies
+    from farq.haraj_chat import InboundMessage, SentMessage
+
+    store = pg_store(upload_dir=tmp_path / 'uploads')
+    local_user = store.start_guest()['user_id']
+    owner = '11111111-1111-4111-8111-111111111111'
+    assert store.link_farq(local_user, owner)
+
+    def create(need, seller):
+        attributes = {'_haraj_consent': {
+            'owner': owner, 'at': '2026-10-06T19:00:00Z', 'account': '101',
+            'recipients': [seller],
+        }}
+        return store.create_request(
+            local_user, need, need, None, 'الرياض', attributes,
+            [RequestRecipient(seller_id=seller, seller_name='synthetic', need=need)],
+            supplier_message='بكم؟',
+        )
+
+    source = create('source item', '202')
+    target = create('combined request', '303')
+    with store._pool.connection() as conn:
+        source_row = conn.execute('select ref_code, attributes from requests where id=%s', (source,)).fetchone()
+        source_ref = source_row['ref_code']
+        source_attributes = source_row['attributes']
+        target_row = conn.execute('select attributes from requests where id=%s', (target,)).fetchone()
+        target_attributes = target_row['attributes']
+
+    for delivery in store.claim_deliveries(limit=2):
+        seller = delivery['seller_id']
+        store.finish_delivery(
+            delivery['id'],
+            sent=SentMessage(f'p2p101_{seller}', f'p2p101_{seller}:7', 7, '101'),
+        )
+
+    source_attributes['merged_into_request_id'] = target
+    target_attributes['_merge_recipient_consents'] = {
+        '202': source_attributes['_haraj_consent'],
+        '303': target_attributes['_haraj_consent'],
+    }
+    with store._pool.connection() as conn:
+        conn.execute('update requests set attributes=%s where id=%s', (Jsonb(source_attributes), source))
+        conn.execute('update requests set attributes=%s where id=%s', (Jsonb(target_attributes), target))
+        for table in ('haraj_threads', 'message_deliveries', 'messages', 'request_recipients'):
+            conn.execute(f'update {table} set request_id=%s where request_id=%s', (target, source))
+
+    reply = InboundMessage('p2p101_202:8', f'{source_ref} متوفر بـ ٧٠٠ ريال', '2026-10-06T19:30:00Z', 8)
+    threads = store.threads_to_sync()
+    source_thread = next(row for row in threads if row['haraj_conversation_id'] == 'p2p101_202')
+    assert source_ref in source_thread['source_ref_codes']
+
+    broker = Mock(configured=True)
+    broker.read_thread.side_effect = lambda _store, thread, _after: [reply] if thread['haraj_conversation_id'] == 'p2p101_202' else []
+    monkeypatch.setattr('farq.haraj_broker.UserHarajBroker', lambda: broker)
+
+    assert sync_user_replies(store, 10, lambda: 2_000_000_000) == 1
+    record = store.get_request(target, local_user)
+    assert any(message.body == reply.body for message in record.messages)
+    assert record.offers and record.offers[0].amount == 700
+    assert store.unmatched_inbound() == []
+
+
 def test_checked_thread_does_not_clear_legacy_failures(pg_store, tmp_path):
     from farq.contracts import RequestRecipient
     from farq.haraj_chat import SentMessage
@@ -350,7 +419,7 @@ def test_search_pagination_on_postgres(name, tmp_path, monkeypatch, pg_store):
     'test_rate_limit_and_challenge_preserve_data_and_pause',
 ])
 def test_haraj_harvest_pg(name, tmp_path, monkeypatch, pg_store):
-    import test_haraj_harvest as module
+    import tests.test_haraj_harvest as module
     monkeypatch.setattr(module, 'Store', pg_store)
     fn = getattr(module, name)
     if 'monkeypatch' in __import__('inspect').signature(fn).parameters:
