@@ -53,6 +53,14 @@ def test_residential_house_rental_is_understood_and_keeps_rent_and_city():
     assert any("للإيجار" in group for group in intent.eligibility_groups)
 
 
+def test_house_floor_qualifier_is_preserved_in_search():
+    intent = analyze("أبي بيت دور أرضي للإيجار في جدة")
+
+    assert intent.subcategory.value == "house"
+    assert "دور أرضي" in intent.need
+    assert "دور أرضي" in intent.search_terms[0]
+
+
 def test_house_without_transaction_does_not_invent_a_rent_or_sale_filter():
     intent = analyze("أبي بيت في جدة")
 
