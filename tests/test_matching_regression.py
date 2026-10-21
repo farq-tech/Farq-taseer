@@ -82,6 +82,83 @@ def test_electric_adjective_in_the_request_is_a_product():
     assert analyze("تركيب أفياش كهرباء بالرياض").subcategory.value == "electrician"
 
 
+def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise():
+    intent = analyze("أبحث عن دباب هوندا موديل 2020")
+    assert intent.understood is True
+    assert intent.type.value == "vehicle"
+    assert intent.category.value == "vehicles"
+    assert intent.subcategory.value == "motorcycles"
+    assert intent.brand.value == "Honda"
+    assert intent.model.value is None  # Make is known; a specific motorcycle model was not given.
+    assert intent.year.value == 2020
+    assert "دباب هوندا 2020" in intent.search_terms
+    assert all("موديل" not in term for term in intent.search_terms)
+    assert all(not term.startswith("عن ") for term in intent.search_terms)
+
+    assert decide(intent, _ad("دباب هوندا موديل 2020"), None)[0] is True
+    assert decide(intent, _ad("سيارة هوندا 2020"), None)[0] is False
+    assert decide(intent, _ad("دباب ياماها 2020"), None)[0] is False
+
+    generic = analyze("دراجة نارية")
+    assert generic.subcategory.value == "motorcycles"
+
+    yamaha = analyze("أبي دباب ياماها 2022")
+    assert yamaha.subcategory.value == "motorcycles"
+    assert yamaha.brand.value == "Yamaha"
+    assert yamaha.year.value == 2022
+    assert "دباب ياماها 2022" in yamaha.search_terms
+
+    jetski = analyze("أبي جت سكي ياماها 2021")
+    assert jetski.subcategory.value == "watercraft"
+    assert jetski.brand.value == "Yamaha"
+    assert jetski.year.value == 2021
+    assert "جت سكي ياماها 2021" in jetski.search_terms
+
+    scooter = analyze("أبحث عن سكوتر كهربائي شاومي")
+    assert scooter.subcategory.value == "electric_scooters"
+    assert scooter.brand.value == "Xiaomi"
+    assert "سكوتر كهربائي شاومي" in scooter.search_terms
+    assert analyze("أبي سكوتر كهربائي").subcategory.value == "electric_scooters"
+
+    hilux = analyze("أحتاج هايلكس 2019 دبل")
+    assert hilux.subcategory.value == "pickups"
+    assert hilux.brand.value == "Toyota"
+    assert hilux.model.value == "Hilux"
+    assert hilux.year.value == 2019
+    assert "هايلكس 2019 دبل" in hilux.search_terms
+
+    hilux_part = analyze("صدام هايلكس 2019")
+    assert hilux_part.category.value == "parts"
+    assert hilux_part.subcategory.value == "car_parts"
+    assert decide(hilux_part, _ad("صدام هايلكس 2019"), None)[0] is True
+    assert decide(hilux_part, _ad("هايلكس 2019"), None)[0] is False
+    assert analyze("موتور كهرباء").category.value != "vehicles"
+
+    english_honda = analyze("Honda motorcycle 2020")
+    assert english_honda.subcategory.value == "motorcycles"
+    assert english_honda.brand.value == "Honda"
+    assert decide(english_honda, _ad("Honda motorcycle 2020"), None)[0] is True
+    assert decide(english_honda, _ad("Yamaha motorcycle 2020"), None)[0] is False
+
+    kawasaki = analyze("دباب كاواساكي 2020")
+    assert kawasaki.brand.value == "Kawasaki"
+    assert decide(kawasaki, _ad("دباب كاواساكي 2020"), None)[0] is True
+    assert decide(kawasaki, _ad("دباب هوندا 2020"), None)[0] is False
+
+    engine = analyze("مكينة دباب هوندا")
+    assert engine.type.value == "product"
+    assert engine.category.value == "parts"
+    assert engine.subcategory.value == "motorcycle_parts"
+    assert engine.need == "مكينة دباب هوندا"
+    assert decide(engine, _ad("مكينة دباب هوندا"), None)[0] is True
+    assert decide(engine, _ad("دباب هوندا 2020"), None)[0] is False
+
+    tire = analyze("كفر دباب ياماها")
+    assert tire.subcategory.value == "motorcycle_parts"
+    assert decide(tire, _ad("كفر دباب ياماها"), None)[0] is True
+    assert decide(tire, _ad("دباب ياماها"), None)[0] is False
+
+
 # TSR-007: a service verb with a product noun is the service.
 def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
     intent = analyze("تنظيف مكيف بالرياض")
