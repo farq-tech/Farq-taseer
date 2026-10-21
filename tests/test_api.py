@@ -166,6 +166,33 @@ def test_intent_endpoint_separates_espresso_repair_from_repair_kits(
 
 
 @pytest.mark.parametrize(
+    "query,expected_search_term",
+    [
+        ("أبغى فني يصلح ثلاجتي بالرياض", "فني ثلاجات"),
+        ("أحتاج تصليح غسالتي بالرياض", "تصليح غسالات"),
+        ("أحتاج صيانة نشافتي بجدة", "صيانة أجهزة منزلية"),
+        ("أبي فني يصلح جلايتي بمكة", "صيانة أجهزة منزلية"),
+    ],
+)
+def test_intent_endpoint_understands_possessive_appliance_repairs(
+    tmp_path: Path, query: str, expected_search_term: str
+):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["category"]["value"] == "services"
+    assert intent["subcategory"]["value"] == "appliance_repair"
+    assert intent["result_unit"] == "service_provider"
+    assert intent["location_city"]["value"] is not None
+    assert any(expected_search_term in term for term in intent["search_terms"])
+
+
+@pytest.mark.parametrize(
     "query",
     [
         "أبي سيارة توصلني للمطار بالرياض",
