@@ -694,6 +694,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="property", category="property", subcategory="land", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ارض", "أرض"), eligibility=(("ارض",),), expansions=("ارض", "أراضي")),
     _head(type="property", category="property", subcategory="villa", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("فيلا", "فلل", "villa", "villas"), label="فيلا", label_from_match=True, eligibility=(("فيلا", "فلل", "villa", "villas"),), expansions=("فيلا", "فلل", "فيلا للإيجار", "villas")),
     _head(type="service", category="services", subcategory="moving", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل عفش", "نقل العفش", "نقل اثاث", "movers", "moving", "furniture moving"), label="نقل عفش", eligibility=(("نقل",), ("عفش", "اثاث")), expansions=("نقل عفش", "نقل اثاث", "دينه نقل عفش")),
+    _head(type="service", category="services", subcategory="goods_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل أغراض", "توصيل اغراض", "نقل أغراض", "نقل اغراض", "شحن أغراض", "شحن اغراض", "نقل بضائع", "شحن بضائع", "توصيل بضائع", "نقل طرود", "شحن طرود", "cargo delivery", "freight transport"), label="نقل أغراض", label_from_match=True, eligibility=(("توصيل", "نقل", "شحن", "cargo", "freight"), ("أغراض", "اغراض", "بضائع", "طرود", "ممتلكات", "goods", "freight")), expansions=("نقل أغراض", "توصيل بضائع", "شحن بضائع", "نقل بضائع", "نقل طرود")),
     _head(type="service", category="services", subcategory="vehicle_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل سيارة", "نقل سيارات", "نقل سيارتي", "نقل مركبة", "سطحة نقل", "سطحه نقل", "سطحة", "سطحه", "car towing", "vehicle transport"), label="نقل سيارة", eligibility=(("سطحة", "سطحه", "ونش", "car towing", "vehicle transport"), ("نقل", "تنقل", "توصيل", "سحب", "tow"), ("سيارة", "سيارتي", "سيارات", "مركبة", "مركبتي", "vehicles", "car")), expansions=("سطحة نقل سيارات", "سطحة نقل سيارة", "نقل سيارة بين المدن", "خدمة سطحة نقل")),
     _head(type="service", category="services", subcategory="car_rental", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تأجير سيارات", "تأجير سيارة", "استئجار سيارة", "استأجر سيارة", "إيجار سيارة", "ايجار سيارة", "إيجار سيارات", "rent a car", "car rental"), label="تأجير سيارات", label_from_match=True, eligibility=(("تأجير", "ايجار", "استئجار", "استأجر", "rental", "rent"), ("سيارات", "سيارة", "car")), expansions=("تأجير سيارات", "إيجار سيارة", "استئجار سيارة", "car rental")),
     _head(type="service", category="services", subcategory="water_delivery", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("وايت ماء", "وايت مياه", "وايت يوصل ماء", "توصيل وايت ماء", "توصيل مياه", "water tanker"), label="توصيل وايت ماء", label_from_match=True, eligibility=(("وايت", "water tanker"), ("ماء", "مياه", "water")), expansions=("وايت ماء", "وايت مياه", "توصيل وايت ماء", "water tanker")),
@@ -846,8 +847,8 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
                 if head.subcategory == "vehicle_transport":
                     sale_cue = any(cue in normalized.split() for cue in ("للبيع", "بيع", "شراء", "مطلوب"))
                     transport_cue = any(cue in normalized.split() for cue in ("نقل", "تنقل", "توصيل", "سحب", "ونش", "tow", "towing"))
-                    car_cue = any(cue in normalized.split() for cue in ("سيارة", "سيارتي", "سيارات", "مركبة", "مركبتي", "سيارته", "سيارتها", "car"))
-                    route_request = find_route(normalized) is not None and any(cue in normalized.split() for cue in ("سطحة", "سطحه", "سيارة", "سيارتي", "سيارات", "مركبة"))
+                    car_cue = any(cue in normalized.split() for cue in ("سيارة", "سياره", "سيارتي", "سيارات", "مركبة", "مركبه", "مركبتي", "سيارته", "سيارتها", "car"))
+                    route_request = find_route(normalized) is not None and any(cue in normalized.split() for cue in ("سطحة", "سطحه", "سيارة", "سياره", "سيارتي", "سيارات", "مركبة", "مركبه"))
                     if sale_cue or not ((transport_cue and car_cue) or route_request):
                         continue
                 if head.type == "property" and _service_request(normalized):
@@ -1725,6 +1726,9 @@ def analyze(query: str) -> IntentResponse:
         search_label = query_label
         expansions = (query_label, f"قطع غيار {context or 'دباب'}", f"{part_shown} دباب")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
+    if route and head.subcategory in {"moving", "goods_transport", "vehicle_transport"}:
+        route_term = f"{query_label} من {city_label(route[0])} إلى {city_label(route[1])}"
+        intent.search_terms = list(dict.fromkeys((route_term, *intent.search_terms)))
     if segment and not stroller_alternatives:
         # Preserve meaningful qualifiers omitted by a canonical head (brand, model,
         # comfort, or the requested material) without sending search framing such as

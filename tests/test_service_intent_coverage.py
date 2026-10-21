@@ -5,6 +5,7 @@ import pytest
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.live_haraj import haraj_queries
 from farq.taxonomy import catalog, read_business
 from farq.text import normalize
 
@@ -339,3 +340,62 @@ def test_vehicle_transport_category_is_available_to_service_providers():
     services = read_business("سطحة نقل سيارات بين المدن")['services']
 
     assert any(item["key"] == "vehicle_transport" for item in services)
+
+
+@pytest.mark.parametrize(
+    "query,subcategory,listing_title,unrelated_title",
+    [
+        (
+            "أبي توصيل أغراض من الرياض إلى جدة",
+            "goods_transport",
+            "نقل أغراض وبضائع بين المدن من الرياض إلى جدة",
+            "نقل عفش من الرياض إلى جدة",
+        ),
+        (
+            "أحتاج شحن بضائع من الرياض إلى جدة",
+            "goods_transport",
+            "شحن بضائع وطرود بين الرياض وجدة",
+            "سطحة نقل سيارات من الرياض إلى جدة",
+        ),
+        (
+            "أبي نقل سيارة من الرياض إلى جدة",
+            "vehicle_transport",
+            "سطحة نقل سيارات من الرياض إلى جدة",
+            "سطحة هيدروليك للبيع",
+        ),
+    ],
+)
+def test_intercity_transport_requests_keep_the_route_and_separate_service_types(
+    query, subcategory, listing_title, unrelated_title
+):
+    intent = analyze(query)
+    seller = Seller(id="seller", name="مقدم خدمة", city="الرياض")
+    matching = Ad(id="matching", title=listing_title, city="الرياض", seller=seller)
+    unrelated = Ad(id="unrelated", title=unrelated_title, city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == subcategory
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert normalize(intent.destination_city.value) == normalize("جدة")
+    assert any("الرياض" in term and "جدة" in term for term in intent.search_terms)
+    live_queries = haraj_queries(intent.search_terms, intent.location_city.value)
+    assert any("الرياض" in term and "جدة" in term for term in live_queries)
+    assert decide(intent, matching, seller)[0] is True
+    assert decide(intent, unrelated, seller)[0] is False
+
+
+def test_furniture_route_remains_a_furniture_moving_request_and_search_term():
+    intent = analyze("نقل عفش من الرياض إلى جدة")
+
+    assert intent.subcategory.value == "moving"
+    assert any("الرياض" in term and "جدة" in term for term in intent.search_terms)
+
+
+def test_goods_delivery_without_an_intercity_route_is_understood():
+    intent = analyze("توصيل أغراض للبيت في الرياض")
+
+    assert intent.subcategory.value == "goods_transport"
+    assert intent.location_city.value == "الرياض"
+    assert intent.destination_city.value is None
