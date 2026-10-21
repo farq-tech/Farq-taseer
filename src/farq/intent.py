@@ -1538,6 +1538,24 @@ def analyze(query: str) -> IntentResponse:
             storage = "1024" if "tb" in raw_storage or "تيرا" in raw_storage else re.search(r"\d+", raw_storage).group(0)
             query_parts.append(f"{storage} جيجا" if iphone_model.group(1) == "ايفون" else f"{storage}GB")
         query_label = " ".join(query_parts)
+    elif head.brand == "Samsung":
+        samsung_storage = _IPHONE_STORAGE.search(normalized)
+        price_bound = _PRICE_MAX.search(normalized)
+        if samsung_storage and not (
+            price_bound and samsung_storage.start() == price_bound.start(1)
+        ):
+            raw_storage = normalize(samsung_storage.group(1))
+            storage_number = re.search(r"\d+", raw_storage)
+            storage = (
+                "1TB"
+                if "tb" in raw_storage or "تيرا" in raw_storage
+                else f"{storage_number.group(0)}GB"
+            )
+            query_label = f"{query_label} {storage}"
+    elif head.brand == "Apple" and str(head.model or "").startswith("MacBook"):
+        macbook_ram = _MACBOOK_RAM.search(normalized)
+        if macbook_ram:
+            query_label = f"{query_label} {macbook_ram.group('ram')}GB"
     if route:
         intent.need = f"{query_label} من {city_label(route[0])} إلى {city_label(route[1])}"
     else:

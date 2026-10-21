@@ -13,6 +13,7 @@ def test_samsung_galaxy_model_query_keeps_brand_variant_and_storage():
     )
     assert intent.brand.value == "Samsung"
     assert intent.model.value == "Galaxy S24 Ultra"
+    assert "512GB" in intent.need
     assert any("سامسونج S24 ألترا 512GB" in term for term in intent.search_terms)
     seller = Seller(id="seller", name="معلن")
     assert decide(intent, Ad(id="same", title="Samsung Galaxy S24 Ultra 512GB", seller=seller), seller)[0]
@@ -28,6 +29,7 @@ def test_english_macbook_model_query_is_understood_without_product_noun():
     assert (intent.category.value, intent.subcategory.value) == ("electronics", "laptops")
     assert intent.brand.value == "Apple"
     assert intent.model.value == "MacBook Pro M3"
+    assert "16GB" in intent.need
     assert any("MacBook Pro M3 16GB" in term for term in intent.search_terms)
 
 
