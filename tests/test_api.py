@@ -467,7 +467,7 @@ def test_item_conversation_routes_through_haraj(tmp_path: Path):
     run()
     tokens = {item["seller_id"]: item["reply_token"] for item in created["recipients"]}
     # Every message to a seller ends with the request's reference, which files his replies here.
-    tagged = lambda text: f"{text}\nرقم الطلب: {created['ref_code']}"
+    tagged = lambda text: f"{text}\nفضلاً اذكر رقم الطلب عند الرد: {created['ref_code']}"
 
     def invite(item, seller, body):
         # The invite (outreach.render_invite): an opener, the item and city, a link line, his own
@@ -648,7 +648,7 @@ def test_picked_suppliers_only_and_photos_reach_haraj(tmp_path: Path):
     assert api.post(url, headers=headers, json={"body": "", "seller_ids": ["11"]}).status_code == 422
     clock.sleep(60)
     run()
-    ref = f"\nرقم الطلب: {created['ref_code']}"
+    ref = f"\nفضلاً اذكر رقم الطلب عند الرد: {created['ref_code']}"
     assert [(seller, body) for _c, seller, body in haraj.sent] == [("11", "مثل هذا" + ref), ("13", "مثل هذا" + ref), ("11", "للكل" + ref), ("12", "للكل" + ref), ("13", "للكل" + ref)]
     assert haraj.attachments == [("11", "image/jpeg", b"jpeg"), ("13", "image/jpeg", b"jpeg")]
 
