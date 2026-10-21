@@ -26,7 +26,7 @@ from collections import OrderedDict
 
 import httpx
 
-from farq.contracts import IntentResponse, ResultUnit
+from farq.contracts import IntentResponse, LocationSensitivity, ResultUnit, known
 from farq.text import normalize
 
 log = logging.getLogger("farq.understand")
@@ -43,6 +43,10 @@ CACHE_SIZE = 500
 PROMPT = """أنت تقرأ طلب عميل سعودي يريد تسعيرة، وتخرج وصفًا منظّمًا له.
 
 اقرأ نية العميل من الجملة كاملة، باللهجة التي كتبها.
+قد يكتب بالعربية الفصحى أو باللهجة أو بالإنجليزية أو يمزج بينها، وقد يخطئ في كتابة اسم
+الماركة أو الموديل. لا تعتبر اللغة أو اختلاف الكتابة سببًا لرفض طلب مفهوم؛ استخدم الصيغ
+الشائعة في إعلانات حراج ضمن المرادفات وعبارات البحث، ولا تخترع تفاصيل غير مذكورة.
+إذا لم يحدد الطلب سلعة أو خدمة بعينها، أو كان غير مفهوم، أخرج {"needs": []} بدل تخمين ما يريده.
 
 أخرج JSON فقط، بهذا الشكل بالضبط:
 {"needs": [{"need": "...", "hiring": true, "must_include": [["..."]], "search_terms": ["..."]}]}
@@ -182,6 +186,9 @@ def _parse(body: str) -> list[dict] | None:
         need = item.get("need")
         if not isinstance(need, str) or not need.strip():
             continue
+        hiring = item.get("hiring")
+        if not isinstance(hiring, bool):
+            continue
         groups = _groups(item.get("must_include"))
         terms = _strings(item.get("search_terms"), MAX_TERMS)
         if not groups or not terms:
@@ -189,7 +196,7 @@ def _parse(body: str) -> list[dict] | None:
             continue
         read.append({
             "need": " ".join(need.split()),
-            "hiring": bool(item.get("hiring")),
+            "hiring": hiring,
             "must_include": groups,
             "search_terms": terms,
         })
@@ -233,30 +240,69 @@ def read_query(query: str) -> list[dict] | None:
         log.warning("understand unavailable", exc_info=True)
         return None
     read = _parse(body)
-    # A refusal is not cached; a reading is, so the same query costs one call.
-    _remember(folded, read)
+    # An unusable model response must not poison this warm instance's cache. Only a
+    # reading can be reused; if parsing failed, let the next request try again.
+    if read:
+        _remember(folded, read)
     _shared_put(folded, read)
     return read
 
 
 def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
-    intent.need = read["need"]
-    intent.eligibility_groups = [list(group) for group in read["must_include"]]
+    was_ununderstood = not intent.understood
+    preserve_identity = intent.model.known or intent.brand.known
+    rule_need = intent.need
+    rule_groups = [list(group) for group in intent.eligibility_groups]
+    rule_terms = list(intent.search_terms)
+    intent.need = rule_need if preserve_identity and rule_need else read["need"]
+    read_groups = [list(group) for group in read["must_include"]]
+    if preserve_identity:
+        merged_groups: list[list[str]] = []
+        seen_groups: set[tuple[str, ...]] = set()
+        for group in (*rule_groups, *read_groups):
+            key = tuple(sorted(normalize(word) for word in group))
+            if key not in seen_groups:
+                seen_groups.add(key)
+                merged_groups.append(group)
+        intent.eligibility_groups = merged_groups
+    else:
+        intent.eligibility_groups = read_groups
     # Every group must hit. The rules relax this for their long tail because they only have
     # the customer's raw words; the model returns the words that matter, so all of them do.
     intent.eligibility_min = None
     city = intent.location_city.value if isinstance(intent.location_city.value, str) else ""
     terms: list[str] = []
-    for term in read["search_terms"]:
-        for candidate in (term, f"{term} {city}".strip() if city else ""):
+    search_terms = [*rule_terms, *read["search_terms"]] if preserve_identity else read["search_terms"]
+    for term in search_terms:
+        candidates = (term,) if preserve_identity else (term, f"{term} {city}".strip() if city else "")
+        for candidate in candidates:
             if candidate and candidate not in terms:
                 terms.append(candidate)
     intent.search_terms = terms[:MAX_TERMS * 2]
     if read["hiring"]:
         intent.result_unit = ResultUnit.SERVICE_PROVIDER
+        intent.location_sensitivity = LocationSensitivity.REQUIRED
+        if not intent.type.known:
+            intent.type = known("service", 0.6, "intent-model")
+        if not intent.location_city.known:
+            if "location_city" not in intent.missing_decision_information:
+                intent.missing_decision_information.append("location_city")
+            intent.clarification_question = "في أي مدينة؟"
     elif intent.result_unit == ResultUnit.SERVICE_PROVIDER:
         # He is buying a thing; do not let the rules' hiring guess stand.
         intent.result_unit = ResultUnit.AD
+        if not intent.type.known:
+            intent.type = known("product", 0.6, "intent-model")
+    elif not intent.type.known:
+        intent.type = known("product", 0.6, "intent-model")
+    if was_ununderstood:
+        # A valid model reading resolved the rules' generic "what do you need?" prompt.
+        # Keep the city question above for service requests when no city was provided.
+        intent.missing_decision_information = [
+            field for field in intent.missing_decision_information if field != "need"
+        ]
+        if "location_city" not in intent.missing_decision_information:
+            intent.clarification_question = None
     intent.understood = True
     return intent
 

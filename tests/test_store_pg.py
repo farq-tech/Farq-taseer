@@ -263,6 +263,7 @@ def test_outreach_columns_on_postgres(pg_store):
         {"seller_id": "502", "ad_id": "9002", "ad_title": "مطبخ", "ad_city": "الرياض", "posted_at": None,
          "listing_state": "active", "match": "near", "title_match": False, "need": "بركسات"},
     ])
+    assert store.search_listing_ids("trace-1", owner) == {"9001", "9002"}
     since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     found = {row["ad_id"]: row for row in store.searched_listings(owner, None, since)}
     assert found["9001"]["seller_id"] == "501" and found["9001"]["title_match"] is True and found["9001"]["ad_title"] == "بركس للبيع"

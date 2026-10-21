@@ -2389,6 +2389,14 @@ class Store:
                 )
             self._connection.commit()
 
+    def search_listing_ids(self, trace_id: str, user_id: str | None) -> set[str]:
+        """Native Haraj listing identities already shown in this owned journey."""
+        rows = self._connection.execute(
+            "select distinct ad_id from search_listings where trace_id = ? and (user_id is null or user_id = ?)",
+            (trace_id, user_id),
+        ).fetchall()
+        return {str(row["ad_id"]) for row in rows if row["ad_id"] is not None}
+
     def searched_listings(self, user_id: str, trace_id: str | None, since: str) -> list[dict]:
         """Listings this user's searches showed since then (and an anonymous search he names)."""
         rows = self._connection.execute(

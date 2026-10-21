@@ -26,8 +26,26 @@ def test_gaming_desktop_keeps_gpu_model_and_city_in_search():
     assert intent.search_terms[0].endswith("جدة")
 
 
+def test_plural_gaming_desktop_query_keeps_gpu_and_city():
+    intent = analyze("أبي كمبيوترات ألعاب RTX 4060 بالرياض")
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "gaming_desktops"
+    assert "RTX 4060" in intent.search_terms[0]
+    assert intent.search_terms[0].endswith("الرياض")
+
+
 def test_laptop_repair_request_is_a_service_not_a_sale_listing():
     intent = analyze("أحتاج فني يصلح لابتوب ألعاب بالرياض")
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "computer_repair"
+    assert intent.result_unit == ResultUnit.SERVICE_PROVIDER
+
+
+def test_english_computer_repair_request_is_a_service():
+    intent = analyze("laptop repair Riyadh")
 
     assert intent.understood is True
     assert intent.type.value == "service"

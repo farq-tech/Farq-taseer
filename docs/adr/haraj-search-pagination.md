@@ -2,7 +2,7 @@
 
 Accepted 2026-10-07. Haraj Search is the existing verified public GraphQL operation; its page and pageInfo.hasNextPage are the only pagination evidence used. No new provider endpoint or mutation is introduced.
 
-The legacy search contract remains available when page is omitted. Paged browsing scans bounded windows using existing concurrency/timeouts, preserves distinct eligible native listings (including visibly dated older ads), and removes only duplicate listing identities. Relevance sorts the matching results; an arbitrary display cap no longer discards them.
+The legacy search contract remains available when page is omitted. Paged browsing scans bounded windows using existing concurrency/timeouts, preserves distinct eligible native listings (including visibly dated older ads), and removes duplicate listing identities across continuation windows by native ad ID. A continuation returns only ads not already shown in that trace while advancing solely from Haraj's `pageInfo.hasNextPage`; an empty window of previously shown ads does not invent exhaustion. Relevance sorts the matching results; an arbitrary display cap no longer discards them.
 
 A continuation carries the same trace and is validated against its recorded owner, exact query and next page. It cannot attach another account's search evidence to the caller. Anonymous public browsing remains anonymous. Credentials and messaging are unaffected. Failed windows keep visible partial results and retry their current window rather than silently skipping pages.
 
