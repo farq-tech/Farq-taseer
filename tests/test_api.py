@@ -112,6 +112,28 @@ def test_search_trace_is_stored(tmp_path: Path):
     assert api.get(f"/v1/search/{trace_id}/trace", headers=signed_in(api)).status_code == 404
 
 
+@pytest.mark.parametrize(
+    "query,subcategory,brand",
+    [
+        ("أحتاج آلة قهوة ديلونجي بالرياض", "coffee_machines", "De'Longhi"),
+        ("أبي مكينة خياطة سنجر", "sewing_machines", "Singer"),
+    ],
+)
+def test_intent_endpoint_classifies_household_machines(tmp_path: Path, query, subcategory, brand):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "product"
+    assert intent["category"]["value"] == "appliances"
+    assert intent["subcategory"]["value"] == subcategory
+    assert intent["brand"]["value"] == brand
+    assert response.json()["state"] is None
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,
