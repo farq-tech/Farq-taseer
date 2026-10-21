@@ -464,6 +464,61 @@ def test_passenger_transport_category_is_available_to_service_providers():
     assert any(item["key"] == "passenger_transport" for item in services)
 
 
+@pytest.mark.parametrize(
+    "query,subcategory,listing_title,unrelated_title",
+    [
+        (
+            "أبي دينا تنقل أثاث",
+            "moving",
+            "دينا نقل عفش وأثاث",
+            "دينا نقل بضائع وكراتين",
+        ),
+        (
+            "أحتاج دينا لنقل عفشي بالرياض",
+            "moving",
+            "دينا نقل عفشي بالرياض",
+            "دينا نقل بضائع بالرياض",
+        ),
+        (
+            "دينا تنقل سيارة من الرياض إلى جدة",
+            "vehicle_transport",
+            "دينا نقل سيارات بين الرياض وجدة",
+            "دينا نقل بضائع بين الرياض وجدة",
+        ),
+        (
+            "أبي دينا تنقل أغراض",
+            "goods_transport",
+            "دينا نقل أغراض وبضائع",
+            "دينا نقل عفش وأثاث",
+        ),
+    ],
+)
+def test_dina_transport_requests_match_the_requested_load_type(
+    query, subcategory, listing_title, unrelated_title
+):
+    intent = analyze(query)
+    seller = Seller(id="dina-driver", name="سائق دينا", city="الرياض")
+    matching_ad = Ad(id="matching", title=listing_title, city="الرياض", seller=seller)
+    unrelated_ad = Ad(id="unrelated", title=unrelated_title, city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == subcategory
+    assert intent.result_unit.value == "service_provider"
+    assert decide(intent, matching_ad, seller)[0] is True
+    assert decide(intent, unrelated_ad, seller)[0] is False
+    assert any(item["key"] == subcategory for item in read_business(listing_title)["services"])
+    if subcategory == "vehicle_transport":
+        assert normalize(intent.destination_city.value) == normalize("جدة")
+        assert any("الرياض" in term and "جدة" in term for term in intent.search_terms)
+
+
+def test_dina_without_a_transport_request_is_not_mistaken_for_a_moving_service():
+    intent = analyze("دينا للبيع")
+
+    assert intent.subcategory.value not in {"moving", "goods_transport", "vehicle_transport"}
+
+
 def test_car_repair_category_is_available_to_service_providers():
     services = read_business("ميكانيكي سيارات وفحص كمبيوتر")['services']
 
