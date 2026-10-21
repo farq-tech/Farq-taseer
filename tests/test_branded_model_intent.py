@@ -33,6 +33,18 @@ def test_english_macbook_model_query_is_understood_without_product_noun():
     assert any("MacBook Pro M3 16GB" in term for term in intent.search_terms)
 
 
+def test_macbook_need_keeps_ram_and_storage_as_separate_requested_specs():
+    cases = [
+        ("MacBook Pro M3 512GB الرياض", ("512GB",)),
+        ("MacBook Air M2 8GB 256GB جدة", ("8GB", "256GB")),
+        ("MacBook Pro M3 64GB RAM 1TB SSD الرياض", ("64GB", "1TB")),
+    ]
+
+    for query, expected_specs in cases:
+        need = analyze(query).need
+        assert all(spec in need for spec in expected_specs), (query, need)
+
+
 def test_dyson_vacuum_query_is_classified_and_keeps_model():
     intent = analyze("مكنسة دايسون V15 بالرياض")
 
