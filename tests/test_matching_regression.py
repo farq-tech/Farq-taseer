@@ -364,6 +364,17 @@ def test_ambiguous_price_text_is_preserved_without_numeric_amount():
     assert ad.price_evidence.kind == "unit_or_installment_price"
 
 
+def test_haraj_display_price_falls_back_to_input_and_trims_whitespace():
+    ad = ad_from_item(
+        {
+            "id": "price-text-fallback",
+            "price": {"formattedPrice": "  ", "inputPrice": "  900 ريال  "},
+        }
+    )
+
+    assert ad.price_text == "900 ريال"
+
+
 def test_description_down_payment_is_not_a_comparable_total():
     ad = ad_from_item(
         {

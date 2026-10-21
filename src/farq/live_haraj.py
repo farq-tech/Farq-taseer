@@ -170,7 +170,6 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
     url = url_path if str(url_path).startswith("http") else (f"https://haraj.com.sa/{url_path}" if url_path else None)
     price_data = item.get("price") or {}
     price = _price(price_data)
-    raw_price_text = price_data.get("formattedPrice") or price_data.get("inputPrice")
     status = item.get("status")
     city = haraj_listing_city(item.get("city"), filtered_city) if filtered_city else canonical_city(item.get("city"))
     listing_state = "active" if status is True else "deleted" if status is False else "unknown"
@@ -189,10 +188,9 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
         url=url,
         city=city,
         district=item.get("geoNeighborhood"),
-        price_text=_price_text(item.get("price")),
         price_amount=price,
         price_currency="SAR" if price is not None else None,
-        price_text=str(raw_price_text) if raw_price_text is not None else None,
+        price_text=_price_text(price_data),
         price_evidence=infer_price_evidence(
             item.get("title"),
             item.get("bodyTEXT"),
