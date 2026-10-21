@@ -648,6 +648,13 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["no_trade_signal"]
     if intent.subcategory.value == "glazing" and title and has_word(title, _GLAZING_NOT):
         return False, ["not_glazing_work"]
+    if intent.subcategory.value == "pvc_wpc_doors" and title:
+        # A door search is for the item. Do not count an installer-only ad as a door listing,
+        # while allowing suppliers who explicitly offer both the door and installation.
+        installation = has_word(title, ("تركيب", "يركب", "فني تركيب"))
+        supply = has_word(title, ("توريد", "للبيع", "بيع", "متوفر", "متوفره"))
+        if installation and not supply:
+            return False, ["installation_service_not_door_product"]
     if ad is not None and title and intent.title_groups and not relaxed:
         for group in intent.title_groups:
             if not _title_has_group(title, seller, group):
