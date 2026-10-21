@@ -120,6 +120,22 @@ def _has_alternate_prices(text: str) -> bool:
     return False
 
 
+def _price_range_evidence(title: str, description: str, field: str) -> dict:
+    """Keep the exact range text and where it appeared; never collapse it to one amount."""
+    field_text = field.strip()
+    if _RANGE.search(field_text) or _FIELD_RANGE.fullmatch(field_text):
+        return {"source": "price_field", "text": field_text[:160]}
+    if _FIELD_MULTIPLE.search(field_text):
+        return {"source": "price_field", "text": field_text[:160]}
+    for source, text in (("title", title), ("description", description)):
+        matches = [pattern.search(text) for pattern in (_RANGE, _HYPHEN_RANGE, _ALTERNATE_PRICES)]
+        matches = [match for match in matches if match is not None]
+        if matches:
+            match = min(matches, key=lambda item: item.start())
+            return {"source": source, "text": match.group(0).strip()[:160]}
+    return {}
+
+
 def _has_separate_additional_charge(text: str) -> bool:
     """Do not treat an item price as the total when the ad gives a separate fee."""
     for match in _CURRENCY_AMOUNT.finditer(text):
@@ -179,7 +195,7 @@ def infer_price_evidence(
     if _FIELD_MULTIPLE.search(field_text):
         return PriceEvidence(kind="ambiguous_amount", source="price_field")
     if _RANGE.search(field_text) or _FIELD_RANGE.fullmatch(field_text):
-        return PriceEvidence(kind="price_range", source="price_field")
+        return PriceEvidence(kind="price_range", **_price_range_evidence(title_text, body_text, field_text))
     if _contains_any(field_text, _AUCTION):
         return PriceEvidence(kind="auction_without_price", source="price_field")
     if _contains_any(field_text, _CONTACT):
@@ -248,7 +264,7 @@ def infer_price_evidence(
         or _HYPHEN_RANGE.search(all_text)
         or _has_alternate_prices(all_text)
     ):
-        return PriceEvidence(kind="price_range")
+        return PriceEvidence(kind="price_range", **_price_range_evidence(title_text, body_text, field_text))
     if _contains_any(all_text, _AUCTION):
         return PriceEvidence(kind="auction_without_price")
     if _contains_any(all_text, _CONTACT):

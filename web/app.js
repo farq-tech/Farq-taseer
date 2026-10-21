@@ -1617,6 +1617,7 @@ function adPriceDisclosure(ad, showMissing = false) {
   if (!ad) return "";
   const evidence = ad.price_evidence || {};
   const raw = String(ad.price_text || "").trim();
+  const evidenceText = String(evidence.text || "").trim();
   const amount = evidence.amount != null ? money(evidence.amount) : "";
   let headline = "";
   let note = "";
@@ -1644,7 +1645,9 @@ function adPriceDisclosure(ad, showMissing = false) {
       note = "لم يُذكر مبلغ واضح في الإعلان.";
       break;
     case "price_range":
-      headline = raw ? `نطاق السعر في الإعلان: ${raw}` : "الإعلان يذكر نطاقًا سعريًا";
+      if (evidenceText && evidence.source === "description") headline = `نطاق السعر المذكور في الوصف: ${evidenceText}`;
+      else if (evidenceText && evidence.source === "title") headline = `نطاق السعر المذكور في العنوان: ${evidenceText}`;
+      else headline = raw ? `نطاق السعر في الإعلان: ${raw}` : "الإعلان يذكر نطاقًا سعريًا";
       note = "لا نعامل النطاق كسعر واحد للمقارنة.";
       break;
     case "unit_or_installment_price":

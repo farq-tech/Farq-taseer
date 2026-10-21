@@ -253,6 +253,20 @@ def test_scaled_ranges_in_price_field_are_not_single_listing_prices(price_text):
     assert evidence.amount is None
 
 
+def test_description_price_range_preserves_its_source_and_exact_text():
+    description = (
+        "شركات فاخره ومعروفه، اسعار مختلفه من 800 حتى 200، "
+        "و السعر حسب المسافه و الوقت"
+    )
+
+    evidence = infer_price_evidence("عربيات اطفال العدد 5 شركات متنوعه", description, None)
+
+    assert evidence.kind == "price_range"
+    assert evidence.amount is None
+    assert evidence.source == "description"
+    assert evidence.text == "من 800 حتى 200"
+
+
 def test_down_payment_is_never_used_as_a_comparable_listing_price():
     evidence = infer_price_evidence(
         "سيارة للبيع",
