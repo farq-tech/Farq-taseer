@@ -187,6 +187,28 @@ def test_intent_endpoint_classifies_colloquial_airport_rides_as_services(tmp_pat
     assert intent["location_city"]["value"] == "الرياض"
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "مطلوب معلمة خصوصي رياضيات اونلاين",
+        "أبي مدرسة خصوصي انجليزي عن بعد",
+    ],
+)
+def test_intent_endpoint_classifies_colloquial_online_tutoring(tmp_path: Path, query):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["subcategory"]["value"] == "tutoring"
+    assert intent["result_unit"] == "service_provider"
+    assert any("انجليزي" in term or "رياضيات" in term for term in intent["search_terms"])
+    assert any("اونلاين" in term or "عن بعد" in term for term in intent["search_terms"])
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,
