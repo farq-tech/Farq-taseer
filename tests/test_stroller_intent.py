@@ -78,6 +78,7 @@ def test_stroller_search_does_not_count_accessories_as_complete_strollers(title)
     accessory = Ad(id="accessory-1", title=title, seller=seller)
 
     assert decide(intent, accessory, seller) == (False, ["accessory_not_device"])
+    assert decide(intent, accessory, seller, relaxed=True) == (False, ["accessory_not_device"])
 
 
 def test_stroller_with_included_accessories_is_still_a_stroller_listing():
