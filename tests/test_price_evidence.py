@@ -267,6 +267,14 @@ def test_description_price_range_preserves_its_source_and_exact_text():
     assert evidence.text == "من 800 حتى 200"
 
 
+@pytest.mark.parametrize("phrase", ["والبيع عالسوم اذا وصل قيمة مناسبة", "والبيع على السوم اذا وصل قيمة مناسبة"])
+def test_attached_colloquial_som_phrase_is_not_reported_as_missing_price(phrase):
+    evidence = infer_price_evidence("عربية أطفال YOYO", phrase, None)
+
+    assert evidence.kind == "auction_without_price"
+    assert evidence.amount is None
+
+
 def test_historical_purchase_and_sale_prices_are_shown_as_context_not_a_final_price():
     evidence = infer_price_evidence(
         "عربية أطفال YOYO بحالة جيدة",
