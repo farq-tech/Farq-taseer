@@ -135,6 +135,7 @@ class PriceEvidence(ContractModel):
     amount: float | None = None
     source: Literal["price_field", "title", "description"] | None = None
     text: str | None = None
+    text_source: Literal["price_field", "title", "description"] | None = None
     negotiable: bool = False
     estimated: bool = False
 

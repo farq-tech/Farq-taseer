@@ -1663,8 +1663,10 @@ function adPriceDisclosure(ad, showMissing = false) {
       note = "لم نعرضه كسعر حالي.";
       break;
     case "ambiguous_amount":
-      headline = raw ? `نص خانة السعر: ${raw}` : "السعر غير واضح في الإعلان";
-      note = "لم نعتبر أي مبلغ منه سعرًا نهائيًا.";
+      if (evidence.text && evidence.text_source === "description") headline = `مبالغ مختلفة مذكورة في الوصف: ${evidence.text}`;
+      else if (evidence.text && evidence.text_source === "title") headline = `مبالغ مختلفة مذكورة في العنوان: ${evidence.text}`;
+      else headline = raw ? `نص خانة السعر: ${raw}` : "السعر غير واضح في الإعلان";
+      note = evidence.text ? "لم نعتبرها سعرًا نهائيًا واحدًا." : "لم نعتبر أي مبلغ منه سعرًا نهائيًا.";
       break;
     case "no_price_signal":
     default:
