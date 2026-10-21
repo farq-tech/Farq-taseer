@@ -291,3 +291,51 @@ def test_supplier_category_catalog_has_one_pest_control_choice():
     keys = [item["key"] for item in catalog("services")]
 
     assert keys.count("pest_control") == 1
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "أبي نقل سيارتي من الرياض إلى جدة",
+        "أحتاج سطحة من الرياض لجدة",
+    ],
+)
+def test_vehicle_transport_requests_keep_the_route_and_find_a_towing_service(query):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "vehicle_transport"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert normalize(intent.destination_city.value) == normalize("جدة")
+    assert "نقل" in normalize(intent.need)
+
+
+def test_car_towing_request_without_a_route_is_still_understood():
+    intent = analyze("أبي سطحة تنقل سيارتي")
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "vehicle_transport"
+    assert intent.destination_city.value is None
+
+
+def test_bare_flatbed_sale_is_not_misclassified_as_vehicle_transport_service():
+    intent = analyze("سطحة للبيع")
+
+    assert intent.subcategory.value != "vehicle_transport"
+    assert intent.result_unit.value != "service_provider"
+
+
+def test_vehicle_transport_service_does_not_match_flatbed_for_sale_listing():
+    intent = analyze("أبي نقل سيارتي من الرياض إلى جدة")
+    seller = Seller(id="seller", name="معرض معدات", city="الرياض")
+    flatbed = Ad(id="flatbed", title="سطحة هيدروليك للبيع", city="الرياض", seller=seller)
+
+    assert decide(intent, flatbed, seller)[0] is False
+
+
+def test_vehicle_transport_category_is_available_to_service_providers():
+    services = read_business("سطحة نقل سيارات بين المدن")['services']
+
+    assert any(item["key"] == "vehicle_transport" for item in services)
