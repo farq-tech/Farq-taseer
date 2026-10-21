@@ -98,6 +98,27 @@ def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(f" {normalize(phrase)} " in normalized for phrase in phrases)
 
 
+_ATTACHED_UNIT_RATE_CUES = tuple(sorted(
+    {
+        normalize(phrase).replace(" ", "")
+        for phrase in _UNIT_OR_INSTALLMENT
+        if normalize(phrase).startswith(("ل", "ب", "لكل"))
+    },
+    key=len,
+    reverse=True,
+))
+
+
+def _contains_unit_or_installment(text: str) -> bool:
+    if _contains_any(text, _UNIT_OR_INSTALLMENT) or _FIELD_UNIT_RATE.search(text):
+        return True
+    normalized = normalize(to_ascii_digits(text))
+    return any(
+        re.search(rf"(?<=\d){re.escape(cue)}(?![\w])", normalized)
+        for cue in _ATTACHED_UNIT_RATE_CUES
+    )
+
+
 def _is_negotiable(text: str) -> bool:
     return _contains_any(text, _NEGOTIABLE) and not _contains_any(text, _NOT_NEGOTIABLE)
 
@@ -213,7 +234,7 @@ def infer_price_evidence(
         return PriceEvidence(kind="auction_without_price", source="price_field")
     if _contains_any(field_text, _CONTACT):
         return PriceEvidence(kind="contact_for_price", source="price_field")
-    if _contains_any(field_text, _UNIT_OR_INSTALLMENT) or _FIELD_UNIT_RATE.search(field_text):
+    if _contains_unit_or_installment(field_text):
         return PriceEvidence(kind="unit_or_installment_price", source="price_field")
     field_value = _FIELD_VALUE.fullmatch(field_text)
     field_text_amount = _amount(field_value.group(1), field_value.group(2)) if field_value else None
@@ -267,7 +288,7 @@ def infer_price_evidence(
             or (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
             or _HYPHEN_RANGE.search(all_text)
             or _has_alternate_prices(all_text)
-            or (_contains_any(all_text, _UNIT_OR_INSTALLMENT) and _contains_any(all_text, _PRICE_CONTEXT))
+            or (_contains_unit_or_installment(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
         ):
             return PriceEvidence(kind="ambiguous_amount", source="price_field")
         if is_estimated:
@@ -303,7 +324,7 @@ def infer_price_evidence(
         return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1], **context)
     if explicit and _has_partial_payment(all_text):
         return PriceEvidence(kind="partial_payment", source=explicit[0][1])
-    if explicit and _contains_any(all_text, _UNIT_OR_INSTALLMENT):
+    if explicit and _contains_unit_or_installment(all_text):
         return PriceEvidence(kind="unit_or_installment_price", source=explicit[0][1])
 
     if explicit:
@@ -318,7 +339,7 @@ def infer_price_evidence(
         local = _window(text, match.start(), match.end())
         if _contains_any(local, _HISTORICAL):
             return PriceEvidence(kind="historical_price", source=source)
-        if _contains_any(local, _UNIT_OR_INSTALLMENT):
+        if _contains_unit_or_installment(local):
             return PriceEvidence(kind="unit_or_installment_price", source=source)
         currency_nearby = bool(_CURRENCY_SUFFIX.match(text[match.end():match.end() + 16]))
         amount = _amount(match.group(1), match.group(2), minimum=0.01 if currency_nearby else PRICE_FLOOR)
@@ -330,7 +351,7 @@ def infer_price_evidence(
 
     if _contains_any(all_text, _HISTORICAL):
         return PriceEvidence(kind="historical_price")
-    if _contains_any(all_text, _UNIT_OR_INSTALLMENT):
+    if _contains_unit_or_installment(all_text):
         return PriceEvidence(kind="unit_or_installment_price")
     if _contains_any(all_text, _ESTIMATED):
         currency_match = _CURRENCY_AMOUNT.search(all_text)
