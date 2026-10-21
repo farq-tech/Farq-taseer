@@ -209,6 +209,34 @@ def test_intent_endpoint_classifies_colloquial_online_tutoring(tmp_path: Path, q
     assert any("اونلاين" in term or "عن بعد" in term for term in intent["search_terms"])
 
 
+@pytest.mark.parametrize(
+    "query,subcategory",
+    [
+        ("أبي دينا تنقل أثاث", "moving"),
+        ("أحتاج دينا لنقل عفشي بالرياض", "moving"),
+        ("دينا تنقل سيارة من الرياض إلى جدة", "vehicle_transport"),
+        ("أبي دينا تنقل أغراض", "goods_transport"),
+    ],
+)
+def test_intent_endpoint_classifies_dina_transport_by_what_it_carries(
+    tmp_path: Path, query, subcategory
+):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["type"]["value"] == "service"
+    assert intent["subcategory"]["value"] == subcategory
+    assert intent["result_unit"] == "service_provider"
+    assert any("دينا" in term for term in intent["search_terms"])
+    if subcategory == "vehicle_transport":
+        assert intent["destination_city"]["value"] == "جده"
+        assert any("الرياض" in term and "جدة" in term for term in intent["search_terms"])
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,
