@@ -85,6 +85,24 @@ _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
 _IPHONE_MODEL = re.compile(r"(?:^|\s)(ايفون|iphone)\s+(\d{1,2})(?!\d)(?:\s+(pro|برو)(?:\s+(max|ماكس))?)?")
 _IPHONE_PRO_MAX_QUERY = re.compile(r"(?:^|\s)(?:ايفون|iphone)\s+\d{1,2}(?!\d)\s+(?:pro|برو)\s+(?:max|ماكس)(?:\s|$)")
 _IPHONE_STORAGE = re.compile(r"(?<!\d)((?:1\s*tb|1\s*تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت))(?![\w])", re.IGNORECASE)
+_SAMSUNG_PHONE_BRAND = re.compile(r"\b(?:سامسونج|samsung|جالكسي|galaxy)\b", re.IGNORECASE)
+_SAMSUNG_PHONE_CODE = re.compile(
+    r"(?<![a-z0-9])(?P<series>s|اس|a)\s*(?P<number>\d{1,3})(?!\d)"
+    r"\s*(?P<variant>ultra|الترا|ألترا|plus|بلس|بلاس|fe|اف\s+اي|\+)?",
+    re.IGNORECASE,
+)
+_MACBOOK_MODEL = re.compile(
+    r"\b(?:macbook|mac\s+book|ماك\s*بوك|ماكبوك)"
+    r"(?:\s+(?P<family>pro|برو|air|اير))?"
+    r"(?:\s+m\s*(?P<chip>[1-5]))?",
+    re.IGNORECASE,
+)
+_MACBOOK_RAM = re.compile(
+    r"(?<!\d)(?P<ram>8|16|18|24|32|36|48|64)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت)(?![\w])",
+    re.IGNORECASE,
+)
+_DYSON_BRAND = re.compile(r"\b(?:دايسون|dyson)\b", re.IGNORECASE)
+_DYSON_MODEL = re.compile(r"(?<![a-z0-9])(?:v|dc)\s*(?P<number>\d{1,3})(?!\d)", re.IGNORECASE)
 _IPAD_FAMILY = re.compile(r"(?:ايباد|ipad)\s*(?:(pro|برو|air|اير|mini|ميني)\b)?", re.IGNORECASE)
 _IPAD_CHIP = re.compile(r"(?<![a-z0-9])m\s*([2-5])(?!\d)", re.IGNORECASE)
 _IPAD_SCREEN = re.compile(r"(?<!\d)(\d{1,2}(?:\.\d)?)\s*(?:انش|بوصه|inch(?:es)?)(?![a-z])", re.IGNORECASE)
@@ -1341,6 +1359,70 @@ def _matched_service_object(head: Head, normalized: str, original: str) -> str |
     return None
 
 
+def _branded_model_head(normalized: str) -> Head | None:
+    """Recognize common branded models even when the user omits the product noun."""
+    samsung = _SAMSUNG_PHONE_CODE.search(normalized)
+    phone_accessory = has_word(normalized, (
+        "كفر", "كفرات", "جراب", "حافظة", "حمايه شاشه", "حماية شاشة",
+        "شاحن", "سماعة", "سماعات", "case", "cover", "charger", "screen protector",
+    ))
+    if samsung and _SAMSUNG_PHONE_BRAND.search(normalized) and not phone_accessory:
+        series = samsung.group("series").upper()
+        number = samsung.group("number")
+        variant = samsung.group("variant") or ""
+        variant_folded = normalize(variant)
+        variant_name = (
+            "Ultra" if variant_folded in {"ultra", "الترا"}
+            else "Plus" if variant_folded in {"plus", "بلس", "بلاس"}
+            else "FE" if variant_folded in {"fe", "اف اي"}
+            else ""
+        )
+        model = f"Galaxy {series}{number}" + (f" {variant_name}" if variant_name else "")
+        variant_group = ("ultra", "الترا", "ألترا") if variant_name == "Ultra" else ("plus", "بلس", "بلاس", "+") if variant_name == "Plus" else ("fe", "اف اي")
+        groups = [("سامسونج", "samsung", "جالكسي", "galaxy"), (f"{series}{number}", f"{series} {number}", f"{series.lower()} {number}", f"اس {number}")]
+        if variant_group:
+            groups.append(variant_group)
+        return _head(
+            type="product", category="electronics", subcategory="phones",
+            result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+            phrases=(model,), brand="Samsung", model=model, label=f"Samsung {model}",
+            eligibility=tuple(groups), expansions=(f"Samsung {model}", f"سامسونج {model}"),
+        )
+
+    macbook = _MACBOOK_MODEL.search(normalized)
+    if macbook:
+        family = normalize(macbook.group("family") or "")
+        family_name = "Pro" if family in {"pro", "برو"} else "Air" if family in {"air", "اير"} else ""
+        chip = macbook.group("chip")
+        model = "MacBook" + (f" {family_name}" if family_name else "") + (f" M{chip}" if chip else "")
+        groups = [("macbook", "mac book", "ماك بوك", "ماكبوك")]
+        if family_name:
+            groups.append((family_name.lower(), "برو" if family_name == "Pro" else "اير"))
+        if chip:
+            groups.append((f"m{chip}", f"m {chip}"))
+        ram = _MACBOOK_RAM.search(normalized)
+        if ram:
+            groups.append((f"{ram.group('ram')}gb", f"{ram.group('ram')} gb", f"{ram.group('ram')} جيجا", f"{ram.group('ram')} قيقا"))
+        return _head(
+            type="product", category="electronics", subcategory="laptops",
+            result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+            phrases=(model,), brand="Apple", model=model, label=model,
+            eligibility=tuple(groups), expansions=(model, f"Apple {model}"),
+        )
+
+    dyson = _DYSON_MODEL.search(normalized)
+    if dyson and _DYSON_BRAND.search(normalized):
+        model = f"Dyson {dyson.group(0).upper().replace(' ', '')}"
+        return _head(
+            type="product", category="appliances", subcategory="vacuum_cleaners",
+            result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+            phrases=(model,), brand="Dyson", model=model, label=model,
+            eligibility=(("dyson", "دايسون"), (dyson.group(0).lower().replace(" ", ""), dyson.group(0).lower())),
+            expansions=(model, f"مكنسة {model}", f"مكنسة دايسون {dyson.group(0)}"),
+        )
+    return None
+
+
 def analyze(query: str) -> IntentResponse:
     original = query.strip()
     normalized = normalize(original)
@@ -1365,6 +1447,8 @@ def analyze(query: str) -> IntentResponse:
     all_matches = _head_matches(normalized)
     match = _select_match(all_matches, normalized)
     head = match.head if match else None
+    if head is None:
+        head = _branded_model_head(normalized)
     matched = [item.head for item in all_matches]
     if head is None:
         head = _long_tail(normalized)
