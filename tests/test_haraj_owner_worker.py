@@ -28,11 +28,20 @@ def test_exact_message_and_owner_come_from_owned_request_not_caller(store):
  broker=UserHarajBroker({},Mock()); broker.call=Mock(return_value={'status':'ACCEPTED','conversation_id':'p2p101_202','message_id':'p2p101_202:7','seq':7,'account_id':'101'})
  receipt=broker.send_delivery(store,item)
  _,owner,payload=broker.call.call_args.args
- assert owner==A and payload['text']=='بكم الباب؟' and payload['recipientId']=='202'
+ assert owner==A and payload['text'].startswith('بكم الباب؟\n') and payload['text'].endswith(f"رقم الطلب: {item['ref_code']}") and payload['recipientId']=='202'
  assert payload['rfqId']==str(UUID(rid)) and payload['deliveryId']==item['id']
  assert payload['itemId']=='25 باب PVC'
  assert payload['expectedAccountId']=='101' and payload['supplierId']=='haraj:seller:202'
  assert receipt.account_id=='101'
+
+def test_send_refuses_delivery_without_request_reference(store):
+ request(store)
+ item=store.claim_deliveries(limit=1)[0]
+ item['ref_code']=None
+ broker=UserHarajBroker({},Mock()); broker.call=Mock()
+ with pytest.raises(HarajChatUnavailable,match='HARAJ_REQUEST_REFERENCE_REQUIRED'):
+  broker.send_delivery(store,item)
+ broker.call.assert_not_called()
 
 def test_old_central_queue_cannot_be_sent_using_customer_session(store):
  request(store,consent=False)
@@ -50,7 +59,8 @@ def test_dispatch_acceptance_preserves_provider_receipt_without_company_footer(s
  assert send_request_directly(store,rid,store.request_owner(rid))==1
  delivery=store._connection.execute('select * from message_deliveries').fetchone()
  assert delivery['haraj_account_id']=='101' and delivery['haraj_message_id']=='p2p101_202:7'
- assert mock.send_delivery.call_args.args[1]['body']=='بكم الباب؟'
+ item=mock.send_delivery.call_args.args[1]
+ assert item['body']=='بكم الباب؟' and item['ref_code']==store.get_request(rid,store.request_owner(rid)).ref_code
 
 def test_inbound_owner_and_quote_routing_and_per_user_read(store,monkeypatch):
  rid=request(store)
@@ -81,6 +91,29 @@ def test_ambiguous_reply_stays_visible_to_its_owner_only_and_is_not_guessed(stor
  assert len(owned_unmatched(store,localA))==1
  assert owned_unmatched(store,localB)==[]
  assert all(not store.get_request(rid,localA).offers for rid in ids)
+
+def test_reference_routes_reply_to_the_matching_request_in_a_shared_conversation(store,monkeypatch):
+ ids=[request(store,need=n) for n in ['25 باب PVC','10 شبابيك']]
+ refs={row['id']:row['ref_code'] for row in store._connection.execute(
+  'select id, ref_code from requests where id in (?,?)',ids
+ )}
+ for index,item in enumerate(store.claim_deliveries(limit=2),start=7):
+  store.finish_delivery(item['id'],sent=SentMessage('p2p101_202',f'p2p101_202:{index}',index,'101'))
+ target=ids[0]
+ reply=InboundMessage('p2p101_202:9',f'بالنسبة لطلبك {refs[target]} متوفر بـ ٧٠٠ ريال','2026-10-06T19:30:00Z',9)
+ mock=Mock(configured=True);mock.read_thread.return_value=[reply]
+ monkeypatch.setattr('farq.haraj_broker.UserHarajBroker',lambda:mock)
+
+ assert sync_user_replies(store,10,lambda:2000000000)==1
+ local=store.request_owner(target)
+ target_record=store.get_request(target,local)
+ other_id=next(rid for rid in ids if rid!=target)
+ other_record=store.get_request(other_id,local)
+ assert any(message.body==reply.body for message in target_record.messages)
+ assert target_record.offers and target_record.offers[0].amount==700
+ assert not any(message.body==reply.body for message in other_record.messages)
+ assert not other_record.offers
+ assert owned_unmatched(store,local)==[]
 
 def test_multiple_items_in_one_request_route_replies_to_request_without_guessing_quote_line(store,monkeypatch):
  local=store._connection.execute('select id from users where farq_user_id=?',(A,)).fetchone()['id']

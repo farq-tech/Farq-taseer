@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 import httpx
-from farq.haraj_chat import HarajChatUnavailable, SentMessage, InboundMessage
+from farq.haraj_chat import HarajChatUnavailable, SentMessage, InboundMessage, find_references, with_reference
 
 def recipient_consent(attributes, seller_id):
     """A merged campaign preserves each supplier's original account and consent."""
@@ -70,11 +70,14 @@ class UserHarajBroker:
             recipient = recipient[len('haraj:seller:'):]
         if not recipient.isdigit() or int(recipient) < 1:
             raise HarajChatUnavailable('HARAJ_INVALID_RECIPIENT')
+        ref_code = item.get('ref_code')
+        if not isinstance(ref_code, str) or find_references(ref_code) != [ref_code]:
+            raise HarajChatUnavailable('HARAJ_REQUEST_REFERENCE_REQUIRED')
         data = self.call('send', owner, {
             'rfqId':str(uuid.UUID(item['request_id'])), 'deliveryId':item['id'],
             'itemId':item.get('need') or '', 'supplierId':item['seller_id'],
             'adId':item.get('ad_id'), 'recipientId':recipient, 'expectedAccountId':consent.get('account'),
-            'conversationId':item.get('haraj_conversation_id'), 'text':item['body'],
+            'conversationId':item.get('haraj_conversation_id'), 'text':with_reference(item['body'], ref_code),
             'consentAt':consent['at'], 'recipientCount':len(recipients),
         })
         if data.get('status') != 'ACCEPTED':
@@ -168,23 +171,45 @@ def sync_user_replies(store, budget_seconds, clock):
                 store.thread_checked(thread,failure_code='HARAJ_PROTOCOL_UNRESOLVED',retry_seconds=60,now=clock())
             continue
         # Haraj reuses one seller/account conversation across RFQs and exposes no reply-to
-        # request id. When every thread in the conversation belongs to one request and seller,
-        # preserve the seller's messages on that request without guessing which item they price.
-        # A single thread still has an exact item and can use normal quote extraction.
+        # request id. Outgoing messages therefore carry the request reference; use it when the
+        # seller echoes it. Without a unique reference, only a conversation scoped to one request
+        # and seller can be filed automatically. Never guess between separate requests.
         request_ids = {thread['request_id'] for thread in threads}
         seller_ids = {thread['seller_id'] for thread in threads}
         request_scoped = len(request_ids) == 1 and len(seller_ids) == 1
         high_water=max((item.seq for item in messages),default=0)
+        unmatched = False
+        synced_requests = set(request_ids) if request_scoped else set()
         for item in messages:
             if store.has_haraj_message(item.haraj_message_id):
                 continue
-            if not request_scoped:
+            references = set(find_references(item.body))
+            if references:
+                targets = {
+                    (thread['request_id'], thread['seller_id'])
+                    for thread in threads
+                    if thread.get('ref_code') in references
+                }
+                target = next(iter(targets)) if len(targets) == 1 else None
+            elif request_scoped:
+                target = (next(iter(request_ids)), next(iter(seller_ids)))
+            else:
+                target = None
+
+            target_threads = [
+                thread for thread in threads
+                if target and (thread['request_id'], thread['seller_id']) == target
+            ]
+            if not target_threads:
+                unmatched = True
                 store.record_unmatched_inbound(conversation,threads[0]['seller_id'],item,farq_user_id=owner)
                 continue
-            thread=threads[0]
-            if store.farq_user_for_request(thread['request_id'])!=owner:
+            thread = target_threads[0]
+            request_id, seller_id = target
+            synced_requests.add(request_id)
+            if store.farq_user_for_request(request_id) != owner:
                 raise HarajChatUnavailable('HARAJ_CONVERSATION_OWNERSHIP')
-            exact_item = len(threads) == 1
+            exact_item = len(target_threads) == 1
             recorded=store.record_inbound(
                 thread if exact_item else {**thread, 'need': None},
                 item,
@@ -193,13 +218,13 @@ def sync_user_replies(store, budget_seconds, clock):
             if recorded is not None:
                 received+=1
                 from farq.push import notify_reply
-                notify_reply(store,thread['request_id'],thread['seller_id'],item.body,message_id=recorded.id)
+                notify_reply(store,request_id,seller_id,item.body,message_id=recorded.id)
         # Unique provider-owner connections make this update owner-exclusive. Preserve original
         # messages and use existing quote extraction / per-user read persistence.
         for thread in threads:
-            store.thread_checked(thread,retry_seconds=30,now=clock(),high_water=high_water,failure_code='HARAJ_ITEM_ASSIGNMENT_REQUIRED' if not request_scoped and messages else None)
-        if request_scoped:
-            store.mark_synced(next(iter(request_ids)))
+            store.thread_checked(thread,retry_seconds=30,now=clock(),high_water=high_water,failure_code='HARAJ_ITEM_ASSIGNMENT_REQUIRED' if unmatched else None)
+        for request_id in synced_requests:
+            store.mark_synced(request_id)
     return received
 
 
