@@ -539,7 +539,7 @@ def reference_line(code: str) -> str:
 
 def with_reference(body: str, code: str | None) -> str:
     """The outgoing text with the request's reference as its last line."""
-    if not code or code in (body or ""):
+    if not code or code in find_references(body):
         return body
     return f"{body.rstrip()}\n{reference_line(code)}" if (body or "").strip() else reference_line(code)
 
