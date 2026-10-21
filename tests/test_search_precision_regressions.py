@@ -143,3 +143,91 @@ def test_long_tail_keeps_useful_terms_beyond_the_first_four():
     assert intent.type.value == "other"
     assert "كبيره" in " ".join(" ".join(group) for group in intent.eligibility_groups)
     assert query in intent.search_terms
+
+
+def test_more_common_arabic_product_requests_get_product_intents():
+    phone = analyze("أبغى أشتري جوال سامسونج S24")
+    car_seat = analyze("أحتاج كرسي سيارة للأطفال")
+    curtains = analyze("أبي محل يبيع قماش ستائر")
+    desk = analyze("أبي مكتب دراسة صغير")
+    oven = analyze("أبحث عن فرن كهربائي صغير")
+    pressure = analyze("وين ألقى جهاز قياس ضغط منزلي")
+    perfume = analyze("أبغى عطر رجالي ديور")
+    bicycle = analyze("أبغى دراجة هوائية مقاس 26")
+    toys = analyze("أحتاج ألعاب تعليمية لعمر 4 سنوات")
+    ride_on = analyze("أبغى دباب للاطفال كهربائي")
+
+    assert (phone.type.value, phone.category.value, phone.subcategory.value) == (
+        "product",
+        "electronics",
+        "phones",
+    )
+    assert "S24" in phone.need
+    assert (car_seat.category.value, car_seat.subcategory.value) == (
+        "car_seats",
+        "car_seats",
+    )
+    assert (curtains.category.value, curtains.subcategory.value) == (
+        "home_textiles",
+        "curtain_fabrics",
+    )
+    assert "قماش ستائر" in curtains.need
+    assert (desk.category.value, desk.subcategory.value) == ("furniture", "office_desks")
+    assert (oven.category.value, oven.subcategory.value) == ("appliances", "ovens")
+    assert "صغير" in oven.need
+    assert (pressure.category.value, pressure.subcategory.value) == (
+        "medical_devices",
+        "blood_pressure_monitors",
+    )
+    assert "منزلي" in pressure.need
+    assert (perfume.category.value, perfume.subcategory.value) == ("perfumes", "perfumes")
+    assert "ديور" in perfume.need
+    assert (bicycle.category.value, bicycle.subcategory.value) == ("bicycles", "bicycles")
+    assert "26" in " ".join(bicycle.search_terms)
+    assert (toys.category.value, toys.subcategory.value) == ("toys", "educational_toys")
+    assert "4" in " ".join(toys.search_terms)
+    assert (ride_on.category.value, ride_on.subcategory.value) == (
+        "toys",
+        "electric_ride_on_toys",
+    )
+
+
+def test_car_batteries_are_parts_and_surveillance_cameras_are_not_forced_to_service():
+    seller = Seller(id="seller", name="معلن")
+    battery = analyze("وين ألقى بطارية كامري 2018")
+    matching_battery = Ad(id="battery", title="بطارية تويوتا كامري 2018 جديدة", seller=seller)
+    whole_car = Ad(id="car", title="تويوتا كامري 2018 للبيع", seller=seller)
+    camera = analyze("أحتاج كاميرا مراقبة للبيت بدون تمديد")
+    install = analyze("أحتاج تركيب كاميرات مراقبة بالرياض")
+
+    assert (battery.type.value, battery.category.value, battery.subcategory.value) == (
+        "product",
+        "parts",
+        "car_parts",
+    )
+    assert battery.model.value == "Camry"
+    assert battery.year.value == 2018
+    assert decide(battery, matching_battery, seller)[0] is True
+    assert decide(battery, whole_car, seller)[0] is False
+
+    assert (camera.type.value, camera.category.value, camera.subcategory.value) == (
+        "product",
+        "electronics",
+        "security_cameras",
+    )
+    assert camera.clarification_question is None
+    assert (install.type.value, install.category.value, install.subcategory.value) == (
+        "service",
+        "services",
+        "cctv",
+    )
+    assert install.location_city.known
+
+
+def test_search_imperative_dor_li_does_not_become_a_product_qualifier():
+    intent = analyze("دور لي سرير أطفال خشب")
+
+    assert intent.subcategory.value == "beds"
+    assert "دور" not in intent.need
+    assert "أطفال" in intent.need
+    assert "خشب" in intent.need

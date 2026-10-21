@@ -340,13 +340,19 @@ _SERVICE_AGENTS = {
 def _service_request(normalized: str) -> bool:
     words = normalized.split()
     service_agents = set(words) & _SERVICE_AGENTS
+    negated_work = {"بدون", "بلا", "ما", "مو", "لا", "غير"}
+    affirmative_service_verb = any(
+        word in _SERVICE_VERBS
+        and (index == 0 or words[index - 1] not in negated_work)
+        for index, word in enumerate(words)
+    )
     nearby_markers = {"قرب", "جنب", "بجانب", "بجوار", "حول", "قريب", "قريبة", "بالقرب"}
     if "مدرسه" in service_agents:
         school_at = words.index("مدرسه")
         preceding = set(words[max(0, school_at - 2) : school_at])
         if preceding & nearby_markers or preceding == {"من", "بالقرب"}:
             service_agents.discard("مدرسه")
-    return bool(set(words) & _SERVICE_VERBS) or bool(service_agents)
+    return affirmative_service_verb or bool(service_agents)
 
 
 @dataclass(frozen=True)
@@ -463,10 +469,20 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="tools", subcategory="leak_detector", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز كشف تسرب", "جهاز كشف تسربات", "كاشف تسرب", "كاشف تسربات"), label="جهاز كشف تسرب", eligibility=(("جهاز", "كاشف"), ("تسرب", "تسريب")), expansions=("جهاز كشف تسرب مياه", "كاشف تسرب مياه")),
     _head(type="product", category="tools", subcategory="metal_cutting_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ماكينة قص حديد", "مكينة قص حديد", "ماكينة قطع حديد", "مكينة قطع حديد"), label="ماكينة قص حديد", label_from_match=True, eligibility=(("ماكينة", "مكينة"), ("قص", "قطع"), ("حديد",)), expansions=("ماكينة قص حديد", "ماكينة قطع حديد", "منشار حديد")),
     _head(type="product", category="medical_devices", subcategory="glucose_meters", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز قياس سكر", "جهاز قياس السكر", "جهاز قياس سكر منزلي", "جهاز قياس السكر المنزلي", "جهاز سكر منزلي", "glucose meter", "blood glucose meter"), label="جهاز قياس سكر", label_from_match=True, eligibility=(("جهاز", "meter"), ("قياس السكر", "سكر", "جلوكوز", "glucose")), expansions=("جهاز قياس سكر", "جهاز قياس السكر المنزلي", "جهاز قياس جلوكوز", "glucose meter", "blood glucose meter")),
+    _head(type="product", category="medical_devices", subcategory="blood_pressure_monitors", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز قياس ضغط", "جهاز قياس الضغط", "جهاز ضغط منزلي", "blood pressure monitor", "bp monitor"), label="جهاز قياس ضغط", label_from_match=True, eligibility=(("جهاز", "monitor"), ("قياس ضغط", "ضغط", "blood pressure")), expansions=("جهاز قياس ضغط", "جهاز قياس الضغط المنزلي", "blood pressure monitor")),
     _head(type="product", category="building_materials", subcategory="wallcoverings", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ورق جدران", "ورق جدار", "ورق حائط", "wallpaper"), label="ورق جدران", label_from_match=True, eligibility=(("ورق", "wallpaper"), ("جدران", "جدار", "حائط", "wallpaper")), expansions=("ورق جدران", "ورق حائط", "ورق جدار", "ورق جدران لاصق", "wallpaper")),
+    _head(type="product", category="electronics", subcategory="security_cameras", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كاميرا مراقبة", "كاميرات مراقبة", "كاميرا مراقبه", "كاميرات مراقبه", "security camera", "surveillance camera"), label="كاميرا مراقبة", label_from_match=True, eligibility=(("كاميرا", "كاميرات", "camera"), ("مراقبة", "مراقبه", "امن", "security", "surveillance")), expansions=("كاميرا مراقبة", "كاميرات مراقبة", "كاميرا مراقبة منزلية", "security camera")),
+    _head(type="product", category="furniture", subcategory="office_desks", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكتب دراسة", "مكتب دراسي", "طاولة دراسة", "study desk"), label="مكتب دراسة", label_from_match=True, eligibility=(("مكتب", "طاولة", "desk"), ("دراسة", "دراسي", "study")), expansions=("مكتب دراسة", "مكتب دراسي", "طاولة دراسة", "study desk")),
+    _head(type="product", category="appliances", subcategory="ovens", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("فرن كهربائي", "فرن غاز", "أفران كهربائية", "فرن", "أفران", "oven", "ovens"), label="فرن", label_from_match=True, eligibility=(("فرن", "أفران", "فرن كهربائي", "oven"),), expansions=("فرن كهربائي", "فرن غاز", "أفران", "oven")),
+    _head(type="product", category="home_textiles", subcategory="curtain_fabrics", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("قماش ستائر", "أقمشة ستائر", "قماش للستائر", "curtain fabric"), label="قماش ستائر", label_from_match=True, eligibility=(("قماش", "أقمشة", "fabric"), ("ستائر", "ستارة", "curtain")), expansions=("قماش ستائر", "أقمشة ستائر", "قماش للستائر", "curtain fabric")),
+    _head(type="product", category="toys", subcategory="educational_toys", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ألعاب تعليمية", "لعبة تعليمية", "العاب تعليمية", "educational toys"), label="ألعاب تعليمية", label_from_match=True, eligibility=(("ألعاب", "العاب", "لعبة", "لعب", "toys"), ("تعليمية", "تعليمي", "educational")), expansions=("ألعاب تعليمية", "ألعاب تعليمية للأطفال", "لعبة تعليمية", "educational toys")),
+    _head(type="product", category="toys", subcategory="electric_ride_on_toys", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دباب أطفال كهربائي", "دباب للاطفال كهربائي", "دباب أطفال", "دباب اطفال", "دراجة أطفال كهربائية", "ride on toy"), label="دباب أطفال كهربائي", label_from_match=True, eligibility=(("دباب", "دراجة", "دراجه", "ride on"), ("أطفال", "اطفال", "كهربائي", "electric")), expansions=("دباب أطفال كهربائي", "دباب اطفال", "دراجة أطفال كهربائية", "لعبة ركوب كهربائية")),
+    _head(type="product", category="perfumes", subcategory="perfumes", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عطر", "عطور", "عطر رجالي", "عطور رجالية", "عطر نسائي", "عطور نسائية", "perfume", "fragrance"), label="عطر", label_from_match=True, eligibility=(("عطر", "عطور", "perfume", "fragrance"),), expansions=("عطر", "عطور", "عطر رجالي", "عطور رجالية", "عطور نسائية", "perfume")),
+    _head(type="product", category="bicycles", subcategory="bicycles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دراجة هوائية", "دراجات هوائية", "سيكل", "دراجة", "bicycle", "bike"), label="دراجة هوائية", label_from_match=True, eligibility=(("دراجة", "دراجات", "سيكل", "bicycle", "bike"),), expansions=("دراجة هوائية", "دراجات هوائية", "سيكل", "bicycle", "bike")),
     *_STROLLER_ACCESSORY_HEADS,
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال يويو", "عربية اطفال يويو", "عرباية أطفال يويو", "عرباية اطفال يويو", "عربايه اطفال يويو", "عربيات أطفال يويو", "عربيات اطفال يويو", "عربة أطفال يويو", "عربة اطفال يويو", "عربات أطفال يويو", "عربات اطفال يويو", "عربية يويو", "عرباية يويو", "عربة يويو", "بيبي زين يويو", "بيبي زن يويو", "بيبيزن يويو", "بيبيزين يويو", "يويو بيبي زين", "يويو بيبي زن", "يويو بيبيزن", "babyzen yoyo", "babyzen yo yo", "yoyo stroller", "yo yo stroller"), model="YOYO", label="عربية أطفال YOYO", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "عربيات", "عربات", "stroller", "pushchair"), ("يويو", "yo yo", "yoyo", "babyzen")), expansions=("عربية أطفال يويو", "عربة أطفال يويو", "عرباية أطفال يويو", "عربات أطفال يويو", "Babyzen YOYO", "YOYO stroller")),
     _head(type="product", category="baby_products", subcategory="strollers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عربية أطفال", "عربية اطفال", "عرباية أطفال", "عرباية اطفال", "عربايه اطفال", "عربيات أطفال", "عربيات اطفال", "عربة أطفال", "عربة اطفال", "عربات أطفال", "عربات اطفال", "عربية بيبي", "عرباية بيبي", "عربة بيبي", "baby stroller", "baby strollers", "stroller", "strollers", "pushchair"), label="عربية أطفال", label_from_match=True, eligibility=(("عربية", "عربيه", "عربة", "عربه", "عرباية", "عربايه", "عربيات", "عربات", "stroller", "pushchair"),), expansions=("عربية أطفال", "عربة أطفال", "عرباية أطفال", "عربات أطفال", "عربية بيبي", "عربة بيبي", "baby stroller", "stroller")),
+    _head(type="product", category="car_seats", subcategory="car_seats", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كرسي سيارة أطفال", "كرسي سيارة للأطفال", "مقعد سيارة أطفال", "مقعد سيارة للأطفال", "child car seat", "baby car seat"), label="كرسي سيارة أطفال", label_from_match=True, eligibility=(("كرسي", "مقعد", "seat"), ("سيارة", "سياره", "car"), ("أطفال", "اطفال", "طفل", "baby", "child")), expansions=("كرسي سيارة أطفال", "مقعد سيارة للأطفال", "baby car seat", "child car seat")),
     _head(type="product", category="parts", subcategory="tyres", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفرات باترول", "كفر باترول"), brand="Nissan", model="Patrol", eligibility=(("كفرات", "كفر", "جنوط"), ("باترول", "patrol")), expansions=("كفرات باترول", "كفرات نيسان باترول", "جنوط باترول")),
     _head(type="product", category="electronics", subcategory="gaming_laptops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لابتوب ألعاب", "لابتوبات ألعاب", "لابتوب قيمنق", "لابتوبات قيمنق", "لابتوب قيمنج", "gaming laptop"), eligibility=(("لابتوب", "لابتوبات", "لاب توب", "laptop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("لابتوب ألعاب", "لابتوبات قيمنق", "gaming laptop"), attributes=("gaming",)),
     _head(type="product", category="electronics", subcategory="laptops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لابتوب", "لابتوبات", "لاب توب"), label="لابتوب", label_from_match=True, eligibility=(("لابتوب", "لابتوبات", "لاب توب", "laptop", "laptops"),), expansions=("لابتوب", "لاب توب", "laptop", "laptops")),
@@ -487,6 +503,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون برو ماكس", "iphone pro max"), brand="Apple", model="iPhone Pro Max", eligibility=(("ايفون", "iphone"), ("برو ماكس", "pro max")), expansions=("ايفون برو ماكس", "iphone pro max")),
     _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايفون", "iphone"), brand="Apple", model="iPhone", eligibility=(("ايفون", "iphone"),), expansions=("ايفون", "iphone")),
+    _head(type="product", category="electronics", subcategory="phones", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جوال", "جوالات", "هاتف ذكي", "هواتف ذكية", "smartphone", "mobile phone", "cell phone"), label="جوال", label_from_match=True, eligibility=(("جوال", "جوالات", "هاتف", "هواتف", "smartphone", "mobile phone", "cell phone"),), expansions=("جوال", "جوالات", "هاتف ذكي", "smartphone", "mobile phone")),
     _head(type="product", category="electronics", subcategory="phone_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("شاحن ايفون", "شاحن iphone", "ايفون شاحن", "iphone charger", "charger iphone"), brand="Apple", model="iPhone", label="شاحن ايفون", eligibility=(("شاحن", "شواحن", "charger"), ("ايفون", "iphone")), expansions=("شاحن ايفون", "شاحن iphone", "iphone charger")),
     _head(type="product", category="electronics", subcategory="phone_accessories", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كفر ايفون", "كفر iphone", "ايفون كفر", "iphone case", "case iphone", "جراب ايفون", "جراب iphone"), brand="Apple", model="iPhone", label="كفر ايفون", eligibility=(("كفر", "كفرات", "جراب", "جرابات", "case", "cases"), ("ايفون", "iphone")), expansions=("كفر ايفون", "جراب ايفون", "iphone case")),
     _head(type="product", category="appliances", subcategory="washing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("غسالة أوتوماتيك", "غسالة اتوماتيك", "غسالات أوتوماتيك", "غسالة", "غسالات"), label="غسالة", label_from_match=True, eligibility=(("غسالة", "غسالات"),), expansions=("غسالة", "غسالة أوتوماتيك", "غسالات")),
@@ -706,9 +723,23 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
             return None
     service = [item for item in matches if item.head.type == "service" and not item.head.ambiguous]
     product = [item for item in matches if item.head.type in {"product", "vehicle", "property"}]
+    product_cue = bool(
+        normalized
+        and (
+            "للبيع" in normalized
+            or "جهاز كشف تسرب" in normalized
+            or "كاشف تسرب" in normalized
+            or ("كاميرا" in normalized and any(term in normalized for term in ("بدون تمديد", "لاسلكي", "واي فاي", "wifi", "wireless")))
+        )
+    )
+    if (
+        any(item.head.subcategory == "cctv" for item in service)
+        and any(item.head.subcategory == "security_cameras" for item in product)
+        and not product_cue
+    ):
+        product = [item for item in product if item.head.subcategory != "security_cameras"]
     selling_a_leak_detector = any(item.head.subcategory == "leak_detector" for item in product)
     explicit_service = bool(normalized and _service_request(normalized))
-    product_cue = bool(normalized and ("للبيع" in normalized or "جهاز كشف تسرب" in normalized or "كاشف تسرب" in normalized))
     if product and (not service or not explicit_service or product_cue):
         return max(product, key=lambda item: item.length)
     if service:
@@ -871,6 +902,12 @@ def _segment_text(original: str) -> str:
 
     raw = " ".join(original.split())
     words = raw.split()
+    if (
+        len(words) >= 2
+        and normalize(words[0]) in {"دور", "دوري"}
+        and normalize(words[1]) in {"لي", "على", "عن"}
+    ):
+        words = words[2:]
     while words and normalize(words[0]) in _WANT_WORDS:
         words = words[1:]
     if (
@@ -1276,6 +1313,7 @@ def analyze(query: str) -> IntentResponse:
         search_label = f"{search_label} {intent.model.value[-1]}"
     if head.type in {"product", "property"} and match is not None:
         matched_words = set(normalize(query_label).split())
+        search_imperative = normalize(original).startswith(("دور لي ", "دور على ", "دوري على "))
         seller_search_phrase = any(
             normalize(word) in {"يبيع", "تبيع", "يبيعون", "تبيعون"}
             for word in original.split()
@@ -1294,6 +1332,7 @@ def analyze(query: str) -> IntentResponse:
                 or folded in _WANT_WORDS
                 or folded in city_words
                 or folded == yoyo_variant
+                or (search_imperative and folded == "دور")
                 or (
                     seller_search_phrase
                     and folded in {"محل", "محلات", "متجر", "متاجر"}
