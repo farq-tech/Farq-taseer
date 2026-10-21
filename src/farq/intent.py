@@ -77,6 +77,10 @@ _REQUEST_PREFACES = {
 }
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
+_YOYO_GENERATION_WORD = re.compile(
+    r"(?:الجيل|جيل|الاصدار|اصدار|النسخه|نسخه)\s+(?:ال)?(الثاني|الثالث|2|3)\b",
+    re.IGNORECASE,
+)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
 _IPHONE_MODEL = re.compile(r"(?:^|\s)(ايفون|iphone)\s+(\d{1,2})(?!\d)(?:\s+(pro|برو)(?:\s+(max|ماكس))?)?")
 _IPHONE_PRO_MAX_QUERY = re.compile(r"(?:^|\s)(?:ايفون|iphone)\s+\d{1,2}(?!\d)\s+(?:pro|برو)\s+(?:max|ماكس)(?:\s|$)")
@@ -1455,8 +1459,12 @@ def analyze(query: str) -> IntentResponse:
         intent.model = known(model_name, 0.9, iphone_model.group(0).strip())
     if head.subcategory == "strollers":
         yoyo_variant = _YOYO_VARIANT.search(to_ascii_digits(normalized))
-        if yoyo_variant and ("يويو" in normalized or "yoyo" in normalized):
-            variant = yoyo_variant.group(1)
+        variant = yoyo_variant.group(1) if yoyo_variant else None
+        if variant is None:
+            generation = _YOYO_GENERATION_WORD.search(normalized)
+            if generation:
+                variant = {"الثاني": "2", "الثالث": "3"}.get(generation.group(1), generation.group(1))
+        if variant and ("يويو" in normalized or "yoyo" in normalized):
             intent.model = known(f"YOYO {variant}", 0.95, "explicit-model-variant")
             intent.need = f"{intent.need} {variant}"
     if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبي زن", "بيبيزن", "بيبيزين")):
