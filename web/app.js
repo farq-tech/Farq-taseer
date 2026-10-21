@@ -1484,6 +1484,7 @@ function renderCard(result) {
       <button type="button" data-action="open" data-key="${esc(key)}" class="fq-offerhead">
         ${offer ? `<strong class="fq-offertitle"><bdi>${esc(offer)}</bdi></strong>` : `<strong class="fq-offertitle"><bdi>${esc(name)}</bdi></strong>`}
         <span class="fq-meta fq-offerwho"><bdi>${esc(name)}</bdi>${where ? ` · ${esc(where)}` : ""}</span>
+        <span class="fq-open-label">عرض تفاصيل الإعلان</span>
       </button>
     </div>
     ${matched.length ? `<div class="fq-matched" aria-label="طابق طلبك في">${matched
