@@ -20,6 +20,7 @@ _UNIT_ALIASES = {
     "gb": "storage_gb", "جيجا": "storage_gb", "جيجابايت": "storage_gb", "جيجا بايت": "storage_gb",
     "قيقا": "storage_gb", "قيقابايت": "storage_gb", "قيقا بايت": "storage_gb",
 }
+_DIMENSION_PAIR = re.compile(r"(?<!\d)(\d{1,2}(?:[.,]\d+)?)\s*(?:x|×|\*)\s*(\d{1,2}(?:[.,]\d+)?)(?!\d)", re.IGNORECASE)
 _UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|inch(?:es)?|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|قيقا بايت|قيقابايت|قيقا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
 # A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
 # account, a pile of leftovers from a job.
@@ -62,6 +63,18 @@ def _specs(text: str) -> dict[str, set[float]]:
             continue
         unit = unit.replace("أ", "ا").replace("ة", "ه")
         found.setdefault(_UNIT_ALIASES.get(unit, unit), set()).add(value)
+    return found
+
+
+def _dimensions(text: str | None) -> set[tuple[float, float]]:
+    """Read size pairs such as «6x8» without treating an unstated size as a mismatch."""
+    found: set[tuple[float, float]] = set()
+    for first, second in _DIMENSION_PAIR.findall(to_ascii_digits(text or "").lower()):
+        try:
+            pair = (float(first.replace(",", ".")), float(second.replace(",", ".")))
+        except ValueError:
+            continue
+        found.add(tuple(sorted(pair)))
     return found
 
 
@@ -478,6 +491,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["over_price_max"]
         if intent.price_min.known and comparable_price < float(intent.price_min.value):
             return False, ["under_price_min"]
+    if ad is not None and intent.subcategory.value in {"royal_tents", "traditional_tents", "camping_tents"}:
+        wanted_dimensions = _dimensions(intent.original_query)
+        stated_dimensions = _dimensions(f"{title}\n{ad.description or ''}")
+        if wanted_dimensions and stated_dimensions and not wanted_dimensions & stated_dimensions:
+            return False, ["dimension_mismatch"]
     provider = intent.result_unit.value != "ad" or intent.type.value == "service"
     if provider and title:
         if has_word(title, _NOT_A_PROVIDER) or (has_word(title, _MAP_LISTING) and has_word(title, _MAP_THING)):
