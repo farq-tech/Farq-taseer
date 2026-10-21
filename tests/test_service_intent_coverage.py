@@ -5,7 +5,7 @@ import pytest
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
-from farq.taxonomy import read_business
+from farq.taxonomy import catalog, read_business
 
 
 @pytest.mark.parametrize(
@@ -203,3 +203,90 @@ def test_common_services_match_providers_without_returning_related_products(
         assert intent.segment_text in intent.search_terms
     assert decide(intent, provider, seller)[0] is True
     assert decide(intent, product, seller)[0] is False
+
+
+def test_translated_book_is_a_product_query_not_translation_service():
+    intent = analyze("أبي كتاب مترجم")
+
+    assert intent.result_unit.value == "ad"
+    assert intent.subcategory.value != "translation"
+
+
+def test_translator_device_is_a_product_query():
+    intent = analyze("أبي جهاز مترجم فوري في الرياض")
+
+    assert intent.type.value == "product"
+    assert intent.subcategory.value == "translator_device"
+    assert intent.result_unit.value == "ad"
+
+
+def test_swimming_coach_does_not_accept_a_fitness_only_trainer():
+    intent = analyze("مدرب سباحة بالرياض")
+    seller = Seller(id="seller", name="مدرب شخصي", city="الرياض")
+    unrelated = Ad(id="fitness", title="مدرب شخصي لياقة بدنية", city="الرياض", seller=seller)
+
+    assert intent.subcategory.value == "sports_coaching"
+    assert decide(intent, unrelated, seller)[0] is False
+
+
+def test_personal_trainer_does_not_accept_a_swimming_only_coach():
+    intent = analyze("مدرب شخصي بالرياض")
+    seller = Seller(id="seller", name="مدرب سباحة", city="الرياض")
+    unrelated = Ad(id="swimming", title="مدرب سباحة للأطفال", city="الرياض", seller=seller)
+
+    assert intent.subcategory.value == "sports_coaching"
+    assert decide(intent, unrelated, seller)[0] is False
+
+
+def test_subject_specific_tutor_listing_is_recognized_and_matched():
+    intent = analyze("مدرس رياضيات بالرياض")
+    seller = Seller(id="seller", name="معلم رياضيات خصوصي", city="الرياض")
+    provider = Ad(
+        id="math-tutor",
+        title="معلم رياضيات خصوصي في الرياض تأسيس ومتابعة لجميع المراحل",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.subcategory.value == "tutoring"
+    assert decide(intent, provider, seller)[0] is True
+    assert any(item["key"] == "tutoring" for item in read_business(provider.title)["services"])
+
+
+def test_cleaning_worker_request_rejects_workers_without_cleaning_evidence():
+    intent = analyze("أبي عاملة نظافة بالرياض")
+    seller = Seller(id="seller", name="عامل حدائق", city="الرياض")
+    gardening_worker = Ad(id="gardener", title="عامل حدائق", city="الرياض", seller=seller)
+
+    assert intent.subcategory.value == "cleaning"
+    assert decide(intent, gardening_worker, seller)[0] is False
+
+
+def test_veterinary_treatment_phrase_is_eligible_provider_evidence():
+    intent = analyze("علاج حيوانات بالرياض")
+    seller = Seller(id="seller", name="عيادة بيطرية", city="الرياض")
+    provider = Ad(id="vet", title="علاج حيوانات وطب بيطري", city="الرياض", seller=seller)
+
+    assert intent.subcategory.value == "veterinary"
+    assert decide(intent, provider, seller)[0] is True
+
+
+def test_camera_sale_is_not_accepted_as_a_photographer():
+    intent = analyze("مصور حفلات بالرياض")
+    seller = Seller(id="seller", name="متجر كاميرات", city="الرياض")
+    camera = Ad(id="camera", title="كاميرا تصوير حفلات", city="الرياض", seller=seller)
+
+    assert decide(intent, camera, seller)[0] is False
+
+
+def test_bare_construction_tasis_does_not_classify_a_plumber_as_a_tutor():
+    services = read_business("تأسيس سباكة وتمديدات مياه")["services"]
+
+    assert any(item["key"] == "plumbing" for item in services)
+    assert not any(item["key"] == "tutoring" for item in services)
+
+
+def test_supplier_category_catalog_has_one_pest_control_choice():
+    keys = [item["key"] for item in catalog("services")]
+
+    assert keys.count("pest_control") == 1

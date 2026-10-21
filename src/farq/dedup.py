@@ -14,8 +14,8 @@ def _keys(result: SearchResult, by_listing: bool = False) -> list[str]:
         keys.append(f"ad:{ad.id}")
     if ad is not None and ad.url:
         keys.append(f"url:{ad.url.split('?')[0].rstrip('/')}")
-    if not by_listing and ad is not None and seller is not None and ad.price_amount is not None and ad.title:
-        keys.append(f"offer:{seller.id}|{normalize(ad.title)}|{ad.price_amount}")
+    if not by_listing and ad is not None and seller is not None and ad.comparable_price_amount is not None and ad.title:
+        keys.append(f"offer:{seller.id}|{normalize(ad.title)}|{ad.comparable_price_amount}")
     if ad is None and seller is not None:
         keys.append(f"seller:{seller.id}")
     elif not by_listing and result.result_unit != ResultUnit.AD and seller is not None and seller.id:

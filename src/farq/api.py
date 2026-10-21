@@ -749,7 +749,15 @@ def create_app(
         # few seconds later finds it ready instead of waiting for it. Measured on production:
         # reading on M02 itself put M02 at 2.3-3s for a first result only 0.5s sooner.
         intents = understand.refine_if_ready(body.query, analyze_needs(body.query))
-        if understand.enabled():
+        # If the rules could not understand any part, don't send M02 a dead end while the
+        # background read is still warming. Resolve that case inline, bounded by the model's
+        # four-second timeout; ordinary understood requests keep the fast response path.
+        needs_model_now = understand.enabled() and any(
+            not intent.understood for intent in intents
+        )
+        if needs_model_now:
+            intents = understand.refine(body.query, intents)
+        elif understand.enabled():
             background.add_task(understand.read_query, body.query)
         intent = intents[0] if intents else analyze(body.query)
         return {
@@ -799,6 +807,31 @@ def create_app(
 
     def _response_results(response) -> list:
         return [*response.results, *(result for group in response.groups for result in group.results)]
+
+    def _remove_previously_shown_ads(results, seen_ad_ids: set[str]) -> list:
+        if not seen_ad_ids:
+            return list(results)
+        return [
+            item for item in results
+            if item.ad is None or item.ad.id not in seen_ad_ids
+        ]
+
+    def _filter_response_ads(response: SearchResponse, seen_ad_ids: set[str]) -> None:
+        if not seen_ad_ids:
+            return
+        response.results = _remove_previously_shown_ads(response.results, seen_ad_ids)
+        for group in response.groups:
+            group.results = _remove_previously_shown_ads(group.results, seen_ad_ids)
+
+    def _filter_stream_event_ads(event: dict, seen_ad_ids: set[str]) -> None:
+        if not seen_ad_ids:
+            return
+        if "results" in event:
+            event["results"] = _remove_previously_shown_ads(event["results"], seen_ad_ids)
+        for group in event.get("groups") or []:
+            group.results = _remove_previously_shown_ads(group.results, seen_ad_ids)
+        if event.get("type") == "done":
+            _filter_response_ads(event["response"], seen_ad_ids)
 
     # A finished search is kept for ten minutes, for everyone. The same sentence searched
     # again (after an edit that changed nothing, a reload, a second customer) answers from
@@ -957,7 +990,9 @@ def create_app(
             return _serve_cached(kept, body.query, user_id).model_dump(mode="json")
         search_config, search_client = page_search(body)
         continued = continuation_id(body, user_id)
+        seen_ad_ids = store.search_listing_ids(continued, user_id) if continued else set()
         response, trace = run_search(body.query, corpus, search_client, search_config, near=body.near, trace_id=continued)
+        _filter_response_ads(response, seen_ad_ids)
         pagination_trace(trace, body, user_id, response, search_client)
         store.record_journey(response.trace_id, user_id, body.query, response.state.value, trace)
         _remember_sellers(response.trace_id, user_id, _response_results(response))
@@ -972,6 +1007,7 @@ def create_app(
         user_id = _user_from_header(authorization)
 
         continued = continuation_id(body, user_id)
+        seen_ad_ids = store.search_listing_ids(continued, user_id) if continued else set()
 
         def generate():
             kept = _cached_or_warming(body.query, body.near) if body.page is None else None
@@ -987,6 +1023,7 @@ def create_app(
             source = _follow_warm(warm) if warm is not None else iter_search(body.query, corpus, search_client, search_config, near=body.near, trace_id=continued)
             intents: dict = {}
             for event in source:
+                _filter_stream_event_ads(event, seen_ad_ids)
                 if event["type"] == "intent":
                     for item in event.get("intents") or [event.get("intent")]:
                         if item is not None:

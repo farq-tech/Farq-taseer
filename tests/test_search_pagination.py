@@ -35,6 +35,56 @@ def test_pages_continue_without_restarting_or_losing_trace(tmp_path, monkeypatch
     assert pages[-1] == 7
 
 
+def test_continuation_hides_ads_already_shown_on_earlier_pages(tmp_path, monkeypatch):
+    api, _ = make_api(tmp_path, monkeypatch)
+
+    def post(self, variables):
+        page = variables["page"]
+        ad_id = {1: 1, 2: 2, 3: 3, 4: 1, 5: 5, 6: 6, 7: 1}[page]
+        return {
+            "items": [{"id": ad_id, "title": "سباك تأسيس وصيانة", "authorId": page + 100,
+                "authorUsername": "مقدم خدمة", "city": "الرياض", "status": True}],
+            "pageInfo": {"hasNextPage": page < 7},
+        }
+
+    monkeypatch.setattr(HarajLiveClient, "_post", post)
+    first = api.post("/v1/search", json={"query": "سباك بالرياض", "page": 1}).json()
+    second = api.post("/v1/search", json={
+        "query": "سباك بالرياض", "page": 4, "continuation_trace": first["trace_id"]
+    }).json()
+
+    assert {item["ad"]["id"] for item in first["results"]} == {"1", "2", "3"}
+    assert {item["ad"]["id"] for item in second["results"]} == {"5", "6"}
+    assert second["next_page"] == 7
+
+    last = api.post("/v1/search", json={
+        "query": "سباك بالرياض", "page": 7, "continuation_trace": first["trace_id"]
+    }).json()
+    assert last["results"] == []
+    assert last["next_page"] is None
+
+
+def test_haraj_has_next_survives_a_duplicate_only_source_page(tmp_path, monkeypatch):
+    api, pages = make_api(tmp_path, monkeypatch)
+
+    def post(self, variables):
+        page = variables["page"]
+        pages.append(page)
+        ad_id = 1 if page in {1, 2} else page
+        return {
+            "items": [{"id": ad_id, "title": "سباك تأسيس وصيانة", "authorId": 100 + ad_id,
+                "authorUsername": "مقدم خدمة", "city": "الرياض", "status": True}],
+            "pageInfo": {"hasNextPage": page < 7},
+        }
+
+    monkeypatch.setattr(HarajLiveClient, "_post", post)
+    result = api.post("/v1/search", json={"query": "سباك بالرياض", "page": 1}).json()
+
+    assert pages == [1, 2, 3]
+    assert {item["ad"]["id"] for item in result["results"]} == {"1", "3"}
+    assert result["next_page"] == 4
+
+
 def test_continuation_cannot_change_query_or_skip_pages(tmp_path, monkeypatch):
     api, _ = make_api(tmp_path, monkeypatch)
     first = api.post("/v1/search", json={"query": "سباك بالرياض", "page": 1}).json()
@@ -64,6 +114,39 @@ def test_stream_continuation_uses_same_page_contract(tmp_path, monkeypatch):
     last = [json.loads(line) for line in response.text.splitlines()][-1]
     assert last["trace_id"] == done["trace_id"] and last["next_page"] == 7
     assert pages == [1, 2, 3, 4, 5, 6]
+
+
+def test_stream_continuation_filters_prior_ids_from_batches_and_done(tmp_path, monkeypatch):
+    api, _ = make_api(tmp_path, monkeypatch)
+
+    def post(self, variables):
+        page = variables["page"]
+        ad_id = {1: 1, 2: 2, 3: 3, 4: 1, 5: 5, 6: 6}[page]
+        return {
+            "items": [{"id": ad_id, "title": "سباك تأسيس وصيانة", "authorId": page + 100,
+                "authorUsername": "مقدم خدمة", "city": "الرياض", "status": True}],
+            "pageInfo": {"hasNextPage": page < 7},
+        }
+
+    monkeypatch.setattr(HarajLiveClient, "_post", post)
+    first = api.post("/v1/search/stream", json={"query": "سباك بالرياض", "page": 1})
+    first_events = [json.loads(line) for line in first.text.splitlines()]
+    trace_id = first_events[-1]["trace_id"]
+
+    second = api.post("/v1/search/stream", json={
+        "query": "سباك بالرياض", "page": 4, "continuation_trace": trace_id
+    })
+    events = [json.loads(line) for line in second.text.splitlines()]
+    result_ids = {
+        item["ad"]["id"]
+        for event in events if event.get("type") == "results"
+        for item in event.get("results", [])
+    }
+    done = events[-1]
+
+    assert result_ids == {"5", "6"}
+    assert {item["ad"]["id"] for item in done["results"]} == {"5", "6"}
+    assert done["next_page"] == 7
 
 
 def test_paged_search_keeps_older_ads_and_distinct_ads_by_same_seller(tmp_path, monkeypatch):
