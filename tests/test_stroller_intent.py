@@ -225,6 +225,9 @@ def test_bare_yoyo_toy_query_does_not_become_a_stroller():
         ("عربية أطفال يويو 2", "YOYO 2"),
         ("عربة اطفال يويـو ٣", "YOYO 3"),
         ("Babyzen YOYO3 stroller", "YOYO 3"),
+        ("عربية يويو الجيل الثالث", "YOYO 3"),
+        ("عربة أطفال YOYO الجيل الثاني", "YOYO 2"),
+        ("عربية أطفال يويو إصدار ٣", "YOYO 3"),
     ],
 )
 def test_explicit_yoyo_generation_is_preserved_in_intent_and_search(query, model):
