@@ -98,20 +98,56 @@ const matchedWords = () => [];
 const adPriceDisclosure = () => '';
 const offerMarks = () => [];
 const adAge = () => null;
-const imageSources = () => [];
+const imageSources = (ad) => ad?.image_ref ? ['https://cdn.test/400.webp'] : [];
 const imageAvailabilityDisclosure = (ad) => ad?.source_has_image === false ? 'لا توجد صور مرفقة بإعلان حراج.' : ad?.source_has_image === true ? 'حراج يذكر وجود صور؛ افتح التفاصيل لمحاولة عرضها.' : '';
 const esc = (value) => String(value);
 const ic = () => '';
 const withoutPrices = (value) => value;
 ''' + source[start:end] + '''
-const html = renderCard({ad:{title:'عربية أطفال يويو', city:'الرياض'}, seller:{id:'seller-1'}});
+const html = renderCard({ad:{title:'عربية أطفال يويو', city:'الرياض', image_ref:'photo.jpg'}, seller:{id:'seller-1'}});
 assert.match(html, /عرض تفاصيل الإعلان/);
 assert.match(html, /data-action="open"/);
 assert.doesNotMatch(html, /لا توجد صور/);
+assert.match(html, /class="fq-shot" data-frame/);
 const noImage = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:false}, seller:{id:'seller-1'}});
 assert.match(noImage, /لا توجد صور مرفقة بإعلان حراج/);
 const missingThumbnail = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:true}, seller:{id:'seller-1'}});
 assert.match(missingThumbnail, /حراج يذكر وجود صور/);
+'''
+    subprocess.run(['node', '-e', script], check=True)
+
+
+def test_failed_listing_image_urls_show_an_explicit_fallback():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    start = source.index('function bindImages(root) {')
+    end = source.index('\n}', start) + 2
+    script = '''const assert = require('node:assert/strict');
+''' + source[start:end] + '''
+const classes = new Set();
+const attributes = new Map([['aria-label', 'افتح إعلان عربية أطفال يويو']]);
+const frame = {
+  classList:{add:(name) => classes.add(name)},
+  getAttribute:(name) => attributes.get(name) || null,
+  setAttribute:(name,value) => attributes.set(name,value),
+};
+const listeners = {};
+const removed = [];
+const assigned = [];
+const img = {
+  dataset:{src:'https://cdn.test/400.webp|https://cdn.test/140.webp'},
+  addEventListener:(name,fn) => {listeners[name] = fn;},
+  closest:(selector) => selector === '[data-frame]' ? frame : null,
+  removeAttribute:(name) => removed.push(name),
+  set src(value) { assigned.push(value); },
+};
+bindImages({querySelectorAll:() => [img]});
+assert.equal(assigned.length, 1);
+listeners.error();
+assert.equal(assigned.length, 2);
+listeners.error();
+assert.deepEqual(removed, ['src']);
+assert.ok(classes.has('is-missing'));
+assert.equal(attributes.get('aria-label'), 'افتح إعلان عربية أطفال يويو · تعذر تحميل الصورة');
 '''
     subprocess.run(['node', '-e', script], check=True)
 

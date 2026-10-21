@@ -2087,6 +2087,9 @@ html.fq-embed .skip { display: none; }
 .fq-offerrow { display: flex; gap: 12px; align-items: flex-start; }
 .fq-shot { flex: 0 0 auto; width: 84px; height: 84px; border-radius: var(--fq-r-small); overflow: hidden;
   border: 1px solid var(--fq-line); background: var(--fq-soft); padding: 0; cursor: pointer; }
+.fq-shot.is-missing { position: relative; }
+.fq-shot.is-missing::after { content: "تعذر تحميل الصورة"; position: absolute; inset: 0; display: grid; place-items: center;
+  padding: 4px; background: var(--fq-soft); color: var(--fq-text-2); font-size: 10px; line-height: 1.4; }
 .fq-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .fq-image-notice { margin: 0; color: var(--fq-text-2); font-size: 12px; line-height: 1.5; }
 .fq-offerhead { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-start;

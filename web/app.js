@@ -872,7 +872,13 @@ function bindImages(root) {
   root.querySelectorAll("img[data-src]").forEach((img) => {
     const urls = (img.dataset.src || "").split("|").filter(Boolean);
     let index = 0;
-    const fail = () => img.closest("[data-frame]")?.classList.add("is-missing");
+    const fail = () => {
+      const frame = img.closest("[data-frame]");
+      if (!frame) return;
+      frame.classList.add("is-missing");
+      const label = frame.getAttribute("aria-label");
+      if (label) frame.setAttribute("aria-label", `${label} · تعذر تحميل الصورة`);
+    };
     const next = () => {
       if (index >= urls.length) {
         fail();
@@ -1483,7 +1489,7 @@ function renderCard(result) {
   // at two sizes, not two pictures. So it is shown once, large enough to judge, and opens
   // the listing when tapped - no carousel over a single image.
   const photo = sources.length
-    ? `<button class="fq-shot" type="button" data-action="open" data-key="${esc(key)}" aria-label="افتح إعلان ${esc(offer || name)}">
+    ? `<button class="fq-shot" data-frame type="button" data-action="open" data-key="${esc(key)}" aria-label="افتح إعلان ${esc(offer || name)}">
         <img alt="" data-src="${esc(sources.join("|"))}" loading="lazy" decoding="async"></button>`
     : "";
   return `<article class="fq-card fq-result${animated ? " fq-in" : ""}${selected ? " picked" : ""}"${animated ? ` style="animation-delay:${(newCardsInBatch - 1) * 35}ms"` : ""}>
