@@ -44,6 +44,24 @@ def test_refresh_rate_is_not_misread_as_requested_quantity():
 
 
 @pytest.mark.parametrize(
+    "query",
+    [
+        "أدور على سرير طبي لكبار السن",
+        "أبحث عن سرير طبي لكبار السن",
+        "نبغى سرير طبي لكبار السن",
+    ],
+)
+def test_request_openers_and_connectors_preserve_the_actual_product_need(query):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "beds"
+    assert intent.segment_text == "سرير طبي لكبار السن"
+    assert intent.need == "سرير طبي لكبار السن"
+    assert intent.search_terms[0] == "سرير طبي لكبار السن"
+
+
+@pytest.mark.parametrize(
     "query,wrong_title,marker",
     [
         ("أبحث عن كنب زاوية بالرياض", "كنب مودرن للبيع", "زاوية"),
