@@ -108,6 +108,26 @@ def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise(
     assert yamaha.year.value == 2022
     assert "دباب ياماها 2022" in yamaha.search_terms
 
+    jetski = analyze("أبي جت سكي ياماها 2021")
+    assert jetski.subcategory.value == "watercraft"
+    assert jetski.brand.value == "Yamaha"
+    assert jetski.year.value == 2021
+    assert "جت سكي ياماها 2021" in jetski.search_terms
+
+    scooter = analyze("أبحث عن سكوتر كهربائي شاومي")
+    assert scooter.subcategory.value == "electric_scooters"
+    assert scooter.brand.value == "Xiaomi"
+    assert "سكوتر كهربائي شاومي" in scooter.search_terms
+    assert analyze("أبي سكوتر كهربائي").subcategory.value == "electric_scooters"
+
+    hilux = analyze("أحتاج هايلكس 2019 دبل")
+    assert hilux.subcategory.value == "pickups"
+    assert hilux.brand.value == "Toyota"
+    assert hilux.model.value == "Hilux"
+    assert hilux.year.value == 2019
+    assert "هايلكس 2019 دبل" in hilux.search_terms
+    assert analyze("موتور كهرباء").category.value != "vehicles"
+
 
 # TSR-007: a service verb with a product noun is the service.
 def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
