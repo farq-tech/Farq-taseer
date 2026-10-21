@@ -625,6 +625,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         # Relaxed matching may waive a secondary detail, never the requested YOYO identity.
         if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO"):
             needed = max(needed, 2)
+        # An explicit abaya size or color is a hard constraint, including in the near-match pass.
+        if intent.subcategory.value == "abayas" and any(
+            str(attribute.value).startswith(("size:", "color:")) for attribute in intent.attributes
+        ):
+            needed = max(needed, len(intent.eligibility_groups))
     if missing and len(matched) < needed:
         return False, [f"missing:{'|'.join(missing[0])}"]
     return True, matched

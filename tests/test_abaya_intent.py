@@ -65,12 +65,24 @@ def test_abaya_matching_requires_the_requested_color_and_size_evidence():
     assert decide(intent, wrong_color, seller)[0] is False
     assert decide(intent, missing_size, seller)[0] is False
     assert decide(intent, unrelated, seller)[0] is False
+    assert decide(intent, wrong_size, seller, relaxed=True)[0] is False
+    assert decide(intent, wrong_color, seller, relaxed=True)[0] is False
+    assert decide(intent, missing_size, seller, relaxed=True)[0] is False
 
 
-def test_tailoring_abayas_remains_a_local_service_request():
-    intent = analyze("أحتاج خياطة عبايات وتعديلها بالخبر")
+@pytest.mark.parametrize(
+    "query,city",
+    [
+        ("أحتاج خياطة عبايات وتعديلها بالخبر", "الخبر"),
+        ("أحتاج خياط عبايات بالرياض", "الرياض"),
+        ("تعديل عباية", None),
+        ("tailor abaya", None),
+    ],
+)
+def test_tailoring_abayas_remains_a_local_service_request(query, city):
+    intent = analyze(query)
 
     assert intent.type.value == "service"
     assert intent.category.value == "services"
     assert intent.subcategory.value == "tailoring"
-    assert intent.location_city.value == "الخبر"
+    assert intent.location_city.value == city

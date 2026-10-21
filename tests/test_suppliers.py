@@ -225,6 +225,19 @@ def test_registration_reads_the_description_even_when_nothing_was_ticked(tmp_pat
     assert other.json()["supplier"]["categories"] == ["plumbing"]
 
 
+def test_abaya_sellers_can_register_their_product_category(tmp_path: Path):
+    _store, api = make(tmp_path)
+    created = register(
+        api,
+        activity_type="products",
+        categories=["abayas"],
+        description="",
+    )
+
+    assert created.status_code == 200
+    assert created.json()["supplier"]["products"] == ["abayas"]
+
+
 def test_bad_supplier_details_are_refused(tmp_path: Path):
     _store, api = make(tmp_path)
     assert register(api, phone="12345").status_code == 422

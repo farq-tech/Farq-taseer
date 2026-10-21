@@ -265,7 +265,7 @@ _SERVICE_VERBS = {
     "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "ينظف", "يغسل", "يفك",
     "يضبط", "يشتغل", "يجي", "يجيني", "يعدل", "يحفر", "يزرع", "يشيك", "يصور", "يقص", "يقلم",
     "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
-    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم",
+    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم", "تعديل",
 }
 # Whoever does the work. "أبغى مقاول يبني لي ملحق" says provider twice over. A cook, a
 # photographer, a tutor, a driver: people hired for an occasion, not things bought.
@@ -273,7 +273,7 @@ _SERVICE_AGENTS = {
     "مقاول", "مقاولات", "فني", "فنيين", "معلم", "معلمين", "عامل", "عماله", "ورشه",
     "حداد", "نجار", "سباك", "كهربائي", "كهربجي", "دهان", "مبلط", "بلاط", "لحام",
     "شركه", "مؤسسه", "صنايعي", "استاذ",
-    "طباخ", "طباخه", "مصور", "مصوره", "مدرس", "مدرسه", "سائق", "قهوجي", "مصمم", "خادمه", "شغاله", "خياطه",
+    "طباخ", "طباخه", "مصور", "مصوره", "مدرس", "مدرسه", "سائق", "قهوجي", "مصمم", "خادمه", "شغاله", "خياطه", "خياط", "tailor",
 }
 
 
@@ -442,7 +442,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="event_planning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"), label="تنسيق مناسبات", label_from_match=True, eligibility=(("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"),), expansions=("منسق حفلات", "تنسيق مناسبات", "منسق زهور", "تجهيز حفلات")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"), label="مدرب سباحة", label_from_match=True, eligibility=(("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"),), expansions=("مدرب سباحة", "تعليم سباحة", "مدربة سباحة")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب شخصي", "مدربة شخصية", "personal trainer"), label="مدرب شخصي", label_from_match=True, eligibility=(("مدرب شخصي", "مدربة شخصية", "personal trainer"),), expansions=("مدرب شخصي", "مدربة شخصية", "personal trainer")),
-    _head(type="service", category="services", subcategory="tailoring", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("خياط", "خياطة فستان", "خياطة عبايات", "تفصيل عبايات", "تعديل عباية", "تفصيل فساتين", "تعديل ملابس", "tailor", "alterations"), label="خياطة وتفصيل", label_from_match=True, eligibility=(("خياط", "خياطة فستان", "خياطة عبايات", "تفصيل عبايات", "تعديل عباية", "خياطة ملابس", "تفصيل فساتين", "تعديل ملابس", "tailor", "alterations"),), expansions=("خياط ملابس", "خياطة فساتين", "تفصيل فساتين", "خياطة عبايات", "تعديل ملابس")),
+    _head(type="service", category="services", subcategory="tailoring", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("خياط", "خياط عباية", "خياط عبايات", "خياطة فستان", "خياطة عباية", "خياطة عبايات", "تفصيل عباية", "تفصيل عبايات", "تعديل عباية", "تعديل عبايات", "تفصيل فساتين", "تعديل ملابس", "tailor", "tailor abaya", "abaya tailoring", "alterations"), label="خياطة وتفصيل", label_from_match=True, eligibility=(("خياط", "خياط عباية", "خياط عبايات", "خياطة فستان", "خياطة عباية", "خياطة عبايات", "تفصيل عباية", "تفصيل عبايات", "تعديل عباية", "تعديل عبايات", "خياطة ملابس", "تفصيل فساتين", "تعديل ملابس", "tailor", "tailor abaya", "abaya tailoring", "alterations"),), expansions=("خياط ملابس", "خياط عبايات", "خياطة فساتين", "تفصيل عبايات", "تعديل عباية", "تعديل ملابس")),
     _head(type="service", category="services", subcategory="childcare", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مربية اطفال", "جليسة اطفال", "حاضنة اطفال", "babysitter", "childcare"), label="رعاية أطفال", label_from_match=True, eligibility=(("مربية أطفال", "جليسة أطفال", "حاضنة أطفال", "babysitter", "childcare"),), expansions=("مربية أطفال", "جليسة أطفال", "رعاية أطفال بالساعة", "حاضنة أطفال")),
     _head(type="service", category="services", subcategory="veterinary", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("طبيب بيطري", "بيطري", "عيادة بيطرية", "علاج حيوانات", "veterinarian", "vet"), label="خدمات بيطرية", label_from_match=True, eligibility=(("طبيب بيطري", "عيادة بيطرية", "بيطري للحيوانات", "خدمات بيطرية", "علاج حيوانات", "veterinarian", "vet"),), expansions=("طبيب بيطري", "عيادة بيطرية", "علاج قطط", "علاج حيوانات")),
     _head(type="service", category="services", subcategory="home_barber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("حلاق منزلي", "حلاق يجي البيت", "حلاقة منزلية", "home barber"), label="حلاقة منزلية", label_from_match=True, eligibility=(("حلاق منزلي", "حلاق يجي البيت", "حلاقة منزلية", "home barber"),), expansions=("حلاق منزلي", "حلاق يجي البيت", "حلاقة منزلية")),
