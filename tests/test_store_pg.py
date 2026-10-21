@@ -351,7 +351,7 @@ def test_search_pagination_on_postgres(name, tmp_path, monkeypatch, pg_store):
     'test_rate_limit_and_challenge_preserve_data_and_pause',
 ])
 def test_haraj_harvest_pg(name, tmp_path, monkeypatch, pg_store):
-    import test_haraj_harvest as module
+    import tests.test_haraj_harvest as module
     monkeypatch.setattr(module, 'Store', pg_store)
     fn = getattr(module, name)
     if 'monkeypatch' in __import__('inspect').signature(fn).parameters:
