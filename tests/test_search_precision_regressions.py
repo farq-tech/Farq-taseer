@@ -3,6 +3,7 @@ import pytest
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.text import normalize
 from farq.understand import _apply
 
 
@@ -12,6 +13,17 @@ def test_arabic_budget_cap_is_extracted_without_treating_dimensions_as_price():
 
     assert budget.price_max.value == 1000
     assert dimension.price_max.known is False
+
+
+def test_arabic_amount_after_bisaar_is_a_budget_and_not_a_search_term():
+    intent = analyze("أبي عربية أطفال يويو بسعر ٧٠٠ ريال")
+
+    assert intent.price_max.value == 700
+    assert intent.price_min.known is False
+    assert all(
+        not {"بسعر", "٧٠٠", "700", "ريال"} & set(normalize(term).split())
+        for term in intent.search_terms
+    )
 
 
 @pytest.mark.parametrize(
@@ -73,6 +85,36 @@ def test_vehicle_mentioned_as_a_service_target_is_not_parsed_as_a_vehicle_sale()
     assert intent.understood is True
     assert intent.type.value == "service"
     assert intent.result_unit.value == "service_provider"
+
+
+def test_colloquial_car_transport_keeps_its_route_when_model_reading_is_generic():
+    query = "ابغى احد ينقل سيارتي من الرياض لجدة"
+    intent = analyze(query)
+    original_need = intent.need
+    original_groups = [list(group) for group in intent.eligibility_groups]
+    original_terms = list(intent.search_terms)
+
+    refined = _apply(
+        intent,
+        {
+            "need": "سيارتي من الرياض إلى جدة",
+            "hiring": False,
+            "must_include": [["سيارتي"]],
+            "search_terms": ["سيارتي الرياض"],
+        },
+    )
+
+    assert refined.understood is True
+    assert refined.type.value == "service"
+    assert refined.subcategory.value == "vehicle_transport"
+    assert refined.result_unit.value == "service_provider"
+    assert refined.need == original_need
+    assert refined.destination_city.value == "جده"
+    assert refined.eligibility_groups == original_groups
+    assert refined.search_terms[0] == original_terms[0]
+    assert any("سطحة نقل سيارات" in term for term in refined.search_terms)
+    assert "سيارتي الرياض" not in refined.search_terms
+    assert any("الرياض" in term and "جدة" in term for term in refined.search_terms)
 
 
 def test_ipad_identity_and_requested_specifications_reject_wrong_capacity():

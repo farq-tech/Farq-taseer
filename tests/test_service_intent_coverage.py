@@ -369,6 +369,16 @@ def test_car_towing_request_without_a_route_is_still_understood():
     assert intent.destination_city.value is None
 
 
+def test_colloquial_request_to_transport_my_car_without_a_route_asks_for_city():
+    intent = analyze("ابغى احد ينقل سيارتي")
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "vehicle_transport"
+    assert intent.result_unit.value == "service_provider"
+    assert "location_city" in intent.missing_decision_information
+
+
 def test_bare_flatbed_sale_is_not_misclassified_as_vehicle_transport_service():
     intent = analyze("سطحة للبيع")
 
