@@ -250,13 +250,19 @@ def read_query(query: str) -> list[dict] | None:
 
 def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     was_ununderstood = not intent.understood
-    preserve_identity = intent.model.known or intent.brand.known
+    preserve_identity = (
+        intent.model.known or intent.brand.known or bool(intent.identity_alternatives)
+    )
     rule_need = intent.need
     rule_groups = [list(group) for group in intent.eligibility_groups]
     rule_terms = list(intent.search_terms)
     intent.need = rule_need if preserve_identity and rule_need else read["need"]
     read_groups = [list(group) for group in read["must_include"]]
-    if preserve_identity:
+    if intent.identity_alternatives:
+        # The rules already represent each explicitly requested alternative in one
+        # OR group. A model's one-brand guess must not narrow that group or the search.
+        intent.eligibility_groups = rule_groups
+    elif preserve_identity:
         merged_groups: list[list[str]] = []
         seen_groups: set[tuple[str, ...]] = set()
         for group in (*rule_groups, *read_groups):
@@ -272,7 +278,13 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     intent.eligibility_min = None
     city = intent.location_city.value if isinstance(intent.location_city.value, str) else ""
     terms: list[str] = []
-    search_terms = [*rule_terms, *read["search_terms"]] if preserve_identity else read["search_terms"]
+    search_terms = (
+        rule_terms
+        if intent.identity_alternatives
+        else [*rule_terms, *read["search_terms"]]
+        if preserve_identity
+        else read["search_terms"]
+    )
     for term in search_terms:
         candidates = (term,) if preserve_identity else (term, f"{term} {city}".strip() if city else "")
         for candidate in candidates:

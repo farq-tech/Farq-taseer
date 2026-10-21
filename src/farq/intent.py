@@ -44,8 +44,12 @@ _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _SHORT_YEAR = re.compile(r"\b(\d{2})\b")
 _IPHONE_MODEL = re.compile(r"(?:^|\s)(ايفون|iphone)\s+(\d{1,2})(?!\d)(?:\s+(pro|برو)(?:\s+(max|ماكس))?)?")
 _IPHONE_PRO_MAX_QUERY = re.compile(r"(?:^|\s)(?:ايفون|iphone)\s+\d{1,2}(?!\d)\s+(?:pro|برو)\s+(?:max|ماكس)(?:\s|$)")
-_IPHONE_STORAGE = re.compile(r"(?<!\d)((?:1\s*tb|1\s*تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت))(?![\w])", re.IGNORECASE)
-_PRICE_MAX = re.compile(r"(?:اقل من|تحت|بحد اقصى|اقل|ما يتعدى|ما يزيد عن)\s+(\d{3,7})")
+_IPHONE_STORAGE = re.compile(r"(?<!\d)((?:1\s*tb|1\s*تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت))(?![\w])", re.IGNORECASE)
+_IPAD_FAMILY = re.compile(r"(?:ايباد|ipad)\s*(?:(pro|برو|air|اير|mini|ميني)\b)?", re.IGNORECASE)
+_IPAD_CHIP = re.compile(r"(?<![a-z0-9])m\s*([2-5])(?!\d)", re.IGNORECASE)
+_IPAD_SCREEN = re.compile(r"(?<!\d)(\d{1,2}(?:\.\d)?)\s*(?:انش|بوصه|inch(?:es)?)(?![a-z])", re.IGNORECASE)
+_IPAD_STORAGE = re.compile(r"(?<!\d)(16|32|64|128|256|512|1024|2048)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت)(?![\w])", re.IGNORECASE)
+_PRICE_MAX = re.compile(r"(?:اقل\s+من|تحت|بحد\s*(?:اقصى|اعلى)?|ما\s*(?:يتعدى|تتعدى|يتعدي|تتعدي|يزيد\s+عن|تزيد\s+عن)|لا\s*(?:يتجاوز|تتجاوز|يتعدي|تتعدي)|ميزانيتي|بميزانيه)\s*(\d{2,7})")
 _PRICE_MIN = re.compile(r"(?:اكثر من|فوق|يبدا من)\s+(\d{3,7})")
 _CAT_BREEDS = (
     ("persian", ("شيرازي", "شرازي", "persian")),
@@ -70,6 +74,28 @@ _APPAREL_COLORS = (
     ("blue", ("ازرق", "زرقاء", "blue")),
     ("green", ("اخضر", "خضراء", "green")),
 )
+_STROLLER_MODEL_CUES = {
+    "YOYO": ("يويو", "yoyo", "babyzen", "بيبيزن", "بيبيزين", "بيبي زين", "بيبي زن"),
+    "Bugaboo": ("bugaboo", "بوقابو", "بوغابو"),
+}
+
+
+def _stroller_alternatives(normalized: str) -> list[str]:
+    """Recognize two stroller identities explicitly joined as acceptable alternatives."""
+    parts = re.split(r"\s+(?:او|or)\s+", normalized)
+    if len(parts) != 2:
+        return []
+    found = []
+    for part in parts:
+        model = next(
+            (name for name, cues in _STROLLER_MODEL_CUES.items() if has_word(part, cues)),
+            None,
+        )
+        if model and model not in found:
+            found.append(model)
+    return found if len(found) == 2 else []
+
+
 # "3 افياش", "4 ابواب", "تنظيف 5 مكيفات": a small number and the noun after it.
 _QUANTITY = re.compile(r"(?:^|\s)(\d{1,3})\s+([؀-ۿ]{2,})")
 # "عدد 3" (the form the confirmation sheet writes), with the noun before it if any.
@@ -428,6 +454,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="furniture", subcategory="double_beds", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سرير نفرين", "سرير مزدوج", "double bed"), label="سرير نفرين", label_from_match=True, eligibility=(("سرير", "اسرة", "bed"), ("نفرين", "مزدوج", "زوجي", "double", "queen", "king")), expansions=("سرير نفرين", "سرير مزدوج", "double bed"), attributes=("double",)),
     _head(type="product", category="furniture", subcategory="beds", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سرير", "اسرة", "bed"), label="سرير", label_from_match=True, eligibility=(("سرير", "اسرة", "bed"),), expansions=("سرير", "اسرة", "bed")),
     _head(type="product", category="electronics", subcategory="screens", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("شاشة كمبيوتر", "شاشة ألعاب", "شاشة قيمنق", "شاشة", "شاشات", "monitor", "computer monitor", "gaming monitor"), label="شاشة", label_from_match=True, eligibility=(("شاشة", "شاشات", "monitor"),), expansions=("شاشة كمبيوتر", "شاشة قيمنق", "شاشة ألعاب", "computer monitor", "gaming monitor", "monitor")),
+    _head(type="product", category="electronics", subcategory="tablets", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ايباد برو", "ipad pro", "ايباد", "ipad"), brand="Apple", label="آيباد", eligibility=(("ايباد", "ipad"),), expansions=("ايباد", "آيباد", "ipad", "ipad tablet")),
+    _head(type="product", category="electronics", subcategory="tablets", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("تابلت", "tablet", "tablets"), label="تابلت", eligibility=(("تابلت", "tablet", "tablets"),), expansions=("تابلت", "جهاز تابلت", "tablet")),
     _head(type="product", category="electronics", subcategory="routers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جهاز راوتر", "راوتر", "router"), label="راوتر", label_from_match=True, eligibility=(("راوتر", "router"),), expansions=("راوتر", "جهاز راوتر", "router")),
     _head(type="product", category="electronics", subcategory="printers", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طابعة ليزر ملونة", "طابعة ليزر", "طابعة", "printer"), label="طابعة", label_from_match=True, eligibility=(("طابعة", "طابعه", "printer"),), expansions=("طابعة ليزر", "طابعة", "printer")),
     _head(type="product", category="electronics", subcategory="consoles", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بلايستيشن 5", "playstation 5", "ps5"), brand="Sony", model="PlayStation 5", eligibility=(("بلايستيشن 5", "playstation 5", "ps5"),), expansions=("بلايستيشن 5", "ps5", "playstation 5")),
@@ -748,6 +776,19 @@ def _attributes(normalized: str, head: Head | None) -> list[FieldValue]:
             if matched_color:
                 found.append(known(f"color:{color}", 0.9, matched_color))
                 break
+    if head and head.subcategory == "tablets":
+        family = _IPAD_FAMILY.search(normalized)
+        chip = _IPAD_CHIP.search(normalized)
+        screen = _IPAD_SCREEN.search(normalized)
+        storage = _IPAD_STORAGE.search(normalized)
+        if family and family.group(1):
+            found.append(known(f"tablet_family:{family.group(1)}", 0.9, family.group(0)))
+        if chip:
+            found.append(known(f"chip:M{chip.group(1)}", 0.95, chip.group(0)))
+        if screen:
+            found.append(known(f"screen_inches:{screen.group(1)}", 0.95, screen.group(0)))
+        if storage:
+            found.append(known(f"storage_gb:{storage.group(1)}", 0.95, storage.group(0)))
     if head:
         for attribute in head.attributes:
             found.append(known(attribute, 0.8, attribute))
@@ -782,6 +823,20 @@ def _quantity(normalized: str, original: str) -> tuple[FieldValue, str | None]:
             continue
         return known(value, 0.8, match.group(0).strip()), _display_word(original, noun)
     return unknown(), None
+
+
+def _price_bound(pattern: re.Pattern[str], normalized: str) -> re.Match[str] | None:
+    match = pattern.search(normalized)
+    if not match:
+        return None
+    # Short limits are valid only when the customer explicitly gives a currency;
+    # this keeps "أقل من 11 إنش" from becoming an 11-riyal budget.
+    amount = match.group(1)
+    if len(amount) < 3:
+        following = normalized[match.end(1):].lstrip()
+        if not re.match(r"(?:ريال|رس|sar|sr|ر\s*س)\b", following):
+            return None
+    return match
 
 
 def _segment_text(original: str) -> str:
@@ -919,6 +974,48 @@ def analyze(query: str) -> IntentResponse:
         query_label = "شاشة كمبيوتر"
     if intent.material.known and head.category and normalize(str(intent.material.value)) not in normalize(label):
         query_label = f"{label} {intent.material.value}"
+    stroller_alternatives = (
+        _stroller_alternatives(normalized) if head.subcategory == "strollers" else []
+    )
+    if stroller_alternatives:
+        query_label = f"عربية أطفال {' أو '.join(stroller_alternatives)}"
+    ipad_model = (
+        _IPAD_FAMILY.search(normalized)
+        if head.subcategory == "tablets" and any(term in normalized for term in ("ايباد", "ipad"))
+        else None
+    )
+    ipad_chip = _IPAD_CHIP.search(normalized) if ipad_model else None
+    ipad_screen = _IPAD_SCREEN.search(normalized) if ipad_model else None
+    ipad_storage = _IPAD_STORAGE.search(normalized) if ipad_model else None
+    ipad_family = None
+    ipad_model_name = None
+    if ipad_model:
+        family = normalize(ipad_model.group(1) or "")
+        family_label = {
+            "pro": "Pro",
+            "برو": "Pro",
+            "air": "Air",
+            "اير": "Air",
+            "mini": "mini",
+            "ميني": "mini",
+        }.get(family)
+        ipad_family = family_label
+        parts = ["iPad"]
+        if family_label:
+            parts.append(family_label)
+        if ipad_chip:
+            parts.append(f"M{ipad_chip.group(1)}")
+        ipad_model_name = " ".join(parts)
+        query_parts = ["آيباد"]
+        if family_label:
+            query_parts.append({"Pro": "برو", "Air": "اير", "mini": "ميني"}[family_label])
+        if ipad_chip:
+            query_parts.append(f"M{ipad_chip.group(1)}")
+        if ipad_screen:
+            query_parts.extend((ipad_screen.group(1), "انش"))
+        if ipad_storage:
+            query_parts.extend((ipad_storage.group(1), "قيقا"))
+        query_label = " ".join(query_parts)
     iphone_model = _IPHONE_MODEL.search(normalized) if head.model in {"iPhone", "iPhone Pro Max"} else None
     iphone_storage = _IPHONE_STORAGE.search(normalized) if iphone_model else None
     if iphone_storage and _PRICE_MAX.search(normalized) and iphone_storage.start() == _PRICE_MAX.search(normalized).start(1):
@@ -966,6 +1063,13 @@ def analyze(query: str) -> IntentResponse:
             intent.need = f"{intent.need} {variant}"
     if head.subcategory == "strollers" and any(term in normalized for term in ("babyzen", "بيبي زين", "بيبي زن", "بيبيزن", "بيبيزين")):
         intent.brand = known("Babyzen", 0.95, "explicit-brand")
+    if ipad_model:
+        intent.brand = known("Apple", 0.95, "explicit-ipad")
+        intent.model = known(ipad_model_name, 0.95, ipad_model.group(0))
+    if stroller_alternatives:
+        intent.identity_alternatives = stroller_alternatives
+        intent.brand = unknown()
+        intent.model = unknown()
     intent.result_unit = head.result_unit
     explicit_work = _service_request(normalized)
     if head.subcategory == "leak_detector" and "جهاز" in normalized.split() and not any(
@@ -995,10 +1099,10 @@ def analyze(query: str) -> IntentResponse:
     if any(item.subcategory == "wardrobe" for item in matched):
         intent.attributes.append(known("wardrobe", 0.7, "دولاب"))
     intent.quantity, intent.quantity_unit = _quantity(normalized, original)
-    price_max = _PRICE_MAX.search(normalized)
+    price_max = _price_bound(_PRICE_MAX, normalized)
     if price_max:
         intent.price_max = known(int(price_max.group(1)), 0.75, price_max.group(0))
-    price_min = _PRICE_MIN.search(normalized)
+    price_min = _price_bound(_PRICE_MIN, normalized)
     if price_min:
         intent.price_min = known(int(price_min.group(1)), 0.75, price_min.group(0))
     if property_transaction == "ambiguous":
@@ -1017,6 +1121,55 @@ def analyze(query: str) -> IntentResponse:
     if intent.model.known and "Pro Max" in str(intent.model.value) and not iphone_storage:
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if stroller_alternatives:
+        model_terms = [
+            term
+            for model in stroller_alternatives
+            for term in _STROLLER_MODEL_CUES[model]
+        ]
+        model_group = next(
+            (
+                index
+                for index, group in enumerate(groups)
+                if any(term in _STROLLER_MODEL_CUES["YOYO"] for term in group)
+            ),
+            None,
+        )
+        if model_group is not None:
+            groups[model_group] = model_terms
+    if ipad_model:
+        if ipad_family:
+            family_terms = {
+                "Pro": ["pro", "برو"],
+                "Air": ["air", "اير"],
+                "mini": ["mini", "ميني"],
+            }[ipad_family]
+            groups.append(family_terms)
+        if ipad_chip:
+            groups.append([f"M{ipad_chip.group(1)}", f"m{ipad_chip.group(1)}"])
+        if ipad_screen:
+            size = ipad_screen.group(1)
+            groups.append(
+                [
+                    f"{size} inch",
+                    f"{size} inches",
+                    f"{size} انش",
+                    f"{size} بوصه",
+                    f"{size} بوصه",
+                ]
+            )
+        if ipad_storage:
+            storage = ipad_storage.group(1)
+            groups.append(
+                [
+                    f"{storage}gb",
+                    f"{storage} gb",
+                    f"{storage} جيجا",
+                    f"{storage} جيجابايت",
+                    f"{storage} قيقا",
+                    f"{storage} قيقا بايت",
+                ]
+            )
     if head.subcategory == "cats":
         for _breed, cues in _CAT_BREEDS:
             if has_word(normalized, cues):
@@ -1106,6 +1259,43 @@ def analyze(query: str) -> IntentResponse:
             search_label = f"{query_label} {' '.join(qualifiers)} {shown_city}".strip()
             intent.need = search_label
     expansions = head.expansions
+    if ipad_model:
+        family = ipad_family or ""
+        chip = f"M{ipad_chip.group(1)}" if ipad_chip else ""
+        specifications = [
+            value
+            for value in (
+                ipad_screen.group(1) if ipad_screen else "",
+                "inch" if ipad_screen else "",
+                f"{ipad_storage.group(1)}GB" if ipad_storage else "",
+            )
+            if value
+        ]
+        compact = " ".join(value for value in ("iPad", family, chip, *specifications) if value)
+        arabic_family = {"Pro": "برو", "Air": "اير", "mini": "ميني"}.get(family, "")
+        arabic_compact = " ".join(
+            value
+            for value in (
+                "آيباد",
+                arabic_family,
+                chip,
+                f"{ipad_screen.group(1)} انش" if ipad_screen else "",
+                f"{ipad_storage.group(1)} قيقا" if ipad_storage else "",
+            )
+            if value
+        )
+        expansions = tuple(
+            dict.fromkeys((compact, arabic_compact, "iPad", "آيباد", *head.expansions))
+        )
+    if stroller_alternatives:
+        expansions = (
+            "عربية أطفال يويو",
+            "عرباية أطفال يويو",
+            "Babyzen YOYO",
+            "عربية أطفال بوقابو",
+            "عرباية أطفال بوقابو",
+            "Bugaboo stroller",
+        )
     if head.subcategory == "strollers" and head.model == "YOYO":
         expansions = (*expansions, "يويو عربة أطفال")
         # Sellers also call these «عرباية». Keep that observed dialect form in the

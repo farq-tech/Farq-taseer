@@ -86,6 +86,10 @@ class IntentResponse(ContractModel):
     price_min: FieldValue = Field(default_factory=unknown)
     price_max: FieldValue = Field(default_factory=unknown)
     attributes: list[FieldValue] = Field(default_factory=list)
+    # A single need may accept more than one explicitly requested product identity
+    # ("YOYO or Bugaboo"). Internal only: preserve the rule-built OR eligibility
+    # groups when the optional model reading is applied.
+    identity_alternatives: list[str] = Field(default_factory=list, exclude=True)
     location_city: FieldValue = Field(default_factory=unknown)
     location_district: FieldValue = Field(default_factory=unknown)
     # "نقل عفش من الرياض للدمام": location_city is the origin, this is where it goes.
