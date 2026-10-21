@@ -816,3 +816,23 @@ def test_working_refrigerator_for_sale_is_not_misclassified_as_a_repair_request(
     assert repair.subcategory.value == "appliance_repair"
     assert repair.result_unit.value == "service_provider"
 
+
+@pytest.mark.parametrize(
+    "query,expected_search_term",
+    [
+        ("أبغى فني يصلح ثلاجتي بالرياض", "فني ثلاجات"),
+        ("أحتاج تصليح غسالتي بالرياض", "تصليح غسالات"),
+        ("أحتاج صيانة نشافتي بجدة", "صيانة أجهزة منزلية"),
+        ("أبي فني يصلح جلايتي بمكة", "صيانة أجهزة منزلية"),
+    ],
+)
+def test_appliance_repair_understands_possessive_device_names(query, expected_search_term):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.category.value == "services"
+    assert intent.subcategory.value == "appliance_repair"
+    assert intent.result_unit.value == "service_provider"
+    assert any(expected_search_term in term for term in intent.search_terms)
+
