@@ -60,6 +60,16 @@ _CAT_SEXES = (
 )
 _CAT_AGE_NUMBER = re.compile(r"(?:عمر(?:ه|ها)?|age)\s*(\d{1,2})\s*(شهر|شهور|اشهر|month|months)\b", re.IGNORECASE)
 _CAT_AGE_WORD = re.compile(r"(?:عمر(?:ه|ها)?|age)\s*(شهرين|شهران|شهر|two months|one month)\b", re.IGNORECASE)
+_APPAREL_SIZE = re.compile(r"(?:مقاس|size)\s*(\d{1,3})\b", re.IGNORECASE)
+_APPAREL_COLORS = (
+    ("black", ("اسود", "سوداء", "سودا", "black")),
+    ("white", ("ابيض", "بيضاء", "white")),
+    ("navy", ("كحلي", "كحليه", "navy")),
+    ("brown", ("بني", "بنيه", "brown")),
+    ("red", ("احمر", "حمراء", "red")),
+    ("blue", ("ازرق", "زرقاء", "blue")),
+    ("green", ("اخضر", "خضراء", "green")),
+)
 # "3 افياش", "4 ابواب", "تنظيف 5 مكيفات": a small number and the noun after it.
 _QUANTITY = re.compile(r"(?:^|\s)(\d{1,3})\s+([؀-ۿ]{2,})")
 # "عدد 3" (the form the confirmation sheet writes), with the noun before it if any.
@@ -268,7 +278,7 @@ _SERVICE_VERBS = {
     "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "ينظف", "يغسل", "يفك",
     "يضبط", "يشتغل", "يجي", "يجيني", "يعدل", "يحفر", "يزرع", "يشيك", "يصور", "يقص", "يقلم",
     "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
-    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم",
+    "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم", "تعديل",
 }
 # Whoever does the work. "أبغى مقاول يبني لي ملحق" says provider twice over. A cook, a
 # photographer, a tutor, a driver: people hired for an occasion, not things bought.
@@ -276,7 +286,7 @@ _SERVICE_AGENTS = {
     "مقاول", "مقاولات", "فني", "فنيين", "معلم", "معلمين", "عامل", "عماله", "ورشه",
     "حداد", "نجار", "سباك", "كهربائي", "كهربجي", "دهان", "مبلط", "بلاط", "لحام",
     "شركه", "مؤسسه", "صنايعي", "استاذ",
-    "طباخ", "طباخه", "مصور", "مصوره", "مدرس", "مدرسه", "سائق", "قهوجي", "مصمم", "خادمه", "شغاله",
+    "طباخ", "طباخه", "مصور", "مصوره", "مدرس", "مدرسه", "سائق", "قهوجي", "مصمم", "خادمه", "شغاله", "خياطه", "خياط", "tailor",
 }
 
 
@@ -412,6 +422,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="electronics", subcategory="gaming_desktops", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كمبيوتر ألعاب مكتبي", "كمبيوتر قيمنق مكتبي", "كمبيوتر قيمنج مكتبي", "كمبيوترات ألعاب", "كمبيوترات قيمنق", "كمبيوترات قيمنج", "كمبيوتر ألعاب", "كمبيوتر قيمنق", "كمبيوتر قيمنج", "gaming desktop", "gaming pc"), eligibility=(("كمبيوتر", "كمبيوترات", "pc", "desktop"), ("ألعاب", "قيمنق", "قيمنج", "gaming")), expansions=("كمبيوتر ألعاب مكتبي", "كمبيوترات قيمنق", "gaming pc"), attributes=("gaming",)),
     _head(type="service", category="services", subcategory="computer_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة لابتوب", "تصليح لابتوب", "صيانة كمبيوتر", "تصليح كمبيوتر", "فني لابتوب", "فني كمبيوتر", "computer repair", "laptop repair"), eligibility=(("صيانة", "تصليح", "اصلاح", "فني", "repair"), ("لابتوب", "كمبيوتر", "لاب توب", "computer", "laptop")), expansions=("صيانة لابتوب", "تصليح كمبيوتر", "فني كمبيوتر"), verbs=("يصلح", "يصلحها", "اصلح", "صيانة", "تصليح", "اصلاح"), objects=("لابتوب", "كمبيوتر", "لاب توب", "computer", "laptop")),
     _head(type="product", category="furniture", subcategory="corner_sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب زاوية", "كنبة زاوية", "كنب زاويه", "كنب حرف L", "كنب حرف ال", "كنب على شكل L", "sectional sofa"), label="كنب زاوية", label_from_match=True, eligibility=(("كنب", "كنبة", "كنبات", "sofa", "sectional"), ("زاوية", "زاويه", "ركنة", "ركنه", "حرف l", "حرف ال", "على شكل l", "sectional")), expansions=("كنب زاوية", "كنب حرف L", "كنب ركنة"), attributes=("corner",)),
+    _head(type="product", category="clothing", subcategory="abayas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("عباءة", "عباية", "عباءات", "عبايات", "عباءة رأس", "عباية رأس", "عباءة كتف", "عباية كتف", "abaya", "abayas"), label="عباءة", label_from_match=True, eligibility=(("عباءة", "عباءه", "عباية", "عبايه", "عباءات", "عبايات", "abaya", "abayas"),), expansions=("عباءة", "عباية", "عبايات", "عباءات", "abaya", "abayas")),
     _head(type="product", category="furniture", subcategory="sofas", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كنب", "كنبة", "كنبات", "sofa"), label="كنب", eligibility=(("كنب", "كنبة", "كنبات", "sofa"),), expansions=("كنب", "كنبات", "sofa")),
     _head(type="product", category="furniture", subcategory="dining_tables", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طاولة طعام", "طاوله طعام", "سفرة طعام", "سفره طعام", "سفرة", "سفره", "dining table"), label="طاولة طعام", label_from_match=True, eligibility=(("طاولة", "طاوله", "سفرة", "سفره", "dining table"),), expansions=("طاولة طعام", "سفرة", "طاولة سفرة")),
     _head(type="product", category="furniture", subcategory="double_beds", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سرير نفرين", "سرير مزدوج", "double bed"), label="سرير نفرين", label_from_match=True, eligibility=(("سرير", "اسرة", "bed"), ("نفرين", "مزدوج", "زوجي", "double", "queen", "king")), expansions=("سرير نفرين", "سرير مزدوج", "double bed"), attributes=("double",)),
@@ -444,7 +455,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="event_planning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"), label="تنسيق مناسبات", label_from_match=True, eligibility=(("منسق حفلات", "منسقة حفلات", "منسق زهور", "منسقة زهور", "تنسيق زهور", "تجهيز حفلات", "تنسيق مناسبات", "event planning"),), expansions=("منسق حفلات", "تنسيق مناسبات", "منسق زهور", "تجهيز حفلات")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"), label="مدرب سباحة", label_from_match=True, eligibility=(("مدرب سباحة", "مدربة سباحة", "تعليم سباحة", "swimming instructor"),), expansions=("مدرب سباحة", "تعليم سباحة", "مدربة سباحة")),
     _head(type="service", category="services", subcategory="sports_coaching", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مدرب شخصي", "مدربة شخصية", "personal trainer"), label="مدرب شخصي", label_from_match=True, eligibility=(("مدرب شخصي", "مدربة شخصية", "personal trainer"),), expansions=("مدرب شخصي", "مدربة شخصية", "personal trainer")),
-    _head(type="service", category="services", subcategory="tailoring", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("خياط", "خياطة فستان", "خياطة عبايات", "تفصيل عبايات", "تعديل عباية", "تفصيل فساتين", "تعديل ملابس", "tailor", "alterations"), label="خياطة وتفصيل", label_from_match=True, eligibility=(("خياط", "خياطة فستان", "خياطة عبايات", "تفصيل عبايات", "تعديل عباية", "خياطة ملابس", "تفصيل فساتين", "تعديل ملابس", "tailor", "alterations"),), expansions=("خياط ملابس", "خياطة فساتين", "تفصيل فساتين", "خياطة عبايات", "تعديل ملابس")),
+    _head(type="service", category="services", subcategory="tailoring", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("خياط", "خياط عباية", "خياط عبايات", "خياطة فستان", "خياطة عباية", "خياطة عبايات", "تفصيل عباية", "تفصيل عبايات", "تعديل عباية", "تعديل عبايات", "تفصيل فساتين", "تعديل ملابس", "tailor", "tailor abaya", "abaya tailoring", "alterations"), label="خياطة وتفصيل", label_from_match=True, eligibility=(("خياط", "خياط عباية", "خياط عبايات", "خياطة فستان", "خياطة عباية", "خياطة عبايات", "تفصيل عباية", "تفصيل عبايات", "تعديل عباية", "تعديل عبايات", "خياطة ملابس", "تفصيل فساتين", "تعديل ملابس", "tailor", "tailor abaya", "abaya tailoring", "alterations"),), expansions=("خياط ملابس", "خياط عبايات", "خياطة فساتين", "تفصيل عبايات", "تعديل عباية", "تعديل ملابس")),
     _head(type="service", category="services", subcategory="childcare", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("مربية اطفال", "جليسة اطفال", "حاضنة اطفال", "babysitter", "childcare"), label="رعاية أطفال", label_from_match=True, eligibility=(("مربية أطفال", "جليسة أطفال", "حاضنة أطفال", "babysitter", "childcare"),), expansions=("مربية أطفال", "جليسة أطفال", "رعاية أطفال بالساعة", "حاضنة أطفال")),
     _head(type="service", category="services", subcategory="veterinary", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("طبيب بيطري", "بيطري", "عيادة بيطرية", "علاج حيوانات", "veterinarian", "vet"), label="خدمات بيطرية", label_from_match=True, eligibility=(("طبيب بيطري", "عيادة بيطرية", "بيطري للحيوانات", "خدمات بيطرية", "علاج حيوانات", "veterinarian", "vet"),), expansions=("طبيب بيطري", "عيادة بيطرية", "علاج قطط", "علاج حيوانات")),
     _head(type="service", category="services", subcategory="home_barber", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("حلاق منزلي", "حلاق يجي البيت", "حلاقة منزلية", "home barber"), label="حلاقة منزلية", label_from_match=True, eligibility=(("حلاق منزلي", "حلاق يجي البيت", "حلاقة منزلية", "home barber"),), expansions=("حلاق منزلي", "حلاق يجي البيت", "حلاقة منزلية")),
@@ -728,6 +739,15 @@ def _attributes(normalized: str, head: Head | None) -> list[FieldValue]:
         age = _cat_age_months(normalized)
         if age:
             found.append(known(f"age_months:{age[0]}", 0.9, age[1]))
+    if head and head.subcategory == "abayas":
+        size = _APPAREL_SIZE.search(normalized)
+        if size:
+            found.append(known(f"size:{size.group(1)}", 0.9, size.group(0)))
+        for color, cues in _APPAREL_COLORS:
+            matched_color = has_word(normalized, cues)
+            if matched_color:
+                found.append(known(f"color:{color}", 0.9, matched_color))
+                break
     if head:
         for attribute in head.attributes:
             found.append(known(attribute, 0.8, attribute))
@@ -1009,6 +1029,15 @@ def analyze(query: str) -> IntentResponse:
         age = _cat_age_months(normalized)
         if age:
             groups.append(_cat_age_group(age[0]))
+    if head.subcategory == "abayas":
+        size = _APPAREL_SIZE.search(normalized)
+        if size:
+            value = size.group(1)
+            groups.append([f"مقاس {value}", f"مقاس{value}", f"size {value}"])
+        for _color, cues in _APPAREL_COLORS:
+            if has_word(normalized, cues):
+                groups.append(list(cues))
+                break
     if head.subcategory == "tutoring":
         if any(term in normalized.split() for term in ("رياضيات", "math", "mathematics")):
             groups.append(["رياضيات", "math", "mathematics"])
