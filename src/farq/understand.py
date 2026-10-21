@@ -27,6 +27,7 @@ from collections import OrderedDict
 import httpx
 
 from farq.contracts import IntentResponse, LocationSensitivity, ResultUnit, known
+from farq.intent import _working_item_sale
 from farq.text import normalize
 
 log = logging.getLogger("farq.understand")
@@ -259,12 +260,16 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     preserve_identity = (
         intent.model.known or intent.brand.known or bool(intent.identity_alternatives)
     )
+    preserve_functioning_sale = (
+        intent.type.value == "product"
+        and _working_item_sale(normalize(intent.original_query))
+    )
     rule_need = intent.need
     rule_groups = [list(group) for group in intent.eligibility_groups]
     rule_terms = list(intent.search_terms)
     intent.need = (
         rule_need
-        if (preserve_identity or preserve_service_route) and rule_need
+        if (preserve_identity or preserve_service_route or preserve_functioning_sale) and rule_need
         else read["need"]
     )
     read_groups = [list(group) for group in read["must_include"]]
@@ -285,6 +290,9 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         # A rule-classified provider service is already a precise match. A generic
         # model reading such as «سيارتي الرياض» must not erase its route or widen it.
         intent.eligibility_groups = rule_groups
+    elif preserve_functioning_sale:
+        # Keep the item's rule-derived identity when the model mistakes «شغالة» for hiring.
+        intent.eligibility_groups = rule_groups
     else:
         intent.eligibility_groups = read_groups
     # Every group must hit. The rules relax this for their long tail because they only have
@@ -294,7 +302,7 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     terms: list[str] = []
     search_terms = (
         rule_terms
-        if intent.identity_alternatives or preserve_service_route
+        if intent.identity_alternatives or preserve_service_route or preserve_functioning_sale
         else [*rule_terms, *read["search_terms"]]
         if preserve_identity or preserve_service_route
         else read["search_terms"]
@@ -302,14 +310,15 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     for term in search_terms:
         candidates = (
             (term,)
-            if preserve_identity or preserve_service_route
+            if preserve_identity or preserve_service_route or preserve_functioning_sale
             else (term, f"{term} {city}".strip() if city else "")
         )
         for candidate in candidates:
             if candidate and candidate not in terms:
                 terms.append(candidate)
     intent.search_terms = terms[:MAX_TERMS * 2]
-    if read["hiring"]:
+    working_item_sale = preserve_functioning_sale
+    if read["hiring"] and not working_item_sale:
         intent.result_unit = ResultUnit.SERVICE_PROVIDER
         intent.location_sensitivity = LocationSensitivity.REQUIRED
         if not intent.type.known:
@@ -318,6 +327,9 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
             if "location_city" not in intent.missing_decision_information:
                 intent.missing_decision_information.append("location_city")
             intent.clarification_question = "في أي مدينة؟"
+    elif working_item_sale:
+        # The model can call «شغالة» hiring even when the customer says the appliance is for sale.
+        intent.result_unit = ResultUnit.AD
     elif intent.result_unit == ResultUnit.SERVICE_PROVIDER and not preserve_service_route:
         # He is buying a thing; do not let the rules' hiring guess stand.
         intent.result_unit = ResultUnit.AD

@@ -5,6 +5,7 @@ import pytest
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.understand import _apply
 from farq.live_haraj import haraj_queries
 from farq.taxonomy import catalog, read_business
 from farq.text import normalize
@@ -775,3 +776,43 @@ def test_colloquial_intercity_cargo_requests_are_classified_and_match_cargo_serv
     assert normalize(intent.destination_city.value) == normalize("جدة")
     assert any("الرياض" in term and "جدة" in term for term in haraj_queries(intent.search_terms, intent.location_city.value))
     assert decide(intent, listing, seller)[0] is True
+
+def test_working_refrigerator_for_sale_is_not_misclassified_as_a_repair_request():
+    query = "أبي ثلاجة شغالة ممتازة للبيع بالرياض"
+    intent = analyze(query)
+
+    assert intent.type.value == "product"
+    assert intent.category.value == "appliances"
+    assert intent.subcategory.value == "refrigerators"
+    assert intent.result_unit.value == "ad"
+
+    seller = Seller(id="seller", name="أجهزة منزلية", city="الرياض")
+    listing = Ad(
+        id="refrigerator",
+        title="ثلاجة شغالة ممتازة للبيع",
+        city="الرياض",
+        seller=seller,
+    )
+    assert decide(intent, listing, seller)[0] is True
+
+    # A model may read «شغالة» as hiring; the explicit sale intent must remain authoritative.
+    refined = _apply(
+        intent,
+        {
+            "need": "صيانة أجهزة",
+            "hiring": True,
+            "must_include": [["صيانة"]],
+            "search_terms": ["فني صيانة أجهزة"],
+        },
+    )
+    assert refined.type.value == "product"
+    assert refined.result_unit.value == "ad"
+    assert refined.need == intent.need
+    assert refined.eligibility_groups == intent.eligibility_groups
+    assert refined.search_terms == intent.search_terms[:8]
+    assert not any("صيانة" in term for term in refined.search_terms)
+
+    repair = analyze("ثلاجة تحتاج صيانة بالرياض")
+    assert repair.subcategory.value == "appliance_repair"
+    assert repair.result_unit.value == "service_provider"
+
