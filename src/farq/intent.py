@@ -1903,6 +1903,9 @@ def analyze(query: str) -> IntentResponse:
             for word in original.split()
         )
         city_words = {normalize(word) for word in (city_label(city_value) or "").split()}
+        ipad_storage_words = (
+            set(normalize(ipad_storage.group(0)).split()) if ipad_storage else set()
+        )
         yoyo_variant = intent.model.value[-1] if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"} else None
         request_preface_words = _leading_request_preface_words(original)
         qualifiers = []
@@ -1917,6 +1920,7 @@ def analyze(query: str) -> IntentResponse:
                 or folded in _WANT_WORDS
                 or folded in request_preface_words
                 or folded in city_words
+                or folded in ipad_storage_words
                 or folded == yoyo_variant
                 or (search_imperative and folded == "دور")
                 or (

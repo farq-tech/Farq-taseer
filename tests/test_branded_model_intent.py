@@ -45,6 +45,16 @@ def test_macbook_need_keeps_ram_and_storage_as_separate_requested_specs():
         assert all(spec in need for spec in expected_specs), (query, need)
 
 
+def test_ipad_storage_is_not_repeated_in_confirmed_need():
+    for query in (
+        "آيباد برو M2 256GB جدة",
+        "آيباد برو M2 256 GB جدة",
+        "آيباد برو M2 256 قيقا جدة",
+    ):
+        need = analyze(query).need
+        assert need.count("256") == 1, (query, need)
+
+
 def test_english_dell_and_hp_model_queries_keep_exact_identity_and_configuration():
     dell = analyze("Dell XPS 13 16GB 512GB الرياض")
     hp = analyze("HP Spectre x360 32GB 1TB جدة")
