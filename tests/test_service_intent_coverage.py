@@ -216,6 +216,22 @@ def test_common_services_match_providers_without_returning_related_products(
     assert decide(intent, product, seller)[0] is False
 
 
+
+def test_hourly_household_helper_can_put_hourly_detail_in_description():
+    intent = analyze("أبي شغالة تجي بالساعة بالرياض")
+    seller = Seller(id="seller", name="شغالات منزلية", city="الرياض")
+    listing = Ad(
+        id="hourly-description",
+        title="شغالات منزلية في الرياض",
+        description="تجي بالساعة",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.subcategory.value == "cleaning"
+    assert decide(intent, listing, seller)[0] is True
+
+
 def test_translated_book_is_a_product_query_not_translation_service():
     intent = analyze("أبي كتاب مترجم")
 
