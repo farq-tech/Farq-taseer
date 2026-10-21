@@ -565,6 +565,13 @@ function imageSources(ad) {
   return [...new Set(urls)];
 }
 
+function imageAvailabilityDisclosure(ad) {
+  if (imageSources(ad).length) return "";
+  if (ad?.source_has_image === false) return "لا توجد صور مرفقة بإعلان حراج.";
+  if (ad?.source_has_image === true) return "حراج يذكر وجود صور؛ افتح التفاصيل لمحاولة عرضها.";
+  return "";
+}
+
 function sellerOf(result) {
   return result.seller || result.ad?.seller || {};
 }
@@ -1471,6 +1478,7 @@ function renderCard(result) {
   const age = adAge(result.ad);
   const needName = multiNeed() ? needOf(result) : "";
   const sources = result.ad ? imageSources(result.ad) : [];
+  const imageNotice = imageAvailabilityDisclosure(result.ad);
   // One photo per listing: Haraj gives a thumbnail, and the two URLs are the same picture
   // at two sizes, not two pictures. So it is shown once, large enough to judge, and opens
   // the listing when tapped - no carousel over a single image.
@@ -1487,6 +1495,7 @@ function renderCard(result) {
         <span class="fq-open-label">عرض تفاصيل الإعلان</span>
       </button>
     </div>
+    ${imageNotice ? `<p class="fq-image-notice" role="note">${esc(imageNotice)}</p>` : ""}
     ${matched.length ? `<div class="fq-matched" aria-label="طابق طلبك في">${matched
       .map((word) => `<span class="fq-hit">${ic("check", 11)}<bdi>${esc(word)}</bdi></span>`)
       .join("")}</div>` : ""}
@@ -1707,6 +1716,7 @@ function detailSheet() {
   const name = who.name;
   const age = adAge(result.ad);
   const gallery = state.gallery.length ? state.gallery : imageSources(result.ad);
+  const imageNotice = gallery.length ? "" : imageAvailabilityDisclosure(result.ad);
   const key = resultKey(result);
   const selected = state.selected.has(key);
   const adTitle = adOriginalText(result.ad?.title);
@@ -1730,6 +1740,7 @@ function detailSheet() {
       ${priceDisclosure}
       ${adTitle ? `<h3 class="fq-ad-title"><bdi>${esc(adTitle)}</bdi></h3>` : ""}
       ${adDescription ? `<p class="fq-ad-original"><bdi>${esc(adDescription)}</bdi></p>` : `<p class="fq-meta">لا يوجد وصف إضافي لهذا الإعلان.</p>`}
+      ${imageNotice ? `<p class="fq-image-notice" role="note">${esc(imageNotice)}</p>` : ""}
       ${gallery.length ? `<h2 style="font-size:15px">صور من إعلان المورد</h2>
         <div id="gallery" style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none">${gallery
           .map((url) => `<div class="fq-skel" style="flex:none;width:96px;height:72px;border-radius:12px;overflow:hidden" data-frame><img alt="" data-src="${esc(url)}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`)

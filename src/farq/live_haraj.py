@@ -200,6 +200,7 @@ def ad_from_item(item: dict, filtered_city: str | None = None) -> Ad:
         posted_at=posted,
         image_ref=item.get("thumbURL") or None,
         image_urls=image_urls_for(item.get("thumbURL")),
+        source_has_image=item.get("hasImage") if isinstance(item.get("hasImage"), bool) else None,
         category_tags=list(item.get("tags") or []),
         listing_state=listing_state,
         seller=seller,

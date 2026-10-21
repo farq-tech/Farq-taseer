@@ -259,6 +259,12 @@ def test_thumbnail_file_names_use_the_measured_cdn_sizes():
     assert empty.image_ref is None
 
 
+def test_haraj_image_presence_is_preserved_only_when_explicit():
+    assert ad_from_item({"id": "image-true", "hasImage": True}).source_has_image is True
+    assert ad_from_item({"id": "image-false", "hasImage": False}).source_has_image is False
+    assert _ad().source_has_image is None
+
+
 def test_parts_games_and_side_mentions_are_not_the_requested_thing():
     camry = analyze("كامري 2024 مستعملة بالرياض")
     rim = _ad(id=21, title="جنوط كامري 2024 مستعمل", bodyTEXT="جنوط وكالة", city="الرياض")
