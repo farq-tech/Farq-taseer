@@ -101,6 +101,24 @@ _MACBOOK_RAM = re.compile(
     r"(?<!\d)(?P<ram>8|16|18|24|32|36|48|64)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت)(?![\w])",
     re.IGNORECASE,
 )
+_BRANDED_LAPTOP_MODELS = (
+    (
+        "Dell",
+        re.compile(
+            r"\bdell\s+(?P<line>xps|latitude|inspiron|precision|vostro|alienware)"
+            r"(?:\s+(?P<code>x\d{3}|m\d{2}|\d{2,4})(?!\s*(?:gb|gib|ram|جيجا|قيقا)))?",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "HP",
+        re.compile(
+            r"\bhp\s+(?P<line>spectre|elitebook|probook|pavilion|envy|omen|victus)"
+            r"(?:\s+(?P<code>x\d{3}|\d{2,4})(?!\s*(?:gb|gib|ram|جيجا|قيقا)))?",
+            re.IGNORECASE,
+        ),
+    ),
+)
 _DYSON_BRAND = re.compile(r"\b(?:دايسون|dyson)\b", re.IGNORECASE)
 _DYSON_MODEL = re.compile(r"(?<![a-z0-9])(?:v|dc)\s*(?P<number>\d{1,3})(?!\d)", re.IGNORECASE)
 _IPAD_FAMILY = re.compile(r"(?:ايباد|ipad)\s*(?:(pro|برو|air|اير|mini|ميني)\b)?", re.IGNORECASE)
@@ -1410,6 +1428,48 @@ def _branded_model_head(normalized: str) -> Head | None:
             eligibility=tuple(groups), expansions=(model, f"Apple {model}"),
         )
 
+    laptop_lines = {
+        "xps": "XPS",
+        "latitude": "Latitude",
+        "inspiron": "Inspiron",
+        "precision": "Precision",
+        "vostro": "Vostro",
+        "alienware": "Alienware",
+        "spectre": "Spectre",
+        "elitebook": "EliteBook",
+        "probook": "ProBook",
+        "pavilion": "Pavilion",
+        "envy": "Envy",
+        "omen": "Omen",
+        "victus": "Victus",
+    }
+    laptop_accessory_or_service = _service_request(normalized) or has_word(
+        normalized,
+        (
+            "شاحن", "كيبل شاحن", "بطارية", "جراب", "حقيبة لابتوب", "شنطة لابتوب",
+            "laptop charger", "charger", "battery", "case", "sleeve", "laptop bag",
+        ),
+    )
+    if not laptop_accessory_or_service:
+        for brand, pattern in _BRANDED_LAPTOP_MODELS:
+            laptop = pattern.search(normalized)
+            if not laptop:
+                continue
+            family = laptop_lines[normalize(laptop.group("line"))]
+            code = (laptop.group("code") or "").upper()
+            model = f"{brand} {family}" + (f" {code}" if code else "")
+            identity = (
+                (f"{brand} {family} {code}", f"{family} {code}", f"{family}{code}")
+                if code
+                else (f"{brand} {family}", family)
+            )
+            return _head(
+                type="product", category="electronics", subcategory="laptops",
+                result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
+                phrases=(model,), brand=brand, model=model, label=model,
+                eligibility=(identity,), expansions=(model, f"{family} laptop"),
+            )
+
     dyson = _DYSON_MODEL.search(normalized)
     if dyson and _DYSON_BRAND.search(normalized):
         model = f"Dyson {dyson.group(0).upper().replace(' ', '')}"
@@ -1552,7 +1612,10 @@ def analyze(query: str) -> IntentResponse:
                 else f"{storage_number.group(0)}GB"
             )
             query_label = f"{query_label} {storage}"
-    elif head.brand == "Apple" and str(head.model or "").startswith("MacBook"):
+    elif head.subcategory == "laptops" and (
+        head.brand in {"Dell", "HP"}
+        or (head.brand == "Apple" and str(head.model or "").startswith("MacBook"))
+    ):
         macbook_ram = _MACBOOK_RAM.search(normalized)
         macbook_specs = []
         if macbook_ram:

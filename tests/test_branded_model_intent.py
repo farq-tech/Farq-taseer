@@ -45,6 +45,30 @@ def test_macbook_need_keeps_ram_and_storage_as_separate_requested_specs():
         assert all(spec in need for spec in expected_specs), (query, need)
 
 
+def test_english_dell_and_hp_model_queries_keep_exact_identity_and_configuration():
+    dell = analyze("Dell XPS 13 16GB 512GB الرياض")
+    hp = analyze("HP Spectre x360 32GB 1TB جدة")
+
+    assert dell.understood is True
+    assert (dell.category.value, dell.subcategory.value, dell.brand.value, dell.model.value) == (
+        "electronics",
+        "laptops",
+        "Dell",
+        "Dell XPS 13",
+    )
+    assert all(spec in dell.need for spec in ("13", "16GB", "512GB"))
+    assert hp.understood is True
+    assert (hp.brand.value, hp.model.value) == ("HP", "HP Spectre X360")
+    assert all(spec in hp.need for spec in ("32GB", "1TB"))
+
+    seller = Seller(id="seller", name="computer shop")
+    exact = Ad(id="exact", title="Dell XPS 13 16GB RAM 512GB SSD laptop", seller=seller)
+    other_model = Ad(id="other", title="Dell XPS 15 16GB RAM 512GB SSD laptop", seller=seller)
+    assert decide(dell, exact, seller)[0]
+    assert not decide(dell, other_model, seller, relaxed=True)[0]
+    assert analyze("Dell XPS 13 charger").subcategory.value != "laptops"
+
+
 def test_dyson_vacuum_query_is_classified_and_keeps_model():
     intent = analyze("مكنسة دايسون V15 بالرياض")
 
