@@ -255,6 +255,51 @@ def test_subject_specific_tutor_listing_is_recognized_and_matched():
     assert any(item["key"] == "tutoring" for item in read_business(provider.title)["services"])
 
 
+@pytest.mark.parametrize(
+    "query,listing_title,wrong_subject_title",
+    [
+        (
+            "مطلوب معلمة خصوصي رياضيات اونلاين",
+            "معلمة خصوصي رياضيات اونلاين لجميع المراحل",
+            "معلمة خصوصي انجليزي اونلاين",
+        ),
+        (
+            "أبي مدرسة خصوصي انجليزي عن بعد",
+            "مدرسة خصوصي انجليزي عن بعد",
+            "مدرسة خصوصي رياضيات عن بعد",
+        ),
+    ],
+)
+def test_colloquial_online_tutoring_searches_keep_subject_and_learning_mode(
+    query, listing_title, wrong_subject_title
+):
+    intent = analyze(query)
+    seller = Seller(id="tutor", name="معلم خصوصي", city="الرياض")
+    provider = Ad(id="tutor-match", title=listing_title, city="الرياض", seller=seller)
+    wrong_subject = Ad(id="wrong-subject", title=wrong_subject_title, city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "tutoring"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_sensitivity.value == "preferred"
+    assert intent.clarification_question is None
+    assert "location_city" not in intent.missing_decision_information
+    assert any("رياضيات" in term or "انجليزي" in term for term in intent.search_terms)
+    assert any("اونلاين" in term or "عن بعد" in term for term in intent.search_terms)
+    assert decide(intent, provider, seller)[0] is True
+    assert decide(intent, wrong_subject, seller)[0] is False
+    assert any(item["key"] == "tutoring" for item in read_business(listing_title)["services"])
+
+
+def test_in_person_tutoring_still_asks_for_a_city_when_none_is_given():
+    intent = analyze("أبي مدرس رياضيات خصوصي")
+
+    assert intent.subcategory.value == "tutoring"
+    assert intent.location_sensitivity.value == "required"
+    assert intent.clarification_question == "في أي مدينة؟"
+
+
 def test_cleaning_worker_request_rejects_workers_without_cleaning_evidence():
     intent = analyze("أبي عاملة نظافة بالرياض")
     seller = Seller(id="seller", name="عامل حدائق", city="الرياض")
