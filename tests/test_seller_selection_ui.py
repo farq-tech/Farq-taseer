@@ -99,6 +99,7 @@ const adPriceDisclosure = () => '';
 const offerMarks = () => [];
 const adAge = () => null;
 const imageSources = () => [];
+const imageAvailabilityDisclosure = (ad) => ad?.source_has_image === false ? 'لا توجد صور مرفقة بإعلان حراج.' : ad?.source_has_image === true ? 'حراج يذكر وجود صور؛ افتح التفاصيل لمحاولة عرضها.' : '';
 const esc = (value) => String(value);
 const ic = () => '';
 const withoutPrices = (value) => value;
@@ -106,6 +107,11 @@ const withoutPrices = (value) => value;
 const html = renderCard({ad:{title:'عربية أطفال يويو', city:'الرياض'}, seller:{id:'seller-1'}});
 assert.match(html, /عرض تفاصيل الإعلان/);
 assert.match(html, /data-action="open"/);
+assert.doesNotMatch(html, /لا توجد صور/);
+const noImage = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:false}, seller:{id:'seller-1'}});
+assert.match(noImage, /لا توجد صور مرفقة بإعلان حراج/);
+const missingThumbnail = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:true}, seller:{id:'seller-1'}});
+assert.match(missingThumbnail, /حراج يذكر وجود صور/);
 '''
     subprocess.run(['node', '-e', script], check=True)
 

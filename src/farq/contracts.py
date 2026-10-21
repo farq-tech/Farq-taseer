@@ -156,6 +156,8 @@ class Ad(ContractModel):
     posted_at: str | None = None
     image_ref: str | None = None
     image_urls: list[str] = Field(default_factory=list)
+    # Haraj's explicit source signal; None means the source did not tell us.
+    source_has_image: bool | None = None
     category_tags: list[str] = Field(default_factory=list)
     listing_state: str = "unknown"
     seller: Seller
