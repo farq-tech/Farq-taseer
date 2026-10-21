@@ -89,6 +89,40 @@ def test_english_espresso_repair_is_a_service_but_a_repair_kit_is_a_product():
     assert kit.subcategory.value == "coffee_machines"
 
 
+@pytest.mark.parametrize(
+    "query,subcategory,brand",
+    [
+        ("أبي مكينة قهوة ديلونغي", "coffee_machines", "De'Longhi"),
+        ("coffee machine DeLonghi", "coffee_machines", "De'Longhi"),
+        ("أبي ماكينة خياطة سنغر", "sewing_machines", "Singer"),
+        ("sewing machine Singer", "sewing_machines", "Singer"),
+    ],
+)
+def test_brand_alias_and_word_order_keep_the_explicit_machine_brand(query, subcategory, brand):
+    intent = analyze(query)
+
+    assert intent.type.value == "product"
+    assert intent.subcategory.value == subcategory
+    assert intent.brand.value == brand
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "صيانة آلة خياطة بالرياض",
+        "coffee machine repair Riyadh",
+        "sewing machine repair Riyadh",
+        "sewing machine maintenance Riyadh",
+    ],
+)
+def test_machine_maintenance_variants_route_to_city_required_service(query):
+    intent = analyze(query)
+
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "appliance_repair"
+    assert intent.location_sensitivity.value == "required"
+
+
 def test_de_longhi_search_rejects_a_different_coffee_machine_brand():
     intent = analyze("أحتاج آلة قهوة ديلونجي بالرياض")
     seller = Seller(id="seller", name="", city="الرياض")
@@ -131,6 +165,29 @@ def test_singer_search_rejects_a_different_sewing_machine_brand():
 
     assert decide(intent, singer, seller)[0] is True
     assert decide(intent, brother, seller)[0] is False
+
+
+def test_english_brand_order_matches_a_listing_with_brand_first():
+    coffee = analyze("coffee machine DeLonghi")
+    sewing = analyze("sewing machine Singer")
+    seller = Seller(id="seller", name="", city="الرياض")
+    delonghi = Ad(
+        id="delonghi-en",
+        title="DeLonghi coffee machine",
+        city="الرياض",
+        listing_state="active",
+        seller=seller,
+    )
+    singer = Ad(
+        id="singer-en",
+        title="Singer sewing machine",
+        city="الرياض",
+        listing_state="active",
+        seller=seller,
+    )
+
+    assert decide(coffee, delonghi, seller)[0] is True
+    assert decide(sewing, singer, seller)[0] is True
 
 
 def test_coffee_alone_does_not_become_a_coffee_machine_search():

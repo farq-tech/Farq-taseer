@@ -117,6 +117,9 @@ def test_search_trace_is_stored(tmp_path: Path):
     [
         ("أحتاج آلة قهوة ديلونجي بالرياض", "coffee_machines", "De'Longhi"),
         ("أبي مكينة خياطة سنجر", "sewing_machines", "Singer"),
+        ("أبي ماكينة خياطة سنغر", "sewing_machines", "Singer"),
+        ("coffee machine DeLonghi", "coffee_machines", "De'Longhi"),
+        ("sewing machine Singer", "sewing_machines", "Singer"),
     ],
 )
 def test_intent_endpoint_classifies_household_machines(tmp_path: Path, query, subcategory, brand):
@@ -138,7 +141,11 @@ def test_intent_endpoint_classifies_household_machines(tmp_path: Path, query, su
     "query,kind,subcategory,result_unit,location_sensitivity",
     [
         ("صيانة مكينة اسبريسو بالرياض", "service", "appliance_repair", "service_provider", "required"),
+        ("صيانة آلة خياطة بالرياض", "service", "appliance_repair", "service_provider", "required"),
         ("espresso machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("coffee machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("sewing machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("sewing machine maintenance Riyadh", "service", "appliance_repair", "service_provider", "required"),
         ("espresso machine repair kit Riyadh", "product", "coffee_machines", "ad", "preferred"),
     ],
 )
