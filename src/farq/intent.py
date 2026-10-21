@@ -1475,6 +1475,30 @@ def _branded_model_head(normalized: str) -> Head | None:
         "omen": "Omen",
         "victus": "Victus",
     }
+    if _english_service_request(normalized):
+        for brand, pattern in _BRANDED_LAPTOP_MODELS:
+            laptop = pattern.search(normalized)
+            if not laptop:
+                continue
+            family = laptop_lines[normalize(laptop.group("line"))]
+            code = (laptop.group("code") or "").upper()
+            model = f"{brand} {family}" + (f" {code}" if code else "")
+            return _head(
+                type="service", category="services", subcategory="computer_repair",
+                result_unit=ResultUnit.SERVICE_PROVIDER,
+                location_sensitivity=LocationSensitivity.REQUIRED,
+                phrases=("laptop repair", "computer repair", model),
+                brand=brand, model=model, label=f"{model} repair",
+                eligibility=(
+                    (
+                        "صيانة", "تصليح", "اصلاح", "فني", "repair", "repairs",
+                        "repairing", "maintenance", "fix", "fixes", "fixing",
+                    ),
+                    ("laptop", "computer", "لابتوب", "لاب توب", "كمبيوتر"),
+                ),
+                expansions=("laptop repair", "computer repair", "تصليح لابتوب", "صيانة كمبيوتر"),
+            )
+
     laptop_accessory_or_service = (
         _service_request(normalized)
         or _english_service_request(normalized)
