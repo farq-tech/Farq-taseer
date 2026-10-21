@@ -108,6 +108,16 @@ def test_stroller_with_included_accessories_is_still_a_stroller_listing():
     assert decide(intent, bundle, seller)[0] is True
 
 
+@pytest.mark.parametrize("title", ["عربية يويو هيكل بس للبيع", "هيكل عربة يويو فقط"])
+def test_stroller_search_rejects_component_only_listings_even_as_near_matches(title):
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    listing = Ad(id="component-only", title=title, seller=seller)
+
+    assert decide(intent, listing, seller) == (False, ["stroller_component_only"])
+    assert decide(intent, listing, seller, relaxed=True) == (False, ["stroller_component_only"])
+
+
 def test_stroller_with_a_car_seat_bundle_is_still_a_stroller_listing():
     intent = analyze("عربية اطفال يويو")
     seller = Seller(id="seller-1", name="معلن")
