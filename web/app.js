@@ -1509,6 +1509,7 @@ function renderFlow() {
   const tabs = [...new Set(state.results.map(needOf).filter(Boolean))];
   if (state.needFilter && !tabs.includes(state.needFilter)) state.needFilter = "";
   const shown = visibleResults();
+  const sellersShown = uniqueSellerCount(shown);
   return `${fqHead({ title: "نتائج البحث", back: "back-understand" })}
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
@@ -1527,13 +1528,25 @@ function renderFlow() {
 // full render, and redrawn alone when a streamed batch changes the count or adds an item.
 function filtersRow(tabs, shown) {
   return `<div class="fq-live"><span class="fq-pulse" aria-hidden="true"></span>
-        <span data-count="${shown.length}">${esc(foundLine(state.shownCount || shown.length))}</span><span data-partial>${state.partial ? " • البحث مستمر" : ""}</span></div>
+        <span data-count="${shown.length}" data-sellers="${sellersShown ?? ""}">${esc(resultsLine(sellersShown == null ? (state.shownCount || shown.length) : shown.length, sellersShown))}</span><span data-partial>${state.partial ? " • البحث مستمر" : ""}</span></div>
       <span class="fq-meta">الأسعار توصلك في عروضهم</span>
       ${tabs.length > 1 ? `<button class="fq-fpill all${state.needFilter ? "" : " on"}" type="button" data-action="filter-need" data-name="" aria-pressed="${!state.needFilter}">الكل</button>${tabs.map((name) => `<button class="fq-fpill${state.needFilter === name ? " on" : ""}" type="button" data-action="filter-need" data-name="${esc(name)}" aria-pressed="${state.needFilter === name}"><bdi>${esc(name)}</bdi></button>`).join("")}` : ""}`;
 }
 
 function foundLine(count) {
-  return count ? `لقينا ${suppliers(count)}` : "ما فيه نتائج";
+  return count ? `لقينا ${plural(count, ["إعلان واحد", "إعلانين", "إعلانات", "إعلانًا"])}` : "ما فيه نتائج";
+}
+
+function uniqueSellerCount(results) {
+  if (!results.length) return 0;
+  const ids = results.map((result) => sellerOf(result).id);
+  if (ids.some((id) => !id)) return null;
+  return new Set(ids).size;
+}
+
+function resultsLine(count, sellers) {
+  const ads = foundLine(count);
+  return !count || sellers == null ? ads : `${ads} من ${plural(sellers, ["بائع واحد", "بائعين", "بائعين", "بائعًا"])}`;
 }
 
 // An empty result says why, and offers what can change the outcome: a failure can be tried
@@ -4479,11 +4492,17 @@ function bindCounter(root) {
   const node = root.querySelector("[data-count]");
   if (!node) return;
   const target = Number(node.dataset.count || 0);
+  const sellers = node.dataset.sellers === "" ? null : Number(node.dataset.sellers);
+  if (sellers != null) {
+    state.shownCount = target;
+    node.textContent = resultsLine(target, sellers);
+    return;
+  }
   const from = Number(state.shownCount || 0);
   if (from === target) return;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     state.shownCount = target;
-    node.textContent = foundLine(target);
+    node.textContent = resultsLine(target, null);
     return;
   }
   const started = performance.now();
@@ -4491,7 +4510,7 @@ function bindCounter(root) {
     const ratio = Math.min(1, (now - started) / 200);
     // counting up from nothing never flashes «no results» on the way
     const value = Math.max(target ? 1 : 0, Math.round(from + (target - from) * ratio));
-    node.textContent = foundLine(value);
+    node.textContent = resultsLine(value, null);
     state.shownCount = value;
     if (ratio < 1) requestAnimationFrame(step);
   };

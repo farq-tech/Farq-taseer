@@ -88,3 +88,29 @@ def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails()
     assert 'state.nextPage = event.next_page ?? null;' in source
     assert 'state.searchId !== searchId || state.traceId !== traceId' in source
     assert '// Keep the page cursor and current cards so the customer can safely retry.' in source
+
+
+def test_result_count_distinguishes_listings_from_unique_sellers():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    functions = []
+    for signature in (
+        'function formatCount(value) {',
+        'function plural(count, [one, two, few, many]) {',
+        'function foundLine(count) {',
+        'function sellerOf(result) {',
+        'function uniqueSellerCount(results) {',
+        'function resultsLine(count, sellers) {',
+    ):
+        start = source.index(signature)
+        end = source.index('\n}', start) + 2
+        functions.append(source[start:end])
+    script = '''const assert = require('node:assert/strict');
+''' + '\n'.join(functions) + '''
+const listings = Array.from({length: 13}, (_, index) => ({seller: {id: index < 2 ? 'seller-1' : `seller-${index}`}}));
+assert.equal(uniqueSellerCount(listings), 12);
+assert.equal(resultsLine(listings.length, uniqueSellerCount(listings)), 'لقينا 13 إعلانًا من 12 بائعًا');
+assert.equal(resultsLine(2, 2), 'لقينا إعلانين من بائعين');
+assert.equal(resultsLine(1, 1), 'لقينا إعلان واحد من بائع واحد');
+assert.equal(resultsLine(13, uniqueSellerCount([{seller: {}}])), 'لقينا 13 إعلانًا');
+'''
+    subprocess.run(['node', '-e', script], check=True)
