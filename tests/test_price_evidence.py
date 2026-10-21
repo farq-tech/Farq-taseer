@@ -231,6 +231,32 @@ def test_unit_price_field_is_labeled_as_a_unit_rate(price_text):
     assert evidence.amount is None
 
 
+def test_attached_unit_rate_in_description_does_not_promote_field_amount_to_total():
+    evidence = infer_price_evidence(
+        "ريالات فضة 100 حبة السعر65للحبه سعر نهائي",
+        None,
+        65,
+        "65",
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
+def test_attached_unit_rate_is_recognized_without_a_price_field():
+    evidence = infer_price_evidence("فضة", "السعر 65للحبه", None)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
+def test_attached_unit_rate_in_price_field_is_not_a_total():
+    evidence = infer_price_evidence("خدمة", None, None, "65للحبه")
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
 @pytest.mark.parametrize(
     "description",
     [
