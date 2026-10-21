@@ -113,11 +113,49 @@ assert.match(html, /data-action="open"/);
 def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails():
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
     assert 'data-action="load-more"' in source
-    assert 'حمّل إعلانات أكثر' in source
+    assert 'تابع البحث عن إعلانات أكثر' in source
+    assert 'هذه دفعة من النتائج، وقد توجد إعلانات أخرى في الصفحات التالية.' in source
+    assert source.index('data-action="load-more"') < source.index('shown.map(renderCard).join("")')
     assert 'json: { query: asked, page, continuation_trace: traceId }' in source
     assert 'state.nextPage = event.next_page ?? null;' in source
     assert 'state.searchId !== searchId || state.traceId !== traceId' in source
     assert '// Keep the page cursor and current cards so the customer can safely retry.' in source
+
+
+def test_more_results_control_is_prominent_only_while_another_page_is_available():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    start = source.index('function renderFlow() {')
+    end = source.index('\n}', start) + 2
+    script = '''const assert = require('node:assert/strict');
+const state = {searchState:'DONE', searching:false, partial:false, results:[{}], needFilter:'', selected:new Set(), nextPage:4, loadingMore:false, notice:'', view:'results', capSheet:false};
+let newCardsInBatch = 0;
+const fqHead = () => '';
+const renderQuestion = () => '';
+const renderSearching = () => '';
+const multiNeed = () => false;
+const needOf = () => '';
+const visibleResults = () => state.results;
+const uniqueSellerCount = () => 1;
+const filtersRow = () => '<div>count</div>';
+const esc = (value) => String(value);
+const finalNotice = () => '';
+const emptyState = () => '';
+const renderCard = () => '<article data-card>listing</article>';
+const resultKey = () => 'ad-1';
+const formatCount = (value) => String(value);
+const suppliers = (value) => `${value} suppliers`;
+''' + source[start:end] + '''
+let html = renderFlow();
+assert.match(html, /قد توجد إعلانات أخرى في الصفحات التالية/);
+assert.ok(html.indexOf('data-action="load-more"') < html.indexOf('data-card'));
+state.loadingMore = true;
+html = renderFlow();
+assert.match(html, /disabled aria-busy="true"/);
+state.nextPage = null;
+html = renderFlow();
+assert.doesNotMatch(html, /data-action="load-more"|قد توجد إعلانات أخرى/);
+'''
+    subprocess.run(['node', '-e', script], check=True)
 
 
 def test_result_count_distinguishes_listings_from_unique_sellers():

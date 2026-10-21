@@ -1812,6 +1812,8 @@ body.fq-auth .fq { background: linear-gradient(135deg, var(--fq-light) 25%, var(
 .fq-filters-row::-webkit-scrollbar { display: none; }
 .fq-filters-row .fq-live { flex: none; max-width: 140px; }
 .fq-filters-row .fq-fpill { align-self: center; }
+.fq-more-results { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.fq-more-results .fq-meta { margin: 0; }
 /* the bar down a result's left edge carries the colour of what it saves */
 .fq-result { position: relative; overflow: hidden; }
 .fq-result::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--bar, var(--fq-line)); }
