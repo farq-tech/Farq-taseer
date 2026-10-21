@@ -267,6 +267,21 @@ def test_description_price_range_preserves_its_source_and_exact_text():
     assert evidence.text == "من 800 حتى 200"
 
 
+def test_historical_purchase_and_sale_prices_are_shown_as_context_not_a_final_price():
+    evidence = infer_price_evidence(
+        "عربية أطفال YOYO بحالة جيدة",
+        "سعر الشراء 2700\nسعر البيع 1200",
+        1200,
+        "1,200",
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+    assert evidence.source == "price_field"
+    assert evidence.text_source == "description"
+    assert evidence.text == "سعر الشراء 2700 ؛ سعر البيع 1200"
+
+
 def test_down_payment_is_never_used_as_a_comparable_listing_price():
     evidence = infer_price_evidence(
         "سيارة للبيع",

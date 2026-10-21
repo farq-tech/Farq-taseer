@@ -54,6 +54,10 @@ assert.match(html, /لا نعامل النطاق كسعر واحد للمقار�
 html = adPriceDisclosure({price_text:'<img>',price_evidence:{kind:'ambiguous_amount',source:'price_field'}});
 assert.match(html, /&lt;img&gt;/);
 assert.doesNotMatch(html, /ر\\.س/);
+html = adPriceDisclosure({price_evidence:{kind:'ambiguous_amount',source:'price_field',text_source:'description',text:'سعر الشراء 2700 ؛ سعر البيع 1200'}});
+assert.match(html, /مبالغ مختلفة مذكورة في الوصف: سعر الشراء 2700 ؛ سعر البيع 1200/);
+assert.match(html, /لم نعتبرها سعرًا نهائيًا واحدًا/);
+assert.doesNotMatch(html, /2700 ر\\.س|1200 ر\\.س/);
 assert.match(adPriceDisclosure({price_evidence:{kind:'auction_without_price'}}), /على السوم/);
 assert.match(adPriceDisclosure({price_evidence:{kind:'contact_for_price'}}), /عند التواصل/);
 assert.equal(adPriceDisclosure({price_evidence:{kind:'no_price_signal'}}), '');

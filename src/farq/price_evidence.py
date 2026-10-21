@@ -136,6 +136,19 @@ def _price_range_evidence(title: str, description: str, field: str) -> dict:
     return {}
 
 
+def _historical_price_context(title: str, description: str) -> dict:
+    """Return price lines that explain why a stated amount conflicts with history."""
+    for source, text in (("title", title), ("description", description)):
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        historical = [line for line in lines if _contains_any(line, _HISTORICAL) and _BARE_AMOUNT.search(line)]
+        if not historical:
+            continue
+        current = [line for line in lines if _EXPLICIT_PRICE.search(line) and _BARE_AMOUNT.search(line)]
+        evidence_lines = list(dict.fromkeys(historical + current))
+        return {"text": " ؛ ".join(evidence_lines)[:160], "text_source": source}
+    return {}
+
+
 def _has_separate_additional_charge(text: str) -> bool:
     """Do not treat an item price as the total when the ad gives a separate fee."""
     for match in _CURRENCY_AMOUNT.finditer(text):
@@ -244,6 +257,10 @@ def infer_price_evidence(
             for text in [title_text if source == "title" else body_text]
         }
         has_other_text_price = bool(text_values - {None, field_amount}) or (None in text_values and bool(text_values))
+        if _contains_any(all_text, _HISTORICAL):
+            context = _historical_price_context(title_text, body_text)
+            if context:
+                return PriceEvidence(kind="ambiguous_amount", source="price_field", **context)
         if (
             _contains_any(all_text, _AUCTION + _CONTACT + _HISTORICAL)
             or has_other_text_price
@@ -282,7 +299,8 @@ def infer_price_evidence(
     # same ad also discusses a past purchase price or a former price. The field
     # price path applies the same conservative rule above.
     if explicit and _contains_any(all_text, _HISTORICAL):
-        return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1])
+        context = _historical_price_context(title_text, body_text)
+        return PriceEvidence(kind="ambiguous_amount", source=explicit[0][1], **context)
     if explicit and _has_partial_payment(all_text):
         return PriceEvidence(kind="partial_payment", source=explicit[0][1])
     if explicit and _contains_any(all_text, _UNIT_OR_INSTALLMENT):
