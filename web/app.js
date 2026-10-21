@@ -1515,10 +1515,13 @@ function renderFlow() {
   <section class="fq-body tight">
     ${asking ? renderQuestion() : ""}
     ${asking || !state.results.length ? "" : `<div class="fq-filters-row">${filtersRow(tabs, shown)}</div>`}
+    ${!asking && state.nextPage != null ? `<div class="fq-more-results" role="status">
+      <p class="fq-meta">هذه دفعة من النتائج، وقد توجد إعلانات أخرى في الصفحات التالية.</p>
+      <button class="fq-btn ghost" type="button" data-action="load-more" style="width:100%" ${state.loadingMore ? 'disabled aria-busy="true"' : ""}>${state.loadingMore ? "نحمّل إعلانات أكثر…" : "تابع البحث عن إعلانات أكثر"}</button>
+    </div>` : ""}
     ${state.notice && !showEmpty ? `<p class="fq-meta" role="status" aria-live="polite">${esc(state.notice)}${!live && !asking && state.results.length && state.searchState === "PARTIAL_RESULTS" ? ` <button class="fq-link" type="button" data-action="retry-search">ابحث مرة ثانية</button>` : ""}</p>` : ""}
     ${showEmpty ? emptyState() : ""}
     ${shown.length ? `<div class="fq-stagger" style="display:flex;flex-direction:column;gap:12px">${((newCardsInBatch = 0), shown.map(renderCard).join(""))}</div>` : ""}
-    ${state.nextPage != null ? `<button class="fq-btn ghost" type="button" data-action="load-more" style="width:100%;margin-top:12px" ${state.loadingMore ? 'disabled aria-busy="true"' : ""}>${state.loadingMore ? "نحمّل إعلانات أكثر…" : "حمّل إعلانات أكثر"}</button>` : ""}
     ${count ? `<div class="fq-sticky"><button class="fq-btn" type="button" data-action="review"><span class="count">${formatCount(count)}</span>متابعة مع ${esc(suppliers(count))}</button></div>` : ""}
   </section>
   ${state.view === "detail" ? detailSheet() : ""}
