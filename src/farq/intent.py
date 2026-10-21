@@ -47,6 +47,19 @@ _IPHONE_PRO_MAX_QUERY = re.compile(r"(?:^|\s)(?:ايفون|iphone)\s+\d{1,2}(?!\
 _IPHONE_STORAGE = re.compile(r"(?<!\d)((?:1\s*tb|1\s*تيرا(?:بايت)?)|(?:64|128|256|512|1024)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت))(?![\w])", re.IGNORECASE)
 _PRICE_MAX = re.compile(r"(?:اقل من|تحت|بحد اقصى|اقل|ما يتعدى|ما يزيد عن)\s+(\d{3,7})")
 _PRICE_MIN = re.compile(r"(?:اكثر من|فوق|يبدا من)\s+(\d{3,7})")
+_CAT_BREEDS = (
+    ("persian", ("شيرازي", "شرازي", "persian")),
+    ("siamese", ("سيامي", "سياميه", "siamese")),
+    ("scottish_fold", ("سكوتش", "اسكتلندي", "scottish fold")),
+    ("british_shorthair", ("بريطاني قصير الشعر", "british shorthair")),
+    ("ragdoll", ("راغدول", "ragdoll")),
+)
+_CAT_SEXES = (
+    ("male", ("ذكر", "male", "boy")),
+    ("female", ("انثى", "انثي", "female", "girl")),
+)
+_CAT_AGE_NUMBER = re.compile(r"(?:عمر(?:ه|ها)?|age)\s*(\d{1,2})\s*(شهر|شهور|اشهر|month|months)\b", re.IGNORECASE)
+_CAT_AGE_WORD = re.compile(r"(?:عمر(?:ه|ها)?|age)\s*(شهرين|شهران|شهر|two months|one month)\b", re.IGNORECASE)
 # "3 افياش", "4 ابواب", "تنظيف 5 مكيفات": a small number and the noun after it.
 _QUANTITY = re.compile(r"(?:^|\s)(\d{1,3})\s+([؀-ۿ]{2,})")
 # "عدد 3" (the form the confirmation sheet writes), with the noun before it if any.
@@ -459,6 +472,9 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تنظيف منازل", "تنظيف شقق", "تنظيف فلل", "تنظيف خزانات", "تنظيف كنب", "تنظيف سجاد", "تنظيف مجالس", "تنظيف واجهات", "شركة تنظيف", "عاملة نظافة", "عامل نظافة", "عاملة تنظيف", "عامل تنظيف", "عمالة نظافة", "تنظيف بالساعة"), label="تنظيف منازل", label_from_match=True, verbs=("تنظيف",), objects=("منزل", "منازل", "شقه", "شقق", "فله", "فلل", "خزان", "خزانات", "كنب", "سجاد", "موكيت", "مجالس", "واجهات", "بيت"), eligibility=(("تنظيف", "نظافه"),), title_groups=(("تنظيف", "نظافه"),), expansions=("شركة تنظيف", "تنظيف منازل", "عاملة نظافة بالساعة")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف سبليت", "مكيف اسبليت", "سبليت"), eligibility=(("مكيف", "سبليت"),), expansions=("مكيف سبليت", "مكيف اسبليت")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف",), eligibility=(("مكيف",),), expansions=("مكيف", "مكيف سبليت")),
+    _head(type="product", category="animals", subcategory="cat_food", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("طعام قطط", "أكل قطط", "غذاء قطط", "cat food", "kitten food"), label="طعام قطط", label_from_match=True, eligibility=(("طعام", "أكل", "اكل", "غذاء", "food"), ("قط", "قطة", "قطط", "قطه", "cat", "kitten")), expansions=("طعام قطط", "أكل قطط", "غذاء قطط", "cat food", "kitten food")),
+    _head(type="other", category="animals", subcategory="cats", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("قط شيرازي", "قطة شيرازي", "قطة شيرازية", "قطط شيرازي", "شيرازي قط", "persian cat", "persian kitten"), label="قط شيرازي", label_from_match=True, eligibility=(("قط", "قطة", "قطط", "قطه", "بسة", "بسه", "هر", "cat", "kitten"),), expansions=("قط شيرازي", "قطة شيرازي", "قطط شيرازي", "persian cat", "persian kitten")),
+    _head(type="other", category="animals", subcategory="cats", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("قط", "قطة", "قطه", "قطط", "بسة", "بسه", "هر", "cat", "cats", "kitten", "kittens"), label="قط", label_from_match=True, eligibility=(("قط", "قطة", "قطط", "قطه", "بسة", "بسه", "هر", "cat", "kitten"),), expansions=("قط", "قطة", "قطط", "بسة", "هر", "cat", "kitten")),
     _head(type="other", category="animals", subcategory="horses", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("حصان", "خيل"), eligibility=(("حصان", "خيل"),), expansions=("حصان", "حصان عربي")),
     _head(type="product", category="furniture", subcategory="wardrobe", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("دولاب", "خزانة"), eligibility=(("دولاب", "خزانه"),), expansions=("دولاب", "خزانة ملابس")),
     _head(type="product", category="equipment", subcategory=None, result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مولد", "شيول", "معدات ثقيله"), eligibility=(("مولد", "شيول", "معدات"),), expansions=("معدات",)),
@@ -669,6 +685,25 @@ def _year(normalized: str, intent_type: str) -> FieldValue:
     return unknown()
 
 
+def _cat_age_months(normalized: str) -> tuple[str, str] | None:
+    numeric = _CAT_AGE_NUMBER.search(normalized)
+    if numeric:
+        return str(int(numeric.group(1))), numeric.group(0)
+    word = _CAT_AGE_WORD.search(normalized)
+    if not word:
+        return None
+    months = "2" if word.group(1) in {"شهرين", "شهران", "two months"} else "1"
+    return months, word.group(0)
+
+
+def _cat_age_group(months: str) -> list[str]:
+    if months == "2":
+        return ["شهرين", "شهران", "عمر شهرين", "عمره شهرين", "2 شهر", "عمر 2 شهر", "2 months", "two months"]
+    if months == "1":
+        return ["شهر", "شهر واحد", "عمر شهر", "عمره شهر", "1 شهر", "عمر 1 شهر", "1 month", "one month"]
+    return [f"عمر {months} شهر", f"عمره {months} شهر", f"{months} شهر", f"{months} شهور", f"{months} months"]
+
+
 def _attributes(normalized: str, head: Head | None) -> list[FieldValue]:
     found: list[FieldValue] = []
     padded = f" {normalized} "
@@ -678,6 +713,20 @@ def _attributes(normalized: str, head: Head | None) -> list[FieldValue]:
         found.append(known("split", 0.85, "سبليت"))
     if " عربي " in padded and head and head.category == "animals":
         found.append(known("arabian", 0.8, "عربي"))
+    if head and head.subcategory == "cats":
+        for breed, cues in _CAT_BREEDS:
+            evidence = has_word(normalized, cues)
+            if evidence:
+                found.append(known(f"breed:{breed}", 0.9, evidence))
+                break
+        for sex, cues in _CAT_SEXES:
+            evidence = has_word(normalized, cues)
+            if evidence:
+                found.append(known(f"sex:{sex}", 0.9, evidence))
+                break
+        age = _cat_age_months(normalized)
+        if age:
+            found.append(known(f"age_months:{age[0]}", 0.9, age[1]))
     if head:
         for attribute in head.attributes:
             found.append(known(attribute, 0.8, attribute))
@@ -947,6 +996,18 @@ def analyze(query: str) -> IntentResponse:
     if intent.model.known and "Pro Max" in str(intent.model.value) and not iphone_storage:
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if head.subcategory == "cats":
+        for _breed, cues in _CAT_BREEDS:
+            if has_word(normalized, cues):
+                groups.append(list(cues))
+                break
+        for _sex, cues in _CAT_SEXES:
+            if has_word(normalized, cues):
+                groups.append(list(cues))
+                break
+        age = _cat_age_months(normalized)
+        if age:
+            groups.append(_cat_age_group(age[0]))
     if head.subcategory == "tutoring":
         if any(term in normalized.split() for term in ("رياضيات", "math", "mathematics")):
             groups.append(["رياضيات", "math", "mathematics"])
@@ -983,6 +1044,13 @@ def analyze(query: str) -> IntentResponse:
         intent.eligibility_min = len(head.eligibility) - len(head.eligibility) // 3
     intent.title_groups = [list(group) for group in head.title_groups]
     search_label = f"{query_label} {shown_city}".strip()
+    if head.subcategory == "cats" and segment:
+        # Cat age/sex/breed terms can be stop words for a canonical label, but they are
+        # required to find and qualify the animal the buyer asked for.
+        intent.need = segment
+        if shown_city and not find_cities(normalize(segment)):
+            intent.need = f"{intent.need} {shown_city}"
+        search_label = intent.need
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
     if head.type in {"product", "property"} and match is not None:
