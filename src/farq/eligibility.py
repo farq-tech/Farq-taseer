@@ -34,6 +34,7 @@ _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _ACCESSORY_LEAD = ("سماعه", "سماعات", "كفر", "شاحن", "حامل", "ستاند", "كيبل", "يد", "ايادي", "جراب", "حافظه",
                    "كاميرا", "كاميرات", "كشاف", "كشافات", "مصباح", "لمبه", "لوح", "الواح", "محول", "منظم", "اسكوتر", "ساعه", "نظاره",
                    "فرش", "مفرش", "مظله", "مقبض", "مقعد", "هيكل", "مهد", "مهاد", "سرير", "كرسي", "كونكت",
+                   "شنطه", "شنط", "حقيبه", "حقائب",
                    "seat", "seats", "carseat", "carseats", "connector", "connectors", "كارسيت", "ملحق", "غطاء", "لبس")
 # «S23», «A54», «PS5», «R18»: a letter or two glued to a number is a model code. A listing that
 # states the same letters with only other numbers («S26 Ultra», «اس 22», «S10») is another
