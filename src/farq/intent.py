@@ -217,6 +217,37 @@ _STOP = {
 }
 
 _DIRECTIONS = {"شمال", "جنوب", "شرق", "غرب"}
+_MOTORCYCLE_BRANDS = (
+    ("Honda", ("هوندا", "honda")),
+    ("Yamaha", ("ياماها", "yamaha")),
+    ("Suzuki", ("سوزوكي", "suzuki")),
+    ("Kawasaki", ("كاواساكي", "كواساكي", "kawasaki")),
+    ("KTM", ("كي تي ام", "ktm")),
+    ("Harley-Davidson", ("هارلي", "هارلي ديفيدسون", "harley", "harley davidson")),
+    ("BMW", ("بي ام دبليو", "bmw")),
+    ("Ducati", ("دوكاتي", "ducati")),
+    ("Triumph", ("ترايمف", "triumph")),
+)
+_MOTORCYCLE_PARTS = (
+    "كفر", "كفرات", "اطار", "اطارات", "جنط", "جنوط", "مكينه", "فرامل", "بريك", "بطاريه",
+    "سلسله", "مساعد", "مرايه", "شمعة", "شمعه", "كشاف",
+)
+
+
+def _motorcycle_brand(normalized: str) -> tuple[str, tuple[str, ...], str] | None:
+    padded = f" {normalized} "
+    for brand, aliases in _MOTORCYCLE_BRANDS:
+        for alias in aliases:
+            folded = normalize(alias)
+            if f" {folded} " in padded:
+                return brand, tuple(normalize(item) for item in aliases), folded
+    return None
+
+
+def _motorcycle_part(normalized: str) -> str | None:
+    return has_word(normalized, _MOTORCYCLE_PARTS)
+
+
 _PROPERTY_RENT_CUES = (
     "للإيجار", "إيجار", "تأجير", "استئجار", "باليوم", "يومي", "يوميا", "يومية", "ليلي", "ليليا",
     "ليلة", "بالليلة", "لليلة", "بالأسبوع", "اسبوعي", "اسبوعيا", "اسبوعية", "بالويكند", "ويكند",
@@ -842,6 +873,7 @@ def analyze(query: str) -> IntentResponse:
             intent.missing_decision_information = ["need"]
             intent.clarification_question = "وش الخدمة أو الغرض اللي تبيه؟ مثال: سباك، نقل عفش، مكيف سبليت."
             return intent
+    motorcycle_brand = _motorcycle_brand(normalized) if head.subcategory == "motorcycles" else None
     intent.understood = True
     property_transaction = _property_transaction(normalized) if head.type == "property" else None
     label = _label(head, match, original)
@@ -893,6 +925,8 @@ def analyze(query: str) -> IntentResponse:
         intent.subcategory = known(head.subcategory, 0.7, head.phrases[0])
     if head.brand:
         intent.brand = known(head.brand, 0.8, head.phrases[0])
+    elif motorcycle_brand:
+        intent.brand = known(motorcycle_brand[0], 0.85, motorcycle_brand[2])
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
     if iphone_model:
@@ -956,6 +990,8 @@ def analyze(query: str) -> IntentResponse:
     if intent.model.known and "Pro Max" in str(intent.model.value) and not iphone_storage:
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if motorcycle_brand and not head.brand:
+        groups.append(list(motorcycle_brand[1]))
     if head.subcategory == "tutoring":
         if any(term in normalized.split() for term in ("رياضيات", "math", "mathematics")):
             groups.append(["رياضيات", "math", "mathematics"])
@@ -1029,6 +1065,7 @@ def analyze(query: str) -> IntentResponse:
     if head.category is None:
         expansions = tuple(" ".join(_display_word(original, word) for word in phrase.split()) for phrase in expansions)
     part = _car_part(normalized) if head.type == "vehicle" and head.subcategory == "cars" else None
+    motorcycle_part = _motorcycle_part(normalized) if head.subcategory == "motorcycles" else None
     if part:
         # «صدام كامري 2019» asks for a part of that car, not the car. Read as a car, the
         # search returned whole Camrys at 65,000 riyals whose body text mentioned a bumper,
@@ -1047,6 +1084,24 @@ def analyze(query: str) -> IntentResponse:
         intent.title_groups = [[part], *intent.title_groups]
         search_label = f"{query_label} {shown_city}".strip()
         expansions = (f"{part_shown} {label}", f"قطع غيار {label}", f"{part_shown} {label} اصلي")
+    elif motorcycle_part:
+        intent.type = known("product", 0.8, motorcycle_part)
+        intent.category = known("parts", 0.75, motorcycle_part)
+        intent.subcategory = known("motorcycle_parts", 0.7, motorcycle_part)
+        intent.result_unit = ResultUnit.AD
+        part_shown = _display_word(original, motorcycle_part)
+        context_words = [
+            word for word in intent.need.split()
+            if not has_word(word.strip("،,.؟?!؛;:"), (motorcycle_part,))
+        ] if intent.need else []
+        context = " ".join(context_words)
+        query_label = f"{part_shown} {context}".strip()
+        intent.need = query_label
+        groups = [[motorcycle_part], *groups]
+        intent.eligibility_groups = groups
+        intent.title_groups = [[motorcycle_part], *intent.title_groups]
+        search_label = query_label
+        expansions = (query_label, f"قطع غيار {context or 'دباب'}", f"{part_shown} دباب")
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
     if segment and intent.result_unit == ResultUnit.SERVICE_PROVIDER:
         # Canonical service labels can drop useful qualifiers such as «بالساعة»,

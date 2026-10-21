@@ -128,6 +128,30 @@ def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise(
     assert "هايلكس 2019 دبل" in hilux.search_terms
     assert analyze("موتور كهرباء").category.value != "vehicles"
 
+    english_honda = analyze("Honda motorcycle 2020")
+    assert english_honda.subcategory.value == "motorcycles"
+    assert english_honda.brand.value == "Honda"
+    assert decide(english_honda, _ad("Honda motorcycle 2020"), None)[0] is True
+    assert decide(english_honda, _ad("Yamaha motorcycle 2020"), None)[0] is False
+
+    kawasaki = analyze("دباب كاواساكي 2020")
+    assert kawasaki.brand.value == "Kawasaki"
+    assert decide(kawasaki, _ad("دباب كاواساكي 2020"), None)[0] is True
+    assert decide(kawasaki, _ad("دباب هوندا 2020"), None)[0] is False
+
+    engine = analyze("مكينة دباب هوندا")
+    assert engine.type.value == "product"
+    assert engine.category.value == "parts"
+    assert engine.subcategory.value == "motorcycle_parts"
+    assert engine.need == "مكينة دباب هوندا"
+    assert decide(engine, _ad("مكينة دباب هوندا"), None)[0] is True
+    assert decide(engine, _ad("دباب هوندا 2020"), None)[0] is False
+
+    tire = analyze("كفر دباب ياماها")
+    assert tire.subcategory.value == "motorcycle_parts"
+    assert decide(tire, _ad("كفر دباب ياماها"), None)[0] is True
+    assert decide(tire, _ad("دباب ياماها"), None)[0] is False
+
 
 # TSR-007: a service verb with a product noun is the service.
 def test_ac_cleaning_is_a_service_not_an_ac_for_sale():
