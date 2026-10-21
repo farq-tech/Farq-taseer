@@ -285,8 +285,8 @@ class HarajLiveClient:
                     seen.add(ad.id)
                     fresh.append(ad)
                 has_next = bool((search.get("pageInfo") or {}).get("hasNextPage"))
-                last = not has_next or not fresh
-                yield QueryFetch(ads=fresh, pages=1, has_next=has_next and not last)
+                last = not has_next
+                yield QueryFetch(ads=fresh, pages=1, has_next=has_next)
                 if last:
                     return
         except LiveTimeout as exc:
