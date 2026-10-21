@@ -63,6 +63,11 @@ def test_yoyo_model_does_not_match_an_unbranded_stroller_ad():
         "مقبض عربة يويو",
         "ستوك يويو مقعد عربة أطفال",
         "مهد عربية يويو",
+        "كرسي سيارة لعربية يويو carseat babyzen",
+        "كونكت توأم لعربية يويو2 جديد بالكرتونة",
+        "مهاد مواليد عربية بيبي يويو",
+        "Babyzen YOYO carseat",
+        "Babyzen YOYO twin connector",
     ],
 )
 def test_stroller_search_does_not_count_accessories_as_complete_strollers(title):
@@ -77,6 +82,14 @@ def test_stroller_with_included_accessories_is_still_a_stroller_listing():
     intent = analyze("عربية اطفال يويو")
     seller = Seller(id="seller-1", name="معلن")
     bundle = Ad(id="ad-1", title="عربية أطفال يويو مع مفرش ومظلة", seller=seller)
+
+    assert decide(intent, bundle, seller)[0] is True
+
+
+def test_stroller_with_a_car_seat_bundle_is_still_a_stroller_listing():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    bundle = Ad(id="ad-bundle", title="عربية أطفال يويو مع كرسي سيارة", seller=seller)
 
     assert decide(intent, bundle, seller)[0] is True
 
