@@ -106,7 +106,7 @@ _BRANDED_LAPTOP_MODELS = (
         "Dell",
         re.compile(
             r"\bdell\s+(?P<line>xps|latitude|inspiron|precision|vostro|alienware)"
-            r"(?:\s+(?P<code>x\d{3}|m\d{2}|\d{2,4})(?!\s*(?:gb|gib|ram|جيجا|قيقا)))?",
+            r"(?:\s+(?P<code>x\d{3}|m\d{2}|\d{2,4})(?!\d)(?!\s*(?:gb|gib|ram|جيجا|قيقا)))?",
             re.IGNORECASE,
         ),
     ),
@@ -114,7 +114,7 @@ _BRANDED_LAPTOP_MODELS = (
         "HP",
         re.compile(
             r"\bhp\s+(?P<line>spectre|elitebook|probook|pavilion|envy|omen|victus)"
-            r"(?:\s+(?P<code>x\d{3}|\d{2,4})(?!\s*(?:gb|gib|ram|جيجا|قيقا)))?",
+            r"(?:\s+(?P<code>x\d{3}|\d{2,4})(?!\d)(?!\s*(?:gb|gib|ram|جيجا|قيقا)))?",
             re.IGNORECASE,
         ),
     ),
@@ -1377,6 +1377,40 @@ def _matched_service_object(head: Head, normalized: str, original: str) -> str |
     return None
 
 
+def _laptop_configuration_groups(normalized: str) -> list[tuple[str, ...]]:
+    groups: list[tuple[str, ...]] = []
+    ram = _MACBOOK_RAM.search(normalized)
+    if ram:
+        size = ram.group("ram")
+        groups.append((f"{size}gb", f"{size} gb", f"{size} جيجا", f"{size} قيقا"))
+
+    price_bound = _PRICE_MAX.search(normalized)
+    storage = next(
+        (
+            candidate
+            for candidate in _IPHONE_STORAGE.finditer(normalized)
+            if not (ram and candidate.start() < ram.end() and candidate.end() > ram.start())
+            and not (price_bound and candidate.start() == price_bound.start(1))
+        ),
+        None,
+    )
+    if storage:
+        raw_storage = normalize(storage.group(1))
+        if "tb" in raw_storage or "تيرا" in raw_storage:
+            size = re.search(r"\d+", raw_storage).group(0)
+            groups.append(
+                (
+                    f"{size}tb", f"{size} tb", f"{size} تيرا", f"{size} تيرابايت",
+                    f"{int(size) * 1024}gb", f"{int(size) * 1024} gb",
+                    f"{int(size) * 1024} جيجا", f"{int(size) * 1024} قيقا",
+                )
+            )
+        else:
+            size = re.search(r"\d+", raw_storage).group(0)
+            groups.append((f"{size}gb", f"{size} gb", f"{size} جيجا", f"{size} قيقا"))
+    return groups
+
+
 def _branded_model_head(normalized: str) -> Head | None:
     """Recognize common branded models even when the user omits the product noun."""
     samsung = _SAMSUNG_PHONE_CODE.search(normalized)
@@ -1418,9 +1452,7 @@ def _branded_model_head(normalized: str) -> Head | None:
             groups.append((family_name.lower(), "برو" if family_name == "Pro" else "اير"))
         if chip:
             groups.append((f"m{chip}", f"m {chip}"))
-        ram = _MACBOOK_RAM.search(normalized)
-        if ram:
-            groups.append((f"{ram.group('ram')}gb", f"{ram.group('ram')} gb", f"{ram.group('ram')} جيجا", f"{ram.group('ram')} قيقا"))
+        groups.extend(_laptop_configuration_groups(normalized))
         return _head(
             type="product", category="electronics", subcategory="laptops",
             result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
@@ -1443,12 +1475,19 @@ def _branded_model_head(normalized: str) -> Head | None:
         "omen": "Omen",
         "victus": "Victus",
     }
-    laptop_accessory_or_service = _service_request(normalized) or has_word(
-        normalized,
-        (
-            "شاحن", "كيبل شاحن", "بطارية", "جراب", "حقيبة لابتوب", "شنطة لابتوب",
-            "laptop charger", "charger", "battery", "case", "sleeve", "laptop bag",
-        ),
+    laptop_accessory_or_service = (
+        _service_request(normalized)
+        or _english_service_request(normalized)
+        or has_word(
+            normalized,
+            (
+                "شاحن", "كيبل شاحن", "بطارية", "جراب", "حقيبة لابتوب", "شنطة لابتوب",
+                "كيبورد", "لوحة مفاتيح", "لوحة المفاتيح", "مفاتيح لابتوب",
+                "laptop charger", "charger", "battery", "case", "sleeve", "laptop bag",
+                "keyboard", "keyboards", "trackpad", "touchpad", "motherboard", "fan",
+                "screen", "laptop screen", "display", "part", "parts", "component", "replacement",
+            ),
+        )
     )
     if not laptop_accessory_or_service:
         for brand, pattern in _BRANDED_LAPTOP_MODELS:
@@ -1463,11 +1502,12 @@ def _branded_model_head(normalized: str) -> Head | None:
                 if code
                 else (f"{brand} {family}", family)
             )
+            eligibility = (identity, *_laptop_configuration_groups(normalized))
             return _head(
                 type="product", category="electronics", subcategory="laptops",
                 result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED,
                 phrases=(model,), brand=brand, model=model, label=model,
-                eligibility=(identity,), expansions=(model, f"{family} laptop"),
+                eligibility=eligibility, expansions=(model, f"{family} laptop"),
             )
 
     dyson = _DYSON_MODEL.search(normalized)

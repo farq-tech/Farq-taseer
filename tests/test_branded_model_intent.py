@@ -79,6 +79,42 @@ def test_english_dell_and_hp_model_queries_keep_exact_identity_and_configuration
     assert analyze("Dell XPS 13 charger").subcategory.value != "laptops"
 
 
+def test_branded_laptop_capacity_is_not_a_partial_model_code():
+    for query, expected_model in (
+        ("Dell XPS 512GB", "Dell XPS"),
+        ("HP EliteBook 512GB", "HP EliteBook"),
+    ):
+        intent = analyze(query)
+        assert intent.model.value == expected_model
+        assert "512GB" in intent.need
+
+
+def test_branded_laptop_ram_and_storage_must_both_match_listing():
+    intent = analyze("Dell XPS 13 16GB RAM 512GB SSD")
+    seller = Seller(id="seller", name="computer shop")
+    exact = Ad(id="exact", title="Dell XPS 13 laptop 16GB RAM 512GB SSD", seller=seller)
+    wrong_storage = Ad(id="wrong-storage", title="Dell XPS 13 laptop 16GB RAM 256GB SSD", seller=seller)
+    wrong_ram = Ad(id="wrong-ram", title="Dell XPS 13 laptop 32GB RAM 512GB SSD", seller=seller)
+
+    assert decide(intent, exact, seller)[0]
+    assert not decide(intent, wrong_storage, seller)[0]
+    assert not decide(intent, wrong_ram, seller)[0]
+
+
+def test_branded_laptop_accessory_and_english_repair_queries_are_not_laptop_ads():
+    for query in (
+        "Dell XPS 13 keyboard",
+        "Dell XPS 13 repair",
+        "HP Spectre x360 fix",
+    ):
+        intent = analyze(query)
+        assert not (
+            intent.understood
+            and intent.type.value == "product"
+            and intent.subcategory.value == "laptops"
+        ), (query, intent)
+
+
 def test_dyson_vacuum_query_is_classified_and_keeps_model():
     intent = analyze("مكنسة دايسون V15 بالرياض")
 
