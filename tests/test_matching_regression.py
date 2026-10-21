@@ -126,6 +126,12 @@ def test_motorcycle_queries_keep_brand_and_year_without_treating_model_as_noise(
     assert hilux.model.value == "Hilux"
     assert hilux.year.value == 2019
     assert "هايلكس 2019 دبل" in hilux.search_terms
+
+    hilux_part = analyze("صدام هايلكس 2019")
+    assert hilux_part.category.value == "parts"
+    assert hilux_part.subcategory.value == "car_parts"
+    assert decide(hilux_part, _ad("صدام هايلكس 2019"), None)[0] is True
+    assert decide(hilux_part, _ad("هايلكس 2019"), None)[0] is False
     assert analyze("موتور كهرباء").category.value != "vehicles"
 
     english_honda = analyze("Honda motorcycle 2020")
