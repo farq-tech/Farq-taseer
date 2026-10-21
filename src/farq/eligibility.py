@@ -399,6 +399,18 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     if not normalize(text):
         return False, ["no_evidence_text"]
     title = ad.title if ad is not None else ""
+    if intent.subcategory.value == "cats" and title and re.search(
+        r"(?:^|\s)(?:cat|caterpillar)\s+\d{3,4}[a-z]?(?:\s|$)", normalize(title), re.IGNORECASE
+    ):
+        return False, ["equipment_brand_collision"]
+    if intent.subcategory.value == "cats" and any(attribute.value == "age_months:1" for attribute in intent.attributes):
+        normalized_text = normalize(to_ascii_digits(text))
+        if has_word(text, ("شهرين", "شهران", "two months")) or re.search(
+            r"(?:عمر(?:ه|ها)?|age)\s*(?:2|two)\s*(?:شهر|شهور|اشهر|month|months)\b",
+            normalized_text,
+            re.IGNORECASE,
+        ):
+            return False, ["age_mismatch"]
     if intent.type.value == "property":
         requested_transaction = _property_transaction(intent.original_query)
         listing_transaction = _property_transaction(title) or _property_transaction(text)

@@ -3,6 +3,7 @@ import pytest
 from farq.contracts import Ad, ResultUnit, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.taxonomy import read_business
 
 
 @pytest.mark.parametrize(
@@ -12,6 +13,7 @@ from farq.intent import analyze
         "أبي قطة سيامي أنثى",
         "أبي قطط للتبني",
         "Persian male cat age 2 months",
+        "cat",
     ],
 )
 def test_cat_listing_queries_are_understood_in_the_animals_category(query):
@@ -69,6 +71,38 @@ def test_cat_food_is_not_misclassified_as_a_live_cat_listing():
     assert intent.type.value == "product"
     assert intent.category.value == "animals"
     assert intent.subcategory.value == "cat_food"
+
+
+def test_caterpillar_cat_320_is_equipment_not_a_live_cat():
+    intent = analyze("CAT 320")
+    assert intent.type.value == "product"
+    assert intent.category.value == "equipment"
+    assert intent.subcategory.value == "excavators"
+    assert intent.brand.value == "Caterpillar"
+    assert intent.model.value == "CAT 320"
+
+    cat_request = analyze("cat")
+    seller = Seller(id="seller-1", name="معلن")
+    excavator = Ad(id="excavator", title="CAT 320 Excavator", seller=seller)
+    assert decide(cat_request, excavator, seller)[0] is False
+
+    business = read_business("أبيع حفارات CAT 320")
+    assert "excavators" in {item["key"] for item in business["products"]}
+
+
+def test_one_month_cat_request_rejects_a_two_month_listing():
+    intent = analyze("أبي قط عمر شهر")
+    seller = Seller(id="seller-1", name="معلن")
+    two_month_old = Ad(
+        id="ad-1",
+        title="قط للبيع",
+        description="العمر شهرين.",
+        seller=seller,
+    )
+
+    assert "age_months:1" in {attribute.value for attribute in intent.attributes}
+    assert decide(intent, two_month_old, seller)[0] is False
+    assert decide(intent, two_month_old, seller, relaxed=True)[0] is False
 
 
 def test_veterinary_requests_remain_local_services():
