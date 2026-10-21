@@ -98,6 +98,13 @@ from farq.text import normalize
             "مغسلة سيارات متنقلة",
         ),
         (
+            "أبي شغالة تجي بالساعة بالرياض",
+            "cleaning",
+            "شغالات بالساعة",
+            "ثلاجة شغالة ممتازة للبيع",
+            "بالساعة",
+        ),
+        (
             "أبي عاملة نظافة تجي بالساعة بجدة",
             "cleaning",
             "عاملة نظافة منزلية بالساعة",
@@ -199,12 +206,30 @@ def test_common_services_match_providers_without_returning_related_products(
     assert intent.result_unit.value == "service_provider"
     assert intent.location_city.known
     assert normalize(detail) in normalize(intent.need)
+    if "بالساعة" in query:
+        assert any("بالساعه" in normalize(term) for term in intent.search_terms)
     assert any(item["key"] == subcategory for item in read_business(good_title)["services"])
     assert not any(item["key"] == subcategory for item in read_business(product_title)["services"])
     if subcategory in {"tutoring", "driving_services", "event_planning", "sports_coaching", "tailoring", "childcare", "veterinary"}:
         assert intent.segment_text in intent.search_terms
     assert decide(intent, provider, seller)[0] is True
     assert decide(intent, product, seller)[0] is False
+
+
+
+def test_hourly_household_helper_can_put_hourly_detail_in_description():
+    intent = analyze("أبي شغالة تجي بالساعة بالرياض")
+    seller = Seller(id="seller", name="شغالات منزلية", city="الرياض")
+    listing = Ad(
+        id="hourly-description",
+        title="شغالات منزلية في الرياض",
+        description="تجي بالساعة",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.subcategory.value == "cleaning"
+    assert decide(intent, listing, seller)[0] is True
 
 
 def test_translated_book_is_a_product_query_not_translation_service():
