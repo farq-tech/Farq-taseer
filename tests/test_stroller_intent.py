@@ -1,5 +1,6 @@
 import pytest
 
+from farq.config import SearchConfig
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
@@ -89,12 +90,13 @@ def test_yoyo_stroller_with_colloquial_arabiya_title_is_eligible():
 
 def test_yoyo_expansion_spends_a_search_slot_on_colloquial_arabiya():
     intent = analyze("عربية اطفال يويو")
-    searched = haraj_queries(intent.search_terms, None)[:6]
+    searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
 
     assert "عرباية أطفال يويو" in searched
     assert "عربايات أطفال يويو" in searched
     assert "Babyzen YOYO" in searched
-    assert len(searched) == 6
+    assert "يويو عربة أطفال" in searched
+    assert len(searched) == 7
 
 
 def test_plural_arabiyat_listing_title_matches_a_yoyo_stroller_search():
@@ -226,11 +228,11 @@ def test_explicit_yoyo_generation_is_preserved_in_intent_and_search(query, model
 def test_haraj_query_budget_keeps_arabic_and_english_yoyo_searches(query):
     intent = analyze(query)
 
-    # Production searches the first six unique phrases. Keep both English forms
+    # Production searches the first seven unique phrases. Keep both English forms
     # inside that budget so Arabic synonyms do not crowd them out.
-    searched = haraj_queries(intent.search_terms, None)[:6]
+    searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
 
-    assert len(searched) == 6
+    assert len(searched) == 7
     assert any("Babyzen YOYO" in term for term in searched)
     assert any("YOYO" in term and "stroller" in term for term in searched)
     if intent.model.value == "YOYO 2":

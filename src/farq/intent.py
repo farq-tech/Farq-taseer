@@ -1753,7 +1753,7 @@ def analyze(query: str) -> IntentResponse:
     if head.subcategory == "strollers" and head.model == "YOYO":
         expansions = (*expansions, "يويو عربة أطفال")
         # Sellers also call these «عرباية». Keep that observed dialect form in the
-        # six-query budget while retaining the English brand/model searches.
+        # seven-query budget while retaining the English brand/model searches.
         expansions = tuple(term for term in expansions if normalize(term) != normalize("عربات أطفال يويو"))
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         variant = intent.model.value[-1]
