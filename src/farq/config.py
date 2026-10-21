@@ -41,10 +41,11 @@ class SearchConfig:
     include_older_ads: bool = False
     live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 20))
     live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 3))
-    # Six texts x three pages: with the city moved out of the text (it is Haraj's own
-    # filter), four queries were mostly the same word twice. 18 page requests at the
-    # existing concurrency of 2 is still one search, not a crawl.
-    live_max_queries: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_QUERIES", 6))
+    # Seven texts x three pages. A production check for «عربية أطفال يويو» showed that
+    # the seventh, reordered Arabic phrase «يويو عربة أطفال» adds qualified listings
+    # beyond the first six; keep this budget high enough to include it. The city remains
+    # a Haraj filter, so city-in-text variants stay after distinct city-free terms.
+    live_max_queries: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_QUERIES", 7))
     live_timeout_seconds: float = field(default_factory=lambda: _env_float("FARQ_LIVE_TIMEOUT_SECONDS", 10))
     live_concurrency: int = field(default_factory=lambda: _env_int("FARQ_LIVE_CONCURRENCY", 2))
     enable_live: bool = field(default_factory=lambda: _env_bool("FARQ_ENABLE_LIVE", True))

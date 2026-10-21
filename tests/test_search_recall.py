@@ -51,10 +51,16 @@ def test_strip_city_words(text, city, expected):
 def test_carpenter_synonyms_fill_the_query_budget():
     queries = _queries("نجار الرياض")
     budget = queries[: SearchConfig().live_max_queries]
-    assert len(budget) == SearchConfig().live_max_queries == 6
+    assert len(budget) == SearchConfig().live_max_queries == 7
     for synonym in ("نجار موبيليا", "منجرة", "تفصيل خزائن", "نجار ابواب", "نجاره"):
         assert synonym in budget
     assert len({query for query in queries}) == len(queries)
+
+
+def test_stroller_search_keeps_the_measured_high_recall_reordered_term():
+    queries = _queries("عربية اطفال يويو")
+    budget = queries[: SearchConfig().live_max_queries]
+    assert "يويو عربة أطفال" in budget
 
 
 def test_spare_slots_take_the_city_in_text_variant_last():
