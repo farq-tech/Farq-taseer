@@ -89,6 +89,7 @@ def test_yoyo_expansion_spends_a_search_slot_on_colloquial_arabiya():
         "مهاد مواليد عربية بيبي يويو",
         "Babyzen YOYO carseat",
         "Babyzen YOYO twin connector",
+        "عجلات لعربية يويو للأطفال",
     ],
 )
 def test_stroller_search_does_not_count_accessories_as_complete_strollers(title):
@@ -104,6 +105,14 @@ def test_stroller_with_included_accessories_is_still_a_stroller_listing():
     intent = analyze("عربية اطفال يويو")
     seller = Seller(id="seller-1", name="معلن")
     bundle = Ad(id="ad-1", title="عربية أطفال يويو مع مفرش ومظلة", seller=seller)
+
+    assert decide(intent, bundle, seller)[0] is True
+
+
+def test_stroller_listing_with_spare_wheels_stays_eligible():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    bundle = Ad(id="ad-spare-wheels", title="عربية أطفال يويو مع عجلات احتياطية", seller=seller)
 
     assert decide(intent, bundle, seller)[0] is True
 
