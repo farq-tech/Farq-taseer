@@ -142,6 +142,7 @@ def test_intent_endpoint_classifies_household_machines(tmp_path: Path, query, su
     [
         ("صيانة مكينة اسبريسو بالرياض", "service", "appliance_repair", "service_provider", "required"),
         ("صيانة آلة خياطة بالرياض", "service", "appliance_repair", "service_provider", "required"),
+        ("فني آلة اسبريسو بالرياض", "service", "appliance_repair", "service_provider", "required"),
         ("espresso machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
         ("coffee machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
         ("sewing machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),

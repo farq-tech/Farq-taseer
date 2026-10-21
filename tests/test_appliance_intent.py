@@ -110,6 +110,7 @@ def test_brand_alias_and_word_order_keep_the_explicit_machine_brand(query, subca
     "query",
     [
         "صيانة آلة خياطة بالرياض",
+        "فني آلة اسبريسو بالرياض",
         "coffee machine repair Riyadh",
         "sewing machine repair Riyadh",
         "sewing machine maintenance Riyadh",
