@@ -11,6 +11,9 @@ from farq.taxonomy import read_business
     "query",
     [
         "عربية اطفال يويو",
+        "عربايات اطفال يويو",
+        "وش عندكم عربايات اطفال يويو",
+        "وش عندكم من عربايات أطفال يويو",
         "عرباية اطفال يويو",
         "عربايه أطفال يويو",
         "عربية أطفال يويو",
@@ -36,7 +39,26 @@ def test_yoyo_stroller_is_understood_as_a_specific_product(query):
     assert any("YOYO" in term or "يويو" in term.lower() for term in intent.search_terms)
 
 
-@pytest.mark.parametrize("query", ["عربية اطفال", "عربة أطفال", "عربيات أطفال", "baby stroller"])
+@pytest.mark.parametrize(
+    "query,discarded,retained",
+    [
+        ("هل يتوفر عربية أطفال يويو أصلية", ("هل", "يتوفر"), "أصلية"),
+        ("تقدر تدورلي عربية يويو في الرياض", ("تقدر", "تدورلي"), "عربية"),
+    ],
+)
+def test_request_framing_does_not_pollute_the_stroller_search(query, discarded, retained):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "strollers"
+    assert intent.model.value == "YOYO"
+    assert retained in intent.need
+    assert not any(word in intent.need.split() for word in discarded)
+
+
+@pytest.mark.parametrize(
+    "query", ["عربية اطفال", "عربة أطفال", "عربيات أطفال", "عربايات أطفال", "baby stroller"]
+)
 def test_generic_stroller_search_does_not_assume_the_yoyo_model(query):
     intent = analyze(query)
 
@@ -70,7 +92,17 @@ def test_yoyo_expansion_spends_a_search_slot_on_colloquial_arabiya():
     searched = haraj_queries(intent.search_terms, None)[:6]
 
     assert "عرباية أطفال يويو" in searched
+    assert "عربايات أطفال يويو" in searched
     assert "Babyzen YOYO" in searched
+    assert len(searched) == 6
+
+
+def test_plural_arabiyat_listing_title_matches_a_yoyo_stroller_search():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    listing = Ad(id="ad-plural-arabiyat", title="عربايات أطفال YOYO للبيع", seller=seller)
+
+    assert decide(intent, listing, seller)[0] is True
 
 
 @pytest.mark.parametrize(
