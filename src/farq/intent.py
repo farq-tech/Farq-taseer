@@ -426,6 +426,16 @@ def _service_request(normalized: str) -> bool:
     return affirmative_service_verb or bool(service_agents)
 
 
+def _working_item_sale(normalized: str) -> bool:
+    """A working appliance marked for sale is an item offer, not a repair request."""
+    words = set(normalized.split())
+    return (
+        bool(words & {"شغال", "شغاله", "شغالين"})
+        and has_word(normalized, ("للبيع", "للتمليك"))
+        and not bool(words & _SERVICE_VERBS)
+    )
+
+
 def _english_service_request(normalized: str) -> bool:
     words = set(normalized.split())
     return bool(words & _ENGLISH_SERVICE_VERBS) and not bool(words & _ENGLISH_PRODUCT_CUES)
@@ -1480,6 +1490,8 @@ def analyze(query: str) -> IntentResponse:
         intent.model = unknown()
     intent.result_unit = head.result_unit
     explicit_work = _service_request(normalized)
+    if head.type == "product" and _working_item_sale(normalized):
+        explicit_work = False
     if head.subcategory == "leak_detector" and "جهاز" in normalized.split() and not any(
         verb in normalized.split() for verb in ("يركب", "يصلح", "يفحص", "تركيب", "تصليح")
     ):
