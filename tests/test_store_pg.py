@@ -76,7 +76,7 @@ def _run(module, name, tmp_path, monkeypatch, make):
         "test_unread_replies_and_phone_notifications",
         "test_every_customer_signs_in_and_sees_only_their_requests",
         "test_picked_suppliers_only_and_photos_reach_haraj",
-        "test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept",
+        "test_replies_follow_the_quoted_request_reference_and_media_is_kept",
     ],
 )
 def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
@@ -93,8 +93,9 @@ def test_api_journeys_on_postgres(name, tmp_path, monkeypatch, pg_store):
         ("test_reply_attribution", "test_every_message_to_a_seller_carries_its_request_reference"),
         ("test_reply_attribution", "test_a_reply_quoting_the_reference_reaches_that_buyer_only"),
         ("test_reply_attribution", "test_two_references_from_two_buyers_are_still_kept_unmatched"),
-        ("test_reply_attribution", "test_one_open_request_in_the_conversation_keeps_the_old_rule"),
-        ("test_reply_attribution", "test_a_reply_written_before_the_second_buyer_asked_goes_to_the_first"),
+        ("test_reply_attribution", "test_without_a_reference_a_reply_stays_unmatched_when_requests_share_a_conversation"),
+        ("test_reply_attribution", "test_one_request_in_the_conversation_can_receive_an_unreferenced_reply"),
+        ("test_reply_attribution", "test_a_reply_written_before_a_second_request_without_reference_stays_unmatched"),
         ("test_limits", "test_recipients_must_come_from_the_customers_own_search"),
         ("test_limits", "test_streamed_and_signed_out_searches_count_when_named"),
         ("test_limits", "test_trial_caps_sellers_per_item_and_subscribers_have_a_ceiling"),
@@ -243,7 +244,7 @@ def test_unreferenced_reply_routing_on_postgres(tmp_path, monkeypatch, pg_store,
     import tests.test_reply_attribution as attribution
 
     monkeypatch.setattr(attribution, "Store", pg_store)
-    attribution.test_without_a_reference_a_reply_goes_to_the_latest_request_he_was_sent(tmp_path, caplog)
+    attribution.test_without_a_reference_a_reply_stays_unmatched_when_requests_share_a_conversation(tmp_path, caplog)
 
 
 def test_outreach_columns_on_postgres(pg_store):

@@ -11,7 +11,7 @@ These tests pin the fix, all against simulated Haraj (nothing leaves the machine
   - only sellers whose own listing matches the item are invited, once each, the best first,
     at most 8 a request;
   - the opener names the seller's listing, varies, names no source, keeps the reference;
-  - an unreferenced reply across buyers goes to the latest request he was sent.
+  - an unreferenced reply across buyers is kept unmatched rather than guessed.
 """
 
 from __future__ import annotations
@@ -481,10 +481,24 @@ def test_a_request_with_no_matching_listing_is_refused_and_nothing_is_queued(tmp
     assert store._connection.execute("select count(*) from message_deliveries").fetchone()[0] == 0
 
 
+def test_shared_account_send_is_refused_without_a_request_reference(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HARAj_USER_ACCOUNT_CONNECTION", "0")
+    store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
+    request_id = make_request(store, ["17035483"])
+    store._connection.execute("update requests set ref_code = null where id = ?", (request_id,))
+    store._connection.commit()
+    chat = AccountChat()
+
+    assert dispatch_pending(store, chat, sleep=lambda _seconds: None, clock=time.time) == 0
+    assert chat.sent == []
+    delivery = store._connection.execute("select delivery_status, error from message_deliveries").fetchone()
+    assert tuple(delivery) == ("failed", "HARAJ_REQUEST_REFERENCE_REQUIRED")
+
+
 # -- replies ----------------------------------------------------------------------------
 
 
-def test_an_unreferenced_reply_is_filed_under_the_latest_request_sent_to_him(tmp_path: Path):
+def test_an_unreferenced_reply_between_multiple_requests_stays_unmatched(tmp_path: Path):
     store = Store(tmp_path / "db.sqlite3", tmp_path / "uploads")
     first = make_request(store, ["17035483"], need="مكيف")
     second = make_request(store, ["17035483"], need="ثلاجة")
@@ -502,7 +516,8 @@ def test_an_unreferenced_reply_is_filed_under_the_latest_request_sent_to_him(tmp
         def fetch(self, *, conversation_id, seller_id, after_seq):
             return [InboundMessage(f"{conversation_id}:9", "هلا", (base + timedelta(hours=1)).isoformat(), 9)]
 
-    assert sync_replies(store, Inbox(), sleep=lambda s: None) == 1
-    owners = {row["request_id"]: row["body"] for row in store._connection.execute("select request_id, body from messages where sender_role = 'seller'")}
-    assert owners == {second: "هلا"}
-    assert store.unmatched_inbound() == []
+    assert sync_replies(store, Inbox(), sleep=lambda s: None) == 0
+    assert store._connection.execute("select count(*) from messages where sender_role = 'seller'").fetchone()[0] == 0
+    unmatched = store.unmatched_inbound()
+    assert len(unmatched) == 1
+    assert set(unmatched[0]["candidate_request_ids"]) == {first, second}

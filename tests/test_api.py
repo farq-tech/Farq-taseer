@@ -653,7 +653,7 @@ def test_picked_suppliers_only_and_photos_reach_haraj(tmp_path: Path):
     assert haraj.attachments == [("11", "image/jpeg", b"jpeg"), ("13", "image/jpeg", b"jpeg")]
 
 
-def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tmp_path: Path, monkeypatch):
+def test_replies_follow_the_quoted_request_reference_and_media_is_kept(tmp_path: Path, monkeypatch):
     import farq.worker as worker
 
     monkeypatch.setattr(worker, "_download", lambda url: b"haraj-photo-bytes")
@@ -679,8 +679,8 @@ def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tm
     assert between < after
     # Haraj keeps one conversation per supplier, shared by both requests.
     haraj.inbox["p2p1_11"] = [
-        InboundMessage("p2p1_11:90", "عن السباكة", between, 90),
-        InboundMessage("p2p1_11:91", "", after, 91, ({"type": "image/jpeg", "url": "https://harajchat-media.example/a.jpg?X-Amz-Expires=86400"},)),
+        InboundMessage("p2p1_11:90", f"{first['ref_code']} عن السباكة", between, 90),
+        InboundMessage("p2p1_11:91", f"{second['ref_code']}", after, 91, ({"type": "image/jpeg", "url": "https://harajchat-media.example/a.jpg?X-Amz-Expires=86400"},)),
     ]
     clock.sleep(60)
     assert run() == (0, 2)
@@ -688,7 +688,7 @@ def test_replies_follow_the_latest_request_to_that_supplier_and_media_is_kept(tm
     assert run() == (0, 0)
     one = api.get(f"/v1/requests/{first['id']}", headers=headers).json()
     two = api.get(f"/v1/requests/{second['id']}", headers=headers).json()
-    assert [m["body"] for m in one["messages"] if m["sender_role"] == "seller"] == ["عن السباكة"]
+    assert [m["body"] for m in one["messages"] if m["sender_role"] == "seller"] == [f"{first['ref_code']} عن السباكة"]
     photo = next(m for m in two["messages"] if m["sender_role"] == "seller")
     assert photo["media"][0]["url"].startswith("/v1/files/")
     assert api.get(photo["media"][0]["url"]).content == b"haraj-photo-bytes"

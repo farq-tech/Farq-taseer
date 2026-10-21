@@ -1507,6 +1507,8 @@ class PgStore:
     def _inbound_candidates(self, conn, conversation_id: str) -> list[dict]:
         rows = conn.execute(
             "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at,"
+            " (select string_agg(source.ref_code, ',') from requests source"
+            "  where source.attributes->>'merged_into_request_id' = r.id and source.ref_code is not null) as source_ref_codes,"
             " coalesce((select array_agg(d.sent_at) from message_deliveries d where d.request_id = t.request_id and d.seller_id = t.seller_id"
             " and d.need = t.need and d.delivery_status = 'sent' and d.sent_at is not null), '{}') as sends"
             " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = %s or t.legacy_conversation_id = %s",

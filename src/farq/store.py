@@ -538,44 +538,39 @@ _ADVANCE_THREAD = (
 def choose_thread(candidates: list[dict], body: str, sent_at: str) -> dict | None:
     """The thread a seller's Haraj reply belongs to, or None when that cannot be known.
 
-    A seller has one conversation with each Taseer account, shared by every buyer who asked
-    him. A reply quoting a request's reference goes to that request. Otherwise it goes to the
-    latest request we had sent him something for before he wrote: a seller answers the last
-    message he received. Across buyers (owner-approved 2026-10-04, after a «هلا» answering the
-    newest invite sat unmatched) the returned row carries ``routed_by`` so the worker logs the
-    inference. Two references, or none of the candidates sent before he wrote across buyers,
-    still return None.
+    Haraj reuses one seller conversation across requests and does not return our request id
+    with an inbound message. A quoted request reference is authoritative. Without one, only a
+    conversation with one request and one seller can be safely assigned; never infer from the
+    latest send.
     Each candidate is a haraj_threads row plus owner_user_id, ref_code, awarded_seller_id,
     request_created_at, and sends (when our messages on that thread were sent)."""
     if not candidates:
         return None
-    moment = _utc(sent_at)
-    oldest = datetime.min.replace(tzinfo=timezone.utc)
-
-    def last_send(row):
-        sends = [item for item in (_utc(value) for value in row["sends"]) if item is not None and (moment is None or item <= moment)]
-        return max(sends) if sends else None
-
-    def latest(rows):
-        sent = [(last_send(row), row) for row in rows]
-        sent = [item for item in sent if item[0] is not None]
-        if sent:
-            return max(sent, key=lambda item: item[0])[1]
-        return max(rows, key=lambda row: _utc(row["request_created_at"]) or oldest)
-
     codes = set(find_references(body))
-    quoted = [row for row in candidates if row.get("ref_code") and row["ref_code"] in codes]
-    if quoted:
-        return latest(quoted) if len({row["request_id"] for row in quoted}) == 1 else None
-    # Only requests he had heard about from us when he wrote, and not those already awarded to someone else.
-    sent_before = [row for row in candidates if last_send(row) is not None]
-    heard = sent_before or candidates
-    open_rows = [row for row in heard if row.get("awarded_seller_id") in (None, "", row["seller_id"])] or heard
-    if len({row["owner_user_id"] for row in open_rows}) > 1:
-        if not sent_before:
+    def request_references(row):
+        references = {row.get("ref_code")}
+        references.update((row.get("source_ref_codes") or "").split(","))
+        return references - {None, ""}
+
+    if codes:
+        quoted = [row for row in candidates if codes.intersection(request_references(row))]
+        if not quoted:
             return None
-        return {**latest(open_rows), "routed_by": "latest_send_across_buyers"}
-    return latest(open_rows)
+        targets = {(row["request_id"], row["seller_id"]) for row in quoted}
+    else:
+        targets = {(row["request_id"], row["seller_id"]) for row in candidates}
+        if len(targets) != 1:
+            return None
+        quoted = candidates
+    if len(targets) != 1:
+        return None
+    target = next(iter(targets))
+    rows = [row for row in quoted if (row["request_id"], row["seller_id"]) == target]
+    # The request is known, but if it has several item threads, keep the reply at request
+    # level instead of assigning it to an arbitrary item or extracting a potentially wrong offer.
+    if len({row.get("need") for row in rows}) > 1:
+        return {**rows[0], "need": None, "allow_offer": False}
+    return rows[0]
 
 
 def search_seller_ids(results) -> set[str]:
@@ -2320,7 +2315,9 @@ class Store:
 
     def _inbound_candidates(self, conversation_id: str) -> list[dict]:
         rows = self._connection.execute(
-            "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at"
+            "select t.*, r.owner_user_id, r.ref_code, r.awarded_seller_id, r.created_at as request_created_at,"
+            " (select group_concat(source.ref_code, ',') from requests source"
+            "  where json_extract(source.attributes_json, '$.merged_into_request_id') = r.id and source.ref_code is not null) as source_ref_codes"
             " from haraj_threads t join requests r on r.id = t.request_id where t.haraj_conversation_id = ? or t.legacy_conversation_id = ?",
             (conversation_id, conversation_id),
         ).fetchall()
