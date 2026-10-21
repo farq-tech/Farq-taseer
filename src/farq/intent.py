@@ -1490,7 +1490,10 @@ def _branded_model_head(normalized: str) -> Head | None:
                 phrases=("laptop repair", "computer repair", model),
                 brand=brand, model=model, label=f"{model} repair",
                 eligibility=(
-                    ("repair", "repairs", "repairing", "maintenance", "fix", "fixes", "fixing"),
+                    (
+                        "صيانة", "تصليح", "اصلاح", "فني", "repair", "repairs",
+                        "repairing", "maintenance", "fix", "fixes", "fixing",
+                    ),
                     ("laptop", "computer", "لابتوب", "لاب توب", "كمبيوتر"),
                 ),
                 expansions=("laptop repair", "computer repair", "تصليح لابتوب", "صيانة كمبيوتر"),

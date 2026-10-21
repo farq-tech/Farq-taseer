@@ -118,6 +118,13 @@ def test_branded_laptop_accessory_and_english_repair_queries_are_not_laptop_ads(
         assert intent.result_unit.value == "service_provider"
         assert intent.location_city.known is False
 
+    repair = analyze("Dell XPS 13 repair الرياض")
+    seller = Seller(id="repair", name="صيانة لابتوب")
+    arabic_provider = Ad(
+        id="arabic", title="صيانة وتصليح لابتوب الرياض", seller=seller, city="الرياض"
+    )
+    assert decide(repair, arabic_provider, seller)[0]
+
 
 def test_dyson_vacuum_query_is_classified_and_keeps_model():
     intent = analyze("مكنسة دايسون V15 بالرياض")
