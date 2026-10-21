@@ -4598,6 +4598,34 @@ function failSearch(status) {
   }
 }
 
+async function recoverSearch(searchId, asked, started, error, timedOut) {
+  if (state.searchId !== searchId) return;
+  const left = SEARCH_TIMEOUT_MS - (Date.now() - started);
+  if (error?.status === 429) {
+    // The server asked for a pause: a second request now would only lengthen it.
+    failSearch("RATE_LIMITED");
+  } else if (!timedOut && !state.results.length && left > 3000) {
+    // The plain endpoint is one fallback when the stream failed before returning results.
+    const fallback = new AbortController();
+    const fallbackTimer = setTimeout(() => fallback.abort(), left);
+    try {
+      const done = await api("/v1/search", { method: "POST", json: { query: asked }, signal: fallback.signal });
+      if (state.searchId !== searchId) return;
+      state.searching = false;
+      applyDone(done);
+      if (state.results.length) cueOnce(`search:${searchId}`, "found", 10);
+    } catch (fallbackError) {
+      if (state.searchId !== searchId) return;
+      failSearch(fallback.signal.aborted ? "TIMEOUT" : fallbackError?.status === 429 ? "RATE_LIMITED" : "INTERNAL_ERROR");
+    } finally {
+      clearTimeout(fallbackTimer);
+    }
+  } else {
+    failSearch(timedOut ? "TIMEOUT" : "INTERNAL_ERROR");
+  }
+  render();
+}
+
 // A search that is still empty after this long says so: the customer sees the wait is known,
 // and the way back stays open the whole time.
 const SLOW_SEARCH_MS = 12000;
@@ -4708,36 +4736,10 @@ async function runSearch(text, city = "") {
     });
     // a stream that closes without its «done» did not finish
     if (!finished && mine()) {
-      failSearch("INTERNAL_ERROR");
-      render();
+      await recoverSearch(searchId, asked, started, new Error("stream closed before completion"), controller.signal.aborted);
     }
   } catch (_error) {
-    if (!mine()) return;
-    const timedOut = controller.signal.aborted;
-    const left = SEARCH_TIMEOUT_MS - (Date.now() - started);
-    if (_error?.status === 429) {
-      // The server asked for a pause: a second request now would only lengthen it.
-      failSearch("RATE_LIMITED");
-    } else if (!timedOut && !state.results.length && left > 3000) {
-      // The plain endpoint is a second chance only when the stream failed fast and nothing arrived.
-      const fallback = new AbortController();
-      const fallbackTimer = setTimeout(() => fallback.abort(), left);
-      try {
-        const done = await api("/v1/search", { method: "POST", json: { query: asked }, signal: fallback.signal });
-        if (!mine()) return;
-        state.searching = false;
-        applyDone(done);
-        if (state.results.length) cueOnce(`search:${state.searchId}`, "found", 10);
-      } catch (_fallback) {
-        if (!mine()) return;
-        failSearch(fallback.signal.aborted ? "TIMEOUT" : _fallback?.status === 429 ? "RATE_LIMITED" : "INTERNAL_ERROR");
-      } finally {
-        clearTimeout(fallbackTimer);
-      }
-    } else {
-      failSearch(timedOut ? "TIMEOUT" : "INTERNAL_ERROR");
-    }
-    render();
+    await recoverSearch(searchId, asked, started, _error, controller.signal.aborted);
   } finally {
     clearTimeout(timer);
     clearTimeout(slowTimer);

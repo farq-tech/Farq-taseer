@@ -1,0 +1,5 @@
+simulation: search-stream-recovery
+routing: path
+mocks:
+  - routeKey: search-api
+    path: ../mocks/taseer-search-recovery/config.yaml
