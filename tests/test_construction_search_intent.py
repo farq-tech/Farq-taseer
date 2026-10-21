@@ -61,11 +61,17 @@ def test_door_product_query_accepts_the_matching_ad_but_not_installation_service
     seller = Seller(id="seller", name="معلن")
     product = Ad(id="door", title="باب WPC للحمام للبيع", seller=seller)
     supply_and_install = Ad(id="supply-install", title="توريد وتركيب باب WPC للحمام", seller=seller)
+    bargain_with_free_install = Ad(
+        id="bargain", title="أرخص باب WPC بالرياض - ضمان 10 سنوات - تركيب مجاني", seller=seller
+    )
     service = Ad(id="install", title="فني تركيب باب WPC", seller=seller)
+    installation_only = Ad(id="install-only", title="تركيب أبواب WPC بالرياض", seller=seller)
 
     assert decide(intent, product, seller)[0] is True
     assert decide(intent, supply_and_install, seller)[0] is True
+    assert decide(intent, bargain_with_free_install, seller)[0] is True
     assert decide(intent, service, seller)[0] is False
+    assert decide(intent, installation_only, seller)[0] is False
 
 
 def test_construction_search_accepts_contractors_and_rejects_material_sales():
