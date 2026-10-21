@@ -46,6 +46,22 @@ def test_office_rental_matches_offices_but_rejects_a_shop_or_an_office_for_sale(
     assert decide(intent, sale, seller)[0] is False
 
 
+def test_office_desk_search_matches_furniture_without_matching_commercial_offices():
+    intent = analyze("أبي مكتب كمبيوتر")
+    seller = Seller(id="seller", name="معلن", city="الرياض")
+    desk = Ad(id="desk", title="مكتب كمبيوتر صغير للبيع", city="الرياض", seller=seller)
+    office = Ad(
+        id="office",
+        title="مكتب تجاري للإيجار في الرياض",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.subcategory.value == "office_desks"
+    assert decide(intent, desk, seller)[0] is True
+    assert decide(intent, office, seller)[0] is False
+
+
 def test_commercial_property_heads_do_not_override_engineering_office_or_study_desk():
     engineering = analyze("أحتاج مكتب هندسي لاستخراج رخصة بالرياض")
     desk = analyze("أبي مكتب دراسة صغير")

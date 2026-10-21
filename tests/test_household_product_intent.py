@@ -129,6 +129,12 @@ def test_supplier_product_taxonomy_does_not_call_sofa_sales_upholstery_service()
     assert not any(item["key"] == "upholstery" for item in listing["services"])
 
 
+def test_supplier_desks_are_classified_as_office_desk_products():
+    listing = read_business("بيع مكاتب دراسة وطاولات كمبيوتر ومكتب قيمنق")
+
+    assert any(item["key"] == "office_desks" for item in listing["products"])
+
+
 def test_upholstery_work_stays_a_service():
     listing = read_business("خدمات تنجيد كنب ومجالس")
 
