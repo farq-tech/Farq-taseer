@@ -809,7 +809,8 @@ def test_working_refrigerator_for_sale_is_not_misclassified_as_a_repair_request(
     assert refined.result_unit.value == "ad"
     assert refined.need == intent.need
     assert refined.eligibility_groups == intent.eligibility_groups
-    assert refined.search_terms == intent.search_terms
+    assert refined.search_terms == intent.search_terms[:8]
+    assert not any("صيانة" in term for term in refined.search_terms)
 
     repair = analyze("ثلاجة تحتاج صيانة بالرياض")
     assert repair.subcategory.value == "appliance_repair"
