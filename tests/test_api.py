@@ -134,6 +134,29 @@ def test_intent_endpoint_classifies_household_machines(tmp_path: Path, query, su
     assert response.json()["state"] is None
 
 
+@pytest.mark.parametrize(
+    "query,kind,subcategory,result_unit,location_sensitivity",
+    [
+        ("صيانة مكينة اسبريسو بالرياض", "service", "appliance_repair", "service_provider", "required"),
+        ("espresso machine repair Riyadh", "service", "appliance_repair", "service_provider", "required"),
+        ("espresso machine repair kit Riyadh", "product", "coffee_machines", "ad", "preferred"),
+    ],
+)
+def test_intent_endpoint_separates_espresso_repair_from_repair_kits(
+    tmp_path: Path, query, kind, subcategory, result_unit, location_sensitivity
+):
+    api = client(tmp_path)
+
+    response = api.post("/v1/intent", json={"query": query})
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["type"]["value"] == kind
+    assert intent["subcategory"]["value"] == subcategory
+    assert intent["result_unit"] == result_unit
+    assert intent["location_sensitivity"] == location_sensitivity
+
+
 def _unrecognized_intent(query: str) -> IntentResponse:
     return IntentResponse(
         original_query=query,

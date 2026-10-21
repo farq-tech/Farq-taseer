@@ -257,6 +257,8 @@ _SERVICE_VERBS = {
     "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
     "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم",
 }
+_ENGLISH_SERVICE_VERBS = {"repair", "repairs", "repairing", "maintenance", "fix", "fixes", "fixing"}
+_ENGLISH_PRODUCT_CUES = {"part", "parts", "kit", "manual", "replacement", "accessory"}
 # Whoever does the work. "أبغى مقاول يبني لي ملحق" says provider twice over. A cook, a
 # photographer, a tutor, a driver: people hired for an occasion, not things bought.
 _SERVICE_AGENTS = {
@@ -277,6 +279,11 @@ def _service_request(normalized: str) -> bool:
         if preceding & nearby_markers or preceding == {"من", "بالقرب"}:
             service_agents.discard("مدرسه")
     return bool(set(words) & _SERVICE_VERBS) or bool(service_agents)
+
+
+def _english_service_request(normalized: str) -> bool:
+    words = set(normalized.split())
+    return bool(words & _ENGLISH_SERVICE_VERBS) and not bool(words & _ENGLISH_PRODUCT_CUES)
 
 
 @dataclass(frozen=True)
@@ -415,7 +422,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="product", category="appliances", subcategory="coffee_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("آلة قهوة ديلونجي", "اله قهوه ديلونجي", "ماكينة قهوة ديلونجي", "ماكينه قهوه ديلونجي", "مكينة قهوة ديلونجي", "مكينه قهوه ديلونجي", "آلة إسبريسو ديلونجي", "ماكينة إسبريسو ديلونجي", "ديلونجي آلة قهوة", "ديلونجي ماكينة قهوة", "delonghi espresso machine", "delonghi coffee machine", "de longhi espresso machine", "de longhi coffee machine"), brand="De'Longhi", label="آلة قهوة ديلونجي", label_from_match=True, eligibility=(("آلة", "اله", "ماكينة", "ماكينه", "مكينة", "مكينه", "espresso", "coffee machine"), ("قهوة", "قهوه", "إسبريسو", "اسبريسو", "espresso"), ("ديلونجي", "ديلونغي", "delonghi", "de longhi")), expansions=("آلة قهوة ديلونجي", "ماكينة قهوة ديلونجي", "مكينة قهوة ديلونجي", "ماكينة إسبريسو ديلونجي", "DeLonghi espresso machine")),
     _head(type="product", category="appliances", subcategory="sewing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكينة خياطة", "مكينه خياطه", "ماكينة خياطة", "ماكينه خياطه", "آلة خياطة", "اله خياطه", "sewing machine"), label="مكينة خياطة", label_from_match=True, eligibility=(("مكينة خياطة", "مكينه خياطه", "ماكينة خياطة", "ماكينه خياطه", "آلة خياطة", "اله خياطه", "sewing machine"),), expansions=("مكينة خياطة", "ماكينة خياطة", "آلة خياطة", "sewing machine")),
     _head(type="product", category="appliances", subcategory="sewing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكينة خياطة سنجر", "مكينه خياطه سنجر", "ماكينة خياطة سنجر", "ماكينه خياطه سنجر", "آلة خياطة سنجر", "اله خياطه سنجر", "singer sewing machine"), brand="Singer", label="مكينة خياطة سنجر", label_from_match=True, eligibility=(("مكينة", "مكينه", "ماكينة", "ماكينه", "آلة", "اله", "sewing machine"), ("خياطة", "خياطه", "sewing"), ("سنجر", "سنغر", "singer")), expansions=("مكينة خياطة سنجر", "ماكينة خياطة سنجر", "آلة خياطة سنجر", "Singer sewing machine")),
-    _head(type="service", category="services", subcategory="appliance_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة آلة قهوة", "صيانة اله قهوه", "صيانة ماكينة قهوة", "صيانة ماكينه قهوه", "صيانة مكينة قهوة", "صيانة مكينه قهوه", "تصليح آلة قهوة", "تصليح ماكينة قهوة", "تصليح مكينة قهوة", "فني آلة قهوة", "فني ماكينة قهوة", "فني مكينة قهوة", "coffee machine repair", "espresso machine repair"), label="صيانة آلة قهوة", label_from_match=True, eligibility=(("صيانة", "تصليح", "فني", "repair"), ("آلة قهوة", "ماكينة قهوة", "مكينة قهوة", "قهوة", "قهوه", "إسبريسو", "اسبريسو", "coffee machine", "espresso machine")), expansions=("صيانة آلة قهوة", "صيانة ماكينة قهوة", "تصليح ماكينة قهوة", "فني مكائن قهوة", "coffee machine repair")),
+    _head(type="service", category="services", subcategory="appliance_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة آلة قهوة", "صيانة اله قهوه", "صيانة ماكينة قهوة", "صيانة ماكينه قهوه", "صيانة مكينة قهوة", "صيانة مكينه قهوه", "تصليح آلة قهوة", "تصليح ماكينة قهوة", "تصليح مكينة قهوة", "فني آلة قهوة", "فني ماكينة قهوة", "فني مكينة قهوة", "صيانة آلة اسبريسو", "صيانة اله اسبريسو", "صيانة ماكينة اسبريسو", "صيانة ماكينه اسبريسو", "صيانة مكينة اسبريسو", "صيانة مكينه اسبريسو", "تصليح آلة اسبريسو", "تصليح ماكينة اسبريسو", "تصليح مكينة اسبريسو", "إصلاح ماكينة اسبريسو", "اصلاح مكينة اسبريسو", "coffee machine repair", "espresso machine repair", "repair coffee machine", "repair espresso machine", "coffee machine maintenance", "espresso machine maintenance"), label="صيانة آلة قهوة", label_from_match=True, eligibility=(("صيانة", "تصليح", "فني", "إصلاح", "اصلاح", "repair", "maintenance"), ("آلة قهوة", "ماكينة قهوة", "مكينة قهوة", "قهوة", "قهوه", "إسبريسو", "اسبريسو", "coffee machine", "espresso machine")), expansions=("صيانة آلة قهوة", "صيانة ماكينة قهوة", "تصليح ماكينة قهوة", "صيانة ماكينة اسبريسو", "تصليح ماكينة اسبريسو", "فني مكائن قهوة", "coffee machine repair", "espresso machine repair")),
     _head(type="service", category="services", subcategory="appliance_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("صيانة ماكينة خياطة", "صيانة ماكينه خياطه", "صيانة مكينة خياطة", "صيانة مكينه خياطه", "تصليح ماكينة خياطة", "تصليح مكينة خياطة", "فني ماكينة خياطة", "فني مكينة خياطة", "sewing machine repair"), label="صيانة ماكينة خياطة", label_from_match=True, eligibility=(("صيانة", "تصليح", "فني", "repair"), ("ماكينة خياطة", "مكينة خياطة", "خياطة", "خياطه", "sewing machine")), expansions=("صيانة ماكينة خياطة", "تصليح ماكينة خياطة", "فني مكائن خياطة", "sewing machine repair")),
     _head(type="product", category="appliances", subcategory="washing_machines", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("غسالة أوتوماتيك", "غسالة اتوماتيك", "غسالات أوتوماتيك", "غسالة", "غسالات"), label="غسالة", label_from_match=True, eligibility=(("غسالة", "غسالات"),), expansions=("غسالة", "غسالة أوتوماتيك", "غسالات")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
@@ -630,7 +637,13 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
     service = [item for item in matches if item.head.type == "service" and not item.head.ambiguous]
     product = [item for item in matches if item.head.type in {"product", "vehicle", "property"}]
     selling_a_leak_detector = any(item.head.subcategory == "leak_detector" for item in product)
-    explicit_service = bool(normalized and _service_request(normalized))
+    explicit_service = bool(
+        normalized
+        and (
+            _service_request(normalized)
+            or (service and _english_service_request(normalized))
+        )
+    )
     product_cue = bool(normalized and ("للبيع" in normalized or "جهاز كشف تسرب" in normalized or "كاشف تسرب" in normalized))
     if product and (not service or not explicit_service or product_cue):
         return max(product, key=lambda item: item.length)

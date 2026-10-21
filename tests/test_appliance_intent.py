@@ -1,3 +1,5 @@
+import pytest
+
 from farq.contracts import Ad, ResultUnit, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
@@ -57,6 +59,34 @@ def test_machine_repair_without_city_still_asks_for_location():
     assert intent.type.value == "service"
     assert intent.location_sensitivity.value == "required"
     assert "location_city" in intent.missing_decision_information
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "صيانة مكينة اسبريسو بالرياض",
+        "تصليح ماكينة اسبريسو بالرياض",
+    ],
+)
+def test_arabic_espresso_repair_uses_local_service_search(query):
+    intent = analyze(query)
+
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "appliance_repair"
+    assert intent.location_sensitivity.value == "required"
+    assert not any("غسالات" in term for term in intent.search_terms)
+    assert any("اسبريسو" in term or "ماكينة قهوة" in term for term in intent.search_terms)
+
+
+def test_english_espresso_repair_is_a_service_but_a_repair_kit_is_a_product():
+    repair = analyze("espresso machine repair Riyadh")
+    kit = analyze("espresso machine repair kit Riyadh")
+
+    assert repair.type.value == "service"
+    assert repair.subcategory.value == "appliance_repair"
+    assert repair.location_sensitivity.value == "required"
+    assert kit.type.value == "product"
+    assert kit.subcategory.value == "coffee_machines"
 
 
 def test_de_longhi_search_rejects_a_different_coffee_machine_brand():
