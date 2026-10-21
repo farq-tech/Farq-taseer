@@ -98,6 +98,13 @@ from farq.text import normalize
             "مغسلة سيارات متنقلة",
         ),
         (
+            "أبي شغالة تجي بالساعة بالرياض",
+            "cleaning",
+            "شغالات بالساعة",
+            "ثلاجة شغالة ممتازة للبيع",
+            "بالساعة",
+        ),
+        (
             "أبي عاملة نظافة تجي بالساعة بجدة",
             "cleaning",
             "عاملة نظافة منزلية بالساعة",
@@ -199,6 +206,8 @@ def test_common_services_match_providers_without_returning_related_products(
     assert intent.result_unit.value == "service_provider"
     assert intent.location_city.known
     assert normalize(detail) in normalize(intent.need)
+    if "بالساعة" in query:
+        assert any("بالساعه" in normalize(term) for term in intent.search_terms)
     assert any(item["key"] == subcategory for item in read_business(good_title)["services"])
     assert not any(item["key"] == subcategory for item in read_business(product_title)["services"])
     if subcategory in {"tutoring", "driving_services", "event_planning", "sports_coaching", "tailoring", "childcare", "veterinary"}:
