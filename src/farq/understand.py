@@ -27,6 +27,7 @@ from collections import OrderedDict
 import httpx
 
 from farq.contracts import IntentResponse, LocationSensitivity, ResultUnit, known
+from farq.intent import _working_item_sale
 from farq.text import normalize
 
 log = logging.getLogger("farq.understand")
@@ -309,7 +310,11 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
             if candidate and candidate not in terms:
                 terms.append(candidate)
     intent.search_terms = terms[:MAX_TERMS * 2]
-    if read["hiring"]:
+    working_item_sale = (
+        intent.type.value == "product"
+        and _working_item_sale(normalize(intent.original_query))
+    )
+    if read["hiring"] and not working_item_sale:
         intent.result_unit = ResultUnit.SERVICE_PROVIDER
         intent.location_sensitivity = LocationSensitivity.REQUIRED
         if not intent.type.known:
@@ -318,6 +323,9 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
             if "location_city" not in intent.missing_decision_information:
                 intent.missing_decision_information.append("location_city")
             intent.clarification_question = "في أي مدينة؟"
+    elif working_item_sale:
+        # The model can call «شغالة» hiring even when the customer says the appliance is for sale.
+        intent.result_unit = ResultUnit.AD
     elif intent.result_unit == ResultUnit.SERVICE_PROVIDER and not preserve_service_route:
         # He is buying a thing; do not let the rules' hiring guess stand.
         intent.result_unit = ResultUnit.AD
