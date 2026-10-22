@@ -60,6 +60,25 @@ def test_request_framing_does_not_pollute_the_stroller_search(query, discarded, 
 
 
 @pytest.mark.parametrize(
+    "query",
+    [
+        "الله يعافيك عربية أطفال يويو",
+        "الله يعافيكي عربية أطفال يويو",
+        "الله يعافيكم عربية أطفال يويو",
+        "يعطيك العافية أبي عربية أطفال يويو",
+        "الله يسعدك أبي عربية أطفال يويو",
+        "يا طويل العمر أبي عربية أطفال يويو",
+    ],
+)
+def test_polite_arabic_framing_does_not_pollute_product_search(query):
+    intent = analyze(query)
+
+    assert intent.need == "عربية أطفال يويو"
+    for term in intent.search_terms:
+        assert not any(word in term for word in ("يعافيك", "يعافيكي", "يعافيكم", "يعطيك", "يسعدك", "طويل", "العمر"))
+
+
+@pytest.mark.parametrize(
     "query", ["عربية اطفال", "عربة أطفال", "عربيات أطفال", "عربايات أطفال", "baby stroller"]
 )
 def test_generic_stroller_search_does_not_assume_the_yoyo_model(query):
