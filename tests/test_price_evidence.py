@@ -315,6 +315,17 @@ def test_service_fee_following_unit_name_is_not_a_unit_rate(description):
     assert evidence.kind == "ambiguous_amount"
     assert evidence.amount is None
 
+def test_pickup_time_after_price_does_not_turn_total_into_daily_rate():
+    evidence = infer_price_evidence(
+        "سلعة للبيع",
+        "السعر 500 ريال، الاستلام اليوم ب5 مساء",
+        None,
+    )
+
+    assert evidence.kind == "explicit_text_price"
+    assert evidence.amount == 500
+
+
 def test_per_tire_amount_in_price_field_is_not_an_order_total():
     evidence = infer_price_evidence(
         "كفرات مستعمله هيلكس فورتشنر هانكوك 265 65 17",
