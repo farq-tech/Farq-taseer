@@ -980,7 +980,10 @@ def create_app(
         paged = replace(
             config,
             live_start_page=body.page,
-            live_max_pages=max(1, min(config.live_max_pages, config.live_request_max_pages)),
+            live_max_pages=max(1, min(
+                config.live_max_pages,
+                config.live_request_max_pages if body.page == 1 else config.live_continuation_max_pages,
+            )),
             live_concurrency=max(config.live_concurrency, config.live_request_concurrency),
             max_results=0,
             min_score_ratio=0,

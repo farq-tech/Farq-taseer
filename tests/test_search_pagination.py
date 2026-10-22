@@ -28,14 +28,15 @@ def test_pages_continue_without_restarting_or_losing_trace(tmp_path, monkeypatch
     assert first["next_page"] == 2
     second = api.post("/v1/search", json={"query": "سباك بالرياض", "page": 2, "continuation_trace": first["trace_id"]})
     assert second.status_code == 200
-    assert pages == [1, 2]
+    assert pages == [1, 2, 3]
     assert second.json()["trace_id"] == first["trace_id"]
-    assert second.json()["next_page"] == 3
-    for page in range(3, 8):
+    assert second.json()["next_page"] == 4
+    assert api.post("/v1/search", json={"query": "سباك بالرياض", "page": 3, "continuation_trace": first["trace_id"]}).status_code == 404
+    for page in (4, 6):
         last = api.post("/v1/search", json={"query": "سباك بالرياض", "page": page, "continuation_trace": first["trace_id"]})
         assert last.status_code == 200
-        assert pages == list(range(1, page + 1))
-        assert last.json()["next_page"] == (page + 1 if page < 7 else None)
+        assert pages == list(range(1, page + 2))
+        assert last.json()["next_page"] == (page + 2 if page < 6 else None)
 
 
 def test_continuation_hides_ads_already_shown_on_earlier_pages(tmp_path, monkeypatch):
@@ -57,17 +58,17 @@ def test_continuation_hides_ads_already_shown_on_earlier_pages(tmp_path, monkeyp
     }).json()
 
     assert {item["ad"]["id"] for item in first["results"]} == {"1"}
-    assert {item["ad"]["id"] for item in second["results"]} == {"2"}
-    assert second["next_page"] == 3
+    assert {item["ad"]["id"] for item in second["results"]} == {"2", "3"}
+    assert second["next_page"] == 4
 
     last = api.post("/v1/search", json={
-        "query": "سباك بالرياض", "page": 3, "continuation_trace": first["trace_id"]
+        "query": "سباك بالرياض", "page": 4, "continuation_trace": first["trace_id"]
     }).json()
-    assert {item["ad"]["id"] for item in last["results"]} == {"3"}
-    assert last["next_page"] == 4
+    assert {item["ad"]["id"] for item in last["results"]} == {"5"}
+    assert last["next_page"] == 6
 
 
-def test_haraj_has_next_survives_a_duplicate_only_source_page(tmp_path, monkeypatch):
+def test_continuation_skips_duplicate_page_and_keeps_following_qualified_ads(tmp_path, monkeypatch):
     api, pages = make_api(tmp_path, monkeypatch)
 
     def post(self, variables):
@@ -86,9 +87,9 @@ def test_haraj_has_next_survives_a_duplicate_only_source_page(tmp_path, monkeypa
         "query": "سباك بالرياض", "page": 2, "continuation_trace": first["trace_id"]
     }).json()
 
-    assert pages == [1, 2]
-    assert result["results"] == []
-    assert result["next_page"] == 3
+    assert pages == [1, 2, 3]
+    assert {item["ad"]["id"] for item in result["results"]} == {"3"}
+    assert result["next_page"] == 4
 
 
 def test_continuation_cannot_change_query_or_skip_pages(tmp_path, monkeypatch):
@@ -118,8 +119,8 @@ def test_stream_continuation_uses_same_page_contract(tmp_path, monkeypatch):
     assert done["type"] == "done" and done["next_page"] == 2
     response = api.post("/v1/search/stream", json={"query": "سباك بالرياض", "page": 2, "continuation_trace": done["trace_id"]})
     last = [json.loads(line) for line in response.text.splitlines()][-1]
-    assert last["trace_id"] == done["trace_id"] and last["next_page"] == 3
-    assert pages == [1, 2]
+    assert last["trace_id"] == done["trace_id"] and last["next_page"] == 4
+    assert pages == [1, 2, 3]
 
 
 def test_stream_continuation_filters_prior_ids_from_batches_and_done(tmp_path, monkeypatch):
@@ -150,9 +151,9 @@ def test_stream_continuation_filters_prior_ids_from_batches_and_done(tmp_path, m
     }
     done = events[-1]
 
-    assert result_ids == {"2"}
-    assert {item["ad"]["id"] for item in done["results"]} == {"2"}
-    assert done["next_page"] == 3
+    assert result_ids == {"2", "3"}
+    assert {item["ad"]["id"] for item in done["results"]} == {"2", "3"}
+    assert done["next_page"] == 4
 
 
 def test_paged_search_keeps_older_ads_and_distinct_ads_by_same_seller(tmp_path, monkeypatch):
@@ -194,8 +195,8 @@ def test_cached_search_keeps_its_continuation_and_owner(tmp_path,monkeypatch):
     body={'query':'سباك بالرياض','page':2,'continuation_trace':cached['trace_id']}
     next_page=api.post('/v1/search',json=body)
     assert next_page.status_code == 200
-    assert next_page.json()['next_page'] == 3
-    assert pages == [1,2]
+    assert next_page.json()['next_page'] == 4
+    assert pages == [1,2,3]
     assert api.get('/v1/search/'+cached['trace_id']+'/availability').status_code==200
 
 
@@ -223,14 +224,14 @@ def test_initial_search_is_bounded_and_continuation_reaches_remaining_pages(tmp_
         'query': 'سباك بالرياض', 'page': 2, 'continuation_trace': first['trace_id']
     }).text.splitlines()]
     second = second_events[-1]
-    assert pages == [1, 2]
-    assert configs == [(1, 4), (1, 4)]
-    assert second['next_page'] == 3
+    assert pages == [1, 2, 3]
+    assert configs == [(1, 4), (2, 4), (2, 4)]
+    assert second['next_page'] == 4
 
-    for page in range(3, 8):
+    for page in (4, 6):
         last = api.post('/v1/search', json={
             'query': 'سباك بالرياض', 'page': page, 'continuation_trace': first['trace_id']
         }).json()
-        assert pages == list(range(1, page + 1))
-        assert last['next_page'] == (page + 1 if page < 7 else None)
-    assert len(configs) == 7 and all(item == (1, 4) for item in configs)
+        assert pages == list(range(1, page + 2))
+        assert last['next_page'] == (page + 2 if page < 6 else None)
+    assert len(configs) == 7 and configs == [(1, 4)] + [(2, 4)] * 6

@@ -41,9 +41,10 @@ class SearchConfig:
     include_older_ads: bool = False
     live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 20))
     live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 3))
-    # Each interactive search request must finish within the mobile client's 30s
-    # window; every deeper page remains reachable through continuation.
+    # Keep the first request to one provider page per query. Continuations scan
+    # a small bounded window so empty/duplicate pages require fewer round trips.
     live_request_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_REQUEST_MAX_PAGES", 1))
+    live_continuation_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_CONTINUATION_MAX_PAGES", 2))
     live_request_concurrency: int = field(default_factory=lambda: _env_int("FARQ_LIVE_REQUEST_CONCURRENCY", 4))
     # Seven texts x three pages. A production check for «عربية أطفال يويو» showed that
     # the seventh, reordered Arabic phrase «يويو عربة أطفال» adds qualified listings
