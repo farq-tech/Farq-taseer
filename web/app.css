@@ -2107,6 +2107,9 @@ html.fq-embed .skip { display: none; }
 .fq-price-proof strong { font-size: 13px; font-weight: 700; }
 .fq-price-proof span { color: var(--fq-text-2); }
 .fq-ad-title { margin: 0; color: var(--fq-text); font-size: 16px; line-height: 1.5; }
+.fq-ad-inline { width: 100%; margin: 0; color: var(--fq-text-2); }
+.fq-ad-inline summary { color: var(--fq-deep); cursor: pointer; font-size: 12px; font-weight: 700; }
+.fq-ad-inline .fq-ad-original { margin-top: 8px; }
 .fq-ad-original { margin: 0; color: var(--fq-text-2); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* His own words, given back to him: why this listing is in the list at all. */
