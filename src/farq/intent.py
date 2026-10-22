@@ -1582,6 +1582,14 @@ def analyze(query: str) -> IntentResponse:
     normalized = normalize(original)
     route = find_route(normalized)
     cities = [route[0]] if route else find_cities(normalized)
+    if route is None and len(cities) == 2 and any(
+        item.head.subcategory == "vehicle_transport"
+        for item in _head_matches(normalized)
+    ):
+        # In a car-transport request, two cities in the order typed give an unambiguous
+        # origin and destination even when the customer omits «من»/«إلى».
+        route = (cities[0], cities[1])
+        cities = [route[0]]
     segment = _segment_text(original) or None
     intent = IntentResponse(original_query=original, need=segment, segment_text=segment)
     if len(cities) > 1:
