@@ -2279,6 +2279,19 @@ def analyze(query: str) -> IntentResponse:
     if screen_service_override:
         service_terms = [f"صيانة شاشة {shown_city}".strip(), f"تصليح شاشة {shown_city}".strip(), f"فني شاشات {shown_city}".strip()]
         intent.search_terms = list(dict.fromkeys([*service_terms, *intent.search_terms]))[:8]
+    if head.subcategory == "strollers" and head.model == "YOYO" and not stroller_alternatives:
+        generation = (
+            intent.model.value[-1]
+            if intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}
+            else ""
+        )
+        preferred = normalize(f"عرباية أطفال يويو {generation}".strip())
+        preferred_index = next(
+            (index for index, term in enumerate(intent.search_terms) if normalize(term) == preferred),
+            None,
+        )
+        if preferred_index is not None and preferred_index > 0:
+            intent.search_terms.insert(0, intent.search_terms.pop(preferred_index))
     return intent
 
 
