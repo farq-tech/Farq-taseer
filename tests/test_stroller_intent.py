@@ -80,6 +80,41 @@ def test_yoyo_model_does_not_match_an_unbranded_stroller_ad():
     assert decide(intent, yoyo, seller)[0] is True
 
 
+@pytest.mark.parametrize(
+    "title,description",
+    [
+        (
+            "عربية أطفال",
+            "عربية أطفال ماركة بريتكس ممتازة ومناسبة للمواليد وماماز اند باباز، ويويو من الماركات المعروفة",
+        ),
+        (
+            "عربيات اطفال العدد 5 شركات متنوعه",
+            "متوفر عدة أنواع وماركات منها بريتكس وماماز اند باباز ويويو، السعر حسب النوع",
+        ),
+    ],
+)
+def test_yoyo_mentioned_as_secondary_brand_is_not_an_exact_or_near_match(title, description):
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    listing = Ad(id="mixed-strollers", title=title, description=description, seller=seller)
+
+    assert decide(intent, listing, seller) == (False, ["yoyo_not_primary_listing_identity"])
+    assert decide(intent, listing, seller, relaxed=True) == (False, ["yoyo_not_primary_listing_identity"])
+
+
+def test_generic_stroller_title_can_be_clarified_by_primary_yoyo_description():
+    intent = analyze("عربية اطفال يويو")
+    seller = Seller(id="seller-1", name="معلن")
+    listing = Ad(
+        id="described-yoyo",
+        title="عربية أطفال",
+        description="عربية أطفال يويو أصلية بحالة ممتازة مع ملحقاتها",
+        seller=seller,
+    )
+
+    assert decide(intent, listing, seller)[0] is True
+
+
 def test_yoyo_stroller_with_colloquial_arabiya_title_is_eligible():
     intent = analyze("عربية اطفال يويو")
     seller = Seller(id="seller-1", name="معلن")
