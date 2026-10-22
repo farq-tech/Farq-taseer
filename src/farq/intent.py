@@ -798,6 +798,8 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="goods_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("توصيل أغراض", "توصيل اغراض", "نقل أغراض", "نقل اغراض", "شحن أغراض", "شحن اغراض", "نقل بضائع", "نقل بضاعة", "شحن بضائع", "شحن بضاعة", "توصيل بضائع", "نقل طرود", "نقل طرد", "شحن طرود", "شحن طرد", "شحن كراتين", "نقل كراتين", "توصيل كراتين", "شحن كرتون", "نقل مبرد", "سيارة نقل مبرد", "شحن مبرد", "نقل بضائع مبردة", "شحن بضائع مبردة", "شاحنة مبردة للنقل", "سيارة مبردة للنقل", "شحن بين المدن", "شركة شحن", "خدمات شحن", "cargo delivery", "freight transport"), label="نقل أغراض", label_from_match=True, eligibility=(("توصيل", "نقل", "شحن", "cargo", "freight"), ("أغراض", "اغراض", "بضائع", "بضاعة", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "صناديق", "ممتلكات", "مبرد", "مبردة", "تبريد", "ثلاجة", "goods", "freight")), expansions=("نقل أغراض", "توصيل بضائع", "شحن بضائع", "نقل بضائع", "نقل مبرد", "سيارة نقل مبرد", "شحن بضائع مبردة", "نقل طرود", "شحن كراتين"), verbs=("يشحن", "شحن", "تنقل", "ينقل", "توصيل", "يوصل", "اوصّل", "اوصل"), objects=("اغراض", "بضائع", "بضاعة", "بضاعه", "طرود", "طرد", "كراتين", "كرتون", "صناديق", "صندوق", "ممتلكات")),
     _head(type="service", category="services", subcategory="vehicle_transport", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("نقل سيارة", "نقل السيارة", "نقل سيارات", "نقل سيارتي", "أنقل سيارة", "أنقل السيارة", "أنقل سيارتي", "أنقل مركبتي", "ينقل سيارتي", "ينقل السيارة", "ينقل سيارة", "أحد ينقل سيارتي", "احد ينقل سيارتي", "نقل مركبة", "دينا تنقل سيارة", "دينا تنقل سيارات", "دينا نقل سيارة", "دينا نقل سيارات", "سطحة نقل", "سطحه نقل", "سطحة", "سطحه", "car towing", "vehicle transport"), label="نقل سيارة", eligibility=(("سطحة", "سطحه", "ونش", "دينا", "car towing", "vehicle transport"), ("نقل", "أنقل", "انقل", "تنقل", "ينقل", "توصيل", "سحب", "tow"), ("سيارة", "سيارتي", "سيارات", "السيارة", "سيارته", "سيارتها", "مركبة", "مركبتي", "vehicles", "car")), expansions=("سطحة نقل سيارات", "سطحة نقل سيارة", "دينا نقل سيارات", "نقل سيارة بين المدن", "خدمة سطحة نقل")),
     _head(type="service", category="services", subcategory="car_repair", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("ميكانيكي سيارات", "ميكانيكي", "ورشة ميكانيكا", "ورشة سيارات", "تصليح سيارات", "صيانة سيارات", "فحص سيارة", "فحص سيارات", "car repair", "auto mechanic"), label="ميكانيكي سيارات", label_from_match=True, eligibility=(("ميكانيكي", "ميكانيكا", "ورشة سيارات", "تصليح سيارات", "صيانة سيارات", "فحص سيارة", "car repair", "auto mechanic"),), expansions=("ميكانيكي سيارات", "ورشة ميكانيكا", "صيانة سيارات", "فحص سيارات", "car repair"), verbs=("يفحص", "فحص", "يصلح", "تصليح", "صيانة"), objects=("سيارة", "سيارات", "مركبة", "مركبات")),
+    _head(type="service", category="services", subcategory="vehicle_insurance", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تأمين سيارة", "تأمين سيارات", "تامين سيارة", "تامين سيارات", "تأمين مركبة", "تأمين مركبات", "تأمين", "تامين", "car insurance", "vehicle insurance"), label="تأمين سيارات", label_from_match=True, eligibility=(("تأمين", "تامين", "insurance"), ("سيارة", "سيارات", "مركبة", "مركبات", "car", "vehicle")), expansions=("تأمين سيارات", "تأمين سيارة", "تأمين مركبات", "car insurance")),
+    _head(type="service", category="services", subcategory="car_detailing", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تلميع سيارات", "تلميع سيارة", "تلميع السيارة", "تلميع", "بوليش سيارات", "بوليش سيارة", "بوليش", "car detailing", "detailing"), label="تلميع سيارات", label_from_match=True, eligibility=(("تلميع", "بوليش", "detailing"), ("سيارة", "سيارات", "مركبة", "مركبات", "car", "vehicle")), expansions=("تلميع سيارات", "تلميع سيارة", "بوليش سيارات", "car detailing")),
     _head(type="service", category="services", subcategory="car_rental", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تأجير سيارات", "تأجير سيارة", "استئجار سيارة", "استأجر سيارة", "إيجار سيارة", "ايجار سيارة", "إيجار سيارات", "rent a car", "car rental"), label="تأجير سيارات", label_from_match=True, eligibility=(("تأجير", "ايجار", "استئجار", "استأجر", "rental", "rent"), ("سيارات", "سيارة", "car")), expansions=("تأجير سيارات", "إيجار سيارة", "استئجار سيارة", "car rental")),
     _head(type="service", category="services", subcategory="water_delivery", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("وايت ماء", "وايت مياه", "وايت يوصل ماء", "توصيل وايت ماء", "توصيل مياه", "water tanker"), label="توصيل وايت ماء", label_from_match=True, eligibility=(("وايت", "water tanker"), ("ماء", "مياه", "water")), expansions=("وايت ماء", "وايت مياه", "توصيل وايت ماء", "water tanker")),
     _head(type="service", category="services", subcategory="domestic_worker_recruitment", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("استقدام عاملة", "استقدام عاملات", "استقدام عمالة منزلية", "نقل كفالة عاملة", "نقل كفالة عاملات", "نقل كفالة عمالة منزلية", "عمالة منزلية نقل كفالة", "عاملات نقل كفالة", "domestic worker recruitment"), label="استقدام ونقل كفالة عمالة منزلية", label_from_match=True, eligibility=(("استقدام", "نقل كفالة", "recruitment", "transfer"), ("عاملة", "عاملات", "عمالة منزلية", "عاملة منزلية", "domestic worker")), expansions=("استقدام عاملة", "استقدام عاملات", "نقل كفالة عاملة", "نقل كفالة عمالة منزلية")),
@@ -931,6 +933,22 @@ def _phrase_at(words: list[str], start: int, phrase: str) -> bool:
     return all(part in prefix_variants(words[start + offset]) for offset, part in enumerate(parts))
 
 
+def _has_explicit_vehicle_context(words: list[str]) -> bool:
+    if set(words) & {
+        "سياره", "سيارات", "مركبه", "مركبات", "موتر", "موتره", "car", "cars", "vehicle", "vehicles"
+    }:
+        return True
+    return any(
+        _phrase_at(words, start, phrase)
+        for candidate in HEADS
+        if candidate.type == "vehicle"
+        and candidate.subcategory == "cars"
+        and candidate.model
+        for phrase in candidate.phrases
+        for start in range(len(words))
+    )
+
+
 def _electric_adjective(words: list[str], start: int) -> bool:
     """True when "كهربائي" at `start` describes a product: "سكيت كهربائي", "مولد كهرباء"."""
 
@@ -948,6 +966,9 @@ def _electric_adjective(words: list[str], start: int) -> bool:
 def _head_matches(normalized: str) -> list[HeadMatch]:
     words = normalized.split()
     found: list[HeadMatch] = []
+    other_insurance_context = set(words) & {
+        "صحي", "صحيه", "طبي", "طبيه", "الحياه", "حياه", "سفر"
+    }
     for head in HEADS:
         best: HeadMatch | None = None
         for index, phrase in enumerate(head.phrases):
@@ -955,6 +976,15 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             for start in range(len(words)):
                 if not _phrase_at(words, start, phrase):
                     continue
+                bare_vehicle_service = {
+                    "vehicle_insurance": {"تامين", "insurance"},
+                    "car_detailing": {"تلميع", "بوليش", "detailing"},
+                }.get(head.subcategory, set())
+                if phrase in bare_vehicle_service:
+                    if not _has_explicit_vehicle_context(words):
+                        continue
+                    if head.subcategory == "vehicle_insurance" and other_insurance_context:
+                        continue
                 if (
                     head.model == "Accent" and phrase == normalize("accent")
                 ) or (
@@ -1122,7 +1152,9 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
         )
     )
     dedicated_vehicle_service = any(
-        item.head.subcategory in {"car_rental", "car_repair"} for item in service
+        item.head.subcategory
+        in {"car_rental", "car_repair", "vehicle_insurance", "car_detailing"}
+        for item in service
     )
     generic_vehicle_product = any(
         item.head.type == "vehicle"
@@ -1888,6 +1920,19 @@ def analyze(query: str) -> IntentResponse:
         intent.brand = known(motorcycle_brand[0], 0.85, motorcycle_brand[2])
     if head.model:
         intent.model = known(head.model, 0.85, head.phrases[0])
+    if head.subcategory in {"vehicle_insurance", "car_detailing"}:
+        vehicle_models = {
+            (item.head.brand, item.head.model): item.head
+            for item in all_matches
+            if item.head.type == "vehicle"
+            and item.head.subcategory == "cars"
+            and item.head.brand
+            and item.head.model
+        }
+        if len(vehicle_models) == 1:
+            (brand, model), model_head = next(iter(vehicle_models.items()))
+            intent.brand = known(brand, 0.8, model_head.phrases[0])
+            intent.model = known(model, 0.85, model_head.phrases[0])
     if iphone_model:
         intent.model = known(model_name, 0.9, iphone_model.group(0).strip())
     if head.subcategory == "strollers":
@@ -2139,6 +2184,9 @@ def analyze(query: str) -> IntentResponse:
         search_label = intent.need
     elif head.subcategory in {
         "car_rental",
+        "car_repair",
+        "car_detailing",
+        "vehicle_insurance",
         "childcare",
         "construction",
         "plumber",
