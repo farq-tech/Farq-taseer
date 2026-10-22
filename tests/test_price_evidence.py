@@ -269,6 +269,25 @@ def test_per_door_promotion_price_is_not_the_total_for_a_multi_door_order():
 
 
 
+def test_per_tire_amount_in_price_field_is_not_an_order_total():
+    evidence = infer_price_evidence(
+        "كفرات مستعمله هيلكس فورتشنر هانكوك 265 65 17",
+        "الكفرات اخت الجديد سعر الحبه 180",
+        180,
+        "180",
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
+def test_explicit_per_piece_text_without_a_price_field_is_not_a_total():
+    evidence = infer_price_evidence("كفرات هانكوك", "سعر الحبه 180 ريال", None)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
 @pytest.mark.parametrize(
     "description",
     [
