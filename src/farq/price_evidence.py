@@ -119,9 +119,10 @@ _UNIT_PRICE_NAMES = (
     "المتر", "الساعه", "اليوم", "الليله", "الرحله", "الشخص", "الفرد",
 )
 _UNIT_PRICE_AMOUNT = re.compile(
-    rf"(?:{'|'.join(_UNIT_PRICE_NAMES)})(?:\s+(?:الواحد|الواحده))?"
-    rf"\s*(?:(?:بسعر|سعر|ب|[:：=])\s*{_PRICE_NUMBER}|"
-    rf"{_PRICE_NUMBER}\s*(?:ريال|ر\s*\.?\s*س|﷼|sar|sr))",
+    rf"(?:{'|'.join(_UNIT_PRICE_NAMES)})\s+الواحده?\s*"
+    rf"(?:(?:بسعر|سعر|ب|[:：=])\s*{_PRICE_NUMBER}|"
+    rf"{_PRICE_NUMBER}\s*(?:ريال|ر\s*\.?\s*س|﷼|sar|sr))|"
+    rf"(?:{'|'.join(_UNIT_PRICE_NAMES)})\s*(?:بسعر|سعر|ب|[:：=])\s*{_PRICE_NUMBER}",
     re.IGNORECASE,
 )
 
