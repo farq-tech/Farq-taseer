@@ -94,6 +94,7 @@ const needOf = () => '';
 const multiNeed = () => false;
 const cityLabel = (value) => value || '';
 const snip = () => 'وصف الإعلان';
+const adOriginalText = (value) => String(value || '').trim();
 const matchedWords = () => [];
 const adPriceDisclosure = () => '';
 const offerMarks = () => [];
@@ -113,6 +114,10 @@ const noImage = renderCard({ad:{title:'عربية أطفال يويو', source_h
 assert.match(noImage, /لا توجد صور مرفقة بإعلان حراج/);
 const missingThumbnail = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:true}, seller:{id:'seller-1'}});
 assert.match(missingThumbnail, /حراج يذكر وجود صور/);
+const longDescription = 'وصف كامل كما كتبه البائع. '.repeat(5);
+const detailed = renderCard({ad:{title:'عربية أطفال يويو', description:longDescription}, seller:{id:'seller-1'}});
+assert.match(detailed, /عرض الوصف الكامل كما كتبه البائع/);
+assert.ok(detailed.includes(longDescription.trimEnd()));
 '''
     subprocess.run(['node', '-e', script], check=True)
 
