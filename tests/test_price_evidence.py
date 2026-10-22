@@ -291,9 +291,16 @@ def test_auction_wording_and_per_door_amount_do_not_make_the_field_a_total():
     [
         "الباب الواحد ب119 ريال",
         "الحبة ب180 ريال",
-        "القطعة 80 ريال",
+        "القطعة ب80 ريال",
     ],
 )
+def test_door_delivery_fee_is_not_a_per_door_rate():
+    evidence = infer_price_evidence("سلعة", "التوصيل للباب 20 ريال", None)
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
 def test_unit_name_followed_by_amount_is_not_a_whole_listing_price(description):
     evidence = infer_price_evidence("سلعة للبيع", description, None)
 
