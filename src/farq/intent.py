@@ -1732,6 +1732,7 @@ _EXPLICIT_TRANSPORT_ACTIONS = {
     "انقل", "نقل", "ينقل", "تنقل", "توصيل", "يوصل", "اوصل", "اوصّل",
     "شحن", "يشحن", "اشحن", "سحب", "سطحة", "سطحه", "ونش", "دينا",
 }
+_VEHICLE_TRANSPORT_CUES = {"سطحة", "سطحه", "ونش"}
 _FURNITURE_PAYLOAD = {"عفش", "عفشي", "عفشها", "اثاث", "اثاثي", "اثاثها"}
 _GENERIC_CARGO_PAYLOAD = {
     "اغراض", "اغراضي", "اغراضها", "بضائع", "بضاعه", "بضاعتي", "طرود", "طرد",
@@ -1746,7 +1747,7 @@ def _explicit_transport_head(
 ) -> Head | None:
     """Use a transport service only when the customer explicitly asks to move a load."""
     words = set(normalized.split())
-    if not words & _EXPLICIT_TRANSPORT_ACTIONS or words & {"للبيع", "بيع", "شراء", "مطلوب"}:
+    if not words & _EXPLICIT_TRANSPORT_ACTIONS or words & {"للبيع", "بيع", "شراء"}:
         return None
     if any(item.head.type == "service" for item in matches):
         return None
@@ -1754,6 +1755,8 @@ def _explicit_transport_head(
         return next((head for head in HEADS if head.subcategory == "vehicle_transport"), None)
     if words & _FURNITURE_PAYLOAD:
         return next((head for head in HEADS if head.subcategory == "moving"), None)
+    if words & _VEHICLE_TRANSPORT_CUES:
+        return next((head for head in HEADS if head.subcategory == "vehicle_transport"), None)
     has_named_item = any(item.head.type in {"product", "other"} for item in matches)
     if route is not None or has_named_item or words & _GENERIC_CARGO_PAYLOAD:
         return next((head for head in HEADS if head.subcategory == "goods_transport"), None)

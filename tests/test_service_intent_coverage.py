@@ -861,6 +861,27 @@ def test_explicit_load_transport_requests_are_services_without_requiring_a_route
 
 
 @pytest.mark.parametrize(
+    ("query", "subcategory"),
+    [
+        ("مطلوب نقل سيارة من الرياض لجدة", "vehicle_transport"),
+        ("مطلوب سطحة من الرياض إلى جدة", "vehicle_transport"),
+        ("سطحة من الرياض إلى جدة", "vehicle_transport"),
+        ("مطلوب نقل أثاث من الرياض لجدة", "moving"),
+        ("مطلوب توصيل عباية من الرياض لجدة", "goods_transport"),
+    ],
+)
+def test_prefaced_transport_requests_keep_the_load_type_and_route(query, subcategory):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == subcategory
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert intent.destination_city.value in {"جده", "جدة"}
+
+
+@pytest.mark.parametrize(
     "query,listing_title",
     [
         (
