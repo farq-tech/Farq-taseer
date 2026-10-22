@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from farq.cities import district_sides, find_cities, find_directions, find_route
+from farq.cities import district_sides, find_cities, find_directions, find_places, find_route
 from farq.contracts import Ad, IntentResponse, Seller
 from farq.text import normalize, prefix_variants, to_ascii_digits, tokens
 
@@ -461,9 +461,9 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         destination = normalize(str(intent.destination_city.value))
         listing_text = f"{ad.title} {ad.description or ''}"
         explicit_route = find_route(listing_text)
-        if explicit_route and explicit_route != (origin, destination):
+        if explicit_route and tuple(map(normalize, explicit_route)) != (origin, destination):
             return False, ["route_mismatch"]
-        listing_cities = {normalize(city) for city in find_cities(listing_text)}
+        listing_cities = {normalize(place) for place in find_places(listing_text)}
         if has_word(listing_text, _NATIONWIDE_ROUTE) and (
             origin in listing_cities or normalize(ad.city or "") == origin
         ):

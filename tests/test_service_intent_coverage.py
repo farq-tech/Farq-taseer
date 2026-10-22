@@ -2,6 +2,7 @@
 
 import pytest
 
+from farq.cities import find_route
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
@@ -824,6 +825,64 @@ def test_goods_delivery_without_an_intercity_route_is_understood():
     assert intent.subcategory.value == "goods_transport"
     assert intent.location_city.value == "الرياض"
     assert intent.destination_city.value is None
+
+
+@pytest.mark.parametrize(
+    ("query", "destination"),
+    [
+        ("أبي دينا تنقل أغراض من الرياض للقصيم", "القصيم"),
+        ("أبي دينا تنقل أغراض من الرياض لمنطقة القصيم", "القصيم"),
+        ("أبي شاحنة تنقل بضائع من الرياض إلى المنطقة الشرقية", "الشرقيه"),
+        ("أبي دينا تنقل أغراض من الرياض للجوف", "الجوف"),
+        ("أبي دينا تنقل أغراض من الرياض لمنطقة أبها", "أبها"),
+    ],
+)
+def test_goods_transport_preserves_haraj_region_destinations(query, destination):
+    intent = analyze(query)
+    seller = Seller(id="carrier", name="ناقل بضائع", city="الرياض")
+    matching = Ad(
+        id="matching",
+        title=f"دينا نقل أغراض من الرياض إلى {destination}",
+        city="الرياض",
+        seller=seller,
+    )
+    wrong_destination = Ad(
+        id="wrong",
+        title="دينا نقل أغراض من الرياض إلى جدة",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "goods_transport"
+    assert intent.location_city.value == "الرياض"
+    assert normalize(intent.destination_city.value) == normalize(destination)
+    if destination == "الشرقيه":
+        assert intent.need.endswith("الشرقية")
+    assert any(
+        normalize("الرياض") in normalize(term) and normalize(destination) in normalize(term)
+        for term in intent.search_terms
+    )
+    assert any(
+        normalize("الرياض") in normalize(term) and normalize(destination) in normalize(term)
+        for term in haraj_queries(intent.search_terms, intent.location_city.value)
+    )
+    assert decide(intent, matching, seller)[0] is True
+    assert decide(intent, wrong_destination, seller)[0] is False
+
+
+@pytest.mark.parametrize(
+    ("route", "expected"),
+    [
+        ("من الرياض للقصيم", ("الرياض", "القصيم")),
+        ("من الرياض للمنطقة الشرقية", ("الرياض", "الشرقيه")),
+        ("من الرياض للجوف", ("الرياض", "الجوف")),
+        ("من المنطقة الشرقية لمنطقة الرياض", ("الشرقيه", "الرياض")),
+        ("من الرياض لمنطقة أبها", ("الرياض", "أبها")),
+    ],
+)
+def test_find_route_recognizes_haraj_listing_regions(route, expected):
+    assert find_route(route) == expected
 
 
 @pytest.mark.parametrize(

@@ -46,6 +46,7 @@ _LABELS: dict[str, str] = {
     "جده": "جدة",
     "مكه": "مكة",
     "الطايف": "الطائف",
+    "الشرقيه": "الشرقية",
 }
 
 _DIRECTIONS = ("شمال", "جنوب", "شرق", "غرب")
@@ -91,6 +92,16 @@ _HARAJ_REGION: dict[str, str] = {
     "الخرج": "الرياض",
     "الدرعية": "الرياض",
     "المزاحمية": "الرياض",
+}
+
+# Haraj labels listings with regional names, not individual cities. These regions are
+# valid route endpoints, but stay out of the city picker because they are not city filters.
+_ROUTE_REGION_ALIASES: dict[str, tuple[str, ...]] = {
+    "الشرقيه": ("الشرقيه", "الشرقية", "المنطقة الشرقية", "منطقة الشرقية"),
+    "القصيم": ("القصيم", "منطقة القصيم"),
+    "الجوف": ("الجوف", "منطقة الجوف"),
+    "أبها": ("منطقة أبها",),
+    "الرياض": ("منطقة الرياض",),
 }
 
 
@@ -189,6 +200,40 @@ def _city_matches(normalized: str, strict: bool) -> list[tuple[int, int, str]]:
     return found
 
 
+def _route_place_matches(normalized: str) -> list[tuple[int, int, str]]:
+    found = _city_matches(normalized, strict=False)
+    for canonical, aliases in _ROUTE_REGION_ALIASES.items():
+        for alias in sorted(aliases, key=len, reverse=True):
+            match = re.search(_city_pattern(normalize(alias)), normalized)
+            if match:
+                found.append((match.start(), match.end(), canonical))
+                break
+    selected: list[tuple[int, int, str]] = []
+    for candidate in sorted(found, key=lambda item: (item[0], -(item[1] - item[0]))):
+        start, end, canonical = candidate
+        if any(
+            existing_canonical == canonical
+            and start < existing_end
+            and existing_start < end
+            for existing_start, existing_end, existing_canonical in selected
+        ):
+            continue
+        selected.append(candidate)
+    return sorted(selected)
+
+
+def find_places(text: str | None) -> list[str]:
+    """Recognized city and Haraj-region names, in the order they appear."""
+    normalized = normalize(text)
+    if not normalized:
+        return []
+    places: list[str] = []
+    for _start, _end, place in _route_place_matches(normalized):
+        if place not in places:
+            places.append(place)
+    return places
+
+
 def find_cities(text: str | None, strict: bool = False) -> list[str]:
     """Cities named in the text, in order. strict=True ignores the bare word "المدينة"."""
 
@@ -206,10 +251,13 @@ _TO = {"الي", "لين", "حتي", "حتى"}
 
 
 def find_route(text: str | None) -> tuple[str, str] | None:
-    """"من الرياض الى جدة" / "من الرياض للدمام": (origin, destination), else None."""
+    """"من الرياض الى جدة" / "من الرياض للدمام": (origin, destination), else None.
+
+    A destination may also be a Haraj listing region such as «القصيم» or «الشرقية».
+    """
 
     normalized = normalize(text)
-    matches = _city_matches(normalized, strict=False)
+    matches = _route_place_matches(normalized)
     if len(matches) != 2:
         return None
     (start_a, end_a, first), (start_b, _end_b, second) = matches

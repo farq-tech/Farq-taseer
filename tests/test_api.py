@@ -286,6 +286,23 @@ def test_intent_endpoint_understands_colloquial_request_to_transport_my_car(tmp_
     assert any("الرياض" in term and "جدة" in term for term in intent["search_terms"])
 
 
+def test_intent_endpoint_preserves_a_haraj_region_as_transport_destination(tmp_path: Path):
+    api = client(tmp_path)
+
+    response = api.post(
+        "/v1/intent",
+        json={"query": "أبي دينا تنقل أغراض من الرياض للقصيم"},
+    )
+
+    assert response.status_code == 200
+    intent = response.json()["intent"]
+    assert intent["understood"] is True
+    assert intent["subcategory"]["value"] == "goods_transport"
+    assert intent["location_city"]["value"] == "الرياض"
+    assert intent["destination_city"]["value"] == "القصيم"
+    assert any("الرياض" in term and "القصيم" in term for term in intent["search_terms"])
+
+
 @pytest.mark.parametrize(
     "query",
     [
