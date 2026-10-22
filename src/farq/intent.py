@@ -1399,13 +1399,17 @@ def _segment_text(original: str) -> str:
 
     raw = " ".join(original.split())
     words = raw.split()
+    if words and normalize(words[0]) == normalize("عندي") and _service_request(normalize(raw)):
+        words = words[1:]
+        after_request_opener = True
+    else:
+        after_request_opener = False
     if (
         len(words) >= 2
         and normalize(words[0]) in {"دور", "دوري"}
         and normalize(words[1]) in {"لي", "على", "عن"}
     ):
         words = words[2:]
-    after_request_opener = False
     while words:
         first = normalize(words[0])
         if (
@@ -2176,7 +2180,11 @@ def analyze(query: str) -> IntentResponse:
         intent.eligibility_min = len(head.eligibility) - len(head.eligibility) // 3
     intent.title_groups = [list(group) for group in head.title_groups]
     search_label = f"{query_label} {shown_city}".strip()
-    if head.subcategory == "cats" and segment:
+    if head.subcategory == "plumber" and match is not None and match.phrase_index is None:
+        # When the customer describes the leak and asks who can fix it, keep the
+        # confirmed need concise; the full sentence remains in segment_text/search_terms.
+        intent.need = search_label
+    elif head.subcategory == "cats" and segment:
         # Cat age/sex/breed terms can be stop words for a canonical label, but they are
         # required to find and qualify the animal the buyer asked for.
         intent.need = segment
