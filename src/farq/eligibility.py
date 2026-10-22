@@ -24,7 +24,10 @@ _DIMENSION_PAIR = re.compile(r"(?<!\d)(\d{1,2}(?:[.,]\d+)?)\s*(?:x|×|\*)\s*(\d{
 _UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|inch(?:es)?|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|قيقا بايت|قيقابايت|قيقا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
 # A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
 # account, a pile of leftovers from a job.
-_GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
+_GONE_PATTERN = re.compile(r"(?<!\w)(?:و|ف)?(?:تم البيع|تم بيعه|تم بيعها|انباع)(?!\w)")
+_NEGATED_GONE = re.compile(
+    r"\b(?:لم|ما|مو|مش|ليس|ليست)\s+(?:(?:يتم|تم)\s+)?(?:ال)?(?:بيع(?:ه|ها|هم)?|انباع(?:ت)?)\b"
+)
 _LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
 _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
@@ -386,6 +389,13 @@ def has_word(text: str | None, words) -> str | None:
     return None
 
 
+def _is_sold_listing(title: str | None, description: str | None) -> bool:
+    """Find explicit sold markers in either seller-written field, respecting negation."""
+    text = normalize(f"{title or ''} {description or ''}")
+    text_without_negated_sold = _NEGATED_GONE.sub(" ", text)
+    return _GONE_PATTERN.search(text_without_negated_sold) is not None
+
+
 _HASHTAG = re.compile(r"(?<!\w)#\S+")
 
 
@@ -670,7 +680,7 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         # «مخلفات ترميم فيلا»: what a job left behind, for sale - not the contractor.
         if first and any(_word_is(first[0], word) for word in _LEFTOVERS):
             return False, ["leftovers_not_provider"]
-    if title and has_word(title, _GONE):
+    if ad is not None and _is_sold_listing(title, ad.description):
         return False, ["already_sold"]
     if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO") and not relaxed and _yoyo_lookalike_claim(text):
         return False, ["model_lookalike"]
