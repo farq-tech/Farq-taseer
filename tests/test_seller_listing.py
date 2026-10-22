@@ -173,3 +173,49 @@ def test_only_the_owner_opens_the_ad_a_seller_was_asked_about(tmp_path: Path, mo
     assert api.get(f"/v1/requests/{request_id}/sellers/111/listing", headers=_signed_in(api)).status_code == 404
     assert api.get(f"/v1/requests/{request_id}/sellers/111/listing").status_code in (401, 403)
     assert len(seen) == 1
+
+
+
+def test_search_results_can_fetch_the_complete_public_listing_without_an_existing_request(monkeypatch, tmp_path):
+    seen = []
+    url = "https://haraj.com.sa/11190601014/x/"
+    details = {
+        "state": "available",
+        "url": url,
+        "title": "هارديسك توشيبا 1 تيرا",
+        "price_amount": 300.0,
+        "price_currency": "SAR",
+        "price_text": "300",
+        "price_evidence": {
+            "kind": "asking_price_in_field",
+            "amount": 300.0,
+            "source": "price_field",
+            "text": None,
+            "text_source": "price_field",
+            "estimated": False,
+            "negotiable": False,
+        },
+        "city": "مكه",
+        "posted_at": "2026-10-15T00:00:00+00:00",
+        "description": "الوصف الأصلي الكامل",
+        "images": ["https://postcdn.haraj.com.sa/a-700.webp"],
+    }
+
+    def fake_details(target):
+        seen.append(target)
+        if target != url:
+            raise ValueError("listing url must be on haraj.com.sa")
+        return details
+
+    monkeypatch.setattr(api_module, "listing_details", fake_details)
+    store = Store(tmp_path / "farq.sqlite3", tmp_path / "uploads")
+    api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), None, SearchConfig(enable_live=False)))
+
+    response = api.get("/v1/listings/details", params={"url": url})
+    assert response.status_code == 200, response.text
+    assert response.json() == details
+    assert seen == [url]
+
+    rejected = api.get("/v1/listings/details", params={"url": "https://example.com/ad"})
+    assert rejected.status_code == 400
+    assert seen == [url, "https://example.com/ad"]

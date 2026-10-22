@@ -1731,6 +1731,11 @@ function detailSheet() {
   const adTitle = adOriginalText(result.ad?.title);
   const adDescription = adOriginalText(result.ad?.description);
   const priceDisclosure = adPriceDisclosure(result.ad, true);
+  const listingDetailNotice = result.ad?.listing_details_state === "loading"
+    ? "جارٍ جلب بيانات الإعلان الأصلية من حراج…"
+    : result.ad?.listing_details_state === "unavailable"
+      ? "تعذر جلب تفاصيل الإعلان الأصلية الآن؛ نعرض البيانات التي وصلت من البحث."
+      : "";
   const originalUrl = harajListingUrl(result.ad);
   return `<div class="fq-scrim" data-action="close-sheet">
     <div class="fq-sheet" role="dialog" aria-modal="true" aria-label="${esc(name)}">
@@ -1747,6 +1752,7 @@ function detailSheet() {
       <hr class="fq-line">
       <h2 style="font-size:15px">تفاصيل الإعلان</h2>
       ${priceDisclosure}
+      ${listingDetailNotice ? `<p class="fq-meta" role="status" aria-live="polite">${esc(listingDetailNotice)}</p>` : ""}
       ${adTitle ? `<h3 class="fq-ad-title"><bdi>${esc(adTitle)}</bdi></h3>` : ""}
       ${adDescription ? `<p class="fq-ad-original"><bdi>${esc(adDescription)}</bdi></p>` : `<p class="fq-meta">لا يوجد وصف إضافي لهذا الإعلان.</p>`}
       ${imageNotice ? `<p class="fq-image-notice" role="note">${esc(imageNotice)}</p>` : ""}
@@ -4859,16 +4865,39 @@ async function openResult(key) {
   state.active = result;
   state.gallery = imageSources(result.ad);
   state.view = "detail";
+  if (result.ad?.url) result.ad.listing_details_state = "loading";
+  else if (result.ad) result.ad.listing_details_state = "unavailable";
   render();
   if (!result.ad?.url) return;
   try {
-    const data = await api(`/v1/listings/images?url=${encodeURIComponent(result.ad.url)}`);
-    if (data.images?.length) {
-      state.gallery = [...new Set([...data.images, ...state.gallery])];
-      if (state.view === "detail" && state.active === result) render();
+    const details = await api(`/v1/listings/details?url=${encodeURIComponent(result.ad.url)}`);
+    if (state.view !== "detail" || state.active !== result) return;
+    if (details?.state === "available") {
+      const previous = result.ad;
+      result.ad = {
+        ...previous,
+        title: details.title || previous.title,
+        description: details.description ?? previous.description,
+        city: details.city || previous.city,
+        posted_at: details.posted_at || previous.posted_at,
+        price_amount: details.price_amount ?? null,
+        price_currency: details.price_currency ?? null,
+        price_text: details.price_text ?? null,
+        price_evidence: details.price_evidence || previous.price_evidence,
+        image_urls: details.images?.length ? details.images : previous.image_urls,
+        listing_details_state: "available",
+      };
+      state.active = result;
+      state.gallery = details.images?.length ? [...new Set(details.images)] : imageSources(result.ad);
+    } else {
+      result.ad.listing_details_state = "unavailable";
     }
+    render();
   } catch (_error) {
-    /* the thumbnail remains */
+    if (state.view === "detail" && state.active === result) {
+      result.ad.listing_details_state = "unavailable";
+      render();
+    }
   }
 }
 
