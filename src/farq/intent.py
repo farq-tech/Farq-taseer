@@ -2358,7 +2358,11 @@ def split_need_texts(query: str) -> list[str]:
     route = find_route(normalized_original)
     cities = [route[0]] if route else find_cities(normalized_original)
     city = city_label(cities[0]) if len(cities) == 1 else ""
-    if has_word(normalized_original, ("باب", "ابواب", "doors", "door")):
+    price_context = has_word(
+        normalized_original,
+        ("سعر", "السعر", "اسعار", "ريال", "ريالات", "sar", "sr", "تكلفة", "تكلفه", "بسعر"),
+    )
+    if not price_context and has_word(normalized_original, ("باب", "ابواب", "doors", "door")):
         door_counts: dict[str, list[int]] = {"pvc": [], "wpc": []}
         for match in _DOOR_MATERIAL_COUNT.finditer(normalized_original):
             amount = int(match.group("count_before"))
