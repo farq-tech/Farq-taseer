@@ -933,6 +933,22 @@ def _phrase_at(words: list[str], start: int, phrase: str) -> bool:
     return all(part in prefix_variants(words[start + offset]) for offset, part in enumerate(parts))
 
 
+def _has_explicit_vehicle_context(words: list[str]) -> bool:
+    if set(words) & {
+        "سياره", "سيارات", "مركبه", "مركبات", "موتر", "موتره", "car", "cars", "vehicle", "vehicles"
+    }:
+        return True
+    return any(
+        _phrase_at(words, start, phrase)
+        for candidate in HEADS
+        if candidate.type == "vehicle"
+        and candidate.subcategory == "cars"
+        and candidate.model
+        for phrase in candidate.phrases
+        for start in range(len(words))
+    )
+
+
 def _electric_adjective(words: list[str], start: int) -> bool:
     """True when "كهربائي" at `start` describes a product: "سكيت كهربائي", "مولد كهرباء"."""
 
@@ -950,6 +966,9 @@ def _electric_adjective(words: list[str], start: int) -> bool:
 def _head_matches(normalized: str) -> list[HeadMatch]:
     words = normalized.split()
     found: list[HeadMatch] = []
+    other_insurance_context = set(words) & {
+        "صحي", "صحيه", "طبي", "طبيه", "الحياه", "حياه", "سفر"
+    }
     for head in HEADS:
         best: HeadMatch | None = None
         for index, phrase in enumerate(head.phrases):
@@ -957,6 +976,15 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             for start in range(len(words)):
                 if not _phrase_at(words, start, phrase):
                     continue
+                bare_vehicle_service = {
+                    "vehicle_insurance": {"تامين", "insurance"},
+                    "car_detailing": {"تلميع", "بوليش", "detailing"},
+                }.get(head.subcategory, set())
+                if phrase in bare_vehicle_service:
+                    if not _has_explicit_vehicle_context(words):
+                        continue
+                    if head.subcategory == "vehicle_insurance" and other_insurance_context:
+                        continue
                 if (
                     head.model == "Accent" and phrase == normalize("accent")
                 ) or (

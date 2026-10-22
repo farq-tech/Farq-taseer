@@ -47,3 +47,16 @@ def test_vehicle_service_intent_accepts_providers_and_rejects_car_sales(
     assert intent.subcategory.value == subcategory
     assert decide(intent, provider, seller)[0] is True
     assert decide(intent, car_for_sale, seller)[0] is False
+
+
+def test_health_insurance_is_not_routed_to_vehicle_insurance():
+    intent = analyze("تأمين صحي")
+
+    assert intent.subcategory.value != "vehicle_insurance"
+
+
+def test_marble_polishing_is_not_routed_to_car_detailing():
+    intent = analyze("تلميع رخام")
+
+    assert intent.type.value == "product"
+    assert intent.subcategory.value == "marble"
