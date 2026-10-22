@@ -30,6 +30,8 @@ _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
 _MODEL_LOOKALIKE = ("مستوحى", "مستوحاة", "شبيه", "شبيهه", "تقليد", "على شكل", "inspired", "lookalike", "similar to yoyo", "similar to babyzen", "مشابه ليويو")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
+_YOYO_MIXED_LISTING = ("متنوع", "متنوعه", "متنوعة", "ماركات", "شركات", "تشكيله", "تشكيلة", "العدد")
+_YOYO_STROLLER_TERMS = ("عربيه", "عربية", "عربايه", "عرباية", "عربيات", "عربايات", "عربه", "عربة", "stroller")
 # A listing that leads with the accessory sells the accessory, not the device; one that leads
 # with another thing («كاميرا مراقبة بطارية طاقة شمسية», «كشاف طاقة شمسية») sells that thing,
 # whatever it mentions inside. Specific nouns only: «جهاز بلايستيشن» still leads with the device.
@@ -590,6 +592,12 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             accessory_at = next((i for i, word in enumerate(words) if any(_word_is(word, term) for term in _ACCESSORY_LEAD)), None)
             if accessory_at is not None and (stroller_at is None or accessory_at < stroller_at):
                 return False, ["accessory_not_device"]
+            description = ad.description if ad is not None else ""
+            if (
+                str(intent.model.value or "").startswith("YOYO")
+                and not _yoyo_is_primary_listing_identity(title, description or "")
+            ):
+                return False, ["yoyo_not_primary_listing_identity"]
         if intent.eligibility_groups:
             head = intent.eligibility_groups[0]
             # The thing asked for is named early in a listing that sells it: «Hisense QLED E7 55
@@ -755,6 +763,29 @@ def _yoyo_lookalike_claim(text: str) -> bool:
         if any(set(prefix_variants(candidate)) & model for candidate in window):
             return True
     return False
+
+
+def _yoyo_is_primary_listing_identity(title: str, description: str) -> bool:
+    """Require YOYO to identify the offered stroller, not merely occur in listing copy."""
+    title_norm = normalize(title)
+    description_norm = normalize(description)
+    title_has_yoyo = has_word(title_norm, ("يويو", "yoyo", "babyzen", "بيبيزن", "بيبي زن"))
+    if title_has_yoyo:
+        # A title advertising a mixed assortment does not establish which model its price refers to.
+        if has_word(title_norm, _YOYO_MIXED_LISTING):
+            return False
+        return True
+
+    # A generic title may be clarified by the opening product statement in the description.
+    # Later compatibility, comparison, or brand-list mentions are not identity evidence.
+    lead = " ".join(tokens(description_norm)[:18])
+    if not has_word(lead, ("يويو", "yoyo", "babyzen", "بيبيزن", "بيبي زن")):
+        return False
+    if not has_word(lead, _YOYO_STROLLER_TERMS):
+        return False
+    if has_word(lead, _YOYO_MIXED_LISTING):
+        return False
+    return True
 
 
 def _electric_trade(title: str, seller: Seller | None, text: str) -> bool:
