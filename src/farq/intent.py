@@ -185,6 +185,10 @@ def _stroller_alternatives(normalized: str) -> list[str]:
 
 
 # "3 افياش", "4 ابواب", "تنظيف 5 مكيفات": a small number and the noun after it.
+_DOOR_MATERIAL_COUNT = re.compile(
+    r"(?P<count_before>\d{1,4})\s*(?P<material_after>pvc|wpc)\b",
+    re.IGNORECASE,
+)
 _QUANTITY = re.compile(r"(?:^|\s)(\d{1,3})\s+([؀-ۿ]{2,})")
 # "عدد 3" (the form the confirmation sheet writes), with the noun before it if any.
 _QUANTITY_COUNT = re.compile(r"(?:([؀-ۿ]{2,})\s+)?عدد\s+(\d{1,4})(?:\s+([؀-ۿ]{2,}))?")
@@ -1612,9 +1616,19 @@ def analyze(query: str) -> IntentResponse:
     property_transaction = _property_transaction(normalized) if head.type == "property" else None
     label = _label(head, match, original)
     intent.material = _material(normalized)
+    door_material = None
+    if head.subcategory == "pvc_wpc_doors":
+        variants = {
+            material
+            for material in ("pvc", "wpc")
+            if has_word(normalized, (material,))
+        }
+        if len(variants) == 1:
+            door_material = variants.pop()
+            intent.material = known(door_material.upper(), 0.95, f"explicit:{door_material}")
     city_value = intent.location_city.value if isinstance(intent.location_city.value, str) else None
     shown_city = city_label(city_value) or ""
-    query_label = label
+    query_label = f"أبواب {door_material.upper()}" if door_material else label
     if head.subcategory == "plumber" and match is not None and match.phrase_index is None:
         query_label = _matched_service_object(head, normalized, original) or label
     screen_service_override = head.subcategory == "screens" and _service_request(normalized)
@@ -1809,6 +1823,8 @@ def analyze(query: str) -> IntentResponse:
     if any(item.subcategory == "wardrobe" for item in matched):
         intent.attributes.append(known("wardrobe", 0.7, "دولاب"))
     intent.quantity, intent.quantity_unit = _quantity(normalized, original)
+    if door_material and intent.quantity.known and intent.quantity_unit == "باب":
+        intent.quantity_unit = f"باب {door_material.upper()}"
     price_range = _PRICE_RANGE.search(normalized)
     price_max = _price_bound(_PRICE_MAX, normalized)
     price_min = _price_bound(_PRICE_MIN, normalized)
@@ -1858,6 +1874,10 @@ def analyze(query: str) -> IntentResponse:
     if intent.model.known and "Pro Max" in str(intent.model.value) and not iphone_storage:
         intent.missing_decision_information.append("storage")
     groups = [list(group) for group in head.eligibility]
+    if door_material:
+        for index, group in enumerate(groups):
+            if any(normalize(term) in {"pvc", "wpc"} for term in group):
+                groups[index] = [door_material]
     if (
         head.subcategory == "goods_transport"
         and route
@@ -1975,7 +1995,11 @@ def analyze(query: str) -> IntentResponse:
         groups.append(list(_PROPERTY_RENT_GROUP))
     elif property_transaction == "sale":
         groups.append(list(_PROPERTY_SALE_GROUP))
-    if intent.material.known and not any(intent.material.value in group for group in groups):
+    if (
+        intent.material.known
+        and not door_material
+        and not any(intent.material.value in group for group in groups)
+    ):
         groups.append([intent.material.value])
     intent.eligibility_groups = groups
     if head.category is None and len(head.eligibility) > 2:
@@ -2012,6 +2036,11 @@ def analyze(query: str) -> IntentResponse:
         search_label = intent.need
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
+    if door_material and segment:
+        intent.need = segment
+        if shown_city and not find_cities(normalize(segment)):
+            intent.need = f"{intent.need} {shown_city}"
+        search_label = intent.need
     if (head.type in {"product", "property"} or head.category == "vehicles") and match is not None:
         matched_words = (
             set(head.phrases[match.phrase_index].split())
@@ -2056,6 +2085,12 @@ def analyze(query: str) -> IntentResponse:
             search_label = f"{query_label} {' '.join(qualifiers)} {shown_city}".strip()
             intent.need = search_label
     expansions = head.expansions
+    if door_material:
+        expansions = (
+            f"أبواب {door_material.upper()}",
+            f"باب {door_material.upper()}",
+            f"{door_material.upper()} doors",
+        )
     if ipad_model:
         family = ipad_family or ""
         chip = f"M{ipad_chip.group(1)}" if ipad_chip else ""
@@ -2319,9 +2354,26 @@ def split_need_texts(query: str) -> list[str]:
     original = " ".join(query.strip().split())
     if not original:
         return [query.strip()]
-    route = find_route(normalize(original))
-    cities = [route[0]] if route else find_cities(normalize(original))
+    normalized_original = normalize(original)
+    route = find_route(normalized_original)
+    cities = [route[0]] if route else find_cities(normalized_original)
     city = city_label(cities[0]) if len(cities) == 1 else ""
+    price_context = has_word(
+        normalized_original,
+        ("سعر", "السعر", "اسعار", "ريال", "ريالات", "sar", "sr", "تكلفة", "تكلفه", "بسعر"),
+    )
+    if not price_context and has_word(normalized_original, ("باب", "ابواب", "doors", "door")):
+        door_counts: dict[str, list[int]] = {"pvc": [], "wpc": []}
+        for match in _DOOR_MATERIAL_COUNT.finditer(normalized_original):
+            amount = int(match.group("count_before"))
+            material = match.group("material_after")
+            if 0 < amount < 10000:
+                door_counts[material.lower()].append(amount)
+        if all(len(door_counts[material]) == 1 for material in ("pvc", "wpc")):
+            return [
+                f"{door_counts[material][0]} باب {material.upper()} {city}".strip()
+                for material in ("pvc", "wpc")
+            ]
     parts: list[str] = []
     for clause in _CLAUSE_SPLIT.split(original):
         clause = clause.strip()
