@@ -257,9 +257,16 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         in {"vehicle_transport", "moving", "goods_transport", "passenger_transport"}
         and intent.destination_city.known
     )
-    preserve_construction_need = (
-        intent.result_unit == ResultUnit.SERVICE_PROVIDER
-        and intent.subcategory.value == "construction"
+    preserve_explicit_service_task = (
+        intent.understood
+        and intent.result_unit == ResultUnit.SERVICE_PROVIDER
+        and intent.subcategory.value in {
+            "construction",
+            "plumber",
+            "electrician",
+            "ac_repair",
+            "appliance_repair",
+        }
         and bool(intent.segment_text)
     )
     preserve_identity = (
@@ -277,7 +284,7 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         if (
             preserve_identity
             or preserve_service_route
-            or preserve_construction_need
+            or preserve_explicit_service_task
             or preserve_functioning_sale
         ) and rule_need
         else read["need"]
@@ -300,6 +307,9 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         # A rule-classified provider service is already a precise match. A generic
         # model reading such as «سيارتي الرياض» must not erase its route or widen it.
         intent.eligibility_groups = rule_groups
+    elif preserve_explicit_service_task:
+        # Keep rule-derived task requirements when a generic model reading drops them.
+        intent.eligibility_groups = rule_groups
     elif preserve_functioning_sale:
         # Keep the item's rule-derived identity when the model mistakes «شغالة» for hiring.
         intent.eligibility_groups = rule_groups
@@ -315,7 +325,7 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         if (
             intent.identity_alternatives
             or preserve_service_route
-            or preserve_construction_need
+            or preserve_explicit_service_task
             or preserve_functioning_sale
         )
         else [*rule_terms, *read["search_terms"]]
@@ -333,7 +343,7 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
                 terms.append(candidate)
     intent.search_terms = terms[:MAX_TERMS * 2]
     working_item_sale = preserve_functioning_sale
-    if read["hiring"] and not working_item_sale:
+    if (read["hiring"] or preserve_explicit_service_task) and not working_item_sale:
         intent.result_unit = ResultUnit.SERVICE_PROVIDER
         intent.location_sensitivity = LocationSensitivity.REQUIRED
         if not intent.type.known:
