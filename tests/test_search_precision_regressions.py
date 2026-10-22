@@ -558,3 +558,38 @@ def test_model_surface_words_do_not_narrow_a_rule_recognized_stroller_identity(q
         for index, title in enumerate(titles)
     )
 
+def test_model_refinement_keeps_rule_task_for_known_railing_subcategory():
+    query = "أبي تركيب درابزين ستان ستيل بالرياض"
+    intent = analyze(query)
+    rule_groups = [list(group) for group in intent.eligibility_groups]
+
+    refined = _apply(
+        intent,
+        {
+            "need": "درابزين ستانلس",
+            "must_include": [["ستانلس", "استيل"]],
+            "search_terms": ["تركيب درابزين ستانلس الرياض"],
+            "hiring": True,
+        },
+    )
+
+    assert refined.subcategory.value == "railings"
+    assert refined.eligibility_groups[0] == rule_groups[0]
+
+    seller = Seller(id="seller", name="معلن", city="الرياض")
+    unrelated = Ad(
+        id="sign",
+        title="تنفيذ لوحات اعلانات احرف بارزه ديكورات ستانلس حديد زنكور",
+        city="الرياض",
+        seller=seller,
+    )
+    railing = Ad(
+        id="railing",
+        title="تركيب درابزين استيل بالرياض",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert decide(refined, unrelated, seller) == (False, ["missing:درابزين"])
+    assert decide(refined, railing, seller)[0]
+
