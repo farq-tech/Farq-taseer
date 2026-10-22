@@ -1737,6 +1737,9 @@ function detailSheet() {
       ? "تعذر جلب تفاصيل الإعلان الأصلية الآن؛ نعرض البيانات التي وصلت من البحث."
       : "";
   const originalUrl = harajListingUrl(result.ad);
+  const retryListingDetails = originalUrl && result.ad?.listing_details_state === "unavailable"
+    ? `<button class="fq-btn ghost sm" type="button" data-action="retry-listing-details" data-key="${esc(key)}">أعد جلب تفاصيل الإعلان</button>`
+    : "";
   return `<div class="fq-scrim" data-action="close-sheet">
     <div class="fq-sheet" role="dialog" aria-modal="true" aria-label="${esc(name)}">
       <span class="fq-grab" aria-hidden="true"></span>
@@ -1752,7 +1755,7 @@ function detailSheet() {
       <hr class="fq-line">
       <h2 style="font-size:15px">تفاصيل الإعلان</h2>
       ${priceDisclosure}
-      ${listingDetailNotice ? `<p class="fq-meta" role="status" aria-live="polite">${esc(listingDetailNotice)}</p>` : ""}
+      ${listingDetailNotice ? `<div class="fq-meta" role="status" aria-live="polite"><p>${esc(listingDetailNotice)}</p>${retryListingDetails}</div>` : ""}
       ${adTitle ? `<h3 class="fq-ad-title"><bdi>${esc(adTitle)}</bdi></h3>` : ""}
       ${adDescription ? `<p class="fq-ad-original"><bdi>${esc(adDescription)}</bdi></p>` : `<p class="fq-meta">لا يوجد وصف إضافي لهذا الإعلان.</p>`}
       ${imageNotice ? `<p class="fq-image-notice" role="note">${esc(imageNotice)}</p>` : ""}
@@ -4859,7 +4862,7 @@ async function loadMoreSearch() {
   }
 }
 
-async function openResult(key) {
+async function openResult(key, refreshDetails = false) {
   const result = state.results.find((item) => resultKey(item) === key);
   if (!result) return;
   state.active = result;
@@ -4871,7 +4874,7 @@ async function openResult(key) {
   if (!result.ad?.url) return;
 
   const url = encodeURIComponent(result.ad.url);
-  const detailsRequest = api(`/v1/listings/details?url=${url}`);
+  const detailsRequest = api(`/v1/listings/details?url=${url}${refreshDetails ? "&refresh=1" : ""}`);
   // Keep the existing image resolver: it can return Haraj gallery photos even when the
   // public listing page no longer exposes Product JSON-LD.
   const imagesRequest = api(`/v1/listings/images?url=${url}`).catch(() => null);
@@ -6077,6 +6080,7 @@ document.addEventListener("click", (event) => {
     if (removed?.preview) URL.revokeObjectURL(removed.preview);
     render();
   } else if (action === "open") openResult(target.dataset.key);
+  else if (action === "retry-listing-details") openResult(target.dataset.key, true);
   else if (action === "toggle") toggle(target.dataset.key);
   else if (action === "quote") openQuote(target.dataset.key);
   else if (action === "unselect") {
