@@ -206,6 +206,8 @@ def _sale_price_matches_purchase_history(title: str, description: str, field_amo
                     return False
                 if _CURRENCY_AMOUNT.search(line):
                     return False
+                if _BARE_AMOUNT.search(line) and re.search(r"[:：=]", line):
+                    return False
 
     if not purchase_amounts or not sale_amounts or not historical_lines:
         return False
