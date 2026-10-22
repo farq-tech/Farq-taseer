@@ -453,6 +453,16 @@ def test_vehicle_transport_route_must_match_or_be_explicitly_nationwide():
         city="الرياض",
         seller=seller,
     )
+    equipment_listing = Ad(
+        id="equipment-listing",
+        title="لوبد نقل معدات من الرياض إلى الطائف ثم جدة",
+        description=(
+            "لوبد مكره سحب نقل معدات\n#الرياض #جدة #مكة\nتويوتا لاندكروزر ديزل\n\n"
+            "سطحة الطايف لنقل السيارات من الطايف إلى جميع مدن المملكة"
+        ),
+        city="الرياض",
+        seller=seller,
+    )
     listed_cities = Ad(
         id="listed-cities",
         title="حائل مدينة الرياض دمام جدة مكة الطائف سطحة نقليات سيارات",
@@ -469,8 +479,11 @@ def test_vehicle_transport_route_must_match_or_be_explicitly_nationwide():
     assert decide(intent, exact, seller)[0] is True
     assert decide(intent, wrong, seller) == (False, ["route_mismatch"])
     assert decide(intent, nationwide, seller)[0] is True
-    assert decide(intent, intercity, seller)[0] is True
+    assert decide(intent, intercity, seller) == (False, ["route_unconfirmed"])
+    assert decide(intent, intercity, seller, relaxed=True)[0] is True
     assert decide(intent, listed_cities, seller)[0] is True
+    assert decide(intent, equipment_listing, seller) == (False, ["vehicle_offer_not_primary"])
+    assert decide(intent, equipment_listing, seller, relaxed=True)[0] is True
     assert decide(intent, route_unconfirmed, seller) == (False, ["route_unconfirmed"])
     assert decide(intent, route_unconfirmed, seller, relaxed=True)[0] is True
 
