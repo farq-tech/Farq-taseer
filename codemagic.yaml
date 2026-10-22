@@ -1,0 +1,30 @@
+workflows:
+  farq-taseer-api-tests:
+    name: Farq Taseer API tests
+    max_build_duration: 30
+    instance_type: linux_x2
+    environment:
+      vars:
+        FARQ_ENABLE_LIVE: "0"
+    cache:
+      cache_paths:
+        - ~/.cache/pip
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: false
+      cancel_previous_builds: true
+    scripts:
+      - name: Install Python test dependencies
+        script: |
+          python3 --version
+          python3 -m pip install -e ".[dev]"
+      - name: Run offline test suite
+        script: |
+          mkdir -p test-results
+          python3 -m pytest -q -m "not integration" --junitxml=test-results/pytest.xml
+        test_report: test-results/pytest.xml
