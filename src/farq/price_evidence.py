@@ -20,8 +20,8 @@ _EXPLICIT_PRICE = re.compile(
 )
 _FIELD_VALUE = re.compile(r"^\s*([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*$")
 _PRICE_NUMBER = r"[0-9][0-9,٬]*(?:[.٫][0-9]+)?(?:\s*(?:ألف|الف|مليون))?"
-_SALE_PRICE_LINE = re.compile(rf"^\s*سعر\s+البيع(?:\s+البيع)?\s*[:：=]?\s*({_PRICE_NUMBER})\s*(?:ريال|ر\s*\.?\s*س|﷼|SAR|SR)?\s*$", re.IGNORECASE)
-_PURCHASE_PRICE_LINE = re.compile(rf"^\s*سعر\s+الشراء\s*[:：=]?\s*({_PRICE_NUMBER})\s*(?:ريال|ر\s*\.?\s*س|﷼|SAR|SR)?\s*$", re.IGNORECASE)
+_SALE_PRICE_LINE = re.compile(rf"^\s*سعر\s+البيع(?:\s+البيع)?\s*[:：=]?\s*([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.?\s*س|﷼|SAR|SR)?\s*$", re.IGNORECASE)
+_PURCHASE_PRICE_LINE = re.compile(rf"^\s*سعر\s+الشراء\s*[:：=]?\s*([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*(?:ريال|ر\s*\.?\s*س|﷼|SAR|SR)?\s*$", re.IGNORECASE)
 _RANGE = re.compile(rf"\bمن\s*{_PRICE_NUMBER}\s*(?:إلى|الى|لين|حتى)\s*{_PRICE_NUMBER}\b")
 _FIELD_RANGE = re.compile(rf"^\s*{_PRICE_NUMBER}\s*(?:[-–—]|إلى|الى|لين|حتى)\s*{_PRICE_NUMBER}\s*$")
 _FIELD_MULTIPLE = re.compile(
