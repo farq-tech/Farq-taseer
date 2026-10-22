@@ -341,7 +341,7 @@ def test_component_prices_are_not_promoted_to_a_sale_price():
 def test_unlabeled_component_amounts_without_punctuation_stay_ambiguous():
     evidence = infer_price_evidence(
         "عربية أطفال YOYO",
-        "العرباي 1300 / البسنت 500 / البورد 300\nسعر الشراء 2700\\nسعر البيع 1200",
+        "العرباي 1300 / البسنت 500 / البورد 300\nسعر الشراء 2700\nسعر البيع 1200",
         1200,
     )
 
