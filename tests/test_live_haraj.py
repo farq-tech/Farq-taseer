@@ -11,6 +11,25 @@ def test_sql_stays_on_haraj_sellers_only():
     assert "catalog_products" not in HARAJ_SELLER_SQL
 
 
+def test_search_fetches_each_query_first_page_before_deeper_pages(monkeypatch):
+    import farq.live_haraj as live_haraj
+
+    calls = []
+    monkeypatch.setattr(live_haraj, "haraj_queries", lambda queries, city: queries)
+    client = HarajLiveClient(SearchConfig(live_page_size=5, live_max_pages=2, live_max_queries=3, live_concurrency=2))
+
+    def fake_post(variables):
+        calls.append((variables["search"], variables["page"]))
+        return {"items": [], "pageInfo": {"hasNextPage": variables["page"] == 1}}
+
+    monkeypatch.setattr(client, "_post", fake_post)
+    list(client.search_iter(["alpha", "beta", "gamma"], None))
+
+    assert set(calls[:3]) == {("alpha", 1), ("beta", 1), ("gamma", 1)}
+    assert len(calls) == 6
+    assert set(calls[3:]) == {("alpha", 2), ("beta", 2), ("gamma", 2)}
+
+
 @pytest.mark.integration
 def test_live_haraj_search_returns_real_pages():
     client = HarajLiveClient(SearchConfig(live_page_size=5, live_max_pages=2, live_max_queries=1, live_timeout_seconds=20))
