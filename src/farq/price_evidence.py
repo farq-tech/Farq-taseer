@@ -343,7 +343,7 @@ def infer_price_evidence(
             or has_other_text_price
             or (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
             or _HYPHEN_RANGE.search(all_text)
-            or _has_alternate_prices(all_text)
+            or (_has_alternate_prices(all_text) and not verified_sale_purchase_context)
             or (_contains_unit_or_installment(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
         ):
             return PriceEvidence(kind="ambiguous_amount", source="price_field")
