@@ -4599,6 +4599,8 @@ function applyDone(event) {
 // A search gives up after this long: whatever arrived stays on screen, and an empty screen
 // says the search failed and offers to try again. The spinner never outlives the search.
 const SEARCH_TIMEOUT_MS = 30000;
+// One continuation may scan up to seven query texts across two provider pages.
+const SEARCH_CONTINUATION_TIMEOUT_MS = 60000;
 
 function failSearch(status) {
   state.searching = false;
@@ -4778,7 +4780,7 @@ async function loadMoreSearch() {
   state.notice = "نبحث عن إعلانات أكثر…";
   render();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), SEARCH_CONTINUATION_TIMEOUT_MS);
   let finished = false;
   let addedTotal = 0;
   const seen = new Set(state.results.map(resultKey));
