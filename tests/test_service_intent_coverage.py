@@ -420,6 +420,61 @@ def test_vehicle_transport_service_does_not_match_flatbed_for_sale_listing():
     assert decide(intent, flatbed, seller)[0] is False
 
 
+def test_vehicle_transport_does_not_match_a_mover_mentioning_its_work_truck_as_a_car():
+    intent = analyze("نقل سيارة من الرياض إلى جدة")
+    seller = Seller(id="mover", name="معلن", city="الرياض")
+    mover = Ad(
+        id="furniture-mover",
+        title="دينا نقل عفش وأثاث مع فك وتركيب داخل وخارج الرياض",
+        description="سعر مشوار السيارة داخل الرياض 150 ريال. سعر الحملة تحميل وتنزيل.",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert decide(intent, mover, seller) == (False, ["moving_not_vehicle_transport"])
+    assert decide(intent, mover, seller, relaxed=True) == (False, ["moving_not_vehicle_transport"])
+
+
+def test_vehicle_transport_route_must_match_or_be_explicitly_nationwide():
+    intent = analyze("نقل سيارة من الرياض إلى جدة")
+    seller = Seller(id="tow", name="سطحة", city="الرياض")
+    exact = Ad(id="exact", title="سطحة نقل سيارات من الرياض إلى جدة", city="الرياض", seller=seller)
+    wrong = Ad(id="wrong", title="سطحة نقل السيارات من بيشة إلى القصيم", city="الرياض", seller=seller)
+    nationwide = Ad(
+        id="nationwide",
+        title="سطحة الرياض لنقل السيارات داخل وخارج المملكة",
+        description="نقل سيارات من الرياض إلى جميع مدن المملكة.",
+        city="الرياض",
+        seller=seller,
+    )
+    intercity = Ad(
+        id="intercity",
+        title="سطحة هيدروليك الرياض لنقل السيارات بين المدن",
+        city="الرياض",
+        seller=seller,
+    )
+    listed_cities = Ad(
+        id="listed-cities",
+        title="حائل مدينة الرياض دمام جدة مكة الطائف سطحة نقليات سيارات",
+        city="الرياض",
+        seller=seller,
+    )
+    route_unconfirmed = Ad(
+        id="route-unconfirmed",
+        title="سطحة الرياض لنقل السيارات داخل وخارج الرياض",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert decide(intent, exact, seller)[0] is True
+    assert decide(intent, wrong, seller) == (False, ["route_mismatch"])
+    assert decide(intent, nationwide, seller)[0] is True
+    assert decide(intent, intercity, seller)[0] is True
+    assert decide(intent, listed_cities, seller)[0] is True
+    assert decide(intent, route_unconfirmed, seller) == (False, ["route_unconfirmed"])
+    assert decide(intent, route_unconfirmed, seller, relaxed=True)[0] is True
+
+
 def test_vehicle_transport_category_is_available_to_service_providers():
     services = read_business("سطحة نقل سيارات بين المدن")['services']
 
