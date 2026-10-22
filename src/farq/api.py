@@ -1110,11 +1110,11 @@ def create_app(
         return {"images": found}
 
     @app.get("/v1/listings/details")
-    def listing_page_details(url: str, request: Request) -> dict:
+    def listing_page_details(url: str, request: Request, refresh: bool = False) -> dict:
         if not listing_details_limiter.allow(client_ip(request)):
             raise HTTPException(status_code=429, detail="too many listing detail requests, try again in a minute", headers={"Retry-After": "60"})
         try:
-            return listing_details(url)
+            return listing_details(url, refresh=True) if refresh else listing_details(url)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

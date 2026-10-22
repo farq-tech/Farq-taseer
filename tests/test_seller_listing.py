@@ -122,6 +122,23 @@ def test_a_deleted_or_unreachable_ad_is_unavailable_not_guessed():
         listing_details("https://example.com/ad")
 
 
+def test_explicit_listing_details_retry_bypasses_cached_unavailable_page():
+    url = "https://haraj.com.sa/11190601022/x/"
+    calls = []
+
+    def opener(_request, timeout=8):
+        del timeout
+        calls.append(True)
+        return _Body("<html>page without Product metadata</html>" if len(calls) == 1 else _AD_PAGE, url)
+
+    first = listing_details(url, opener=opener, now=1.0)
+    retried = listing_details(url, opener=opener, now=1.0, refresh=True)
+
+    assert first["state"] == "unavailable"
+    assert retried["state"] == "available"
+    assert len(calls) == 2
+
+
 @pytest.fixture(autouse=True)
 def _any_recipient(monkeypatch):
     monkeypatch.setenv("FARQ_RECIPIENTS_FROM_SEARCH", "0")
@@ -201,8 +218,8 @@ def test_search_results_can_fetch_the_complete_public_listing_without_an_existin
         "images": ["https://postcdn.haraj.com.sa/a-700.webp"],
     }
 
-    def fake_details(target):
-        seen.append(target)
+    def fake_details(target, refresh=False):
+        seen.append((target, refresh))
         if target != url:
             raise ValueError("listing url must be on haraj.com.sa")
         return details
@@ -214,8 +231,13 @@ def test_search_results_can_fetch_the_complete_public_listing_without_an_existin
     response = api.get("/v1/listings/details", params={"url": url})
     assert response.status_code == 200, response.text
     assert response.json() == details
-    assert seen == [url]
+    assert seen == [(url, False)]
+
+    refreshed = api.get("/v1/listings/details", params={"url": url, "refresh": "1"})
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json() == details
+    assert seen == [(url, False), (url, True)]
 
     rejected = api.get("/v1/listings/details", params={"url": "https://example.com/ad"})
     assert rejected.status_code == 400
-    assert seen == [url, "https://example.com/ad"]
+    assert seen == [(url, False), (url, True), ("https://example.com/ad", False)]

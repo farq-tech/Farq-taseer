@@ -156,7 +156,7 @@ html = detailSheet();
 assert.doesNotMatch(html, /data-action="retry-listing-details"/);
 '''
     subprocess.run(['node', '-e', script], check=True)
-    assert 'else if (action === "retry-listing-details") openResult(target.dataset.key);' in source
+    assert 'else if (action === "retry-listing-details") openResult(target.dataset.key, true);' in source
 
 
 def test_failed_listing_image_urls_show_an_explicit_fallback():
@@ -279,7 +279,7 @@ assert.equal(resultsLine(13, uniqueSellerCount([{seller: {}}])), 'لقينا 13 
 
 def test_opening_a_result_refreshes_it_from_the_original_haraj_listing():
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
-    start = source.index('async function openResult(key) {')
+    start = source.index('async function openResult(key, refreshDetails = false) {')
     end = source.index('\n}', start) + 2
     script = r"""
 const assert = require('node:assert/strict');
@@ -324,9 +324,12 @@ const imageSources = (ad) => ad?.image_urls || [];
   assert.equal(fallback.ad.description, 'الوصف الموجود في البحث');
   assert.equal(fallback.ad.listing_details_state, 'unavailable');
   assert.deepEqual(state.gallery, ['image-route-two', 'thumb-2']);
-  assert.equal(calls.length, 4);
-  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/details?url=')).length, 2);
-  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/images?url=')).length, 2);
+  await openResult('second', true);
+  assert.equal(fallback.ad.listing_details_state, 'unavailable');
+  assert.equal(calls.length, 6);
+  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/details?url=')).length, 3);
+  assert.ok(calls.some((path) => path.startsWith('/v1/listings/details?url=') && path.endsWith('&refresh=1')));
+  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/images?url=')).length, 3);
   assert.ok(renders >= 4);
 })().catch((error) => { console.error(error); process.exit(1); });
 """
