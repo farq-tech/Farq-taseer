@@ -65,6 +65,8 @@ def test_request_framing_does_not_pollute_the_stroller_search(query, discarded, 
         "الله يعافيك عربية أطفال يويو",
         "الله يعافيكي عربية أطفال يويو",
         "الله يعافيكم عربية أطفال يويو",
+        "يعطيك العافية أبي عربية أطفال يويو",
+        "الله يسعدك أبي عربية أطفال يويو",
     ],
 )
 def test_polite_arabic_framing_does_not_pollute_product_search(query):
@@ -72,7 +74,7 @@ def test_polite_arabic_framing_does_not_pollute_product_search(query):
 
     assert intent.need == "عربية أطفال يويو"
     for term in intent.search_terms:
-        assert not any(word in term for word in ("يعافيك", "يعافيكي", "يعافيكم"))
+        assert not any(word in term for word in ("يعافيك", "يعافيكي", "يعافيكم", "يعطيك", "يسعدك"))
 
 
 @pytest.mark.parametrize(
