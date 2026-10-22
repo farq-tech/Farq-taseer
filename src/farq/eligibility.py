@@ -768,7 +768,6 @@ def _yoyo_lookalike_claim(text: str) -> bool:
 def _yoyo_is_primary_listing_identity(title: str, description: str) -> bool:
     """Require YOYO to identify the offered stroller, not merely occur in listing copy."""
     title_norm = normalize(title)
-    description_norm = normalize(description)
     title_has_yoyo = has_word(title_norm, ("يويو", "yoyo", "babyzen", "بيبيزن", "بيبي زن"))
     if title_has_yoyo:
         # A title advertising a mixed assortment does not establish which model its price refers to.
@@ -776,9 +775,11 @@ def _yoyo_is_primary_listing_identity(title: str, description: str) -> bool:
             return False
         return True
 
-    # A generic title may be clarified by the opening product statement in the description.
-    # Later compatibility, comparison, or brand-list mentions are not identity evidence.
-    lead = " ".join(tokens(description_norm)[:18])
+    # A generic title may be clarified by its opening line, not later comparison or
+    # compatibility copy. Preserve line boundaries: Haraj sellers often use them to
+    # separate the offered brand from other brands mentioned afterward.
+    first_line = description.splitlines()[0] if description else ""
+    lead = " ".join(tokens(normalize(first_line))[:10])
     if not has_word(lead, ("يويو", "yoyo", "babyzen", "بيبيزن", "بيبي زن")):
         return False
     if not has_word(lead, _YOYO_STROLLER_TERMS):

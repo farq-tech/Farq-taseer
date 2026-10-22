@@ -91,6 +91,10 @@ def test_yoyo_model_does_not_match_an_unbranded_stroller_ad():
             "عربيات اطفال العدد 5 شركات متنوعه",
             "متوفر عدة أنواع وماركات منها بريتكس وماماز اند باباز ويويو، السعر حسب النوع",
         ),
+        (
+            "عربية أطفال",
+            "عربية أطفال ماركة بريتكس\nخفيفة وعملية\nالنظافة متوسطة\nتعمل بشكل جيد تماماً\nالسعر 100ريال\nماماز اند باباز\nيويو",
+        ),
     ],
 )
 def test_yoyo_mentioned_as_secondary_brand_is_not_an_exact_or_near_match(title, description):
