@@ -287,7 +287,7 @@ const result = {
   ad: {url: 'https://haraj.com.sa/1/post/', title: 'نتيجة مختصرة', description: 'وصف مقتطع', image_urls: ['thumb']},
 };
 const fallback = {
-  ad: {url: 'https://haraj.com.sa/2/post/', title: 'عنوان البحث', description: 'الوصف الموجود في البحث', image_urls: ['thumb-2']},
+  ad: {url: 'https://haraj.com.sa/2/post/', title: 'عنوان البحث', description: 'الوصف الموجود في البحث، وفيه تفاصيل إضافية من البحث', image_urls: ['thumb-2'], price_amount: 700, price_currency: 'SAR', price_text: '700', price_evidence: {kind: 'asking_price_in_field', amount: 700}},
 };
 const state = {results: [result, fallback], active: null, gallery: [], view: 'results'};
 const calls = [];
@@ -304,7 +304,11 @@ const api = async (path) => {
     price_evidence: {kind: 'asking_price_in_field', amount: 300, source: 'price_field'},
     images: ['haraj-photo-b', 'haraj-photo-a'],
   };
-  return {state: 'unavailable'};
+  return {
+    state: 'available', detail_source: 'structured_summary', title: 'عنوان صفحة حراج',
+    description: 'وصف مختصر', price_amount: null, price_currency: null, price_text: null,
+    price_evidence: {kind: 'no_price_signal', amount: null}, images: [],
+  };
 };
 const render = () => { renders += 1; };
 const resultKey = (item) => item === result ? 'first' : 'second';
@@ -320,12 +324,16 @@ const imageSources = (ad) => ad?.image_urls || [];
   assert.deepEqual(state.gallery, ['image-route-one', 'haraj-photo-b', 'haraj-photo-a']);
 
   await openResult('second');
-  assert.equal(fallback.ad.title, 'عنوان البحث');
-  assert.equal(fallback.ad.description, 'الوصف الموجود في البحث');
-  assert.equal(fallback.ad.listing_details_state, 'unavailable');
+  assert.equal(fallback.ad.title, 'عنوان صفحة حراج');
+  assert.equal(fallback.ad.listing_details_state, 'available');
+  assert.equal(fallback.ad.price_amount, 700);
+  assert.equal(fallback.ad.price_currency, 'SAR');
+  assert.equal(fallback.ad.price_text, '700');
+  assert.equal(fallback.ad.price_evidence.kind, 'asking_price_in_field');
+  assert.equal(fallback.ad.description, 'الوصف الموجود في البحث، وفيه تفاصيل إضافية من البحث');
   assert.deepEqual(state.gallery, ['image-route-two', 'thumb-2']);
   await openResult('second', true);
-  assert.equal(fallback.ad.listing_details_state, 'unavailable');
+  assert.equal(fallback.ad.listing_details_state, 'available');
   assert.equal(calls.length, 6);
   assert.equal(calls.filter((path) => path.startsWith('/v1/listings/details?url=')).length, 3);
   assert.ok(calls.some((path) => path.startsWith('/v1/listings/details?url=') && path.endsWith('&refresh=1')));

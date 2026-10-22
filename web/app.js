@@ -4883,16 +4883,23 @@ async function openResult(key, refreshDetails = false) {
     if (state.view !== "detail" || state.active !== result) return;
     if (details?.state === "available") {
       const previous = result.ad;
+      const summaryOnly = details.detail_source === "structured_summary";
+      const detailDescription = details.description ?? previous.description;
+      const description = summaryOnly && (previous.description || "").length > (detailDescription || "").length
+        ? previous.description
+        : detailDescription;
       result.ad = {
         ...previous,
         title: details.title || previous.title,
-        description: details.description ?? previous.description,
+        description,
         city: details.city || previous.city,
         posted_at: details.posted_at || previous.posted_at,
-        price_amount: details.price_amount ?? null,
-        price_currency: details.price_currency ?? null,
-        price_text: details.price_text ?? null,
-        price_evidence: details.price_evidence || previous.price_evidence,
+        price_amount: summaryOnly && details.price_amount == null ? previous.price_amount : details.price_amount ?? null,
+        price_currency: summaryOnly && details.price_amount == null ? previous.price_currency : details.price_currency ?? null,
+        price_text: summaryOnly && details.price_amount == null ? previous.price_text : details.price_text ?? null,
+        price_evidence: summaryOnly && details.price_amount == null
+          ? previous.price_evidence || details.price_evidence
+          : details.price_evidence || previous.price_evidence,
         image_urls: details.images?.length ? details.images : previous.image_urls,
         listing_details_state: "available",
       };
