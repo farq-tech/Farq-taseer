@@ -68,7 +68,9 @@ def test_clear_water_leak_repair_request_is_routed_to_a_plumber():
     assert intent.subcategory.value == "plumber"
     assert intent.result_unit.value == "service_provider"
     assert intent.location_city.value == "الرياض"
-    assert "تسرب ماء الرياض" in intent.need
+    assert intent.need == "تسرب ماء الرياض"
+    assert intent.segment_text == "تسرب ماء في السقف من يصلحه بالرياض"
+    assert intent.segment_text in intent.search_terms
     assert any("تسرب ماء" in term for term in intent.search_terms)
     assert any("سباك" in term for term in intent.search_terms)
     seller = Seller(id="seller", name="بائع", city="الرياض")
