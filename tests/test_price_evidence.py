@@ -269,6 +269,63 @@ def test_per_door_promotion_price_is_not_the_total_for_a_multi_door_order():
 
 
 
+def test_auction_wording_and_per_door_amount_do_not_make_the_field_a_total():
+    evidence = infer_price_evidence(
+        "أبواب WPC بيضاء للبيع - الرياض",
+        (
+            "للبيع عدد 14 باب wpc لون أبيض جديدة بمقابضها وحلوقها، "
+            "الفك والنقل على المشتري للسومة الأعلى\n"
+            "الباب الواحد ب119 ريال\n"
+            "واللي بيشيلها كلها بنراعيه"
+        ),
+        2000,
+        "2,000",
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "الباب الواحد ب119 ريال",
+        "الحبة ب180 ريال",
+        "القطعة ب80 ريال",
+    ],
+)
+def test_unit_name_followed_by_amount_is_not_a_whole_listing_price(description):
+    evidence = infer_price_evidence("سلعة للبيع", description, None)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
+def test_door_delivery_fee_is_not_a_per_door_rate():
+    evidence = infer_price_evidence("سلعة", "التوصيل للباب 20 ريال", None)
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
+@pytest.mark.parametrize("description", ["تركيب الباب 100 ريال", "التوصيل للباب 20 ريال"])
+def test_service_fee_following_unit_name_is_not_a_unit_rate(description):
+    evidence = infer_price_evidence("أبواب للبيع", description, None)
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+def test_pickup_time_after_price_does_not_turn_total_into_daily_rate():
+    evidence = infer_price_evidence(
+        "سلعة للبيع",
+        "السعر 500 ريال، الاستلام اليوم ب5 مساء",
+        None,
+    )
+
+    assert evidence.kind == "explicit_text_price"
+    assert evidence.amount == 500
+
+
 def test_per_tire_amount_in_price_field_is_not_an_order_total():
     evidence = infer_price_evidence(
         "كفرات مستعمله هيلكس فورتشنر هانكوك 265 65 17",

@@ -842,7 +842,7 @@ def create_app(
     SEARCH_CACHE_SECONDS = 600
     # Bump when intent expansion or ranking semantics change so old result snapshots
     # do not hide the updated search behavior for one cache lifetime.
-    SEARCH_CACHE_REVISION = "3"
+    SEARCH_CACHE_REVISION = "4"
 
     def _search_key(query: str, near: bool = False) -> str:
         namespace = "search-near" if near else "search"
