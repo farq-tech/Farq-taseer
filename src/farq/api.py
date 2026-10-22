@@ -967,8 +967,8 @@ def create_app(
         if body.page is None:
             initial = replace(
                 config,
-                live_max_pages=max(1, min(config.live_max_pages, config.live_initial_max_pages)),
-                live_concurrency=max(config.live_concurrency, config.live_initial_concurrency),
+                live_max_pages=max(1, min(config.live_max_pages, config.live_request_max_pages)),
+                live_concurrency=max(config.live_concurrency, config.live_request_concurrency),
             )
             if isinstance(live_client, HarajLiveClient):
                 initial_client = copy(live_client)
@@ -977,7 +977,15 @@ def create_app(
                     initial_client.jobs = set()
                 return initial, initial_client
             return initial, live_client
-        paged = replace(config, live_start_page=body.page, max_results=0, min_score_ratio=0, include_older_ads=True)
+        paged = replace(
+            config,
+            live_start_page=body.page,
+            live_max_pages=max(1, min(config.live_max_pages, config.live_request_max_pages)),
+            live_concurrency=max(config.live_concurrency, config.live_request_concurrency),
+            max_results=0,
+            min_score_ratio=0,
+            include_older_ads=True,
+        )
         return paged, ((CachedHarajClient(paged, harvest) if os.environ.get("FARQ_HARAJ_PUBLIC_HARVEST_ENABLED") == "1" else HarajLiveClient(paged)) if live_client is not None else None)
 
     def continuation_id(body: SearchBody, user_id: str | None) -> str | None:

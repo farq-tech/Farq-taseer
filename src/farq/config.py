@@ -41,10 +41,10 @@ class SearchConfig:
     include_older_ads: bool = False
     live_page_size: int = field(default_factory=lambda: _env_int("FARQ_LIVE_PAGE_SIZE", 20))
     live_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_MAX_PAGES", 3))
-    # The first response must finish within the mobile client's 30s search window.
-    # Deeper pages remain available through the existing continuation cursor.
-    live_initial_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_INITIAL_MAX_PAGES", 1))
-    live_initial_concurrency: int = field(default_factory=lambda: _env_int("FARQ_LIVE_INITIAL_CONCURRENCY", 4))
+    # Each interactive search request must finish within the mobile client's 30s
+    # window; every deeper page remains reachable through continuation.
+    live_request_max_pages: int = field(default_factory=lambda: _env_int("FARQ_LIVE_REQUEST_MAX_PAGES", 1))
+    live_request_concurrency: int = field(default_factory=lambda: _env_int("FARQ_LIVE_REQUEST_CONCURRENCY", 4))
     # Seven texts x three pages. A production check for «عربية أطفال يويو» showed that
     # the seventh, reordered Arabic phrase «يويو عربة أطفال» adds qualified listings
     # beyond the first six; keep this budget high enough to include it. The city remains
