@@ -116,8 +116,11 @@ def test_yoyo_model_does_not_match_an_unbranded_stroller_ad():
     generic = Ad(id="ad-1", title="عربة أطفال مستعملة", seller=seller)
     yoyo = Ad(id="ad-2", title="عربية أطفال يويو للبيع", seller=seller)
 
+    yoyo3 = Ad(id="ad-yoyo-3", title="عربية يويو 3", seller=seller)
+
     assert decide(intent, generic, seller)[0] is False
     assert decide(intent, yoyo, seller)[0] is True
+    assert decide(intent, yoyo3, seller)[0] is True
 
 
 def test_low_scoring_but_eligible_yoyo_ads_are_not_hidden_by_the_relative_floor():
@@ -350,6 +353,10 @@ def test_haraj_query_budget_keeps_arabic_and_english_yoyo_searches(query):
     searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
 
     assert len(searched) == 7
+    mixed_script_term = "عربة أطفال YOYO"
+    if intent.model.value == "YOYO 2":
+        mixed_script_term += " 2"
+    assert mixed_script_term in searched
     assert any("Babyzen YOYO" in term for term in searched)
     assert any("YOYO" in term and "stroller" in term for term in searched)
     if intent.model.value == "YOYO 2":
