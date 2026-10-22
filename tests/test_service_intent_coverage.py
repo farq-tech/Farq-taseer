@@ -777,6 +777,12 @@ def test_wedding_venues_stay_separate_from_event_planning_services():
             "نقل عفش من الرياض إلى جدة",
         ),
         (
+            "أبي أنقل عباية من الرياض لجدة",
+            "goods_transport",
+            "نقل أغراض وبضائع بين المدن من الرياض إلى جدة",
+            "عبايات جديدة بالرياض",
+        ),
+        (
             "أحتاج شحن بضائع من الرياض إلى جدة",
             "goods_transport",
             "شحن بضائع وطرود بين الرياض وجدة",
@@ -818,12 +824,40 @@ def test_furniture_route_remains_a_furniture_moving_request_and_search_term():
     assert any("الرياض" in term and "جدة" in term for term in intent.search_terms)
 
 
+def test_mentioning_an_item_and_two_cities_without_a_transport_action_stays_a_product_search():
+    intent = analyze("أبي عباية من الرياض إلى جدة")
+
+    assert intent.subcategory.value == "abayas"
+    assert intent.result_unit.value == "ad"
+
+
 def test_goods_delivery_without_an_intercity_route_is_understood():
     intent = analyze("توصيل أغراض للبيت في الرياض")
 
     assert intent.subcategory.value == "goods_transport"
     assert intent.location_city.value == "الرياض"
     assert intent.destination_city.value is None
+
+
+@pytest.mark.parametrize(
+    "query,subcategory",
+    [
+        ("أبي أنقل عباية", "goods_transport"),
+        ("أبي أنقل أغراضي", "goods_transport"),
+        ("أبي أنقل عفشي", "moving"),
+        ("أبي أنقل كامري", "vehicle_transport"),
+    ],
+)
+def test_explicit_load_transport_requests_are_services_without_requiring_a_route(query, subcategory):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == subcategory
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_sensitivity.value == "required"
+    assert intent.location_city.known is False
+    assert "location_city" in intent.missing_decision_information
 
 
 @pytest.mark.parametrize(

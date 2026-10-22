@@ -445,7 +445,7 @@ def _property_transaction(normalized: str) -> str | None:
 # for_sale_not_service gate in eligibility.
 _SERVICE_VERBS = {
     "يسوي", "يسويها", "يركب", "يركبها", "يصلح", "يصلحه", "يصلحها", "يبني", "يفصل", "يفصلها",
-    "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "انقل", "ينظف", "يغسل", "يفك",
+    "يمدد", "يدهن", "يصبغ", "يرمم", "يلحم", "يكشف", "ينقل", "ينظف", "يغسل", "يفك",
     "يضبط", "يشتغل", "يجي", "يجيني", "يعدل", "يحفر", "يزرع", "يشيك", "يصور", "يقص", "يقلم", "تنقل",
     "اسوي", "اصلح", "اضبط", "تركيب", "تصليح", "صيانه", "تفصيل", "ترميم", "تمديد",
     "دهان", "لحام", "نقل", "كشف", "بناء", "تنظيف", "غسيل", "فك", "توصيل", "تصميم", "تعديل",
@@ -1600,6 +1600,38 @@ def _branded_model_head(normalized: str) -> Head | None:
     return None
 
 
+_EXPLICIT_TRANSPORT_ACTIONS = {
+    "انقل", "نقل", "ينقل", "تنقل", "توصيل", "يوصل", "اوصل", "اوصّل",
+    "شحن", "يشحن", "اشحن", "سحب", "سطحة", "سطحه", "ونش", "دينا",
+}
+_FURNITURE_PAYLOAD = {"عفش", "عفشي", "عفشها", "اثاث", "اثاثي", "اثاثها"}
+_GENERIC_CARGO_PAYLOAD = {
+    "اغراض", "اغراضي", "اغراضها", "بضائع", "بضاعه", "بضاعتي", "طرود", "طرد",
+    "كراتين", "كرتون", "صناديق", "صندوق", "ممتلكات", "ممتلكاتي",
+}
+
+
+def _explicit_transport_head(
+    normalized: str,
+    route: tuple[str, str] | None,
+    matches: list[HeadMatch],
+) -> Head | None:
+    """Use a transport service only when the customer explicitly asks to move a load."""
+    words = set(normalized.split())
+    if not words & _EXPLICIT_TRANSPORT_ACTIONS or words & {"للبيع", "بيع", "شراء", "مطلوب"}:
+        return None
+    if any(item.head.type == "service" for item in matches):
+        return None
+    if any(item.head.type == "vehicle" for item in matches):
+        return next((head for head in HEADS if head.subcategory == "vehicle_transport"), None)
+    if words & _FURNITURE_PAYLOAD:
+        return next((head for head in HEADS if head.subcategory == "moving"), None)
+    has_named_item = any(item.head.type in {"product", "other"} for item in matches)
+    if route is not None or has_named_item or words & _GENERIC_CARGO_PAYLOAD:
+        return next((head for head in HEADS if head.subcategory == "goods_transport"), None)
+    return None
+
+
 def analyze(query: str) -> IntentResponse:
     original = query.strip()
     normalized = normalize(original)
@@ -1632,6 +1664,10 @@ def analyze(query: str) -> IntentResponse:
     all_matches = _head_matches(normalized)
     match = _select_match(all_matches, normalized)
     head = match.head if match else None
+    transport_head = _explicit_transport_head(normalized, route, all_matches)
+    if transport_head is not None:
+        head = transport_head
+        match = None
     if head is None:
         head = _branded_model_head(normalized)
     matched = [item.head for item in all_matches]
