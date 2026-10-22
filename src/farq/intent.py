@@ -186,8 +186,7 @@ def _stroller_alternatives(normalized: str) -> list[str]:
 
 # "3 افياش", "4 ابواب", "تنظيف 5 مكيفات": a small number and the noun after it.
 _DOOR_MATERIAL_COUNT = re.compile(
-    r"(?:(?P<count_before>\d{1,4})\s*(?P<material_after>pvc|wpc)|"
-    r"(?P<material_before>pvc|wpc)\s*(?P<count_after>\d{1,4}))\b",
+    r"(?P<count_before>\d{1,4})\s*(?P<material_after>pvc|wpc)\b",
     re.IGNORECASE,
 )
 _QUANTITY = re.compile(r"(?:^|\s)(\d{1,3})\s+([؀-ۿ]{2,})")
@@ -1202,12 +1201,11 @@ def _quantity(normalized: str, original: str) -> tuple[FieldValue, str | None]:
     door_counts = []
     if has_word(normalized, ("باب", "ابواب", "doors", "door")):
         for match in _DOOR_MATERIAL_COUNT.finditer(normalized):
-            count_group = "count_before" if match.group("count_before") else "count_after"
-            material = match.group("material_after") or match.group("material_before")
-            count_start = match.start(count_group)
+            count_start = match.start("count_before")
             if any(start <= count_start < end for start, end in price_amount_spans):
                 continue
-            amount = int(match.group(count_group))
+            amount = int(match.group("count_before"))
+            material = match.group("material_after")
             if 0 < amount < 10000:
                 door_counts.append((material.lower(), amount, match.group(0)))
     if len(door_counts) == 1:
@@ -2374,9 +2372,8 @@ def split_need_texts(query: str) -> list[str]:
     if has_word(normalized_original, ("باب", "ابواب", "doors", "door")):
         door_counts: dict[str, list[int]] = {"pvc": [], "wpc": []}
         for match in _DOOR_MATERIAL_COUNT.finditer(normalized_original):
-            count_group = "count_before" if match.group("count_before") else "count_after"
-            material = match.group("material_after") or match.group("material_before")
-            amount = int(match.group(count_group))
+            amount = int(match.group("count_before"))
+            material = match.group("material_after")
             if 0 < amount < 10000:
                 door_counts[material.lower()].append(amount)
         if all(len(door_counts[material]) == 1 for material in ("pvc", "wpc")):
