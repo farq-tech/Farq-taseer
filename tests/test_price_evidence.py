@@ -338,6 +338,17 @@ def test_component_prices_are_not_promoted_to_a_sale_price():
     assert evidence.amount is None
 
 
+def test_component_prices_without_currency_are_not_promoted_to_a_sale_price():
+    evidence = infer_price_evidence(
+        "عربية أطفال YOYO",
+        "العرباي: 1300 / البسنت: 500 / البورد: 300\\nسعر الشراء 2700\\nسعر البيع 1200",
+        1200,
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
 def test_historical_purchase_and_sale_prices_are_shown_as_context_not_a_final_price():
     evidence = infer_price_evidence(
         "عربية أطفال YOYO بحالة جيدة",
