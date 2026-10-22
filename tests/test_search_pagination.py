@@ -1,10 +1,13 @@
 import json
+import hashlib
+import time
 from fastapi.testclient import TestClient
 from farq.api import create_app
 from farq.config import SearchConfig
 from farq.corpus import MemoryCorpus
 from farq.live_haraj import HarajLiveClient
 from farq.store import Store
+from farq.text import normalize
 
 
 def make_api(tmp_path, monkeypatch):
@@ -198,6 +201,38 @@ def test_cached_search_keeps_its_continuation_and_owner(tmp_path,monkeypatch):
     assert next_page.json()['next_page'] == 4
     assert pages == [1,2,3]
     assert api.get('/v1/search/'+cached['trace_id']+'/availability').status_code==200
+
+
+def test_search_cache_revision_ignores_previous_result_snapshot(tmp_path, monkeypatch):
+    pages = []
+
+    def post(self, variables):
+        pages.append(variables["page"])
+        return {
+            "items": [{"id": "fresh", "title": "سباك تأسيس وصيانة", "authorId": 101,
+                "authorUsername": "مقدم خدمة", "city": "الرياض", "status": True}],
+            "pageInfo": {"hasNextPage": False},
+        }
+
+    monkeypatch.setattr(HarajLiveClient, "_post", post)
+    config = SearchConfig(live_max_pages=1, live_max_queries=1)
+    query = "سباك بالرياض"
+    seed_store = Store(tmp_path / "seed-db", tmp_path / "seed-uploads")
+    seed_api = TestClient(create_app(seed_store, MemoryCorpus([]), HarajLiveClient(config), config))
+    previous_response = seed_api.post("/v1/search", json={"query": query}).json()
+
+    stale_store = Store(tmp_path / "stale-db", tmp_path / "stale-uploads")
+    digest = hashlib.sha256(normalize(query).encode()).hexdigest()[:40]
+    stale_store.set_value(
+        f"search:v5:{digest}",
+        json.dumps({"at": time.time(), "response": previous_response}, ensure_ascii=False),
+    )
+    api = TestClient(create_app(stale_store, MemoryCorpus([]), HarajLiveClient(config), config))
+
+    refreshed_response = api.post("/v1/search", json={"query": query}).json()
+
+    assert pages == [1, 1]
+    assert refreshed_response["trace_id"] != previous_response["trace_id"]
 
 
 def test_initial_search_is_bounded_and_continuation_reaches_remaining_pages(tmp_path, monkeypatch):
