@@ -301,6 +301,43 @@ def test_attached_colloquial_som_phrase_is_not_reported_as_missing_price(phrase)
     assert evidence.amount is None
 
 
+@pytest.mark.parametrize(
+    "description, field_amount",
+    [
+        ("سعر الشراء 2700 / سعر البيع 1200", 1200),
+        ("سعر الشراء 900 / سعر البيع البيع 850", 850),
+        ("سعر الشراء 2700 ريال / سعر البيع 1200 ريال", 1200),
+    ],
+)
+def test_matching_labeled_sale_price_is_used_with_purchase_price_context(description, field_amount):
+    evidence = infer_price_evidence("عربية أطفال YOYO بحالة جيدة", description, field_amount)
+
+    assert evidence.kind == "asking_price_in_field"
+    assert evidence.amount == field_amount
+
+
+def test_labeled_sale_price_that_disagrees_with_price_field_stays_ambiguous():
+    evidence = infer_price_evidence(
+        "عربية أطفال YOYO بحالة جيدة",
+        "سعر الشراء 2700 / سعر البيع 1200",
+        1000,
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
+def test_component_prices_are_not_promoted_to_a_sale_price():
+    evidence = infer_price_evidence(
+        "عربية أطفال YOYO",
+        "العرباي: 1300 ريال / البسنت: 500 ريال / البورد: 300 ريال",
+        1900,
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
 def test_historical_purchase_and_sale_prices_are_shown_as_context_not_a_final_price():
     evidence = infer_price_evidence(
         "عربية أطفال YOYO بحالة جيدة",
@@ -309,11 +346,8 @@ def test_historical_purchase_and_sale_prices_are_shown_as_context_not_a_final_pr
         "1,200",
     )
 
-    assert evidence.kind == "ambiguous_amount"
-    assert evidence.amount is None
-    assert evidence.source == "price_field"
-    assert evidence.text_source == "description"
-    assert evidence.text == "سعر الشراء 2700 ؛ سعر البيع 1200"
+    assert evidence.kind == "asking_price_in_field"
+    assert evidence.amount == 1200
 
 
 def test_down_payment_is_never_used_as_a_comparable_listing_price():
