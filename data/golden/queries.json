@@ -1634,7 +1634,12 @@
         "long_tail",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "service",
+        "category": "services",
+        "subcategory": "vehicle_insurance",
+        "result_unit": "service_provider"
+      }
     },
     {
       "id": "q149",
@@ -1645,7 +1650,13 @@
         "location_required",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "service",
+        "category": "services",
+        "subcategory": "car_repair",
+        "result_unit": "service_provider",
+        "need": "فحص سيارات متنقل"
+      }
     },
     {
       "id": "q150",
@@ -1655,7 +1666,12 @@
         "vehicles",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "service",
+        "category": "services",
+        "subcategory": "car_detailing",
+        "result_unit": "service_provider"
+      }
     },
     {
       "id": "q151",
