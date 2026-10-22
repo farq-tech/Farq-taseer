@@ -163,3 +163,13 @@ def test_material_followed_by_an_amount_is_not_guessed_as_door_quantity():
     intent = analyze("أبواب PVC 700 بالرياض")
 
     assert intent.quantity.value is None
+
+
+def test_explicit_door_prices_do_not_split_into_quantities():
+    from farq.intent import analyze_needs
+
+    intents = analyze_needs("سعر أبواب 700 PVC و900 WPC بالرياض")
+
+    assert len(intents) == 1
+    assert intents[0].quantity.value is None
+    assert intents[0].material.value is None
