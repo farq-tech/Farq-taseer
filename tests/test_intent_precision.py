@@ -80,6 +80,17 @@ def test_clear_water_leak_repair_request_is_routed_to_a_plumber():
     assert decide(intent, plumber, seller)[0] is True
 
 
+def test_explicit_air_conditioner_repair_is_not_misrouted_to_plumbing_for_a_leak():
+    intent = analyze("فني مكيفات يصلح تسريب بالرياض")
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "ac_repair"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert any("مكيف" in term or "تكييف" in term for term in intent.search_terms)
+
+
 def test_appliance_repair_request_is_not_sent_to_product_ads():
     intent = analyze("فني يصلح غسالة أوتوماتيك بالرياض")
 

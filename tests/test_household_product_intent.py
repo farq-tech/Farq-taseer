@@ -121,6 +121,27 @@ def test_cleaning_a_sofa_remains_a_service_request():
     assert intent.result_unit.value == "service_provider"
 
 
+@pytest.mark.parametrize(
+    "query,city",
+    [
+        ("أبي أحد ينظف البيت في جدة", "جده"),
+        ("أحتاج تنظيف البيت بالرياض", "الرياض"),
+        ("أبي أحد ينظف البيت", None),
+    ],
+)
+def test_plain_home_cleaning_requests_are_understood_as_a_local_service(query, city):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "cleaning"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == city
+    assert any("تنظيف منازل" in term or "شركة تنظيف" in term for term in intent.search_terms)
+    if city is None:
+        assert "location_city" in intent.missing_decision_information
+
+
 def test_supplier_product_taxonomy_does_not_call_sofa_sales_upholstery_service():
     listing = read_business("بيع كنب زاوية وطاولات طعام وأسرة وشاشات وراوترات وطابعات")
     keys = {item["key"] for item in listing["products"]}
