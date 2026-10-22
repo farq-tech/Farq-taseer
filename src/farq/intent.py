@@ -1073,6 +1073,17 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
         return max(service, key=lambda item: item.length)
     if dedicated_vehicle_service and not product_cue:
         return max(service, key=lambda item: item.length)
+    specific_car_models = [
+        item
+        for item in product
+        if item.head.type == "vehicle"
+        and item.head.subcategory == "cars"
+        and item.head.model is not None
+    ]
+    if generic_vehicle_product and len({item.head.model for item in specific_car_models}) == 1:
+        # A model name can be a one-word head just like «سيارة». When both appear,
+        # keep the customer's explicit model instead of falling back to all cars.
+        return max(specific_car_models, key=lambda item: item.length)
     if product and (not service or not explicit_service or product_cue):
         return max(product, key=lambda item: item.length)
     if service:

@@ -44,6 +44,41 @@ def test_yaris_search_keeps_whole_cars_and_rejects_wanted_or_dismantled_parts(ti
     assert decide(intent, ad, seller)[0] is expected
 
 
+@pytest.mark.parametrize(
+    ("query", "model", "brand", "matching_title", "wrong_title"),
+    [
+        (
+            "أبي سيارة يارس 2020 بالرياض",
+            "Yaris",
+            "Toyota",
+            "سيارة تويوتا يارس 2020",
+            "سيارة تويوتا كورولا 2020",
+        ),
+        (
+            "سيارة كامري 2015",
+            "Camry",
+            "Toyota",
+            "سيارة تويوتا كامري 2015",
+            "سيارة تويوتا كورولا 2015",
+        ),
+    ],
+)
+def test_explicit_model_beats_generic_car_word(
+    query, model, brand, matching_title, wrong_title
+):
+    intent = analyze(query)
+    seller = Seller(id="seller", name="معلن")
+    matching = Ad(id="matching", title=matching_title, city="الرياض", seller=seller)
+    wrong = Ad(id="wrong", title=wrong_title, city="الرياض", seller=seller)
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "cars"
+    assert intent.model.value == model
+    assert intent.brand.value == brand
+    assert decide(intent, matching, seller)[0] is True
+    assert decide(intent, wrong, seller)[0] is False
+
+
 def test_double_cab_datsun_is_understood_as_a_pickup():
     intent = analyze("مطلوب ددسن غمارتين")
 
