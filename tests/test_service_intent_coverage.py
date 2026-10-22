@@ -926,3 +926,30 @@ def test_appliance_repair_understands_possessive_device_names(query, expected_se
     assert intent.result_unit.value == "service_provider"
     assert any(expected_search_term in term for term in intent.search_terms)
 
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "نقل السيارة الرياض جدة",
+        "نقل سيارة الرياض جدة",
+        "أبي أنقل سيارتي الرياض جدة",
+    ],
+)
+def test_vehicle_transport_infers_ordered_cities_without_route_prepositions(query):
+    intent = analyze(query)
+
+    assert intent.understood is True
+    assert intent.type.value == "service"
+    assert intent.subcategory.value == "vehicle_transport"
+    assert intent.result_unit.value == "service_provider"
+    assert intent.location_city.value == "الرياض"
+    assert normalize(intent.destination_city.value) == normalize("جدة")
+    assert any("الرياض" in term and "جدة" in term for term in intent.search_terms)
+
+
+def test_furniture_moving_does_not_treat_two_cities_as_an_implicit_route():
+    intent = analyze("نقل عفش الرياض جدة")
+
+    assert "location_city" in intent.missing_decision_information
+    assert intent.destination_city.value is None
