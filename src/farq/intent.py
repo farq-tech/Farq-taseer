@@ -2258,9 +2258,13 @@ def analyze(query: str) -> IntentResponse:
         # These service details change what the customer is asking for (duration,
         # permit purpose, building work, worker transfer, or delivery point), so keep
         # their words in the confirmed need as well as in the provider query.
-        intent.need = segment
+        # A fully English request is clearer in the app when its known service and city
+        # use the canonical Arabic label. segment_text and original_query still preserve
+        # the customer's exact words for search and audit.
+        english_only = not any("\u0600" <= char <= "\u06ff" for char in segment)
+        intent.need = search_label if english_only else segment
         if shown_city and not find_cities(normalize(segment)):
-            intent.need = f"{intent.need} {shown_city}"
+            intent.need = f"{intent.need} {shown_city}" if shown_city not in intent.need else intent.need
         search_label = intent.need
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         search_label = f"{search_label} {intent.model.value[-1]}"
@@ -2631,6 +2635,17 @@ def split_need_texts(query: str) -> list[str]:
         if index:
             part = _drop_joining_waw(part)
         part_cities = find_cities(part)
+        if part_cities:
+            words = part.split()
+            words = [
+                word for word_index, word in enumerate(words)
+                if not (
+                    normalize(word) in {"في", "فى"}
+                    and word_index + 1 < len(words)
+                    and find_cities(words[word_index + 1])
+                )
+            ]
+            part = " ".join(words)
         content = [token for token in tokens(part) if not find_cities(token) and token not in _STOP]
         if part_cities and not content:
             continue

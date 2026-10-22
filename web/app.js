@@ -1487,6 +1487,9 @@ function renderCard(result) {
   const needName = multiNeed() ? needOf(result) : "";
   const sources = result.ad ? imageSources(result.ad) : [];
   const imageNotice = imageAvailabilityDisclosure(result.ad);
+  const nearMatchNotice = result.match === "near"
+    ? `<p class="fq-match-notice" role="note">مطابقة قريبة — تأكد من تفاصيل الإعلان قبل الاختيار.</p>`
+    : "";
   // One photo per listing: Haraj gives a thumbnail, and the two URLs are the same picture
   // at two sizes, not two pictures. So it is shown once, large enough to judge, and opens
   // the listing when tapped - no carousel over a single image.
@@ -1503,6 +1506,7 @@ function renderCard(result) {
         <span class="fq-open-label">عرض تفاصيل الإعلان</span>
       </button>
     </div>
+    ${nearMatchNotice}
     ${imageNotice ? `<p class="fq-image-notice" role="note">${esc(imageNotice)}</p>` : ""}
     ${matched.length ? `<div class="fq-matched" aria-label="طابق طلبك في">${matched
       .map((word) => `<span class="fq-hit">${ic("check", 11)}<bdi>${esc(word)}</bdi></span>`)
@@ -4640,7 +4644,7 @@ async function recoverSearch(searchId, asked, started, error, timedOut) {
     const fallback = new AbortController();
     const fallbackTimer = setTimeout(() => fallback.abort(), left);
     try {
-      const done = await api("/v1/search", { method: "POST", json: { query: asked }, signal: fallback.signal });
+      const done = await api("/v1/search", { method: "POST", json: { query: asked, near: true }, signal: fallback.signal });
       if (state.searchId !== searchId) return;
       state.searching = false;
       applyDone(done);
@@ -4714,7 +4718,7 @@ async function runSearch(text, city = "") {
   try {
     const headers = { "Content-Type": "application/json" };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked }), signal: controller.signal });
+    const response = await fetch("/v1/search/stream", { method: "POST", headers, body: JSON.stringify({ query: asked, near: true }), signal: controller.signal });
     if (!response.ok || !response.body) {
       const refused = new Error("stream");
       refused.status = response.status;
@@ -4811,7 +4815,7 @@ async function loadMoreSearch() {
     const response = await fetch("/v1/search/stream", {
       method: "POST",
       headers,
-      body: JSON.stringify({ query: asked, page, continuation_trace: traceId }),
+      body: JSON.stringify({ query: asked, page, continuation_trace: traceId, near: true }),
       signal: controller.signal,
     });
     if (!response.ok || !response.body) {
@@ -5302,7 +5306,7 @@ function warmSearch() {
   const query = (searchTextFromNeeds() || "").trim();
   if (!query || !state.city) return;
   const asked = cityInText(query) ? query : `${query} ${cityLabel(state.city)}`;
-  api("/v1/search/warm", { method: "POST", json: { query: asked }, skipAuth: true, quiet: true }).catch(() => {});
+  api("/v1/search/warm", { method: "POST", json: { query: asked, near: true }, skipAuth: true, quiet: true }).catch(() => {});
 }
 
 // Screens switch at once: what we already have (or a placeholder) shows while the server answers.

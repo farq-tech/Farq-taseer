@@ -110,6 +110,8 @@ assert.match(html, /عرض تفاصيل الإعلان/);
 assert.match(html, /data-action="open"/);
 assert.doesNotMatch(html, /لا توجد صور/);
 assert.match(html, /class="fq-shot" data-frame/);
+const nearHtml = renderCard({match:'near', ad:{title:'نقل عفش بين المدن', city:'الرياض'}, seller:{id:'seller-2'}});
+assert.match(nearHtml, /مطابقة قريبة — تأكد من تفاصيل الإعلان قبل الاختيار/);
 const noImage = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:false}, seller:{id:'seller-1'}});
 assert.match(noImage, /لا توجد صور مرفقة بإعلان حراج/);
 const missingThumbnail = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:true}, seller:{id:'seller-1'}});
@@ -120,6 +122,14 @@ assert.match(detailed, /عرض الوصف الكامل كما كتبه البا�
 assert.ok(detailed.includes(longDescription.trimEnd()));
 '''
     subprocess.run(['node', '-e', script], check=True)
+
+
+def test_every_search_path_requests_near_matches_and_labels_them():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    assert 'json: { query: asked, near: true }' in source
+    assert 'JSON.stringify({ query: asked, near: true })' in source
+    assert 'continuation_trace: traceId, near: true' in source
+    assert 'role="note">مطابقة قريبة — تأكد من تفاصيل الإعلان قبل الاختيار.' in source
 
 
 def test_unavailable_listing_details_can_be_retried_from_the_detail_sheet():
@@ -200,7 +210,7 @@ def test_search_results_can_continue_and_keep_previous_cards_when_a_page_fails()
     assert 'تابع البحث عن إعلانات أكثر' in source
     assert 'هذه دفعة من النتائج، وقد توجد إعلانات أخرى في الصفحات التالية.' in source
     assert source.index('data-action="load-more"') < source.index('shown.map(renderCard).join("")')
-    assert 'body: JSON.stringify({ query: asked, page, continuation_trace: traceId })' in source
+    assert 'body: JSON.stringify({ query: asked, page, continuation_trace: traceId, near: true })' in source
     assert 'fetch("/v1/search/stream", {' in source
     assert 'const added = addResults(event.results);' in source
     assert 'توقف تحميل الإعلانات الإضافية قبل اكتماله.' in source
