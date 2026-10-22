@@ -176,11 +176,14 @@ _PRODUCT_NOT_TRADE = (
 # not the trade doing work. Vehicles stay out: «كهربائي سيارات» is not a home electrician.
 _MOVING = ("نقل عفش", "نقل اثاث", "نقل العفش", "نقل الاثاث")
 _VEHICLE_TRANSPORT_OFFER = (
-    "نقل سيارة", "نقل سيارات", "نقل مركبة", "نقل مركبات", "سطحة نقل", "سطحه نقل",
+    "نقل سيارة", "نقل السيارات", "نقل سيارات", "نقل السيارة", "نقل مركبة", "نقل مركبات",
+    "نقل المركبة", "نقل المركبات", "نقل جميع السيارات", "نقل جميع انواع السيارات",
+    "سطحة لنقل", "سطحه لنقل", "سطحة نقل", "سطحه نقل",
     "سطحة سيارات", "سطحه سيارات", "سطحة سيارة", "سطحه سياره", "car towing", "vehicle transport",
 )
+_EQUIPMENT_TRANSPORT_ONLY = ("لوبد", "لوابد", "نقل معدات", "معدات ثقيلة", "نقل آليات", "نقل اليات")
 _NATIONWIDE_ROUTE = (
-    "بين المدن", "جميع المدن", "جميع مدن المملكة", "كل مدن المملكة", "كافة مدن المملكة", "جميع مدن السعودية",
+    "جميع المدن", "بين جميع المدن", "بين كافة المدن", "جميع مدن المملكة", "كل مدن المملكة", "كافة مدن المملكة", "جميع مدن السعودية",
     "كل مدن السعودية", "جميع مناطق المملكة", "كافة مناطق المملكة", "داخل وخارج المملكة",
 )
 _SERVICE_VERBS = ("تفصيل", "تركيب", "فك", "صيانه", "تصنيع", "تصليح", "اصلاح", "ترميم")
@@ -409,7 +412,7 @@ def _property_transaction(text: str) -> str | None:
 # city, another model or size, a wanted-ad, a price outside the asked range - still rejects.
 SOFT_REJECTIONS = (
     "head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike",
-    "yoyo_variant_mismatch", "route_unconfirmed",
+    "yoyo_variant_mismatch", "route_unconfirmed", "vehicle_offer_not_primary",
 )
 
 
@@ -438,8 +441,11 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
     title = ad.title if ad is not None else ""
     if ad is not None and intent.subcategory.value == "vehicle_transport":
         listing_text = f"{ad.title} {ad.description or ''}"
-        if has_word(listing_text, _MOVING) and not has_word(listing_text, _VEHICLE_TRANSPORT_OFFER):
+        primary_vehicle_offer = _vehicle_transport_offer_in_lead(ad.title, ad.description or "")
+        if has_word(listing_text, _MOVING) and not primary_vehicle_offer:
             return False, ["moving_not_vehicle_transport"]
+        if has_word(ad.title, _EQUIPMENT_TRANSPORT_ONLY) and not primary_vehicle_offer and not relaxed:
+            return False, ["vehicle_offer_not_primary"]
     if (
         ad is not None
         and intent.subcategory.value in {"vehicle_transport", "passenger_transport", "moving", "goods_transport"}
@@ -455,6 +461,12 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         listing_cities = {normalize(city) for city in find_cities(listing_text)}
         if has_word(listing_text, _NATIONWIDE_ROUTE) and (
             origin in listing_cities or normalize(ad.city or "") == origin
+        ):
+            pass
+        elif (
+            intent.subcategory.value in {"moving", "goods_transport"}
+            and has_word(listing_text, ("بين المدن",))
+            and (origin in listing_cities or normalize(ad.city or "") == origin)
         ):
             pass
         elif _has_explicit_route_cue(listing_text) and not {origin, destination} <= listing_cities:
@@ -797,6 +809,14 @@ def _has_explicit_route_cue(text: str) -> bool:
     arabic_return = re.search(r"\S+\s+راجع(?:ه)?\s+(?:الى|الي|ل)\s+\S+", normalized)
     english_route = re.search(r"\bfrom\s+\S+.*?\bto\s+\S+", normalized, re.IGNORECASE)
     return bool(arabic_route or arabic_return or english_route)
+
+
+def _vehicle_transport_offer_in_lead(title: str, description: str) -> bool:
+    if has_word(title, _VEHICLE_TRANSPORT_OFFER):
+        return True
+    lead = description.split("\n\n", 1)[0]
+    lead = " ".join(tokens(normalize(lead))[:32])
+    return has_word(lead, _VEHICLE_TRANSPORT_OFFER)
 
 
 def _yoyo_is_primary_listing_identity(title: str, description: str) -> bool:
