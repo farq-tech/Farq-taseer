@@ -6,7 +6,7 @@ from farq.config import SearchConfig
 from farq.contracts import Ad, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
-from farq.live_haraj import haraj_queries
+from farq.live_haraj import haraj_queries, haraj_query_budget
 from farq.taxonomy import read_business
 
 
@@ -207,13 +207,15 @@ def test_repeated_letter_yoyo_typos_still_find_the_stroller(typo):
 
 def test_yoyo_expansion_spends_a_search_slot_on_colloquial_arabiya():
     intent = analyze("عربية اطفال يويو")
-    searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
+    limit = haraj_query_budget(intent.search_terms, SearchConfig().live_max_queries)
+    searched = haraj_queries(intent.search_terms, None)[:limit]
 
     assert "عرباية أطفال يويو" in searched
     assert "عربايات أطفال يويو" in searched
+    assert "عربة أطفال YOYO" in searched
     assert "Babyzen YOYO" in searched
     assert "يويو عربة أطفال" in searched
-    assert len(searched) == 7
+    assert len(searched) == 8
 
 
 def test_plural_arabiyat_listing_title_matches_a_yoyo_stroller_search():
@@ -348,11 +350,13 @@ def test_explicit_yoyo_generation_is_preserved_in_intent_and_search(query, model
 def test_haraj_query_budget_keeps_arabic_and_english_yoyo_searches(query):
     intent = analyze(query)
 
-    # Production searches the first seven unique phrases. Keep both English forms
-    # inside that budget so Arabic synonyms do not crowd them out.
-    searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
+    # YOYO uses one targeted extra phrase so colloquial Arabic and mixed-script
+    # listings both remain discoverable; other searches keep the configured budget.
+    limit = haraj_query_budget(intent.search_terms, SearchConfig().live_max_queries)
+    searched = haraj_queries(intent.search_terms, None)[:limit]
 
-    assert len(searched) == 7
+    assert limit == 8
+    assert len(searched) == 8
     mixed_script_term = "عربة أطفال YOYO"
     if intent.model.value == "YOYO 2":
         mixed_script_term += " 2"
