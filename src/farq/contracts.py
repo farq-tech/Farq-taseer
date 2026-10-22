@@ -201,7 +201,12 @@ class NeedGroup(ContractModel):
 
 
 class SearchResponse(ContractModel):
-    next_page: int | None = None
+    # Exact continuation cursor; a request may scan more than one provider page,
+    # so clients must send this value as-is rather than incrementing it.
+    next_page: int | None = Field(
+        default=None,
+        description="Exact continuation cursor. Requests may scan multiple provider pages; send this value as-is.",
+    )
     contract_version: str = CONTRACT_VERSION
     state: SearchState
     intent: IntentResponse
