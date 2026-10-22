@@ -1478,6 +1478,8 @@ function renderCard(result) {
   const offer = withoutPrices(result.ad?.title);
   const where = cityLabel(result.ad?.city || seller.city || "");
   const detail = snip(result);
+  const originalDescription = adOriginalText(result.ad?.description);
+  const showOriginalDescription = originalDescription.length > 72;
   const matched = matchedWords(result);
   const priceDisclosure = adPriceDisclosure(result.ad);
   const marks = offerMarks(result);
@@ -1506,6 +1508,7 @@ function renderCard(result) {
       .map((word) => `<span class="fq-hit">${ic("check", 11)}<bdi>${esc(word)}</bdi></span>`)
       .join("")}</div>` : ""}
     ${detail ? `<p class="fq-small fq-offerbody"><bdi>${esc(detail)}</bdi></p>` : ""}
+    ${showOriginalDescription ? `<details class="fq-ad-inline"><summary>عرض الوصف الكامل كما كتبه البائع</summary><p class="fq-ad-original"><bdi>${esc(originalDescription)}</bdi></p></details>` : ""}
     ${priceDisclosure}
     ${needName || age || marks.length ? `<div class="fq-cardtags">${needName ? `<span class="fq-tag deep"><bdi>${esc(needName)}</bdi></span>` : ""}${marks
       .map((mark) => `<span class="fq-tag">${esc(mark)}</span>`)
