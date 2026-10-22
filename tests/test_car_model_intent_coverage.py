@@ -79,6 +79,23 @@ def test_explicit_model_beats_generic_car_word(
     assert decide(intent, wrong, seller)[0] is False
 
 
+def test_specific_product_beats_car_model_mentioned_as_compatibility():
+    query = "أحتاج كرسي سيارة أطفال كامري"
+    intent = analyze(query)
+    seller = Seller(id="seller", name="معلن")
+    matching = Ad(
+        id="seat",
+        title="كرسي سيارة أطفال متوافق مع كامري",
+        seller=seller,
+    )
+    wrong = Ad(id="car", title="تويوتا كامري للبيع", seller=seller)
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "car_seats"
+    assert decide(intent, matching, seller)[0] is True
+    assert decide(intent, wrong, seller)[0] is False
+
+
 def test_double_cab_datsun_is_understood_as_a_pickup():
     intent = analyze("مطلوب ددسن غمارتين")
 

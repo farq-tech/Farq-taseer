@@ -1080,9 +1080,18 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
         and item.head.subcategory == "cars"
         and item.head.model is not None
     ]
-    if generic_vehicle_product and len({item.head.model for item in specific_car_models}) == 1:
+    only_car_products = all(
+        item.head.type == "vehicle" and item.head.subcategory == "cars"
+        for item in product
+    )
+    if (
+        generic_vehicle_product
+        and only_car_products
+        and len({item.head.model for item in specific_car_models}) == 1
+    ):
         # A model name can be a one-word head just like «سيارة». When both appear,
         # keep the customer's explicit model instead of falling back to all cars.
+        # More specific product heads (for example a child car seat) still win.
         return max(specific_car_models, key=lambda item: item.length)
     if product and (not service or not explicit_service or product_cue):
         return max(product, key=lambda item: item.length)
