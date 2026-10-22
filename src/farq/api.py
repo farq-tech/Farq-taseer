@@ -382,6 +382,7 @@ def create_app(
     # are the one place an unknown caller can probe which emails exist.
     search_limiter = SlidingWindow(_env_rate("FARQ_SEARCH_PER_MINUTE", 30), 60)
     intent_limiter = SlidingWindow(_env_rate("FARQ_INTENT_PER_MINUTE", 60), 60)
+    listing_details_limiter = SlidingWindow(_env_rate("FARQ_LISTING_DETAILS_PER_MINUTE", 30), 60)
     register_limiter = SlidingWindow(_env_rate("FARQ_REGISTER_PER_HOUR", 20), 3600)
 
     def guard_search(request: Request, query: str, limiter: SlidingWindow) -> None:
@@ -1107,6 +1108,15 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"images": found}
+
+    @app.get("/v1/listings/details")
+    def listing_page_details(url: str, request: Request) -> dict:
+        if not listing_details_limiter.allow(client_ip(request)):
+            raise HTTPException(status_code=429, detail="too many listing detail requests, try again in a minute", headers={"Retry-After": "60"})
+        try:
+            return listing_details(url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/v1/media/thumb")
     def thumb(name: str, size: str = "400") -> Response:
