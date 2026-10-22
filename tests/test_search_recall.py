@@ -92,6 +92,30 @@ def test_live_queries_are_deduplicated_and_listings_once_across_queries():
 # City ---------------------------------------------------------------------------
 
 
+def test_muzahimiyah_is_recognized_and_haraj_region_label_is_narrowed():
+    intent = analyze("أبي محل للإيجار في المزاحمية")
+
+    assert intent.understood is True
+    assert intent.location_city.value == "المزاحمية"
+    assert intent.clarification_question is None
+
+    local = _listing(
+        "محل خضار لايجار اليومي المزاحميه سوق البلديه",
+        city="الرياض",
+        filtered="المزاحمية",
+    )
+    assert local.city == "المزاحمية"
+    assert decide(intent, local, local.seller)[0] is True
+
+    riyadh_intent = analyze("محل تجاري للإيجار في الرياض")
+    same_ad_without_local_filter = _listing(
+        "محل خضار لايجار اليومي المزاحميه سوق البلديه",
+        city="الرياض",
+        filtered="الرياض",
+    )
+    assert decide(riyadh_intent, same_ad_without_local_filter, same_ad_without_local_filter.seller)[0] is False
+
+
 def test_haraj_region_label_is_the_filtered_city():
     # A Dammam-filtered search returns listings labelled «الشرقيه»; 173 of 173 were
     # rejected as another city before.
