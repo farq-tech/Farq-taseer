@@ -2367,9 +2367,23 @@ def split_need_texts(query: str) -> list[str]:
     original = " ".join(query.strip().split())
     if not original:
         return [query.strip()]
-    route = find_route(normalize(original))
-    cities = [route[0]] if route else find_cities(normalize(original))
+    normalized_original = normalize(original)
+    route = find_route(normalized_original)
+    cities = [route[0]] if route else find_cities(normalized_original)
     city = city_label(cities[0]) if len(cities) == 1 else ""
+    if has_word(normalized_original, ("باب", "ابواب", "doors", "door")):
+        door_counts: dict[str, list[int]] = {"pvc": [], "wpc": []}
+        for match in _DOOR_MATERIAL_COUNT.finditer(normalized_original):
+            count_group = "count_before" if match.group("count_before") else "count_after"
+            material = match.group("material_after") or match.group("material_before")
+            amount = int(match.group(count_group))
+            if 0 < amount < 10000:
+                door_counts[material.lower()].append(amount)
+        if all(len(door_counts[material]) == 1 for material in ("pvc", "wpc")):
+            return [
+                f"אبواب {material.upper()} {door_counts[material][0]} {city}".strip()
+                for material in ("pvc", "wpc")
+            ]
     parts: list[str] = []
     for clause in _CLAUSE_SPLIT.split(original):
         clause = clause.strip()
