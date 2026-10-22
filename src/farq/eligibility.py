@@ -575,6 +575,24 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             )
             and not re.fullmatch(r"(?:19|20)\d{2}", token)
         ]
+        if intent.model.value in {"Land Cruiser 70", "Land Cruiser Prado"}:
+            # Haraj commonly titles these trims as "Land Cruiser Prado" or
+            # "لاندكروزر شاص/ربع". The family name is a valid prefix for these
+            # specific models, while the trim still has to lead the listing.
+            family_prefixes = (("لاندكروزر",), ("land", "cruiser"))
+            for prefix in family_prefixes:
+                if tuple(leading[: len(prefix)]) != prefix:
+                    continue
+                after_family = leading[len(prefix) :]
+                if any(
+                    contains_term(
+                        " ".join(after_family[: len(normalize(name).split())]), name
+                    )
+                    for name in names
+                    if normalize(name).split() != list(prefix)
+                ):
+                    leading = after_family
+                    break
         if names and not any(
             contains_term(" ".join(leading[: len(normalize(name).split())]), name)
             for name in names

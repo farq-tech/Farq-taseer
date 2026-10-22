@@ -148,7 +148,7 @@ def test_yaris_search_keeps_whole_cars_and_rejects_wanted_or_dismantled_parts(ti
             "Land Cruiser 70",
             "Toyota",
             "cars",
-            "تويوتا شاص 2021",
+            "تويوتا لاندكروزر شاص 2021",
             "تويوتا لاندكروزر برادو",
         ),
         (
@@ -156,7 +156,7 @@ def test_yaris_search_keeps_whole_cars_and_rejects_wanted_or_dismantled_parts(ti
             "Land Cruiser Prado",
             "Toyota",
             "cars",
-            "تويوتا برادو 2020",
+            "تويوتا لاندكروزر برادو 2020",
             "تويوتا لاندكروزر",
         ),
         (
@@ -360,6 +360,20 @@ def test_vehicle_model_must_be_the_leading_vehicle_in_the_listing_title():
     )
 
     assert decide(intent, title, seller)[0] is False
+
+
+def test_land_cruiser_70_quarter_title_is_a_vehicle_match():
+    intent = analyze("أبي سيارة ربع 2020 بالرياض")
+    seller = Seller(id="seller", name="معلن")
+    listing = Ad(
+        id="land-cruiser-70",
+        title="تويوتا لاندكروزر ربع 2020",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert intent.model.value == "Land Cruiser 70"
+    assert decide(intent, listing, seller)[0] is True
 
 
 def test_double_cab_datsun_is_understood_as_a_pickup():
