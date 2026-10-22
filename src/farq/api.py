@@ -839,9 +839,14 @@ def create_app(
     # the store in a moment instead of asking Haraj again; and M02 warms the search for the
     # sentence it shows, so the tap on «ابحث» usually finds it ready.
     SEARCH_CACHE_SECONDS = 600
+    # Bump when intent expansion or ranking semantics change so old result snapshots
+    # do not hide the updated search behavior for one cache lifetime.
+    SEARCH_CACHE_REVISION = "2"
 
     def _search_key(query: str, near: bool = False) -> str:
-        return ("search-near:" if near else "search:") + hashlib.sha256(normalize(query).encode()).hexdigest()[:40]
+        namespace = "search-near" if near else "search"
+        digest = hashlib.sha256(normalize(query).encode()).hexdigest()[:40]
+        return f"{namespace}:v{SEARCH_CACHE_REVISION}:{digest}"
 
     def _cached_search(query: str, near: bool = False):
         try:

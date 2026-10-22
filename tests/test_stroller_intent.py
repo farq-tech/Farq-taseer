@@ -79,6 +79,25 @@ def test_polite_arabic_framing_does_not_pollute_product_search(query):
 
 
 @pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("عربية اطفال يويو", "عرباية أطفال يويو"),
+        ("عرباية أطفال يويو", "عرباية أطفال يويو"),
+        ("عربة أطفال يويو", "عرباية أطفال يويو"),
+        ("عربية اطفال يويو 2", "عرباية أطفال يويو 2"),
+        ("عربية اطفال يويو اصلية", "عرباية أطفال يويو"),
+    ],
+)
+def test_yoyo_search_prioritizes_observed_high_recall_dialect(query, expected):
+    intent = analyze(query)
+
+    assert intent.search_terms[0] == expected
+    assert any("عربية أطفال يويو" in term or "عرباية أطفال يويو" in term for term in intent.search_terms)
+    if "اصلية" in query:
+        assert any("اصلية" in term for term in intent.search_terms)
+
+
+@pytest.mark.parametrize(
     "query", ["عربية اطفال", "عربة أطفال", "عربيات أطفال", "عربايات أطفال", "baby stroller"]
 )
 def test_generic_stroller_search_does_not_assume_the_yoyo_model(query):

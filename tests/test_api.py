@@ -1,3 +1,4 @@
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from farq.corpus import MemoryCorpus, default_sample_path
 from farq.haraj_chat import InboundMessage, SentMessage, extract_price
 from farq.live_haraj import LiveBatch, QueryFetch
 from farq.store import Store
+from farq.text import normalize
 from farq.worker import poll_once
 
 
@@ -1062,6 +1064,13 @@ def test_a_finished_search_is_served_from_the_store_for_ten_minutes(tmp_path: Pa
     api = TestClient(create_app(store, MemoryCorpus.from_json(default_sample_path()), CountingHaraj(), SearchConfig(enable_live=True)))
     first = api.post("/v1/search", json={"query": "أبي سباك بالرياض"})
     assert first.status_code == 200
+    legacy_query = "عربية اطفال يويو"
+    legacy_key = "search:" + hashlib.sha256(normalize(legacy_query).encode()).hexdigest()[:40]
+    store.set_value(legacy_key, json.dumps({"at": time.time(), "response": first.json()}, ensure_ascii=False))
+    before_legacy = len(calls)
+    legacy = api.post("/v1/search", json={"query": legacy_query})
+    assert legacy.status_code == 200
+    assert len(calls) > before_legacy
     seen = len(calls)
     assert seen >= 1
     second = api.post("/v1/search", json={"query": "ابي سباك بالرياض"})
