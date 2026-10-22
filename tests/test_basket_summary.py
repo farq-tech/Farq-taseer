@@ -258,6 +258,20 @@ def test_reply_notification_is_queued_then_recorded(tmp_path, monkeypatch):
     assert api.get("/v1/notifications", headers=headers).json()["unread"] == 0
 
 
+def test_request_list_identifies_last_seller_reply_without_treating_text_as_offer(tmp_path):
+    _store, api = app(tmp_path)
+    headers = signed_in(api)
+    request_id, tokens = request_with(api, headers, [("1", "متجر الربيع")], need="عربية أطفال يويو")
+    reply = api.post(f"/v1/seller/{tokens['1']}/messages", json={"body": "السعر ٧٠٠، والرياض متاح فيها الاستلام"})
+    assert reply.status_code == 200, reply.text
+
+    summary = listed(api, headers, request_id)
+    assert summary["last_message"] == "السعر ٧٠٠، والرياض متاح فيها الاستلام"
+    assert summary["last_message_role"] == "seller"
+    assert summary["last_message_seller_name"] == "متجر الربيع"
+    assert summary["priced_offer_count"] == 0
+
+
 def test_reply_notification_records_a_push_that_a_device_took_and_never_repeats(tmp_path, monkeypatch):
     monkeypatch.setenv("TASEER_REPLY_NOTIFICATIONS", "1")
     monkeypatch.setenv("VAPID_PUBLIC_KEY", "pub")

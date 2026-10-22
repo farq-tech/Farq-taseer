@@ -23,6 +23,9 @@ const state = {
   gallery: [],
   note: "",
   requests: [],
+  notifications: [],
+  notificationsEnabled: false,
+  notificationsUnavailable: false,
   thread: null,
   activeSeller: "",
   replyTo: null,
@@ -1009,18 +1012,24 @@ const sound = {
     } catch (_error) {}
   },
   // The first tap unlocks audio; after that a cue can play whenever it likes.
-  unlock() {
-    if (this.ready) return;
+  async unlock() {
+    if (this.ready && this.ctx?.state === "running") return true;
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    this.ctx = this.ctx || new Ctx();
-    this.ctx.resume?.();
-    this.ready = true;
+    if (!Ctx) return false;
+    try {
+      this.ctx = this.ctx || new Ctx();
+      if (this.ctx.state !== "running") await this.ctx.resume();
+      this.ready = this.ctx.state === "running";
+      return this.ready;
+    } catch (_error) {
+      this.ready = false;
+      return false;
+    }
   },
   // Reduced motion is about movement on screen; sound answers only to this app's
   // switch, to what the browser allows, and to the device's own silent mode.
   play(name) {
-    if (!this.on || !this.ready || !this.ctx) return;
+    if (!this.on || !this.ready || !this.ctx || this.ctx.state !== "running") return;
     const recipe = SOUNDS[name];
     if (!recipe) return;
     const [notes, gain] = recipe;
@@ -1970,7 +1979,7 @@ async function refreshUnread() {
     setUnread(state.requests);
     // Something arrived while the customer was on another screen.
     const newest = state.requests.map((item) => item.last_message_at || "").sort().pop() || "";
-    if (state.unreadTotal > was) cueOnce(`inbox:${newest}`, "offer", 12);
+    if (state.unreadTotal > was && state.notifyPrefs?.messages !== false) cueOnce(`inbox:${newest}`, "reply", 10);
     if (changed && (state.view === "requests" || state.view === "notifications")) render();
   } catch (_error) {}
 }
@@ -2024,6 +2033,9 @@ function renderRequests() {
         const need = item.need || item.original_text;
         const status = requestStatus(item);
         const unread = item.unread_count || 0;
+        const lastSender = item.last_message_role === "seller"
+          ? `رد ${item.last_message_seller_name ? `من ${item.last_message_seller_name}` : "من البائع"}`
+          : item.last_message_role === "user" ? "آخر رسالة منك" : "";
         const parts = [suppliers(item.recipient_count || 0)];
         if (item.replied_count) parts.push(`${plural(item.replied_count, ["رد واحد", "ردّين", "ردود", "رد"])}`);
         else parts.push("ما وصلت ردود بعد");
@@ -2060,6 +2072,7 @@ function renderRequests() {
               ${unread ? `<span class="fq-unread">${formatCount(unread)} رسائل جديدة</span>` : ""}
             </span>
           </div>
+          ${item.last_message ? `<div class="fq-request-preview"><span class="fq-request-sender">${esc(lastSender)}</span><span class="fq-request-snippet"><bdi>${esc(snippet(item.last_message, 76))}</bdi></span></div>` : ""}
           ${item.latest_offer_amount != null
             ? `<hr class="fq-line"><div style="display:flex;justify-content:flex-start"><strong style="font-size:13px;color:var(--fq-deep)">أقل عرض ${esc(money(item.latest_offer_amount))}</strong></div>`
             : ""}
@@ -2201,7 +2214,7 @@ function mediaHtml(media) {
         return `<a class="wa-doc" href="${url}" target="_blank" rel="noopener"><span class="wa-file-icon">PDF</span><span>${esc(item.name || "ملف")}${size}</span></a>`;
       }
       if (item.type === "video/mp4") return `<video class="wa-video" src="${url}" controls preload="metadata"></video>`;
-      if (item.type === "audio/aac") return `<audio class="wa-audio" src="${url}" controls preload="none"></audio>`;
+      if (item.type === "audio/aac") return `<div class="wa-audio-card"><span class="wa-audio-label">${ic("volume-2", 16)}رسالة صوتية</span><audio class="wa-audio" src="${url}" controls preload="none" aria-label="تشغيل رسالة صوتية"></audio></div>`;
       return "";
     })
     .join("");
@@ -2237,6 +2250,7 @@ function waBubble(thread, message, { group, byId, first = true, best = null }) {
   const won = thread.awarded_seller_id && thread.awarded_seller_id === message.seller_id;
   const offer = price != null
     ? `<div class="fq-offer" style="color:${tone.ink}">
+        <span class="fq-offer-sender">عرض من <bdi>${esc(who)}</bdi></span>
         <div class="head">${cheapest ? `<span class="low">الأقل حاليًا</span>` : "<span></span>"}<span class="amount">${esc(money(price))}</span></div>
         ${body ? `<p class="fq-offer-note">${body}</p>` : ""}
       </div>
@@ -2733,17 +2747,21 @@ const NOTE_KINDS = {
 
 function renderNotifications() {
   const list = state.notifications || [];
-  const markAll = `<button class="fq-markall" type="button" data-action="read-all">تحديد الكل كمقروء</button>`;
+  const hasUnread = list.some((item) => item.unread);
+  const markAll = state.notificationsEnabled && hasUnread ? `<button class="fq-markall" type="button" data-action="read-all">تحديد الكل كمقروء</button>` : "";
+  const limited = !state.notificationsEnabled ? `<div class="fq-note-status" role="status">${state.notificationsUnavailable ? "تعذر تحميل سجل التنبيهات الآن." : "التنبيهات المحفوظة غير مفعّلة حاليًا."} نعرض هنا الطلبات التي فيها ردود غير مقروءة فقط.</div>` : "";
   if (!list.length) {
     return `${fqHead({ title: "الإشعارات", mark: true, end: markAll })}
     <section class="fq-body center">
+      ${limited}
       <div class="fq-blob">${ic("bell", 48)}</div>
-      <div><h1 class="fq-h2">ما فيه إشعارات بعد</h1><p class="fq-lead">أول ما يوصل عرض أو رسالة، تلقاه هنا.</p></div>
+      <div><h1 class="fq-h2">ما فيه رسائل جديدة</h1><p class="fq-lead">الردود الجديدة تظهر هنا، وتقدر تفتح الطلب لمتابعة المحادثة كاملة.</p></div>
     </section>${fqNav("account")}`;
   }
   const groups = [["اليوم", list.filter((item) => chatDay(item.at) === "اليوم")], ["أمس", list.filter((item) => chatDay(item.at) === "أمس")], ["أقدم", list.filter((item) => !["اليوم", "أمس"].includes(chatDay(item.at)))]];
   return `${fqHead({ title: "الإشعارات", mark: true, end: markAll })}
   <section class="fq-body">
+    ${limited}
     ${groups
       .filter(([, items]) => items.length)
       .map(([label, items]) => `<div style="display:flex;flex-direction:column;gap:12px">
@@ -2751,9 +2769,10 @@ function renderNotifications() {
         ${items
           .map((note) => {
             const kind = NOTE_KINDS[note.kind] || NOTE_KINDS.message;
-            return `<button class="fq-note" type="button" data-action="thread" data-id="${esc(note.request_id || "")}">
+            const heading = note.seller ? `رسالة جديدة من ${note.seller}` : kind.title;
+            return `<button class="fq-note${note.unread ? " is-unread" : ""}" type="button" data-action="thread" data-id="${esc(note.request_id || "")}"${note.notification_id ? ` data-notification-id="${esc(note.notification_id)}"` : ""} aria-label="افتح طلب ${esc(note.need || "")}، ${esc(heading)}">
               <span class="ic">${ic(kind.glyph, 18)}</span>
-              <span class="mid"><span class="kind">${esc(kind.title)} <em>· ${esc(note.need || "")}</em></span>
+              <span class="mid"><span class="kind">${esc(heading)}</span><span class="fq-note-need">طلبك: <bdi>${esc(note.need || "")}</bdi></span>
                 <span class="txt">${esc(note.text || "")}</span></span>
               <span class="when">${note.unread ? `<span class="unread"></span>` : ""}${esc(ago(note.at))}</span>
             </button>`;
@@ -2767,11 +2786,9 @@ function renderNotifications() {
 
 // N03_NotificationSettings — node 85:145.
 const NOTIFY_ROWS = [
-  ["messages", "رسائل الموردين", "تنبيه فوري عند وصول رسالة جديدة في المحادثة"],
-  ["offers", "عروض جديدة", "تنبيه عند تقديم مورد لعرض سعر جديد لطلبك"],
-  ["lower", "عرض أقل", "تنبيه فوري إذا وصل عرض سعر أقل من العروض الحالية"],
-  ["updates", "تحديثات الطلب", "ترسية الطلب، إغلاق الطلب، أو تحديث حالته الرسمية"],
-  ["billing", "الاشتراك والاستخدام", "تذكير بحد الاستخدام الشهري وتجديد باقة العضوية"],
+  ["messages", "صوت الرسائل", "تشغيل صوت داخل التطبيق عند وصول رد جديد"],
+  ["offers", "صوت العروض", "تشغيل صوت داخل التطبيق عند وصول عرض سعر مسجل"],
+  ["lower", "صوت العرض الأقل", "تشغيل صوت مختلف إذا كان العرض المسجل أقل من عرض سابق"],
 ];
 
 function renderNotifySettings() {
@@ -2787,6 +2804,10 @@ function renderNotifySettings() {
       </span>
       <button class="fq-switch${on ? " on" : ""}" type="button" data-action="sound-toggle" role="switch" aria-checked="${on}" aria-label="أصوات التطبيق"><span></span></button>
     </div>
+    <div class="fq-setting">
+      <span class="meta"><strong>تنبيهات الجوال</strong><span class="fq-meta">${esc(pushSettingsDescription())} نغمة التنبيه الخارجية يحددها جهازك.</span></span>
+      ${pushSettingsAction()}
+    </div>
     ${NOTIFY_ROWS.map(([key, title, desc]) => {
       const on = prefs[key] !== false;
       return `<div class="fq-setting">
@@ -2799,6 +2820,18 @@ function renderNotifySettings() {
     }).join("")}
   </section>
   ${fqNav("account")}`;
+}
+
+function pushSettingsDescription() {
+  if (!pushSupported) return "هذا المتصفح لا يدعم التنبيهات الخارجية.";
+  if (typeof Notification !== "undefined" && Notification.permission === "denied") return "منع المتصفح التنبيهات؛ غيّر الإذن من إعدادات المتصفح.";
+  if (state.pushState === "on") return "تنبيهات الرسائل والعروض مفعّلة على هذا الجهاز.";
+  return "لم يتم تأكيد تسجيل هذا الجهاز للتنبيهات بعد.";
+}
+
+function pushSettingsAction() {
+  if (!pushSupported || state.pushState === "on" || (typeof Notification !== "undefined" && Notification.permission === "denied")) return "";
+  return `<button class="fq-btn soft sm" type="button" data-action="enable-notify">تفعيل على هذا الجهاز</button>`;
 }
 
 // N02_PushPermission — node 85:101. A modal over whatever screen asked for it.
@@ -5446,9 +5479,9 @@ function announceArrivals(before, after) {
   const priced = fresh.filter((item) => messagePrice(item) != null);
   // «Lowest» means it beat a price already on the table; the first price is just a price.
   const undercut = older.length ? priced.filter((item) => messagePrice(item) < Math.min(...older)) : [];
-  if (undercut.length) cueOnce(`lower:${undercut[0].id}`, "lower", [10, 40, 16]);
-  else if (priced.length) cueOnce(`offer:${priced[0].id}`, "offer", 12);
-  else cueOnce(`reply:${fresh[0].id}`, "reply", 10);
+  if (undercut.length && state.notifyPrefs?.lower !== false) cueOnce(`lower:${undercut[0].id}`, "lower", [10, 40, 16]);
+  else if (priced.length && state.notifyPrefs?.offers !== false) cueOnce(`offer:${priced[0].id}`, "offer", 12);
+  else if (state.notifyPrefs?.messages !== false) cueOnce(`reply:${fresh[0].id}`, "reply", 10);
 }
 
 
@@ -5516,31 +5549,56 @@ async function loadSubStatus() {
   } catch (_error) {}
 }
 
-// N01 builds its feed from the requests list: each offer, reply and award is one line.
-// N01 builds its feed from the requests list: each offer, reply and award is one line.
-// It loads the list itself, because loadRequests() would switch the screen to «طلباتي».
+// It loads the requests and durable notifications without switching away from this screen.
 async function loadNotifications() {
   state.view = "notifications";
   render();
+  let inbox = { enabled: false, notifications: [] };
+  let inboxUnavailable = false;
   try {
     await ensureAuth();
-    state.requests = (await api("/v1/requests")).requests || [];
+    const [requestData, inboxData] = await Promise.all([
+      api("/v1/requests"),
+      api("/v1/notifications").catch(() => {
+        inboxUnavailable = true;
+        return { enabled: false, notifications: [] };
+      }),
+    ]);
+    inbox = inboxData;
+    state.requests = requestData.requests || [];
     setUnread(state.requests);
   } catch (_error) {
     return;
   }
-  const feed = [];
-  for (const item of state.requests) {
-    const need = item.need || item.original_text || "";
-    const at = item.last_message_at || item.created_at;
-    if (item.awarded_seller_id) feed.push({ kind: "award", need, text: "اعتمدنا العرض الفائز", at, request_id: item.id, unread: false });
-    if (item.latest_offer_amount != null) feed.push({ kind: "offer", need, text: `وصل عرض بقيمة ${money(item.latest_offer_amount)}`, at, request_id: item.id, unread: Boolean(item.unread_count) });
-    if (item.unread_count) feed.push({ kind: "message", need, text: item.last_message || "رسالة جديدة في المحادثة", at, request_id: item.id, unread: true });
+  state.notificationsEnabled = Boolean(inbox?.enabled);
+  state.notificationsUnavailable = inboxUnavailable;
+  if (state.notificationsEnabled) {
+    const requestById = new Map(state.requests.map((item) => [item.id, item]));
+    state.notifications = (inbox.notifications || []).map((note) => {
+      const request = requestById.get(note.request_id);
+      return {
+        kind: note.event === "supplier_reply" ? "message" : "offer",
+        notification_id: note.id,
+        seller: note.title || "البائع",
+        need: request?.need || request?.original_text || "",
+        text: note.body || "وصل رد جديد. افتح الطلب لعرض المحادثة.",
+        at: note.created_at || note.sent_at,
+        request_id: note.request_id,
+        unread: !note.read,
+      };
+    });
+  } else {
+    state.notifications = state.requests.filter((item) => item.unread_count).map((item) => ({
+      kind: "message",
+      seller: item.last_message_seller_name || "",
+      need: item.need || item.original_text || "",
+      text: item.last_message || `${formatCount(item.unread_count)} رسائل غير مقروءة في هذه المحادثة`,
+      at: item.last_message_at || item.created_at,
+      request_id: item.id,
+      unread: true,
+    }));
   }
-  // «تحديد الكل كمقروء» is remembered on this device until the server keeps read state.
-  const readAt = Date.parse(storedGet("farq.notesReadAt") || "") || 0;
-  for (const note of feed) if (note.unread && (Date.parse(note.at || "") || 0) <= readAt) note.unread = false;
-  state.notifications = feed.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  state.notifications.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
   if (state.view === "notifications") render();
 }
 
@@ -6012,22 +6070,21 @@ document.addEventListener("click", (event) => {
     try {
       localStorage.setItem("farq.notifyPrefs", JSON.stringify(state.notifyPrefs));
     } catch (_error) {}
-    if (state.notifyPrefs[key] && state.pushState !== "on") enableNotifications(true).catch(() => {}).finally(render);
-    else render();
-  } else if (action === "sound-toggle") {
-    sound.unlock();
-    sound.on = !sound.on;
-    if (sound.on) cue("offer", 12);
     render();
+  } else if (action === "sound-toggle") {
+    sound.on = !sound.on;
+    render();
+    if (sound.on) sound.unlock().then((ready) => ready && cue("offer", 12));
   } else if (action === "try-sound") {
     // one short cue, the same one an arriving offer plays
-    sound.unlock();
-    cue("offer", 12);
+    sound.unlock().then((ready) => ready && cue("offer", 12));
   } else if (action === "read-all") {
-    const newest = (state.notifications || []).map((item) => item.at || "").sort().pop();
-    storedSet("farq.notesReadAt", newest && newest > new Date().toISOString() ? newest : new Date().toISOString());
-    state.notifications = (state.notifications || []).map((item) => ({ ...item, unread: false }));
-    render();
+    api("/v1/notifications/read", { method: "POST", json: {} })
+      .then(() => {
+        state.notifications = (state.notifications || []).map((item) => ({ ...item, unread: false }));
+        render();
+      })
+      .catch(() => toast("ما قدرنا نحفظ حالة القراءة. حاول مرة ثانية."));
   } else if (action === "change-city") {
     state.cityMode = "pick";
     go("city-ask");
@@ -6250,6 +6307,9 @@ document.addEventListener("click", (event) => {
     render();
   } else if (action === "thread") {
     if (!target.dataset.id) return;
+    if (target.dataset.notificationId) {
+      api("/v1/notifications/read", { method: "POST", json: { id: target.dataset.notificationId } }).catch(() => toast("ما قدرنا نحفظ قراءة التنبيه."));
+    }
     state.activeSeller = "";
     state.replyTo = null;
     state.picked = null;
