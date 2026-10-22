@@ -72,5 +72,7 @@ def test_golden_set_covers_required_cases_and_intent_rules():
             assert intent.location_district.value == expect["district"], item["id"]
         if "result_unit" in expect:
             assert intent.result_unit.value == expect["result_unit"], item["id"]
+        if "need" in expect:
+            assert intent.need == expect["need"], item["id"]
         if "clarification" in expect:
             assert bool(intent.clarification_question) is expect["clarification"], item["id"]
