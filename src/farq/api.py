@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from copy import copy
 from datetime import datetime, timedelta, timezone
 from dataclasses import replace
 import json
@@ -900,7 +901,8 @@ def create_app(
             warm = warming[key] = Warm()
         try:
             if _cached_search(query, near) is None:
-                for event in iter_search(query, corpus, live_client, config, near=near):
+                warm_config, warm_client = page_search(SearchBody(query=query, near=near))
+                for event in iter_search(query, corpus, warm_client, warm_config, near=near):
                     with warm.cond:
                         warm.events.append(event)
                         warm.cond.notify_all()
@@ -963,7 +965,18 @@ def create_app(
 
     def page_search(body: SearchBody):
         if body.page is None:
-            return config, live_client
+            initial = replace(
+                config,
+                live_max_pages=max(1, min(config.live_max_pages, config.live_initial_max_pages)),
+                live_concurrency=max(config.live_concurrency, config.live_initial_concurrency),
+            )
+            if isinstance(live_client, HarajLiveClient):
+                initial_client = copy(live_client)
+                initial_client.config = initial
+                if isinstance(initial_client, CachedHarajClient):
+                    initial_client.jobs = set()
+                return initial, initial_client
+            return initial, live_client
         paged = replace(config, live_start_page=body.page, max_results=0, min_score_ratio=0, include_older_ads=True)
         return paged, ((CachedHarajClient(paged, harvest) if os.environ.get("FARQ_HARAJ_PUBLIC_HARVEST_ENABLED") == "1" else HarajLiveClient(paged)) if live_client is not None else None)
 
