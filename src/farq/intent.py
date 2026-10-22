@@ -1994,13 +1994,14 @@ def analyze(query: str) -> IntentResponse:
     elif head.subcategory in {
         "car_rental",
         "childcare",
+        "construction",
         "domestic_worker_recruitment",
         "engineering_offices",
         "water_delivery",
     } and segment:
         # These service details change what the customer is asking for (duration,
-        # permit purpose, worker transfer, or delivery point), so keep their words
-        # in the confirmed need as well as in the provider query.
+        # permit purpose, building work, worker transfer, or delivery point), so keep
+        # their words in the confirmed need as well as in the provider query.
         intent.need = segment
         if shown_city and not find_cities(normalize(segment)):
             intent.need = f"{intent.need} {shown_city}"

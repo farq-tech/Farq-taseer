@@ -3,6 +3,7 @@ import pytest
 from farq.contracts import Ad, ResultUnit, Seller
 from farq.eligibility import decide
 from farq.intent import analyze
+from farq.understand import _apply
 
 
 @pytest.mark.parametrize(
@@ -45,6 +46,29 @@ def test_construction_requests_are_categorized_and_ask_for_city_when_missing(que
     if city is None:
         assert intent.clarification_question == "في أي مدينة؟"
     assert intent.segment_text in intent.search_terms
+
+
+def test_construction_need_keeps_the_explicit_building_work_and_city():
+    intent = analyze("أبغى مقاول يبني ملحق في جدة")
+
+    assert intent.need == "مقاول يبني ملحق في جدة"
+
+
+def test_intent_model_cannot_drop_the_explicit_construction_work_item():
+    intent = analyze("أبغى مقاول يبني ملحق في جدة")
+
+    refined = _apply(
+        intent,
+        {
+            "need": "مقاول بناء جدة",
+            "must_include": [["مقاول"]],
+            "search_terms": ["مقاول بناء جدة"],
+            "hiring": True,
+        },
+    )
+
+    assert refined.need == "مقاول يبني ملحق في جدة"
+    assert any("ملحق" in term for term in refined.search_terms)
 
 
 def test_installing_a_wpc_door_stays_a_service_request():

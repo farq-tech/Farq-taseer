@@ -257,6 +257,11 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         in {"vehicle_transport", "moving", "goods_transport", "passenger_transport"}
         and intent.destination_city.known
     )
+    preserve_construction_need = (
+        intent.result_unit == ResultUnit.SERVICE_PROVIDER
+        and intent.subcategory.value == "construction"
+        and bool(intent.segment_text)
+    )
     preserve_identity = (
         intent.model.known or intent.brand.known or bool(intent.identity_alternatives)
     )
@@ -269,7 +274,12 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     rule_terms = list(intent.search_terms)
     intent.need = (
         rule_need
-        if (preserve_identity or preserve_service_route or preserve_functioning_sale) and rule_need
+        if (
+            preserve_identity
+            or preserve_service_route
+            or preserve_construction_need
+            or preserve_functioning_sale
+        ) and rule_need
         else read["need"]
     )
     read_groups = [list(group) for group in read["must_include"]]
@@ -302,7 +312,12 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     terms: list[str] = []
     search_terms = (
         rule_terms
-        if intent.identity_alternatives or preserve_service_route or preserve_functioning_sale
+        if (
+            intent.identity_alternatives
+            or preserve_service_route
+            or preserve_construction_need
+            or preserve_functioning_sale
+        )
         else [*rule_terms, *read["search_terms"]]
         if preserve_identity or preserve_service_route
         else read["search_terms"]
