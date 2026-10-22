@@ -24,7 +24,10 @@ _DIMENSION_PAIR = re.compile(r"(?<!\d)(\d{1,2}(?:[.,]\d+)?)\s*(?:x|×|\*)\s*(\d{
 _UNIT_SPEC = re.compile(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(كيلو واط|كيلوواط|امبير|أمبير|كيلو|بوصه|بوصة|انش|inch(?:es)?|قدم|لتر|طن|واط|كراسي|كرسي|جيجا بايت|جيجابايت|جيجا|قيقا بايت|قيقابايت|قيقا|kva|kw|kg|gb|ah)(?![a-z\u0621-\u064a])")
 # A listing that is no longer a listing: sold, a scrapped car, a phone locked to another
 # account, a pile of leftovers from a job.
-_GONE = ("تم البيع", "تم بيعه", "تم بيعها", "انباع")
+_GONE_PATTERN = re.compile(r"(?<!\w)(?:و|ف)?(?:تم البيع|تم بيعه|تم بيعها|انباع)(?!\w)")
+_NEGATED_GONE = re.compile(
+    r"\b(?:لم|ما|مو|مش|ليس|ليست)\s+(?:(?:يتم|تم)\s+)?(?:ال)?(?:بيع(?:ه|ها|هم)?|انباع(?:ت)?)\b"
+)
 _LOCKED_PHONE = ("مقفل", "مقفول", "ايكلود مقفل", "icloud")
 _SCRAPPED_CAR = ("تشليح",)
 _LEFTOVERS = ("مخلفات", "بقايا")
@@ -279,10 +282,44 @@ _MAP_LISTING = ("جوجل", "قوقل", "google")
 _MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
 _SALE_WORDS = ("للبيع", "بيع", "البيع")
 _GLAZING_NOT = ("تنظيف", "غسيل", "غرفه نوم", "طاوله", "مرايه", "سياره", "عطر", "جوال", "شاشه", "نظاره")
-_LEAD_IN = {"للبيع", "بيع", "تويوتا", "toyota", "نيسان", "nissan", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد"}
+_LEAD_IN = {
+    "للبيع", "بيع", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد",
+    "تويوتا", "toyota", "نيسان", "nissan", "هيونداي", "hyundai", "هوندا", "honda",
+    "جمس", "gmc", "جي", "ام", "سي", "مرسيدس", "بنز", "mercedes", "benz", "لكزس", "lexus",
+    "شفروليه", "شيفروليه", "chevrolet", "chevy", "فورد", "ford", "دودج", "dodge", "كيا", "kia",
+    "مازدا", "mazda", "بي", "دبليو", "bmw", "اودي", "audi", "بورش", "بورشه", "porsche",
+    "تسلا", "tesla", "رام", "ram",
+}
 _MODEL_TOKENS = {
     "Camry": ("كامري", "camry"),
     "Land Cruiser": ("لاندكروزر", "لاند كروزر", "land cruiser"),
+    "Corolla": ("كورولا", "corolla"),
+    "Elantra": ("النترا", "elantra"),
+    "Sonata": ("سوناتا", "sonata"),
+    "Accord": ("اكورد", "accord"),
+    "Civic": ("سيفيك", "civic"),
+    "Patrol": ("باترول", "patrol"),
+    "Yukon": ("يوكن", "yukon"),
+    "E200": ("e200",),
+    "ES": ("es",),
+    "LX570": ("lx570",),
+    "Land Cruiser 70": ("شاص", "ربع", "land cruiser 70", "70 series"),
+    "Land Cruiser Prado": ("برادو", "prado", "land cruiser prado"),
+    "FJ Cruiser": ("اف جي", "fj cruiser"),
+    "Accent": ("اكسنت", "accent"),
+    "Azera": ("ازيرا", "azera"),
+    "Tahoe": ("تاهو", "tahoe"),
+    "Sierra": ("سييرا", "sierra"),
+    "Ram 1500": ("1500",),
+    "Mustang": ("موستنق", "موستنج", "mustang"),
+    "Charger": ("تشارجر", "charger"),
+    "K5": ("k5",),
+    "Altima": ("التيما", "altima"),
+    "Mazda 6": ("مازدا 6", "mazda 6", "6"),
+    "520": ("520",),
+    "A6": ("a6",),
+    "Cayenne": ("كايين", "cayenne"),
+    "Model 3": ("موديل 3", "model 3"),
     "Yaris": ("يارس", "yaris"),
     "Datsun": ("ددسن", "داتسن", "داتسون", "datsun"),
 }
@@ -350,6 +387,13 @@ def has_word(text: str | None, words) -> str | None:
         if parts and _sequence_hit(haystack, parts, _word_is):
             return word
     return None
+
+
+def _is_sold_listing(title: str | None, description: str | None) -> bool:
+    """Find explicit sold markers in either seller-written field, respecting negation."""
+    text = normalize(f"{title or ''} {description or ''}")
+    text_without_negated_sold = _NEGATED_GONE.sub(" ", text)
+    return _GONE_PATTERN.search(text_without_negated_sold) is not None
 
 
 _HASHTAG = re.compile(r"(?<!\w)#\S+")
@@ -531,8 +575,38 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["year_mismatch"]
     if intent.type.value == "vehicle" and intent.subcategory.value in {"cars", "pickups"} and title:
         names = _MODEL_TOKENS.get(intent.model.value or "", ())
-        leading = [token for token in tokens(title) if token not in _LEAD_IN and not token.isdigit()]
-        if names and not any(contains_term(" ".join(leading[:1]), name) for name in names):
+        title_tokens = tokens(title)
+        leading = [
+            token
+            for index, token in enumerate(title_tokens)
+            if (
+                token not in _LEAD_IN
+                or (token == "جي" and index > 0 and title_tokens[index - 1] == "اف")
+            )
+            and not re.fullmatch(r"(?:19|20)\d{2}", token)
+        ]
+        if intent.model.value in {"Land Cruiser 70", "Land Cruiser Prado"}:
+            # Haraj commonly titles these trims as "Land Cruiser Prado" or
+            # "لاندكروزر شاص/ربع". The family name is a valid prefix for these
+            # specific models, while the trim still has to lead the listing.
+            family_prefixes = (("لاندكروزر",), ("land", "cruiser"))
+            for prefix in family_prefixes:
+                if tuple(leading[: len(prefix)]) != prefix:
+                    continue
+                after_family = leading[len(prefix) :]
+                if any(
+                    contains_term(
+                        " ".join(after_family[: len(normalize(name).split())]), name
+                    )
+                    for name in names
+                    if normalize(name).split() != list(prefix)
+                ):
+                    leading = after_family
+                    break
+        if names and not any(
+            contains_term(" ".join(leading[: len(normalize(name).split())]), name)
+            for name in names
+        ):
             return False, ["part_not_vehicle"]
         if intent.subcategory.value == "cars" and any(contains_term(title, part) for part in _CAR_PARTS):
             return False, ["part_not_vehicle"]
@@ -606,7 +680,7 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
         # «مخلفات ترميم فيلا»: what a job left behind, for sale - not the contractor.
         if first and any(_word_is(first[0], word) for word in _LEFTOVERS):
             return False, ["leftovers_not_provider"]
-    if title and has_word(title, _GONE):
+    if ad is not None and _is_sold_listing(title, ad.description):
         return False, ["already_sold"]
     if intent.subcategory.value == "strollers" and str(intent.model.value or "").startswith("YOYO") and not relaxed and _yoyo_lookalike_claim(text):
         return False, ["model_lookalike"]

@@ -94,6 +94,7 @@ const needOf = () => '';
 const multiNeed = () => false;
 const cityLabel = (value) => value || '';
 const snip = () => 'وصف الإعلان';
+const adOriginalText = (value) => String(value || '').trim();
 const matchedWords = () => [];
 const adPriceDisclosure = () => '';
 const offerMarks = () => [];
@@ -113,8 +114,49 @@ const noImage = renderCard({ad:{title:'عربية أطفال يويو', source_h
 assert.match(noImage, /لا توجد صور مرفقة بإعلان حراج/);
 const missingThumbnail = renderCard({ad:{title:'عربية أطفال يويو', source_has_image:true}, seller:{id:'seller-1'}});
 assert.match(missingThumbnail, /حراج يذكر وجود صور/);
+const longDescription = 'وصف كامل كما كتبه البائع. '.repeat(5);
+const detailed = renderCard({ad:{title:'عربية أطفال يويو', description:longDescription}, seller:{id:'seller-1'}});
+assert.match(detailed, /عرض الوصف الكامل كما كتبه البائع/);
+assert.ok(detailed.includes(longDescription.trimEnd()));
 '''
     subprocess.run(['node', '-e', script], check=True)
+
+
+def test_unavailable_listing_details_can_be_retried_from_the_detail_sheet():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    start = source.index('function detailSheet() {')
+    end = source.index('\n}', start) + 2
+    script = '''const assert = require('node:assert/strict');
+const result = {ad:{url:'https://haraj.com.sa/123/post/', title:'عنوان الإعلان', listing_details_state:'unavailable'}, seller:{id:'seller-1', name:'بائع'}};
+const state = {active:result, gallery:[], selected:new Set()};
+const sellerOf = () => result.seller;
+const displayName = () => ({name:'بائع', handle:''});
+const adAge = () => null;
+const imageSources = () => [];
+const imageAvailabilityDisclosure = () => '';
+const resultKey = () => 'seller-1:123';
+const adOriginalText = (value) => String(value || '').trim();
+const adPriceDisclosure = () => '';
+const harajListingUrl = (ad) => ad?.url || '';
+const place = () => '';
+const cityLabel = () => '';
+const initial = () => 'ب';
+const esc = (value) => String(value);
+''' + source[start:end] + '''
+let html = detailSheet();
+assert.match(html, /تعذر جلب تفاصيل الإعلان الأصلية الآن/);
+assert.match(html, /data-action="retry-listing-details" data-key="seller-1:123"/);
+assert.match(html, /أعد جلب تفاصيل الإعلان/);
+result.ad.listing_details_state = 'loading';
+html = detailSheet();
+assert.doesNotMatch(html, /data-action="retry-listing-details"/);
+result.ad.listing_details_state = 'unavailable';
+result.ad.url = '';
+html = detailSheet();
+assert.doesNotMatch(html, /data-action="retry-listing-details"/);
+'''
+    subprocess.run(['node', '-e', script], check=True)
+    assert 'else if (action === "retry-listing-details") openResult(target.dataset.key, true);' in source
 
 
 def test_failed_listing_image_urls_show_an_explicit_fallback():
@@ -237,7 +279,7 @@ assert.equal(resultsLine(13, uniqueSellerCount([{seller: {}}])), 'لقينا 13 
 
 def test_opening_a_result_refreshes_it_from_the_original_haraj_listing():
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
-    start = source.index('async function openResult(key) {')
+    start = source.index('async function openResult(key, refreshDetails = false) {')
     end = source.index('\n}', start) + 2
     script = r"""
 const assert = require('node:assert/strict');
@@ -282,9 +324,12 @@ const imageSources = (ad) => ad?.image_urls || [];
   assert.equal(fallback.ad.description, 'الوصف الموجود في البحث');
   assert.equal(fallback.ad.listing_details_state, 'unavailable');
   assert.deepEqual(state.gallery, ['image-route-two', 'thumb-2']);
-  assert.equal(calls.length, 4);
-  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/details?url=')).length, 2);
-  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/images?url=')).length, 2);
+  await openResult('second', true);
+  assert.equal(fallback.ad.listing_details_state, 'unavailable');
+  assert.equal(calls.length, 6);
+  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/details?url=')).length, 3);
+  assert.ok(calls.some((path) => path.startsWith('/v1/listings/details?url=') && path.endsWith('&refresh=1')));
+  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/images?url=')).length, 3);
   assert.ok(renders >= 4);
 })().catch((error) => { console.error(error); process.exit(1); });
 """

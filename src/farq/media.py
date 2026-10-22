@@ -101,7 +101,7 @@ def _product(html: str) -> dict | None:
     return None
 
 
-def listing_details(url: str, opener=None, now: float | None = None) -> dict:
+def listing_details(url: str, opener=None, now: float | None = None, refresh: bool = False) -> dict:
     """What the public Haraj listing page says about the ad, read-only, for the customer who
     asked that seller: title, the price as the seller typed it, city, posting date, body and
     photos. ``state`` is ``unavailable`` when the page is gone, unreachable or no longer an
@@ -112,7 +112,7 @@ def listing_details(url: str, opener=None, now: float | None = None) -> dict:
         raise ValueError("listing url must be on haraj.com.sa")
     moment = time.time() if now is None else now
     cached = _DETAILS.get(url)
-    if cached and moment - cached[0] < _TTL_SECONDS:
+    if cached and moment - cached[0] < _TTL_SECONDS and not refresh:
         return dict(cached[1])
     unavailable = {"state": "unavailable", "url": url}
     request = urllib.request.Request(

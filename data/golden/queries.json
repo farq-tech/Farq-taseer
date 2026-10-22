@@ -619,7 +619,13 @@
         "long_tail",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "pickups",
+        "brand": "Toyota",
+        "model": "Hilux"
+      }
     },
     {
       "id": "q048",
@@ -630,7 +636,14 @@
         "long_tail",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Honda",
+        "model": "Accord",
+        "year": 2021
+      }
     },
     {
       "id": "q049",
@@ -639,7 +652,15 @@
         "vehicles",
         "city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Hyundai",
+        "model": "Sonata",
+        "year": 2019,
+        "city": "الرياض"
+      }
     },
     {
       "id": "q050",
@@ -650,7 +671,13 @@
         "long_tail",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Nissan",
+        "model": "Patrol"
+      }
     },
     {
       "id": "q051",
@@ -660,7 +687,14 @@
         "brand_mix",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "GMC",
+        "model": "Yukon",
+        "year": 2020
+      }
     },
     {
       "id": "q052",
@@ -670,7 +704,13 @@
         "brand_mix",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Mercedes-Benz",
+        "model": "E200"
+      }
     },
     {
       "id": "q053",
@@ -681,7 +721,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Lexus",
+        "model": "ES",
+        "year": 2023
+      }
     },
     {
       "id": "q054",
@@ -1531,7 +1578,14 @@
         "dialect",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "Land Cruiser 70",
+        "year": 2021
+      }
     },
     {
       "id": "q145",
@@ -1542,7 +1596,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "Land Cruiser 70",
+        "year": 2024
+      }
     },
     {
       "id": "q146",
@@ -1573,7 +1634,12 @@
         "long_tail",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "service",
+        "category": "services",
+        "subcategory": "vehicle_insurance",
+        "result_unit": "service_provider"
+      }
     },
     {
       "id": "q149",
@@ -1584,7 +1650,13 @@
         "location_required",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "service",
+        "category": "services",
+        "subcategory": "car_repair",
+        "result_unit": "service_provider",
+        "need": "فحص سيارات متنقل"
+      }
     },
     {
       "id": "q150",
@@ -1594,7 +1666,12 @@
         "vehicles",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "service",
+        "category": "services",
+        "subcategory": "car_detailing",
+        "result_unit": "service_provider"
+      }
     },
     {
       "id": "q151",
@@ -1819,7 +1896,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "Camry",
+        "year": 2016
+      }
     },
     {
       "id": "q175",
@@ -1830,7 +1914,13 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Lexus",
+        "model": "LX570"
+      }
     },
     {
       "id": "q176",
@@ -1840,7 +1930,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "Land Cruiser Prado",
+        "year": 2020
+      }
     },
     {
       "id": "q177",
@@ -1851,7 +1948,14 @@
         "dialect",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "FJ Cruiser",
+        "year": 2014
+      }
     },
     {
       "id": "q178",
@@ -1861,7 +1965,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "Corolla",
+        "year": 2024
+      }
     },
     {
       "id": "q179",
@@ -1871,7 +1982,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Toyota",
+        "model": "Yaris",
+        "year": 2022
+      }
     },
     {
       "id": "q180",
@@ -1881,7 +1999,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Hyundai",
+        "model": "Accent",
+        "year": 2018
+      }
     },
     {
       "id": "q181",
@@ -1891,7 +2016,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Hyundai",
+        "model": "Elantra",
+        "year": 2021
+      }
     },
     {
       "id": "q182",
@@ -1901,7 +2033,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Hyundai",
+        "model": "Azera",
+        "year": 2019
+      }
     },
     {
       "id": "q183",
@@ -1912,7 +2051,14 @@
         "brand_mix",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Chevrolet",
+        "model": "Tahoe",
+        "year": 2023
+      }
     },
     {
       "id": "q184",
@@ -1922,7 +2068,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "pickups",
+        "brand": "GMC",
+        "model": "Sierra",
+        "year": 2020
+      }
     },
     {
       "id": "q185",
@@ -1933,7 +2086,13 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "pickups",
+        "brand": "Ram",
+        "model": "Ram 1500"
+      }
     },
     {
       "id": "q186",
@@ -1944,7 +2103,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Ford",
+        "model": "Mustang",
+        "year": 2017
+      }
     },
     {
       "id": "q187",
@@ -1954,7 +2120,14 @@
         "brand_mix",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Dodge",
+        "model": "Charger",
+        "year": 2019
+      }
     },
     {
       "id": "q188",
@@ -1965,7 +2138,14 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Kia",
+        "model": "K5",
+        "year": 2022
+      }
     },
     {
       "id": "q189",
@@ -1975,7 +2155,13 @@
         "brand_mix",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Hyundai",
+        "model": "Sonata"
+      }
     },
     {
       "id": "q190",
@@ -1986,7 +2172,13 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Nissan",
+        "model": "Altima"
+      }
     },
     {
       "id": "q191",
@@ -1997,7 +2189,13 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Mazda",
+        "model": "Mazda 6"
+      }
     },
     {
       "id": "q192",
@@ -2008,7 +2206,13 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Honda",
+        "model": "Civic"
+      }
     },
     {
       "id": "q193",
@@ -2019,7 +2223,13 @@
         "spelling",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "BMW",
+        "model": "520"
+      }
     },
     {
       "id": "q194",
@@ -2029,7 +2239,13 @@
         "brand_mix",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Audi",
+        "model": "A6"
+      }
     },
     {
       "id": "q195",
@@ -2040,7 +2256,13 @@
         "long_tail",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Porsche",
+        "model": "Cayenne"
+      }
     },
     {
       "id": "q196",
@@ -2051,7 +2273,13 @@
         "model",
         "without_city"
       ],
-      "expect": {}
+      "expect": {
+        "type": "vehicle",
+        "category": "vehicles",
+        "subcategory": "cars",
+        "brand": "Tesla",
+        "model": "Model 3"
+      }
     },
     {
       "id": "q197",
