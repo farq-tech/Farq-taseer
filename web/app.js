@@ -4869,8 +4869,14 @@ async function openResult(key) {
   else if (result.ad) result.ad.listing_details_state = "unavailable";
   render();
   if (!result.ad?.url) return;
+
+  const url = encodeURIComponent(result.ad.url);
+  const detailsRequest = api(`/v1/listings/details?url=${url}`);
+  // Keep the existing image resolver: it can return Haraj gallery photos even when the
+  // public listing page no longer exposes Product JSON-LD.
+  const imagesRequest = api(`/v1/listings/images?url=${url}`).catch(() => null);
   try {
-    const details = await api(`/v1/listings/details?url=${encodeURIComponent(result.ad.url)}`);
+    const details = await detailsRequest;
     if (state.view !== "detail" || state.active !== result) return;
     if (details?.state === "available") {
       const previous = result.ad;
@@ -4898,6 +4904,12 @@ async function openResult(key) {
       result.ad.listing_details_state = "unavailable";
       render();
     }
+  }
+
+  const imageData = await imagesRequest;
+  if (state.view === "detail" && state.active === result && imageData?.images?.length) {
+    state.gallery = [...new Set([...imageData.images, ...state.gallery])];
+    render();
   }
 }
 
