@@ -169,7 +169,10 @@ def listing_details(url: str, opener=None, now: float | None = None) -> dict:
         "price_text": price_text,
         "price_evidence": {
             "kind": evidence.kind,
+            "amount": displayed_amount,
             "source": evidence.source,
+            "text": evidence.text,
+            "text_source": evidence.text_source,
             "estimated": evidence.estimated,
             "negotiable": evidence.negotiable,
         },
