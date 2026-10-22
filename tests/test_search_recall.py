@@ -10,7 +10,7 @@ from farq.config import SearchConfig
 from farq.eligibility import decide
 from farq.haraj_harvest import CachedHarajClient, HarvestStore
 from farq.intent import analyze
-from farq.live_haraj import HarajLiveClient, LiveUnavailable, ad_from_item, haraj_queries
+from farq.live_haraj import HarajLiveClient, LiveUnavailable, ad_from_item, haraj_queries, haraj_query_budget
 from farq.store import Store
 
 
@@ -58,8 +58,11 @@ def test_carpenter_synonyms_fill_the_query_budget():
 
 
 def test_stroller_search_keeps_the_measured_high_recall_reordered_term():
-    queries = _queries("عربية اطفال يويو")
-    budget = queries[: SearchConfig().live_max_queries]
+    intent = analyze("عربية اطفال يويو")
+    queries = haraj_queries(intent.search_terms, intent.location_city.value)
+    limit = haraj_query_budget(intent.search_terms, SearchConfig().live_max_queries)
+    budget = queries[:limit]
+    assert limit == 8
     assert "يويو عربة أطفال" in budget
 
 

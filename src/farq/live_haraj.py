@@ -248,6 +248,13 @@ def haraj_queries(terms: list[str], city: str | None) -> list[str]:
     return selected
 
 
+def haraj_query_budget(queries: list[str], default: int) -> int:
+    """Use one measured extra Haraj phrase for YOYO coverage; keep other searches bounded."""
+    if any(re.search(r"(?:يويو|yoyo|babyzen)", query, re.IGNORECASE) for query in queries):
+        return max(default, 8)
+    return default
+
+
 class HarajLiveClient:
     def __init__(self, config: SearchConfig, opener=None):
         self.config = config
@@ -326,7 +333,8 @@ class HarajLiveClient:
 
     def search_iter(self, queries: list[str], city: str | None):
         """Fetch each query's first page before spending time on deeper pages."""
-        selected = haraj_queries(queries, city)[: self.config.live_max_queries]
+        limit = haraj_query_budget(queries, self.config.live_max_queries)
+        selected = haraj_queries(queries, city)[:limit]
         if not selected:
             return
         workers = max(1, min(self.config.live_concurrency, len(selected)))
