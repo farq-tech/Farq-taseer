@@ -269,6 +269,38 @@ def test_per_door_promotion_price_is_not_the_total_for_a_multi_door_order():
 
 
 
+def test_auction_wording_and_per_door_amount_do_not_make_the_field_a_total():
+    evidence = infer_price_evidence(
+        "أبواب WPC بيضاء للبيع - الرياض",
+        (
+            "للبيع عدد 14 باب wpc لون أبيض جديدة بمقابضها وحلوقها، "
+            "الفك والنقل على المشتري للسومة الأعلى\n"
+            "الباب الواحد ب119 ريال\n"
+            "واللي بيشيلها كلها بنراعيه"
+        ),
+        2000,
+        "2,000",
+    )
+
+    assert evidence.kind == "ambiguous_amount"
+    assert evidence.amount is None
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "الباب الواحد ب119 ريال",
+        "الحبة ب180 ريال",
+        "القطعة 80 ريال",
+    ],
+)
+def test_unit_name_followed_by_amount_is_not_a_whole_listing_price(description):
+    evidence = infer_price_evidence("سلعة للبيع", description, None)
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
 def test_per_tire_amount_in_price_field_is_not_an_order_total():
     evidence = infer_price_evidence(
         "كفرات مستعمله هيلكس فورتشنر هانكوك 265 65 17",
