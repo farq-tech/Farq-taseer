@@ -75,6 +75,9 @@ _REQUEST_PREPOSITIONS = {normalize(word) for word in ("على", "عن", "إلى"
 _REQUEST_PREFACES = {
     (normalize("عندي"), normalize(phrase)) for phrase in ("طلب", "طلبية")
 }
+_POLITE_PREFACES = {
+    (normalize("يا"), normalize("طويل"), normalize("العمر")),
+}
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
 _YOYO_VARIANT = re.compile(r"(?:يويو|yoyo)\s*([23])(?!\d)", re.IGNORECASE)
 _YOYO_GENERATION_WORD = re.compile(
@@ -1282,6 +1285,13 @@ def _segment_text(original: str) -> str:
     while words:
         first = normalize(words[0])
         if (
+            len(words) >= 3
+            and tuple(normalize(word) for word in words[:3]) in _POLITE_PREFACES
+        ):
+            words = words[3:]
+            after_request_opener = True
+            continue
+        if (
             len(words) >= 2
             and (first, normalize(words[1])) in _REQUEST_PREFACES
         ):
@@ -1307,13 +1317,21 @@ def _segment_text(original: str) -> str:
 
 
 def _leading_request_preface_words(original: str) -> set[str]:
-    """Return words in a known request preface after ordinary request openers."""
+    """Return words in known request prefaces and fixed polite openers."""
 
     words = original.split()
+    normalized = [normalize(word) for word in words]
     index = 0
+    preface_words: set[str] = set()
     after_request_opener = False
+    for phrase in _POLITE_PREFACES:
+        if tuple(normalized[: len(phrase)]) == phrase:
+            preface_words.update(phrase)
+            index = len(phrase)
+            after_request_opener = True
+            break
     while index < len(words):
-        current = normalize(words[index])
+        current = normalized[index]
         if current in _WANT_WORDS:
             index += 1
             after_request_opener = True
@@ -1324,10 +1342,10 @@ def _leading_request_preface_words(original: str) -> set[str]:
             continue
         break
     if index + 1 < len(words):
-        preface = (normalize(words[index]), normalize(words[index + 1]))
+        preface = (normalized[index], normalized[index + 1])
         if preface in _REQUEST_PREFACES:
-            return set(preface)
-    return set()
+            preface_words.update(preface)
+    return preface_words
 
 
 def _content_tokens(normalized: str) -> list[str]:
