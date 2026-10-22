@@ -89,11 +89,15 @@ def score(
 
 
 def rank(intent: IntentResponse, results: list[SearchResult], config: SearchConfig, now: datetime) -> list[SearchResult]:
-    del intent
     ordered = sorted(results, key=lambda item: (item.match == "exact", item.score), reverse=True)
     if config.max_results > 0:
         ordered = ordered[:config.max_results]
     if not ordered or config.min_score_ratio <= 0:
+        return ordered
+    if intent.type.value in {"product", "vehicle", "property"}:
+        # Exact eligibility is the relevance gate for item listings. A relative score
+        # floor can hide real ads only because optional details (description, price,
+        # image, or date) are absent; keep every eligible listing and use score to order it.
         return ordered
     best = ordered[0].score
     if best <= 0:

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from farq.config import SearchConfig
@@ -78,6 +80,31 @@ def test_yoyo_model_does_not_match_an_unbranded_stroller_ad():
 
     assert decide(intent, generic, seller)[0] is False
     assert decide(intent, yoyo, seller)[0] is True
+
+
+def test_low_scoring_but_eligible_yoyo_ads_are_not_hidden_by_the_relative_floor():
+    from farq.contracts import SearchResult
+    from farq.ranking import rank
+
+    intent = analyze("عربية اطفال يويو")
+    first_seller = Seller(id="seller-1", name="معلن 1")
+    second_seller = Seller(id="seller-2", name="معلن 2")
+    first = Ad(id="ad-1", title="عربيه أطفال ماركة يويو yoyo", seller=first_seller)
+    second = Ad(id="ad-2", title="عربة اطفال يويو 2", seller=second_seller)
+
+    assert decide(intent, first, first_seller)[0] is True
+    assert decide(intent, second, second_seller)[0] is True
+    kept = rank(
+        intent,
+        [
+            SearchResult(result_unit=intent.result_unit, ad=first, seller=first_seller, score=1.0),
+            SearchResult(result_unit=intent.result_unit, ad=second, seller=second_seller, score=0.2),
+        ],
+        SearchConfig(),
+        datetime.now(timezone.utc),
+    )
+
+    assert [item.ad.id for item in kept] == ["ad-1", "ad-2"]
 
 
 @pytest.mark.parametrize(
