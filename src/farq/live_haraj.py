@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -255,7 +256,7 @@ class HarajLiveClient:
     def _post(self, variables: dict) -> dict:
         body = json.dumps({"query": SEARCH_QUERY, "variables": variables}).encode()
         request = urllib.request.Request(
-            ENDPOINT,
+            os.environ.get("FARQ_HARAJ_SEARCH_ENDPOINT", ENDPOINT),
             data=body,
             headers={
                 "Content-Type": "application/json",
@@ -324,40 +325,49 @@ class HarajLiveClient:
         return QueryFetch(ads=ads, pages=pages, has_next=has_next, timed_out=timed_out, error=error)
 
     def search_iter(self, queries: list[str], city: str | None):
-        """Every page from every query, handed over the moment it arrives."""
+        """Fetch each query's first page before spending time on deeper pages."""
         selected = haraj_queries(queries, city)[: self.config.live_max_queries]
         if not selected:
             return
         workers = max(1, min(self.config.live_concurrency, len(selected)))
-        pages: "queue.Queue[QueryFetch | None]" = queue.Queue()
+        pages: "queue.Queue[tuple[str, int, QueryFetch] | None]" = queue.Queue()
 
-        def work(query: str) -> None:
+        def work(query: str, page: int) -> None:
             try:
-                for fetch in self.search_one_iter(query, city):
-                    pages.put(replace(fetch, query=query))
+                result = self._post({"search": query, "page": page, "limit": self.config.live_page_size, "city": city})
+                ads = [ad_from_item(item, city) for item in (result.get("items") or []) if item.get("id")]
+                fetch = QueryFetch(ads=ads, pages=1, has_next=bool((result.get("pageInfo") or {}).get("hasNextPage")))
             except LiveTimeout as exc:
-                pages.put(QueryFetch(timed_out=True, error=str(exc)))
+                fetch = QueryFetch(timed_out=True, error=str(exc))
             except LiveUnavailable as exc:
-                pages.put(QueryFetch(error=str(exc)))
+                fetch = QueryFetch(error=str(exc))
             except Exception as exc:  # network and parser failures stay visible
-                pages.put(QueryFetch(error=str(exc)))
-            finally:
-                pages.put(None)
+                fetch = QueryFetch(error=str(exc))
+            pages.put((query, page, fetch))
+            pages.put(None)
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for query in selected:
-                pool.submit(work, query)
-            finished = 0
-            # One listing found by two queries ("نجار" and "نجاره") is one listing.
             seen: set[str] = set()
-            while finished < len(selected):
-                fetch = pages.get()
-                if fetch is None:
-                    finished += 1
-                    continue
-                fresh = [ad for ad in fetch.ads if ad.id not in seen]
-                seen.update(ad.id for ad in fresh)
-                yield replace(fetch, ads=fresh)
+            pending = [(query, self.config.live_start_page) for query in selected]
+            for depth in range(max(0, self.config.live_max_pages)):
+                if not pending:
+                    break
+                for query, page in pending:
+                    pool.submit(work, query, page)
+                completed = 0
+                next_pending = []
+                while completed < len(pending):
+                    item = pages.get()
+                    if item is None:
+                        completed += 1
+                        continue
+                    query, page, fetch = item
+                    if fetch.has_next and depth + 1 < self.config.live_max_pages:
+                        next_pending.append((query, page + 1))
+                    fresh = [ad for ad in fetch.ads if ad.id not in seen]
+                    seen.update(ad.id for ad in fresh)
+                    yield replace(fetch, query=query, ads=fresh)
+                pending = next_pending
 
     def search(self, queries: list[str], city: str | None) -> LiveBatch:
         batch = LiveBatch()
