@@ -234,3 +234,55 @@ assert.equal(resultsLine(1, 1), 'لقينا إعلان واحد من بائع و
 assert.equal(resultsLine(13, uniqueSellerCount([{seller: {}}])), 'لقينا 13 إعلانًا');
 '''
     subprocess.run(['node', '-e', script], check=True)
+
+def test_opening_a_result_refreshes_it_from_the_original_haraj_listing():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    start = source.index('async function openResult(key) {')
+    end = source.index('\n}', start) + 2
+    script = r"""
+const assert = require('node:assert/strict');
+const result = {
+  ad: {url: 'https://haraj.com.sa/1/post/', title: 'نتيجة مختصرة', description: 'وصف مقتطع', image_urls: ['thumb']},
+};
+const fallback = {
+  ad: {url: 'https://haraj.com.sa/2/post/', title: 'عنوان البحث', description: 'الوصف الموجود في البحث', image_urls: ['thumb-2']},
+};
+const state = {results: [result, fallback], active: null, gallery: [], view: 'results'};
+const calls = [];
+let renders = 0;
+const api = async (path) => {
+  calls.push(path);
+  if (decodeURIComponent(path).includes('/1/post/')) return {
+    state: 'available', title: 'عنوان الإعلان الأصلي', description: 'الوصف الأصلي كاملًا',
+    city: 'الرياض', posted_at: '2026-10-15T00:00:00Z', price_amount: 300,
+    price_currency: 'SAR', price_text: '300',
+    price_evidence: {kind: 'asking_price_in_field', amount: 300, source: 'price_field'},
+    images: ['haraj-photo-b', 'haraj-photo-a'],
+  };
+  return {state: 'unavailable'};
+};
+const render = () => { renders += 1; };
+const resultKey = (item) => item === result ? 'first' : 'second';
+const imageSources = (ad) => ad?.image_urls || [];
+""" + source[start:end] + r"""
+(async () => {
+  await openResult('first');
+  assert.equal(state.active, result);
+  assert.equal(result.ad.title, 'عنوان الإعلان الأصلي');
+  assert.equal(result.ad.description, 'الوصف الأصلي كاملًا');
+  assert.equal(result.ad.price_evidence.amount, 300);
+  assert.equal(result.ad.listing_details_state, 'available');
+  assert.deepEqual(state.gallery, ['haraj-photo-b', 'haraj-photo-a']);
+
+  await openResult('second');
+  assert.equal(fallback.ad.title, 'عنوان البحث');
+  assert.equal(fallback.ad.description, 'الوصف الموجود في البحث');
+  assert.equal(fallback.ad.listing_details_state, 'unavailable');
+  assert.deepEqual(state.gallery, ['thumb-2']);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((path) => path.startsWith('/v1/listings/details?url=')));
+  assert.ok(renders >= 4);
+})().catch((error) => { console.error(error); process.exit(1); });
+"""
+    subprocess.run(['node', '-e', script], check=True)
+    assert 'تعذر جلب تفاصيل الإعلان الأصلية الآن؛ نعرض البيانات التي وصلت من البحث.' in source
