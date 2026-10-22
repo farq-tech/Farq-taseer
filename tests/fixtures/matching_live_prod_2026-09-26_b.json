@@ -556,7 +556,7 @@
   {
    "query": "أبي كامري 2015 مستعملة",
    "rank": 11,
-   "label": "EXACT",
+   "label": "WRONG",
    "title": "كامري GL موديل 2015",
    "body": "تم البيع\nتم البيع",
    "price_amount": null
