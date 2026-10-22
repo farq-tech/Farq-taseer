@@ -522,3 +522,39 @@ def test_car_rental_keeps_the_requested_period_and_rejects_conflicting_terms():
     assert weekly.location_city.value == "الرياض"
     assert decide(weekly, weekly_ad, seller)[0]
     assert decide(weekly, monthly_ad, seller) == (False, ["rent_term_mismatch"])
+
+@pytest.mark.parametrize(
+    ("query", "model_groups"),
+    [
+        ("عربية اطفال يويو", [["عربية"], ["أطفال"], ["YOYO"]]),
+        ("عرباية أطفال يويو", [["عرباية"], ["YOYO"]]),
+    ],
+)
+def test_model_surface_words_do_not_narrow_a_rule_recognized_stroller_identity(query, model_groups):
+    intent = analyze(query)
+    rule_groups = [list(group) for group in intent.eligibility_groups]
+    refined = _apply(
+        intent,
+        {
+            "need": "عربية أطفال يويو",
+            "must_include": model_groups,
+            "search_terms": [query],
+            "hiring": False,
+        },
+    )
+
+    assert refined.eligibility_groups == rule_groups
+
+    seller = Seller(id="seller", name="معلن")
+    titles = [
+        "عربية أطفال YOYO أصلية",
+        "عربة يويو Yoyo",
+        "عرباية أطفال Babyzen YOYO",
+        "YOYO Stroller",
+        "طقم عرباية YOYO مع باسينت",
+    ]
+    assert all(
+        decide(refined, Ad(id=str(index), title=title, seller=seller), seller)[0]
+        for index, title in enumerate(titles)
+    )
+

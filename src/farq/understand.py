@@ -295,14 +295,12 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
         # OR group. A model's one-brand guess must not narrow that group or the search.
         intent.eligibility_groups = rule_groups
     elif preserve_identity:
-        merged_groups: list[list[str]] = []
-        seen_groups: set[tuple[str, ...]] = set()
-        for group in (*rule_groups, *read_groups):
-            key = tuple(sorted(normalize(word) for word in group))
-            if key not in seen_groups:
-                seen_groups.add(key)
-                merged_groups.append(group)
-        intent.eligibility_groups = merged_groups
+        # A rule-recognized brand or model already has its identity groups. Appending the
+        # model reading's surface words makes every group an AND condition; a paraphrase can
+        # then hide valid listings that use the rule's known synonyms. Structured details
+        # (model, year, price, specs) are checked separately by eligibility. Keep the model
+        # groups only when the rules have no identity evidence to preserve.
+        intent.eligibility_groups = rule_groups or read_groups
     elif preserve_service_route:
         # A rule-classified provider service is already a precise match. A generic
         # model reading such as «سيارتي الرياض» must not erase its route or widen it.
