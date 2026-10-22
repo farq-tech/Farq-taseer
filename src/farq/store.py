@@ -706,6 +706,7 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
     last = messages[-1] if messages else None
     preview = " ".join((last["body"] or "").split()) if last is not None else ""
     last_role = last["sender_role"] if last is not None else None
+    last_offer_amount = None if last is None or last["offer_amount"] is None else float(last["offer_amount"])
     last_seller_name = None
     if last_role == "seller" and last["seller_id"]:
         last_seller_key = seller_key(last["seller_id"])
@@ -732,6 +733,7 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "last_message_at": None if last is None else _stamp(last["created_at"]),
         "last_message_role": last_role,
         "last_message_seller_name": last_seller_name,
+        "last_message_offer_amount": last_offer_amount,
         "recipient_count": recipient_count,
         "sent_count": sent_count,
         "failed_count": failed_count,
@@ -3002,10 +3004,14 @@ class Store:
         ).fetchone()["count"]
         return {"notifications": [customer_notification_view(row) for row in rows], "unread": int(unread)}
 
-    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None) -> int:
+    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None, request_id: str | None = None) -> int:
         if notification_id:
             cursor = self._connection.execute(
                 "update customer_notifications set read_at = ? where user_id = ? and id = ? and read_at is null", (_now(), user_id, notification_id)
+            )
+        elif request_id:
+            cursor = self._connection.execute(
+                "update customer_notifications set read_at = ? where user_id = ? and request_id = ? and read_at is null", (_now(), user_id, request_id)
             )
         else:
             cursor = self._connection.execute("update customer_notifications set read_at = ? where user_id = ? and read_at is null", (_now(), user_id))

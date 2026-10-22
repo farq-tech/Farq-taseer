@@ -269,7 +269,25 @@ def test_request_list_identifies_last_seller_reply_without_treating_text_as_offe
     assert summary["last_message"] == "السعر ٧٠٠، والرياض متاح فيها الاستلام"
     assert summary["last_message_role"] == "seller"
     assert summary["last_message_seller_name"] == "متجر الربيع"
+    assert summary["last_message_offer_amount"] is None
     assert summary["priced_offer_count"] == 0
+
+
+def test_opening_a_request_marks_only_its_durable_notifications_read(tmp_path, monkeypatch):
+    monkeypatch.setenv("TASEER_REPLY_NOTIFICATIONS", "1")
+    _store, api = app(tmp_path)
+    headers = signed_in(api)
+    first_id, first_tokens = request_with(api, headers, [("1", "المتجر الأول")], need="عربية يويو")
+    second_id, second_tokens = request_with(api, headers, [("2", "المتجر الثاني")], need="باب PVC")
+    quote(api, first_tokens["1"], 700)
+    quote(api, second_tokens["2"], 1200)
+
+    marked = api.post("/v1/notifications/read", headers=headers, json={"request_id": first_id})
+    assert marked.status_code == 200 and marked.json() == {"marked": 1}
+    inbox = api.get("/v1/notifications", headers=headers).json()
+    assert inbox["unread"] == 1
+    states = {item["request_id"]: item["read"] for item in inbox["notifications"]}
+    assert states == {first_id: True, second_id: False}
 
 
 def test_reply_notification_records_a_push_that_a_device_took_and_never_repeats(tmp_path, monkeypatch):

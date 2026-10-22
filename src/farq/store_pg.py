@@ -1952,12 +1952,17 @@ class PgStore:
             ).fetchone()["count"]
         return {"notifications": [customer_notification_view(row) for row in rows], "unread": int(unread)}
 
-    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None) -> int:
+    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None, request_id: str | None = None) -> int:
         with self._pool.connection() as conn:
             if notification_id:
                 done = conn.execute(
                     "update customer_notifications set read_at = now() where user_id = %s and id = %s and read_at is null returning id",
                     (user_id, notification_id),
+                ).fetchall()
+            elif request_id:
+                done = conn.execute(
+                    "update customer_notifications set read_at = now() where user_id = %s and request_id = %s and read_at is null returning id",
+                    (user_id, request_id),
                 ).fetchall()
             else:
                 done = conn.execute(

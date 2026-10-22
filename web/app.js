@@ -1975,13 +1975,27 @@ async function refreshUnread() {
     const data = await api("/v1/requests", { quiet: true });
     const changed = JSON.stringify(data.requests || []) !== JSON.stringify(state.requests);
     const was = state.unreadTotal;
+    const previousById = new Map(state.requests.map((item) => [item.id, item]));
     state.requests = data.requests || [];
     setUnread(state.requests);
-    // Something arrived while the customer was on another screen.
-    const newest = state.requests.map((item) => item.last_message_at || "").sort().pop() || "";
-    if (state.unreadTotal > was && state.notifyPrefs?.messages !== false) cueOnce(`inbox:${newest}`, "reply", 10);
+    if (state.unreadTotal > was) {
+      for (const item of state.requests) {
+        const previous = previousById.get(item.id);
+        if ((item.unread_count || 0) <= (previous?.unread_count || 0) || item.last_message_role !== "seller") continue;
+        announcePolledArrival(previous, item);
+      }
+    }
     if (changed && (state.view === "requests" || state.view === "notifications")) render();
   } catch (_error) {}
+}
+
+function announcePolledArrival(previous, next) {
+  const key = `inbox:${next.id}:${next.last_message_at || ""}`;
+  const price = next.last_message_offer_amount;
+  const undercut = price != null && previous?.latest_offer_amount != null && price < previous.latest_offer_amount;
+  if (undercut && state.notifyPrefs?.lower !== false) cueOnce(key, "lower", [10, 40, 16]);
+  else if (price != null && state.notifyPrefs?.offers !== false) cueOnce(key, "offer", 12);
+  else if (state.notifyPrefs?.messages !== false) cueOnce(key, "reply", 10);
 }
 
 // R01_MyRequests / R01_MyRequests_Empty — nodes 37:9 and 37:119.
@@ -5457,6 +5471,7 @@ async function loadThread(id, silent = false) {
   await ensureAuth();
   const thread = await api(`/v1/requests/${id}`, { quiet: silent });
   threadCache.set(id, thread);
+  if (!silent) api("/v1/notifications/read", { method: "POST", json: { request_id: id }, quiet: true }).catch(() => {});
   if (state.view !== "thread" || (state.pendingThread && state.pendingThread !== id)) return;
   const before = state.thread;
   const previous = JSON.stringify(before?.messages || []);
