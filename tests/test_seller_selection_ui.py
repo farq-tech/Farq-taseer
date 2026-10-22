@@ -122,6 +122,43 @@ assert.ok(detailed.includes(longDescription.trimEnd()));
     subprocess.run(['node', '-e', script], check=True)
 
 
+def test_unavailable_listing_details_can_be_retried_from_the_detail_sheet():
+    source = (Path(__file__).parents[1] / 'web/app.js').read_text()
+    start = source.index('function detailSheet() {')
+    end = source.index('\n}', start) + 2
+    script = '''const assert = require('node:assert/strict');
+const result = {ad:{url:'https://haraj.com.sa/123/post/', title:'عنوان الإعلان', listing_details_state:'unavailable'}, seller:{id:'seller-1', name:'بائع'}};
+const state = {active:result, gallery:[], selected:new Set()};
+const sellerOf = () => result.seller;
+const displayName = () => ({name:'بائع', handle:''});
+const adAge = () => null;
+const imageSources = () => [];
+const imageAvailabilityDisclosure = () => '';
+const resultKey = () => 'seller-1:123';
+const adOriginalText = (value) => String(value || '').trim();
+const adPriceDisclosure = () => '';
+const harajListingUrl = (ad) => ad?.url || '';
+const place = () => '';
+const cityLabel = () => '';
+const initial = () => 'ب';
+const esc = (value) => String(value);
+''' + source[start:end] + '''
+let html = detailSheet();
+assert.match(html, /تعذر جلب تفاصيل الإعلان الأصلية الآن/);
+assert.match(html, /data-action="retry-listing-details" data-key="seller-1:123"/);
+assert.match(html, /أعد جلب تفاصيل الإعلان/);
+result.ad.listing_details_state = 'loading';
+html = detailSheet();
+assert.doesNotMatch(html, /data-action="retry-listing-details"/);
+result.ad.listing_details_state = 'unavailable';
+result.ad.url = '';
+html = detailSheet();
+assert.doesNotMatch(html, /data-action="retry-listing-details"/);
+'''
+    subprocess.run(['node', '-e', script], check=True)
+    assert 'else if (action === "retry-listing-details") openResult(target.dataset.key);' in source
+
+
 def test_failed_listing_image_urls_show_an_explicit_fallback():
     source = (Path(__file__).parents[1] / 'web/app.js').read_text()
     start = source.index('function bindImages(root) {')
