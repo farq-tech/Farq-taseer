@@ -71,7 +71,8 @@ def test_polite_arabic_framing_does_not_pollute_product_search(query):
     intent = analyze(query)
 
     assert intent.need == "عربية أطفال يويو"
-    assert all(not any(word in term for word in ("يعافيك", "يعافيكي", "يعافيكم")) for term in intent.search_terms)
+    for term in intent.search_terms:
+        assert not any(word in term for word in ("يعافيك", "يعافيكي", "يعافيكم"))
 
 
 @pytest.mark.parametrize(
