@@ -106,3 +106,60 @@ def test_construction_search_accepts_contractors_and_rejects_material_sales():
 
     assert decide(intent, matching, contractor)[0] is True
     assert decide(intent, materials, contractor)[0] is False
+
+
+@pytest.mark.parametrize(
+    ("query", "material", "quantity"),
+    [
+        ("أبواب 20 باب PVC بالرياض", "PVC", 20),
+        ("أبواب 22 باب WPC بالرياض", "WPC", 22),
+    ],
+)
+def test_variant_door_quantity_is_kept_with_its_material(query, material, quantity):
+    from farq.intent import eligibility_groups
+
+    intent = analyze(query)
+    opposite = "WPC" if material == "PVC" else "PVC"
+
+    assert intent.understood is True
+    assert intent.subcategory.value == "pvc_wpc_doors"
+    assert intent.material.value == material
+    assert intent.quantity.value == quantity
+    assert intent.quantity_unit == f"باب {material}"
+    assert [opposite.lower()] not in eligibility_groups(intent)
+    assert all(opposite.lower() not in term.lower() for term in intent.search_terms)
+
+
+def test_mixed_door_quantities_split_into_material_specific_needs():
+    from farq.intent import analyze_needs
+
+    intents = analyze_needs("أبواب PVC وWPC في الرياض 20 PVC و22 WPC")
+
+    assert len(intents) == 2
+    by_material = {intent.material.value: intent for intent in intents}
+    assert set(by_material) == {"PVC", "WPC"}
+    assert by_material["PVC"].quantity.value == 20
+    assert by_material["WPC"].quantity.value == 22
+    assert all(
+        not any(other.lower() in term.lower() for term in intent.search_terms)
+        for material, intent in by_material.items()
+        for other in ({"PVC", "WPC"} - {material})
+    )
+
+
+def test_unquantified_mixed_pvc_wpc_doors_stay_one_combined_need():
+    from farq.intent import analyze_needs
+
+    intents = analyze_needs("أبواب PVC وWPC في الرياض")
+
+    assert len(intents) == 1
+    assert intents[0].subcategory.value == "pvc_wpc_doors"
+    assert intents[0].material.value is None
+    assert any("pvc" in term.lower() for term in intents[0].search_terms)
+    assert any("wpc" in term.lower() for term in intents[0].search_terms)
+
+
+def test_material_followed_by_an_amount_is_not_guessed_as_door_quantity():
+    intent = analyze("أبواب PVC 700 بالرياض")
+
+    assert intent.quantity.value is None
