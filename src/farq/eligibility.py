@@ -186,6 +186,11 @@ _NATIONWIDE_ROUTE = (
     "جميع المدن", "بين جميع المدن", "بين كافة المدن", "جميع مدن المملكة", "كل مدن المملكة", "كافة مدن المملكة", "جميع مدن السعودية",
     "كل مدن السعودية", "جميع مناطق المملكة", "كافة مناطق المملكة", "داخل وخارج المملكة",
 )
+_EXPLICIT_ROUTE_CUES = (
+    re.compile(r"(?:^|\s)من\s+(?P<origin>.+?)\s+(?:الى|الي|ل)\s+(?P<destination>\S+)", re.IGNORECASE),
+    re.compile(r"(?P<origin>\S+)\s+راجع(?:ه)?\s+(?:الى|الي|ل)\s+(?P<destination>\S+)", re.IGNORECASE),
+    re.compile(r"\bfrom\s+(?P<origin>.+?)\s+to\s+(?P<destination>\S+)", re.IGNORECASE),
+)
 _SERVICE_VERBS = ("تفصيل", "تركيب", "فك", "صيانه", "تصنيع", "تصليح", "اصلاح", "ترميم")
 _VEHICLE_WORDS = ("سياره", "سيارات", "ميكانيكي", "دباب", "سكوتر", "سيكل", "دراجه", "دركسون")
 
@@ -805,10 +810,15 @@ def _yoyo_lookalike_claim(text: str) -> bool:
 
 def _has_explicit_route_cue(text: str) -> bool:
     normalized = normalize(text)
-    arabic_route = re.search(r"(?:^|\s)من\s+\S+.*?\s+(?:الى|الي|ل)\s+\S+", normalized)
-    arabic_return = re.search(r"\S+\s+راجع(?:ه)?\s+(?:الى|الي|ل)\s+\S+", normalized)
-    english_route = re.search(r"\bfrom\s+\S+.*?\bto\s+\S+", normalized, re.IGNORECASE)
-    return bool(arabic_route or arabic_return or english_route)
+    for pattern in _EXPLICIT_ROUTE_CUES:
+        match = pattern.search(normalized)
+        if not match:
+            continue
+        endpoints = to_ascii_digits(f"{match.group('origin')} {match.group('destination')}")
+        # A money, measurement or quantity range is not evidence of a destination.
+        if not re.search(r"\d", endpoints):
+            return True
+    return False
 
 
 def _vehicle_transport_offer_in_lead(title: str, description: str) -> bool:

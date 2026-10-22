@@ -488,6 +488,28 @@ def test_vehicle_transport_route_must_match_or_be_explicitly_nationwide():
     assert decide(intent, route_unconfirmed, seller, relaxed=True)[0] is True
 
 
+def test_numeric_price_range_is_not_mistaken_for_a_conflicting_transport_route():
+    intent = analyze("نقل عفش من الرياض إلى جدة")
+    seller = Seller(id="mover", name="نقل عفش", city="الرياض")
+    price_range = Ad(
+        id="price-range",
+        title="نقل عفش مع الفك والتركيب",
+        description="السعر يبدأ من 300 إلى 400 داخل الرياض",
+        city="الرياض",
+        seller=seller,
+    )
+    conflicting_route = Ad(
+        id="conflicting-route",
+        title="نقل عفش من الرياض إلى الدمام",
+        city="الرياض",
+        seller=seller,
+    )
+
+    assert decide(intent, price_range, seller) == (False, ["route_unconfirmed"])
+    assert decide(intent, price_range, seller, relaxed=True)[0] is True
+    assert decide(intent, conflicting_route, seller) == (False, ["route_mismatch"])
+
+
 def test_vehicle_transport_category_is_available_to_service_providers():
     services = read_business("سطحة نقل سيارات بين المدن")['services']
 
