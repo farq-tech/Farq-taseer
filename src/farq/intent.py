@@ -746,6 +746,33 @@ HEADS: tuple[Head, ...] = (
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("يارس", "تويوتا يارس", "yaris", "toyota yaris"), brand="Toyota", model="Yaris", label="تويوتا يارس", label_from_match=True, eligibility=(("يارس", "yaris"),), expansions=("تويوتا يارس", "يارس", "Toyota Yaris", "Yaris")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كامري", "camry"), brand="Toyota", model="Camry", eligibility=(("كامري", "camry"),), expansions=("كامري", "toyota camry", "تويوتا كامري")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لاندكروزر", "land cruiser"), brand="Toyota", model="Land Cruiser", eligibility=(("لاندكروزر", "لاند كروزر", "land cruiser"),), expansions=("لاندكروزر",)),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كورولا", "تويوتا كورولا", "corolla", "toyota corolla"), brand="Toyota", model="Corolla", label="تويوتا كورولا", eligibility=(("كورولا", "corolla"),), expansions=("تويوتا كورولا", "كورولا", "Toyota Corolla")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("النترا", "إلنترا", "هيونداي النترا", "elantra", "hyundai elantra"), brand="Hyundai", model="Elantra", label="هيونداي النترا", eligibility=(("النترا", "elantra"),), expansions=("هيونداي النترا", "النترا", "Hyundai Elantra")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سوناتا", "هيونداي سوناتا", "sonata", "hyundai sonata"), brand="Hyundai", model="Sonata", label="هيونداي سوناتا", eligibility=(("سوناتا", "sonata"),), expansions=("هيونداي سوناتا", "سوناتا", "Hyundai Sonata")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("اكورد", "أكورد", "هوندا اكورد", "accord", "honda accord"), brand="Honda", model="Accord", label="هوندا أكورد", eligibility=(("اكورد", "accord"),), expansions=("هوندا أكورد", "اكورد", "Honda Accord")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سيفيك", "هوندا سيفيك", "civic", "honda civic"), brand="Honda", model="Civic", label="هوندا سيفيك", eligibility=(("سيفيك", "civic"),), expansions=("هوندا سيفيك", "سيفيك", "Honda Civic")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("باترول فتك", "نيسان باترول", "باترول", "nissan patrol", "patrol"), brand="Nissan", model="Patrol", label="نيسان باترول", eligibility=(("باترول", "patrol"),), expansions=("نيسان باترول", "باترول", "Nissan Patrol")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جمس يوكن", "جي ام سي يوكن", "يوكن", "gmc yukon", "yukon"), brand="GMC", model="Yukon", label="جمس يوكن", eligibility=(("يوكن", "yukon"),), expansions=("جمس يوكن", "GMC Yukon")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مرسيدس e200", "مرسيدس بنز e200", "mercedes e200", "mercedes-benz e200"), brand="Mercedes-Benz", model="E200", label="مرسيدس E200", eligibility=(("e200",),), expansions=("مرسيدس E200", "Mercedes-Benz E200")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لكزس es", "lexus es"), brand="Lexus", model="ES", label="لكزس ES", eligibility=(("es",),), expansions=("لكزس ES", "Lexus ES")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("لكزس lx570", "lexus lx570"), brand="Lexus", model="LX570", label="لكزس LX570", eligibility=(("lx570",),), expansions=("لكزس LX570", "Lexus LX570")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("شاص", "تويوتا شاص", "ربع", "تويوتا ربع", "land cruiser 70", "land cruiser 70 series", "toyota 70 series"), brand="Toyota", model="Land Cruiser 70", label="تويوتا شاص", eligibility=(("شاص", "ربع", "land cruiser 70", "70 series"),), expansions=("تويوتا شاص", "لاندكروزر شاص", "Land Cruiser 70")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("برادو", "تويوتا برادو", "لاندكروزر برادو", "land cruiser prado", "prado", "toyota prado"), brand="Toyota", model="Land Cruiser Prado", label="تويوتا برادو", eligibility=(("برادو", "prado"),), expansions=("تويوتا برادو", "برادو", "Toyota Prado")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("اف جي", "اف جي كروزر", "تويوتا اف جي", "fj cruiser", "toyota fj cruiser"), brand="Toyota", model="FJ Cruiser", label="تويوتا اف جي", eligibility=(("اف جي", "fj cruiser"),), expansions=("تويوتا اف جي", "اف جي كروزر", "Toyota FJ Cruiser")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("اكسنت", "هيونداي اكسنت", "accent", "hyundai accent"), brand="Hyundai", model="Accent", label="هيونداي اكسنت", eligibility=(("اكسنت", "accent"),), expansions=("هيونداي اكسنت", "اكسنت", "Hyundai Accent")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ازيرا", "أزيرا", "هيونداي ازيرا", "azera", "hyundai azera"), brand="Hyundai", model="Azera", label="هيونداي ازيرا", eligibility=(("ازيرا", "azera"),), expansions=("هيونداي ازيرا", "ازيرا", "Hyundai Azera")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("تاهو", "شفروليه تاهو", "شيفروليه تاهو", "chevrolet tahoe", "tahoe"), brand="Chevrolet", model="Tahoe", label="شفروليه تاهو", eligibility=(("تاهو", "tahoe"),), expansions=("شفروليه تاهو", "تاهو", "Chevrolet Tahoe")),
+    _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("جمس سييرا", "جي ام سي سييرا", "سييرا", "gmc sierra", "sierra"), brand="GMC", model="Sierra", label="جمس سييرا", eligibility=(("سييرا", "sierra"),), expansions=("جمس سييرا", "سييرا", "GMC Sierra")),
+    _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("رام 1500", "ram 1500"), brand="Ram", model="Ram 1500", label="رام 1500", eligibility=(("رام 1500", "ram 1500"),), expansions=("رام 1500", "Ram 1500")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("موستنق", "موستنج", "فورد موستنق", "mustang", "ford mustang"), brand="Ford", model="Mustang", label="فورد موستنق", eligibility=(("موستنق", "موستنج", "mustang"),), expansions=("فورد موستنق", "موستنق", "Ford Mustang")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("تشارجر", "دودج تشارجر", "charger", "dodge charger"), brand="Dodge", model="Charger", label="دودج تشارجر", eligibility=(("تشارجر", "charger"),), expansions=("دودج تشارجر", "تشارجر", "Dodge Charger")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("كيا k5", "kia k5"), brand="Kia", model="K5", label="كيا K5", eligibility=(("k5",),), expansions=("كيا K5", "Kia K5")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("التيما", "نيسان التيما", "altima", "nissan altima"), brand="Nissan", model="Altima", label="نيسان التيما", eligibility=(("التيما", "altima"),), expansions=("نيسان التيما", "التيما", "Nissan Altima")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مازدا 6", "mazda 6"), brand="Mazda", model="Mazda 6", label="مازدا 6", eligibility=(("مازدا 6", "mazda 6"),), expansions=("مازدا 6", "Mazda 6")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بي ام 520", "بي ام دبليو 520", "bmw 520"), brand="BMW", model="520", label="بي ام دبليو 520", eligibility=(("520",),), expansions=("بي ام دبليو 520", "BMW 520")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("اودي a6", "أودي a6", "audi a6"), brand="Audi", model="A6", label="اودي A6", eligibility=(("a6",),), expansions=("اودي A6", "Audi A6")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("بورش كايين", "بورشه كايين", "porsche cayenne", "cayenne"), brand="Porsche", model="Cayenne", label="بورش كايين", eligibility=(("كايين", "cayenne"),), expansions=("بورش كايين", "كايين", "Porsche Cayenne")),
+    _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("تسلا موديل 3", "tesla model 3", "model 3 tesla"), brand="Tesla", model="Model 3", label="تسلا موديل 3", eligibility=(("موديل 3", "model 3"),), expansions=("تسلا موديل 3", "Tesla Model 3")),
     _head(type="vehicle", category="vehicles", subcategory="cars", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("سيارة", "سيارات", "مركبة", "مركبات", "موتر", "car", "cars", "vehicle", "vehicles"), label="سيارة", label_from_match=True, eligibility=(("سيارة", "سيارات", "مركبة", "مركبات", "موتر", "car", "cars", "vehicle", "vehicles"),), expansions=("سيارات", "سيارة", "موتر", "cars", "vehicles")),
     _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("هايلكس", "هايلوكس", "hilux", "hi lux", "تويوتا هايلكس", "تويوتا هايلوكس"), brand="Toyota", model="Hilux", label="هايلكس", eligibility=(("هايلكس", "هايلوكس", "hilux", "hi lux"),), expansions=("هايلكس", "تويوتا هايلكس", "hilux")),
     _head(type="vehicle", category="vehicles", subcategory="pickups", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("ددسن غمارتين", "داتسن غمارتين", "داتسون غمارتين", "datsun double cab"), brand="Datsun", model="Datsun", label="ددسن غمارتين", label_from_match=True, eligibility=(("ددسن", "داتسن", "داتسون", "datsun"), ("غمارتين", "double cab")), expansions=("ددسن غمارتين", "داتسن غمارتين", "Datsun double cab")),
@@ -928,6 +955,50 @@ def _head_matches(normalized: str) -> list[HeadMatch]:
             for start in range(len(words)):
                 if not _phrase_at(words, start, phrase):
                     continue
+                if (
+                    head.model == "Accent" and phrase == normalize("accent")
+                ) or (
+                    head.model == "Charger" and phrase == normalize("charger")
+                ):
+                    vehicle_context = bool(
+                        _YEAR.search(normalized)
+                        or any(
+                            cue in words
+                            for cue in (
+                                "سياره",
+                                "سيارات",
+                                "مركبه",
+                                "موتر",
+                                "هيونداي",
+                                "hyundai",
+                                "دودج",
+                                "dodge",
+                            )
+                        )
+                    )
+                    if not vehicle_context:
+                        continue
+                if head.model == "Land Cruiser 70" and phrase == normalize("ربع"):
+                    vehicle_context = bool(
+                        _YEAR.search(normalized)
+                        or any(
+                            cue in words
+                            for cue in (
+                                "سياره",
+                                "سيارات",
+                                "مركبه",
+                                "موتر",
+                                "تويوتا",
+                                "toyota",
+                                "لاندكروزر",
+                                "لاند",
+                                "land",
+                                "cruiser",
+                            )
+                        )
+                    )
+                    if not vehicle_context:
+                        continue
                 if head.subcategory == "vehicle_transport":
                     sale_cue = any(cue in normalized.split() for cue in ("للبيع", "بيع", "شراء", "مطلوب"))
                     transport_cue = any(cue in normalized.split() for cue in ("نقل", "انقل", "تنقل", "ينقل", "توصيل", "سحب", "ونش", "tow", "towing"))

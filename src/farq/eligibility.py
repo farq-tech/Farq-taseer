@@ -279,10 +279,44 @@ _MAP_LISTING = ("جوجل", "قوقل", "google")
 _MAP_THING = ("خريطه", "موقع", "نشاط", "حساب", "maps")
 _SALE_WORDS = ("للبيع", "بيع", "البيع")
 _GLAZING_NOT = ("تنظيف", "غسيل", "غرفه نوم", "طاوله", "مرايه", "سياره", "عطر", "جوال", "شاشه", "نظاره")
-_LEAD_IN = {"للبيع", "بيع", "تويوتا", "toyota", "نيسان", "nissan", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد"}
+_LEAD_IN = {
+    "للبيع", "بيع", "سياره", "مستعمل", "مستعمله", "فل", "كامل", "اوبشن", "استاندر", "نص", "هايبرد",
+    "تويوتا", "toyota", "نيسان", "nissan", "هيونداي", "hyundai", "هوندا", "honda",
+    "جمس", "gmc", "جي", "ام", "سي", "مرسيدس", "بنز", "mercedes", "benz", "لكزس", "lexus",
+    "شفروليه", "شيفروليه", "chevrolet", "chevy", "فورد", "ford", "دودج", "dodge", "كيا", "kia",
+    "مازدا", "mazda", "بي", "دبليو", "bmw", "اودي", "audi", "بورش", "بورشه", "porsche",
+    "تسلا", "tesla", "رام", "ram",
+}
 _MODEL_TOKENS = {
     "Camry": ("كامري", "camry"),
     "Land Cruiser": ("لاندكروزر", "لاند كروزر", "land cruiser"),
+    "Corolla": ("كورولا", "corolla"),
+    "Elantra": ("النترا", "elantra"),
+    "Sonata": ("سوناتا", "sonata"),
+    "Accord": ("اكورد", "accord"),
+    "Civic": ("سيفيك", "civic"),
+    "Patrol": ("باترول", "patrol"),
+    "Yukon": ("يوكن", "yukon"),
+    "E200": ("e200",),
+    "ES": ("es",),
+    "LX570": ("lx570",),
+    "Land Cruiser 70": ("شاص", "ربع", "land cruiser 70", "70 series"),
+    "Land Cruiser Prado": ("برادو", "prado", "land cruiser prado"),
+    "FJ Cruiser": ("اف جي", "fj cruiser"),
+    "Accent": ("اكسنت", "accent"),
+    "Azera": ("ازيرا", "azera"),
+    "Tahoe": ("تاهو", "tahoe"),
+    "Sierra": ("سييرا", "sierra"),
+    "Ram 1500": ("1500",),
+    "Mustang": ("موستنق", "موستنج", "mustang"),
+    "Charger": ("تشارجر", "charger"),
+    "K5": ("k5",),
+    "Altima": ("التيما", "altima"),
+    "Mazda 6": ("مازدا 6", "mazda 6", "6"),
+    "520": ("520",),
+    "A6": ("a6",),
+    "Cayenne": ("كايين", "cayenne"),
+    "Model 3": ("موديل 3", "model 3"),
     "Yaris": ("يارس", "yaris"),
     "Datsun": ("ددسن", "داتسن", "داتسون", "datsun"),
 }
@@ -531,8 +565,20 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             return False, ["year_mismatch"]
     if intent.type.value == "vehicle" and intent.subcategory.value in {"cars", "pickups"} and title:
         names = _MODEL_TOKENS.get(intent.model.value or "", ())
-        leading = [token for token in tokens(title) if token not in _LEAD_IN and not token.isdigit()]
-        if names and not any(contains_term(" ".join(leading[:1]), name) for name in names):
+        title_tokens = tokens(title)
+        leading = [
+            token
+            for index, token in enumerate(title_tokens)
+            if (
+                token not in _LEAD_IN
+                or (token == "جي" and index > 0 and title_tokens[index - 1] == "اف")
+            )
+            and not re.fullmatch(r"(?:19|20)\d{2}", token)
+        ]
+        if names and not any(
+            contains_term(" ".join(leading[: len(normalize(name).split())]), name)
+            for name in names
+        ):
             return False, ["part_not_vehicle"]
         if intent.subcategory.value == "cars" and any(contains_term(title, part) for part in _CAR_PARTS):
             return False, ["part_not_vehicle"]
