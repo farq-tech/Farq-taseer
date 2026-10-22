@@ -1198,19 +1198,6 @@ def _quantity(normalized: str, original: str) -> tuple[FieldValue, str | None]:
             (price_range.start(group), price_range.end(group))
             for group in (1, 3)
         )
-    door_counts = []
-    if has_word(normalized, ("باب", "ابواب", "doors", "door")):
-        for match in _DOOR_MATERIAL_COUNT.finditer(normalized):
-            count_start = match.start("count_before")
-            if any(start <= count_start < end for start, end in price_amount_spans):
-                continue
-            amount = int(match.group("count_before"))
-            material = match.group("material_after")
-            if 0 < amount < 10000:
-                door_counts.append((material.lower(), amount, match.group(0)))
-    if len(door_counts) == 1:
-        material, amount, evidence = door_counts[0]
-        return known(amount, 0.9, evidence), f"باب {material.upper()}"
     count = _QUANTITY_COUNT.search(normalized)
     count_is_price = count and any(
         start <= count.start(2) < end for start, end in price_amount_spans
@@ -1836,6 +1823,8 @@ def analyze(query: str) -> IntentResponse:
     if any(item.subcategory == "wardrobe" for item in matched):
         intent.attributes.append(known("wardrobe", 0.7, "دولاب"))
     intent.quantity, intent.quantity_unit = _quantity(normalized, original)
+    if door_material and intent.quantity.known and intent.quantity_unit == "باب":
+        intent.quantity_unit = f"باب {door_material.upper()}"
     price_range = _PRICE_RANGE.search(normalized)
     price_max = _price_bound(_PRICE_MAX, normalized)
     price_min = _price_bound(_PRICE_MIN, normalized)
@@ -2378,7 +2367,7 @@ def split_need_texts(query: str) -> list[str]:
                 door_counts[material.lower()].append(amount)
         if all(len(door_counts[material]) == 1 for material in ("pvc", "wpc")):
             return [
-                f"אبواب {material.upper()} {door_counts[material][0]} {city}".strip()
+                f"{door_counts[material][0]} باب {material.upper()} {city}".strip()
                 for material in ("pvc", "wpc")
             ]
     parts: list[str] = []
