@@ -311,6 +311,22 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     elif preserve_functioning_sale:
         # Keep the item's rule-derived identity when the model mistakes «شغالة» for hiring.
         intent.eligibility_groups = rule_groups
+    elif intent.understood and intent.subcategory.known and rule_groups:
+        # A known subcategory has rule-built identity groups. The model may add an
+        # independent constraint, but it must not replace the requested task with a
+        # broader material-only reading (for example, signs made of steel for railings).
+        merged_groups = [list(group) for group in rule_groups]
+        rule_keys = [{normalize(word) for word in group if normalize(word)} for group in rule_groups]
+        for group in read_groups:
+            group_keys = {normalize(word) for word in group if normalize(word)}
+            overlaps = [index for index, keys in enumerate(rule_keys) if group_keys & keys]
+            if len(overlaps) == 1:
+                target = merged_groups[overlaps[0]]
+                existing = {normalize(word) for word in target}
+                target.extend(word for word in group if normalize(word) and normalize(word) not in existing)
+            elif not overlaps and group_keys:
+                merged_groups.append(list(group))
+        intent.eligibility_groups = merged_groups
     else:
         intent.eligibility_groups = read_groups
     # Every group must hit. The rules relax this for their long tail because they only have
