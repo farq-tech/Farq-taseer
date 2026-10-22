@@ -125,7 +125,15 @@ _IPAD_FAMILY = re.compile(r"(?:ايباد|ipad)\s*(?:(pro|برو|air|اير|mini
 _IPAD_CHIP = re.compile(r"(?<![a-z0-9])m\s*([2-5])(?!\d)", re.IGNORECASE)
 _IPAD_SCREEN = re.compile(r"(?<!\d)(\d{1,2}(?:\.\d)?)\s*(?:انش|بوصه|inch(?:es)?)(?![a-z])", re.IGNORECASE)
 _IPAD_STORAGE = re.compile(r"(?<!\d)(16|32|64|128|256|512|1024|2048)\s*(?:gb|جيجا(?:بايت)?|جيجا\s+بايت|قيقا(?:بايت)?|قيقا\s+بايت)(?![\w])", re.IGNORECASE)
-_PRICE_AMOUNT = r"([0-9]+(?:(?:,|\s|٬)[0-9]{3})*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?"
+_PRICE_NUMBER = r"[0-9]+(?:(?:,|\s|٬)[0-9]{3})*(?:[.٫][0-9]+)?"
+_PRICE_MULTIPLIER = r"(ألف|الف|مليون)"
+_PRICE_AMOUNT = rf"({_PRICE_NUMBER})(?:\s*{_PRICE_MULTIPLIER})?"
+_PRICE_RANGE = re.compile(
+    rf"(?:السعر|سعر|بسعر|price)\s+(?:(?:يبدا|تبدأ)\s+)?(?:من\s+)?"
+    rf"({_PRICE_NUMBER})(?:\s*{_PRICE_MULTIPLIER})?"
+    rf"\s+(?:الي|الى|حتي|حتى|to)\s+"
+    rf"({_PRICE_NUMBER})(?:\s*{_PRICE_MULTIPLIER})?"
+)
 _PRICE_MAX = re.compile(
     rf"(?:اقل\s+من|تحت|بسعر|بحد(?:ود)?\s*(?:اقص[ىي]|اعل[ىي])?|ما\s*(?:يتعدى|تتعدى|يتعدي|تتعدي|يزيد\s+عن|تزيد\s+عن)|لا\s*(?:يتجاوز|تتجاوز|يتعدي|تتعدي)|ميزانيتي|بميزانيه)\s*{_PRICE_AMOUNT}"
 )
@@ -1181,6 +1189,11 @@ def _quantity(normalized: str, original: str) -> tuple[FieldValue, str | None]:
         for pattern in (_PRICE_MAX, _PRICE_MIN)
         for match in pattern.finditer(normalized)
     ]
+    for price_range in _PRICE_RANGE.finditer(normalized):
+        price_amount_spans.extend(
+            (price_range.start(group), price_range.end(group))
+            for group in (1, 3)
+        )
     count = _QUANTITY_COUNT.search(normalized)
     count_is_price = count and any(
         start <= count.start(2) < end for start, end in price_amount_spans
@@ -1222,14 +1235,27 @@ def _price_bound(pattern: re.Pattern[str], normalized: str) -> re.Match[str] | N
 
 
 def _price_bound_value(match: re.Match[str]) -> int:
-    amount = match.group(1).replace(",", "").replace("٬", "").replace(" ", "").replace("٫", ".")
+    return _price_amount_value(match.group(1), match.group(2))
+
+
+def _price_amount_value(amount: str, multiplier: str | None) -> int:
+    amount = amount.replace(",", "").replace("٬", "").replace(" ", "").replace("٫", ".")
     value = float(amount)
-    multiplier = normalize(match.group(2) or "")
+    multiplier = normalize(multiplier or "")
     if multiplier == "الف":
         value *= 1_000
     elif multiplier == "مليون":
         value *= 1_000_000
     return int(value)
+
+
+def _share_price_range_multiplier(unitless_amount: str, stated_amount: str) -> bool:
+    unitless_value = _price_amount_value(unitless_amount, None)
+    stated_value = _price_amount_value(stated_amount, None)
+    if unitless_value <= 0 or stated_value <= 0:
+        return False
+    ratio = unitless_value / stated_value
+    return 0.1 <= ratio <= 10
 
 
 def _segment_text(original: str) -> str:
@@ -1783,12 +1809,39 @@ def analyze(query: str) -> IntentResponse:
     if any(item.subcategory == "wardrobe" for item in matched):
         intent.attributes.append(known("wardrobe", 0.7, "دولاب"))
     intent.quantity, intent.quantity_unit = _quantity(normalized, original)
+    price_range = _PRICE_RANGE.search(normalized)
     price_max = _price_bound(_PRICE_MAX, normalized)
-    if price_max:
-        intent.price_max = known(_price_bound_value(price_max), 0.75, price_max.group(0))
     price_min = _price_bound(_PRICE_MIN, normalized)
-    if price_min:
-        intent.price_min = known(_price_bound_value(price_min), 0.75, price_min.group(0))
+    if price_range:
+        min_multiplier = price_range.group(2)
+        max_multiplier = price_range.group(4)
+        if (
+            min_multiplier
+            and not max_multiplier
+            and _share_price_range_multiplier(price_range.group(3), price_range.group(1))
+        ):
+            max_multiplier = min_multiplier
+        elif (
+            max_multiplier
+            and not min_multiplier
+            and _share_price_range_multiplier(price_range.group(1), price_range.group(3))
+        ):
+            min_multiplier = max_multiplier
+        intent.price_min = known(
+            _price_amount_value(price_range.group(1), min_multiplier),
+            0.75,
+            price_range.group(0),
+        )
+        intent.price_max = known(
+            _price_amount_value(price_range.group(3), max_multiplier),
+            0.75,
+            price_range.group(0),
+        )
+    else:
+        if price_max:
+            intent.price_max = known(_price_bound_value(price_max), 0.75, price_max.group(0))
+        if price_min:
+            intent.price_min = known(_price_bound_value(price_min), 0.75, price_min.group(0))
     if property_transaction == "ambiguous":
         intent.missing_decision_information.append("transaction_type")
         if head.location_sensitivity == LocationSensitivity.REQUIRED and not intent.location_city.known:
@@ -2098,7 +2151,11 @@ def analyze(query: str) -> IntentResponse:
         intent.title_groups = [[motorcycle_part], *intent.title_groups]
         search_label = query_label
         expansions = (query_label, f"قطع غيار {context or 'دباب'}", f"{part_shown} دباب")
-    price_bound_matches = [price for price in (price_min, price_max) if price]
+    price_bound_matches = (
+        [price_range]
+        if price_range
+        else [price for price in (price_min, price_max) if price]
+    )
     price_words = {
         word
         for price in price_bound_matches
@@ -2112,7 +2169,9 @@ def analyze(query: str) -> IntentResponse:
         # Use the explicit budget for eligibility; sending «بحدود 50 ألف» to Haraj
         # makes it search that text instead of the vehicle words and loses matching ads.
         search_label = " ".join(
-            word for word in search_label.split() if normalize(word) not in price_words
+            word
+            for word in search_label.split()
+            if not (set(normalize(word).split()) & price_words)
         )
     intent.search_terms = expand(search_label, expansions, groups, shown_city or None)
     if route and head.subcategory in {"moving", "goods_transport", "vehicle_transport", "passenger_transport"}:
@@ -2129,7 +2188,7 @@ def analyze(query: str) -> IntentResponse:
         if set(segment_tokens) - label_tokens:
             exact_segment = (
                 intent.segment_text
-                if intent.result_unit == ResultUnit.SERVICE_PROVIDER
+                if intent.result_unit == ResultUnit.SERVICE_PROVIDER and not price_words
                 else " ".join(_display_word(original, word) for word in segment_tokens)
             )
             if exact_segment and exact_segment not in intent.search_terms:
@@ -2139,7 +2198,8 @@ def analyze(query: str) -> IntentResponse:
     represented_numbers.update(
         number
         for price in price_bound_matches
-        for number in re.findall(r"\d+", to_ascii_digits(price.group(1)))
+        for group in ((1, 3) if price is price_range else (1,))
+        for number in re.findall(r"\d+", to_ascii_digits(price.group(group)))
     )
     if segment and asked_numbers - represented_numbers:
         exact_segment = " ".join(segment.split())
