@@ -72,3 +72,26 @@ def test_datsun_pickup_search_does_not_return_parts_or_sold_ads(title, expected)
     ad = Ad(id="listing", title=title, seller=seller)
 
     assert decide(intent, ad, seller)[0] is expected
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("تم البيع والله يبارك للجميع", False),
+        ("لم يتم البيع", True),
+        ("ما تم البيع", True),
+        ("لم يتم بيعها", True),
+        ("ما انباع", True),
+        ("السيارة نظيفة وتم البيع", False),
+    ],
+)
+def test_sold_marker_in_description_excludes_listing_without_misreading_negation(description, expected):
+    intent = analyze("مطلوب ددسن غمارتين")
+    seller = Seller(id="seller", name="معلن")
+    ad = Ad(id="listing", title="ددسن غمارتين للبيع", description=description, seller=seller)
+
+    accepted, reasons = decide(intent, ad, seller)
+
+    assert accepted is expected
+    if not expected:
+        assert reasons == ["already_sold"]
