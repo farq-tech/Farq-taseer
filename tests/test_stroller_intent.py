@@ -448,3 +448,16 @@ def test_english_plural_stroller_business_descriptions_are_classified():
     result = read_business("Babyzen YOYO strollers and baby strollers")
 
     assert any(item["key"] == "strollers" for item in result["products"])
+
+
+@pytest.mark.parametrize(
+    "queries,configured,expected",
+    [
+        (["عربية أطفال"], 7, 7),
+        (["معدات منزلية"], 9, 9),
+        (["Babyzen YOYO"], 7, 8),
+        (["Babyzen YOYO"], 9, 9),
+    ],
+)
+def test_targeted_yoyo_query_budget_preserves_configured_limits(queries, configured, expected):
+    assert haraj_query_budget(queries, configured) == expected
