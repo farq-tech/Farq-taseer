@@ -1923,6 +1923,11 @@ class PgStore:
             row = conn.execute("select owner_user_id from requests where id = %s", (request_id,)).fetchone()
         return None if row is None else row["owner_user_id"]
 
+    def request_need(self, request_id: str) -> str | None:
+        with self._pool.connection() as conn:
+            row = conn.execute("select need, original_text from requests where id = %s", (request_id,)).fetchone()
+        return None if row is None else (row["need"] or row["original_text"])
+
     def enqueue_customer_notification(self, *, user_id: str, event: str, dedupe_key: str, title: str, body: str | None,
                                       url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
         notification_id = uuid4().hex

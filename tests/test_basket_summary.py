@@ -10,6 +10,7 @@
 """
 
 from pathlib import Path
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -304,6 +305,9 @@ def test_reply_notification_records_a_push_that_a_device_took_and_never_repeats(
     request_id, tokens = request_with(api, headers, [("1", "أ")])
     quote(api, tokens["1"], 100)
     [row] = api.get("/v1/notifications", headers=headers).json()["notifications"]
+    payload = json.loads(sent[0]["data"])
+    assert payload["title"] == "رسالة جديدة من أ"
+    assert payload["body"].startswith("طلبك: مكيف سبليت ·")
     assert row["delivery_state"] == "sent" and row["sent_at"] and row["delivered"]["web_push"] == 1
     assert len(sent) == 1
     # The same message notified again (a retried task) is not a second notification.

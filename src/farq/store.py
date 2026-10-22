@@ -2975,6 +2975,10 @@ class Store:
         row = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
         return None if row is None else row["owner_user_id"]
 
+    def request_need(self, request_id: str) -> str | None:
+        row = self._connection.execute("select need, original_text from requests where id = ?", (request_id,)).fetchone()
+        return None if row is None else (row["need"] or row["original_text"])
+
     def enqueue_customer_notification(self, *, user_id: str, event: str, dedupe_key: str, title: str, body: str | None,
                                       url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
         """The in-app row, written before any push is tried. None when this event was already queued."""
