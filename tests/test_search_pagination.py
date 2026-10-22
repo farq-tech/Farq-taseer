@@ -181,10 +181,45 @@ def test_cached_search_keeps_its_continuation_and_owner(tmp_path,monkeypatch):
     api,pages=make_api(tmp_path,monkeypatch)
     first=api.post('/v1/search',json={'query':'سباك بالرياض'}).json()
     cached=api.post('/v1/search',json={'query':'سباك بالرياض'}).json()
-    assert first['next_page'] == 4 and cached['next_page'] == 4
-    body={'query':'سباك بالرياض','page':4,'continuation_trace':cached['trace_id']}
+    assert first['next_page'] == 2 and cached['next_page'] == 2
+    assert pages == [1]
+    body={'query':'سباك بالرياض','page':2,'continuation_trace':cached['trace_id']}
     next_page=api.post('/v1/search',json=body)
     assert next_page.status_code == 200
-    assert next_page.json()['next_page'] == 7
-    assert pages == [1,2,3,4,5,6]
+    assert next_page.json()['next_page'] == 5
+    assert pages == [1,2,3,4]
     assert api.get('/v1/search/'+cached['trace_id']+'/availability').status_code==200
+
+
+def test_initial_search_is_bounded_and_continuation_reaches_remaining_pages(tmp_path, monkeypatch):
+    api, pages = make_api(tmp_path, monkeypatch)
+    configs = []
+    def post(self, variables):
+        configs.append((self.config.live_max_pages, self.config.live_concurrency))
+        page = variables['page']
+        pages.append(page)
+        return {"items": [{"id": page, "title": "سباك تأسيس وصيانة", "authorId": page + 100,
+                "authorUsername": "مقدم خدمة", "city": "الرياض", "status": True}],
+                "pageInfo": {"hasNextPage": page < 7}}
+    monkeypatch.setattr(HarajLiveClient, "_post", post)
+
+    first_events = [json.loads(line) for line in api.post(
+        '/v1/search/stream', json={'query': 'سباك بالرياض'}
+    ).text.splitlines()]
+    first = first_events[-1]
+    assert pages == [1]
+    assert configs == [(1, 4)]
+    assert first['next_page'] == 2
+
+    second_events = [json.loads(line) for line in api.post('/v1/search/stream', json={
+        'query': 'سباك بالرياض', 'page': 2, 'continuation_trace': first['trace_id']
+    }).text.splitlines()]
+    second = second_events[-1]
+    assert pages == [1, 2, 3, 4]
+    assert second['next_page'] == 5
+
+    last = api.post('/v1/search', json={
+        'query': 'سباك بالرياض', 'page': 5, 'continuation_trace': first['trace_id']
+    }).json()
+    assert pages == [1, 2, 3, 4, 5, 6, 7]
+    assert last['next_page'] is None
