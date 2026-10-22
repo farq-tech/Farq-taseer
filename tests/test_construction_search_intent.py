@@ -68,6 +68,7 @@ def test_intent_model_cannot_drop_the_explicit_construction_work_item():
     )
 
     assert refined.need == "مقاول يبني ملحق في جدة"
+    assert any("ملحق" in term for term in refined.search_terms)
 
 
 def test_installing_a_wpc_door_stays_a_service_request():

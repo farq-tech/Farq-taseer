@@ -312,7 +312,12 @@ def _apply(intent: IntentResponse, read: dict) -> IntentResponse:
     terms: list[str] = []
     search_terms = (
         rule_terms
-        if intent.identity_alternatives or preserve_service_route or preserve_functioning_sale
+        if (
+            intent.identity_alternatives
+            or preserve_service_route
+            or preserve_construction_need
+            or preserve_functioning_sale
+        )
         else [*rule_terms, *read["search_terms"]]
         if preserve_identity or preserve_service_route
         else read["search_terms"]
