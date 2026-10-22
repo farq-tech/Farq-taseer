@@ -69,6 +69,42 @@ def test_listing_details_read_the_public_ad_page():
     assert [item.rsplit("/", 1)[-1] for item in details["images"]] == ["1350x1800_A.jpg-700.webp", "1350x1800_B.jpg-700.webp"]
 
 
+def test_listing_details_accept_matching_haraj_thing_summary_without_inventing_price():
+    url = "https://haraj.com.sa/11190601023/stroller/"
+    page = '''<script type="application/ld+json" id="json-ld-post-details">{
+      "@context":"https://schema.org","@type":"Thing",
+      "name":"عربية أطفال يويو أصلية",
+      "description":"عربية أطفال يويو أصلية ونظيفة، التواصل للجادين",
+      "image":["https://postcdn.haraj.com.sa/userfiles30/2026-10-15/stroller.jpg-700.webp"],
+      "url":"https://haraj.com.sa/11190601023/stroller/"
+    }</script>'''
+
+    details = listing_details(url, opener=_page(page, url), now=1.0)
+
+    assert details["state"] == "available"
+    assert details["detail_source"] == "structured_summary"
+    assert details["title"] == "عربية أطفال يويو أصلية"
+    assert details["description"].startswith("عربية أطفال يويو أصلية ونظيفة")
+    assert details["price_amount"] is None
+    assert details["price_currency"] is None
+    assert details["city"] is None
+    assert details["posted_at"] is None
+    assert details["images"] == ["https://postcdn.haraj.com.sa/userfiles30/2026-10-15/stroller.jpg-700.webp"]
+
+
+def test_listing_details_reject_thing_summary_for_a_different_ad_id():
+    requested = "https://haraj.com.sa/11190601024/stroller/"
+    page = '''<script type="application/ld+json">{
+      "@type":"Thing","name":"عربية أطفال يويو",
+      "description":"إعلان آخر",
+      "url":"https://haraj.com.sa/11190601025/stroller/"
+    }</script>'''
+
+    assert listing_details(requested, opener=_page(page, requested), now=1.0) == {
+        "state": "unavailable", "url": requested,
+    }
+
+
 def test_the_gallery_keeps_the_order_the_seller_gave_his_photos():
     # B is the first photo on this page (not alphabetical): it stays first.
     html = '<img src="https://postcdn.haraj.com.sa/userfiles30/2026-10-15/1350x1800_B.jpg-700.webp">' + _AD_PAGE

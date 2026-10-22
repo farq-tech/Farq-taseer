@@ -70,7 +70,10 @@ def listing_images(url: str, opener=None, now: float | None = None) -> list[str]
     return list(ordered)
 
 
-_PRODUCT_LD = re.compile(r'<script type="application/ld\+json"[^>]*>(.*?)</script>', re.S)
+_JSON_LD = re.compile(
+    r'<script\b(?=[^>]*\btype=["\']application/ld\+json["\'])[^>]*>(.*?)</script\s*>',
+    re.I | re.S,
+)
 _POST_DATE = re.compile(r'postDate\\?"\s*,\s*(\d{9,11})')
 _DETAILS: dict[str, tuple[float, dict]] = {}
 
@@ -90,14 +93,37 @@ def _gallery(html: str) -> list[str]:
     return list(best.values())
 
 
-def _product(html: str) -> dict | None:
-    for block in _PRODUCT_LD.findall(html):
+def _structured_listing(html: str, requested_url: str) -> tuple[dict, str] | None:
+    products: list[dict] = []
+    summaries: list[dict] = []
+    requested_ids = re.findall(
+        r"(?:^|/)(\d{7,})(?:/|$)",
+        urllib.parse.urlsplit(requested_url).path,
+    )
+    requested_id = requested_ids[0] if requested_ids else None
+    for block in _JSON_LD.findall(html):
         try:
             data = json.loads(block)
         except ValueError:
             continue
-        if isinstance(data, dict) and data.get("@type") == "Product":
-            return data
+        if not isinstance(data, dict):
+            continue
+        kind = data.get("@type")
+        if kind == "Product" and data.get("name"):
+            products.append(data)
+        elif kind == "Thing" and data.get("name") and data.get("description"):
+            listed_url = data.get("url")
+            listed_ids = (
+                re.findall(r"(?:^|/)(\d{7,})(?:/|$)", urllib.parse.urlsplit(listed_url).path)
+                if isinstance(listed_url, str)
+                else []
+            )
+            if requested_id and requested_id in listed_ids:
+                summaries.append(data)
+    if products:
+        return products[0], "product"
+    if summaries:
+        return summaries[0], "structured_summary"
     return None
 
 
@@ -132,10 +158,11 @@ def listing_details(url: str, opener=None, now: float | None = None, refresh: bo
     except (HTTPError, URLError, TimeoutError, ValueError, OSError):
         # Not cached: an outage is retried on the next open, a deleted ad answers the same.
         return unavailable
-    product = _product(html)
-    if product is None or not product.get("name"):
+    structured = _structured_listing(html, url)
+    if structured is None:
         _DETAILS[url] = (moment, unavailable)
         return dict(unavailable)
+    product, detail_source = structured
     offer = product.get("offers") if isinstance(product.get("offers"), dict) else {}
     place = offer.get("availableAtOrFrom") if isinstance(offer.get("availableAtOrFrom"), dict) else {}
     raw_price = offer.get("price")
@@ -162,6 +189,7 @@ def listing_details(url: str, opener=None, now: float | None = None, refresh: bo
     description = product.get("description")
     details = {
         "state": "available",
+        "detail_source": detail_source,
         "url": url,
         "title": html_lib.unescape(str(product["name"])).strip(),
         "price_amount": displayed_amount,
