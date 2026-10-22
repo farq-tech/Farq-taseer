@@ -92,7 +92,7 @@ class IntentResponse(ContractModel):
     identity_alternatives: list[str] = Field(default_factory=list, exclude=True)
     location_city: FieldValue = Field(default_factory=unknown)
     location_district: FieldValue = Field(default_factory=unknown)
-    # "نقل عفش من الرياض للدمام": location_city is the origin, this is where it goes.
+    # "نقل عفش من الرياض للدمام": origin is location_city; destination may be a city or Haraj region.
     destination_city: FieldValue = Field(default_factory=unknown)
     location_sensitivity: LocationSensitivity = LocationSensitivity.PREFERRED
     missing_decision_information: list[str] = Field(default_factory=list)
