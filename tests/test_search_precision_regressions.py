@@ -26,6 +26,63 @@ def test_arabic_amount_after_bisaar_is_a_budget_and_not_a_search_term():
     )
 
 
+def test_explicit_arabic_price_range_is_not_read_as_a_quantity_or_search_text():
+    intent = analyze("أبواب PVC السعر يبدأ من 300 إلى 400 داخل الرياض")
+    grouped_amounts = analyze("أبواب PVC السعر من ١,٥٠٠ إلى ٢,٠٠٠ ريال في الرياض")
+    upper_multiplier = analyze("أبواب PVC السعر من 50 إلى 60 ألف في الرياض")
+    lower_multiplier = analyze("أبواب PVC السعر من 50 ألف إلى 60 في الرياض")
+    near_thousand = analyze("أبواب PVC السعر من 900 إلى 1 ألف في الرياض")
+    explicit_upper = analyze("أبواب PVC السعر من 50 ألف إلى 60000 في الرياض")
+    seller = Seller(id="doors", name="بائع أبواب", city="الرياض")
+
+    assert intent.price_min.value == 300
+    assert intent.price_max.value == 400
+    assert intent.quantity.known is False
+    assert intent.quantity_unit is None
+    assert any("أبواب PVC" in term and "الرياض" in term for term in intent.search_terms)
+    assert not any(
+        token in normalize(" ".join(intent.search_terms)).split()
+        for token in ("السعر", "يبدا", "300", "400")
+    )
+    within_range = Ad(
+        id="within-range", title="أبواب PVC جديدة", city="الرياض", price_amount=350, seller=seller
+    )
+    below_range = Ad(
+        id="below-range", title="أبواب PVC جديدة", city="الرياض", price_amount=250, seller=seller
+    )
+    above_range = Ad(
+        id="above-range", title="أبواب PVC جديدة", city="الرياض", price_amount=450, seller=seller
+    )
+    assert decide(intent, within_range, seller)[0] is True
+    assert decide(intent, below_range, seller) == (False, ["under_price_min"])
+    assert decide(intent, above_range, seller) == (False, ["over_price_max"])
+    assert grouped_amounts.price_min.value == 1500
+    assert grouped_amounts.price_max.value == 2000
+    assert grouped_amounts.quantity.known is False
+    assert not any(
+        any(character.isdigit() for character in term)
+        for term in grouped_amounts.search_terms
+    )
+    assert upper_multiplier.price_min.value == 50_000
+    assert upper_multiplier.price_max.value == 60_000
+    assert lower_multiplier.price_min.value == 50_000
+    assert lower_multiplier.price_max.value == 60_000
+    assert near_thousand.price_min.value == 900
+    assert near_thousand.price_max.value == 1_000
+    assert explicit_upper.price_min.value == 50_000
+    assert explicit_upper.price_max.value == 60_000
+
+
+def test_service_search_does_not_reinsert_price_range_from_exact_segment():
+    intent = analyze("أبي نقل عفش السعر يبدأ من 300 إلى 400 داخل الرياض")
+    terms = normalize(" ".join(intent.search_terms)).split()
+
+    assert intent.price_min.value == 300
+    assert intent.price_max.value == 400
+    assert any("نقل عفش" in term for term in intent.search_terms)
+    assert not set(terms) & {"السعر", "يبدا", "300", "400"}
+
+
 @pytest.mark.parametrize(
     "query, expected_budget",
     [
