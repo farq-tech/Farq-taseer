@@ -252,6 +252,9 @@ const calls = [];
 let renders = 0;
 const api = async (path) => {
   calls.push(path);
+  if (path.startsWith('/v1/listings/images?')) {
+    return {images: decodeURIComponent(path).includes('/1/post/') ? ['image-route-one'] : ['image-route-two']};
+  }
   if (decodeURIComponent(path).includes('/1/post/')) return {
     state: 'available', title: 'عنوان الإعلان الأصلي', description: 'الوصف الأصلي كاملًا',
     city: 'الرياض', posted_at: '2026-10-15T00:00:00Z', price_amount: 300,
@@ -272,15 +275,16 @@ const imageSources = (ad) => ad?.image_urls || [];
   assert.equal(result.ad.description, 'الوصف الأصلي كاملًا');
   assert.equal(result.ad.price_evidence.amount, 300);
   assert.equal(result.ad.listing_details_state, 'available');
-  assert.deepEqual(state.gallery, ['haraj-photo-b', 'haraj-photo-a']);
+  assert.deepEqual(state.gallery, ['image-route-one', 'haraj-photo-b', 'haraj-photo-a']);
 
   await openResult('second');
   assert.equal(fallback.ad.title, 'عنوان البحث');
   assert.equal(fallback.ad.description, 'الوصف الموجود في البحث');
   assert.equal(fallback.ad.listing_details_state, 'unavailable');
-  assert.deepEqual(state.gallery, ['thumb-2']);
-  assert.equal(calls.length, 2);
-  assert.ok(calls.every((path) => path.startsWith('/v1/listings/details?url=')));
+  assert.deepEqual(state.gallery, ['image-route-two', 'thumb-2']);
+  assert.equal(calls.length, 4);
+  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/details?url=')).length, 2);
+  assert.equal(calls.filter((path) => path.startsWith('/v1/listings/images?url=')).length, 2);
   assert.ok(renders >= 4);
 })().catch((error) => { console.error(error); process.exit(1); });
 """
