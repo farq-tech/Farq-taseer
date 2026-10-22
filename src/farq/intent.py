@@ -856,7 +856,7 @@ HEADS: tuple[Head, ...] = (
     _head(type="service", category="services", subcategory="cctv", result_unit=ResultUnit.HYBRID, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("كاميرات مراقبة", "كاميرات مراقبه", "كاميرا مراقبة", "كاميرا مراقبه", "cctv"), label="كاميرات مراقبة", verbs=("تركيب",), objects=("كاميرا", "كاميرات"), eligibility=(("كاميرا", "كاميرات"), ("مراقبه", "مراقبة", "cctv")), expansions=("كاميرات مراقبة", "تركيب كاميرات مراقبة")),
     # Require both a household-worker cue and an hourly cue so “working” appliances do not match.
     _head(type="service", category="services", subcategory="cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("شغالة بالساعة", "شغالة تجي بالساعة", "شغالات بالساعة", "عاملة منزلية بالساعة"), label="تنظيف بالساعة", label_from_match=True, eligibility=(("شغالة", "شغالات", "عاملة منزلية", "عاملات منزلية", "عاملة تنظيف", "عاملات تنظيف"), ("بالساعة", "تجي بالساعة")), title_groups=(("شغالة", "شغالات", "عاملة منزلية", "عاملات منزلية", "عاملة تنظيف", "عاملات تنظيف"),), expansions=("شغالة بالساعة", "شغالات بالساعة", "عاملة نظافة بالساعة", "عاملات تنظيف بالساعة", "تنظيف منازل بالساعة")),
-    _head(type="service", category="services", subcategory="cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تنظيف منازل", "تنظيف شقق", "تنظيف فلل", "تنظيف خزانات", "تنظيف كنب", "تنظيف سجاد", "تنظيف مجالس", "تنظيف واجهات", "شركة تنظيف", "عاملة نظافة", "عامل نظافة", "عاملة تنظيف", "عامل تنظيف", "عمالة نظافة", "تنظيف بالساعة"), label="تنظيف منازل", label_from_match=True, verbs=("تنظيف",), objects=("منزل", "منازل", "شقه", "شقق", "فله", "فلل", "خزان", "خزانات", "كنب", "سجاد", "موكيت", "مجالس", "واجهات", "بيت"), eligibility=(("تنظيف", "نظافه"),), title_groups=(("تنظيف", "نظافه"),), expansions=("شركة تنظيف", "تنظيف منازل", "عاملة نظافة بالساعة")),
+    _head(type="service", category="services", subcategory="cleaning", result_unit=ResultUnit.SERVICE_PROVIDER, location_sensitivity=LocationSensitivity.REQUIRED, phrases=("تنظيف منازل", "تنظيف شقق", "تنظيف فلل", "تنظيف خزانات", "تنظيف كنب", "تنظيف سجاد", "تنظيف مجالس", "تنظيف واجهات", "شركة تنظيف", "عاملة نظافة", "عامل نظافة", "عاملة تنظيف", "عامل تنظيف", "عمالة نظافة", "تنظيف بالساعة"), label="تنظيف منازل", label_from_match=True, verbs=("تنظيف", "ينظف", "تنظف", "نظف", "يغسل", "غسل"), objects=("منزل", "منازل", "شقه", "شقق", "فله", "فلل", "خزان", "خزانات", "كنب", "سجاد", "موكيت", "مجالس", "واجهات", "بيت", "استراحة", "استراحات", "حمام", "حمامات", "مطبخ", "مطابخ"), eligibility=(("تنظيف", "نظافه"),), title_groups=(("تنظيف", "نظافه"),), expansions=("شركة تنظيف", "تنظيف منازل", "عاملة نظافة بالساعة")),
     _head(type="product", category="appliances", subcategory="ac_parts", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("قطع غيار مكيف", "قطع غيار مكيفات", "قطع غيار تكييف", "سبير مكيف", "سبير مكيفات", "ac spare parts", "air conditioner parts", "air conditioner spare parts"), label="قطع غيار مكيف", label_from_match=True, eligibility=(("مكيف", "مكيفات", "تكييف", "ac", "air conditioner"), ("قطع غيار", "سبير", "spare parts", "spare part", "parts", "كمبروسر", "كومبروسر", "كرت", "مروحة", "فلتر", "حساس", "ريموت")), title_groups=(("قطع غيار", "سبير", "spare parts", "spare part", "parts", "كمبروسر", "كومبروسر", "كرت", "مروحة", "فلتر", "حساس", "ريموت"),), expansions=("قطع غيار مكيف", "قطع غيار مكيفات", "سبير مكيف", "ac spare parts", "air conditioner parts")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف سبليت", "مكيف اسبليت", "سبليت"), eligibility=(("مكيف", "سبليت"),), expansions=("مكيف سبليت", "مكيف اسبليت")),
     _head(type="product", category="appliances", subcategory="ac", result_unit=ResultUnit.AD, location_sensitivity=LocationSensitivity.PREFERRED, phrases=("مكيف",), eligibility=(("مكيف",),), expansions=("مكيف", "مكيف سبليت")),
@@ -1170,6 +1170,15 @@ def _select_match(matches: list[HeadMatch], normalized: str | None = None) -> He
         service = airport_services
     elif find_route(normalized or "") and passenger_services:
         service = passenger_services
+    explicit_hvac = [
+        item
+        for item in service
+        if item.head.subcategory in {"ac_cleaning", "ac_repair", "ac_install"}
+        and item.phrase_index is not None
+    ]
+    if explicit_hvac:
+        # A named AC job outranks the generic verb/object leak fallback.
+        return max(explicit_hvac, key=lambda item: item.length)
     if generic_vehicle_product and _service_request(normalized) and not service and not product_cue:
         # «يسوي لي مظلة سيارات» mentions the use of the service, not a car for sale.
         return None
