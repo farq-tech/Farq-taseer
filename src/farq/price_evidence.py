@@ -14,12 +14,14 @@ from farq.text import normalize, to_ascii_digits
 PRICE_FLOOR = 50
 
 _EXPLICIT_PRICE = re.compile(
-    r"(?:سعر\s+البيع|السعر(?:\s+المطلوب)?|بسعر|سعر|للبيع(?:\s+ب)?)\s*(?:هو\s*)?[:：=]?\s*"
+    r"(?:سعر\s+البيع(?:\s+البيع)?|السعر(?:\s+المطلوب)?|بسعر|سعر|للبيع(?:\s+ب)?)\s*(?:هو\s*)?[:：=]?\s*"
     r"([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?",
     re.IGNORECASE,
 )
 _FIELD_VALUE = re.compile(r"^\s*([0-9][0-9,٬]*(?:[.٫][0-9]+)?)(?:\s*(ألف|الف|مليون))?\s*$")
 _PRICE_NUMBER = r"[0-9][0-9,٬]*(?:[.٫][0-9]+)?(?:\s*(?:ألف|الف|مليون))?"
+_SALE_PRICE_LINE = re.compile(rf"^\s*سعر\s+البيع(?:\s+البيع)?\s*[:：=]?\s*({_PRICE_NUMBER})\s*(?:ريال|ر\s*\.?\s*س|﷼|SAR|SR)?\s*$", re.IGNORECASE)
+_PURCHASE_PRICE_LINE = re.compile(rf"^\s*سعر\s+الشراء\s*[:：=]?\s*({_PRICE_NUMBER})\s*(?:ريال|ر\s*\.?\s*س|﷼|SAR|SR)?\s*$", re.IGNORECASE)
 _RANGE = re.compile(rf"\bمن\s*{_PRICE_NUMBER}\s*(?:إلى|الى|لين|حتى)\s*{_PRICE_NUMBER}\b")
 _FIELD_RANGE = re.compile(rf"^\s*{_PRICE_NUMBER}\s*(?:[-–—]|إلى|الى|لين|حتى)\s*{_PRICE_NUMBER}\s*$")
 _FIELD_MULTIPLE = re.compile(
@@ -170,6 +172,56 @@ def _historical_price_context(title: str, description: str) -> dict:
     return {}
 
 
+def _sale_price_matches_purchase_history(title: str, description: str, field_amount: float | None) -> bool:
+    """Trust a sale price only when it matches the field and purchase history is explicit."""
+    if field_amount is None:
+        return False
+
+    purchase_amounts: list[float] = []
+    sale_amounts: list[float] = []
+    historical_lines: list[str] = []
+    for text in (title, description):
+        for raw_line in text.splitlines():
+            for line in re.split(r"[;/]+", raw_line):
+                line = line.strip()
+                if not line:
+                    continue
+                purchase = _PURCHASE_PRICE_LINE.fullmatch(line)
+                sale = _SALE_PRICE_LINE.fullmatch(line)
+                if purchase:
+                    amount = _amount(purchase.group(1), purchase.group(2))
+                    if amount is None:
+                        return False
+                    purchase_amounts.append(amount)
+                    if _contains_any(line, _HISTORICAL):
+                        historical_lines.append(line)
+                    continue
+                if sale:
+                    amount = _amount(sale.group(1), sale.group(2))
+                    if amount is None:
+                        return False
+                    sale_amounts.append(amount)
+                    continue
+                if _contains_any(line, _HISTORICAL):
+                    return False
+                if _CURRENCY_AMOUNT.search(line):
+                    return False
+
+    if not purchase_amounts or not sale_amounts or not historical_lines:
+        return False
+    return all(amount == field_amount for amount in sale_amounts)
+
+
+def _is_purchase_price_line_amount(text: str, start: int, end: int) -> bool:
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line = text[line_start:line_end if line_end >= 0 else len(text)]
+    return any(
+        _PURCHASE_PRICE_LINE.fullmatch(segment.strip())
+        for segment in re.split(r"[;/]+", line)
+    )
+
+
 def _has_separate_additional_charge(text: str) -> bool:
     """Do not treat an item price as the total when the ad gives a separate fee."""
     for match in _CURRENCY_AMOUNT.finditer(text):
@@ -251,6 +303,7 @@ def infer_price_evidence(
                 return PriceEvidence(kind="ambiguous_amount", amount=low_or_field_amount, source="price_field")
 
     if field_amount is not None:
+        verified_sale_purchase_context = _sale_price_matches_purchase_history(title_text, body_text, field_amount)
         if _has_partial_payment(all_text):
             source = "title" if _has_partial_payment(title_text) else "description"
             return PriceEvidence(kind="partial_payment", source=source)
@@ -262,6 +315,8 @@ def infer_price_evidence(
         for currency_match in _CURRENCY_AMOUNT.finditer(all_text):
             amount = _amount(currency_match.group(1), currency_match.group(2), minimum=0.01)
             if amount is None or amount == field_amount:
+                continue
+            if verified_sale_purchase_context and _is_purchase_price_line_amount(all_text, currency_match.start(1), currency_match.end(1)):
                 continue
             if _is_additional_charge_at(all_text, currency_match.start(1), currency_match.end(1)):
                 continue
@@ -278,12 +333,13 @@ def infer_price_evidence(
             for text in [title_text if source == "title" else body_text]
         }
         has_other_text_price = bool(text_values - {None, field_amount}) or (None in text_values and bool(text_values))
-        if _contains_any(all_text, _HISTORICAL):
+        if _contains_any(all_text, _HISTORICAL) and not verified_sale_purchase_context:
             context = _historical_price_context(title_text, body_text)
             if context:
                 return PriceEvidence(kind="ambiguous_amount", source="price_field", **context)
         if (
-            _contains_any(all_text, _AUCTION + _CONTACT + _HISTORICAL)
+            _contains_any(all_text, _AUCTION + _CONTACT)
+            or (_contains_any(all_text, _HISTORICAL) and not verified_sale_purchase_context)
             or has_other_text_price
             or (_RANGE.search(all_text) and _contains_any(all_text, _PRICE_CONTEXT))
             or _HYPHEN_RANGE.search(all_text)
