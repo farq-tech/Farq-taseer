@@ -39,7 +39,7 @@ _ALTERNATE_PRICES = re.compile(
     r"(?:السعر(?:\s+المطلوب)?|سعر\s+البيع|بسعر|سعر|للبيع(?:\s+ب)?)[^\n]{0,35}?[0-9][0-9,٬]*(?:[.٫][0-9]+)?"
     r"[^\n]{0,25}?(?:او|أو|\sو(?=\s*[0-9])\s*|/|،|,\s+)[^\n]{0,15}?(?P<second>[0-9][0-9,٬]*(?:[.٫][0-9]+)?)"
 )
-_AUCTION = ("على السوم", "عالسوم", "ع السوم", "السوم", "يسوم", "مزايده", "مزايدة")
+_AUCTION = ("على السوم", "عالسوم", "ع السوم", "السوم", "السومة", "للسومة", "السومة الأعلى", "للسومة الأعلى", "يسوم", "مزايده", "مزايدة")
 _CONTACT = ("للاستفسار عن السعر", "السعر على الخاص", "السعر بالخاص", "تواصل لمعرفة السعر", "السعر عند التواصل")
 _HISTORICAL = (
     "اشتريته", "شريته", "اشتريتها", "شريتها", "كان سعره", "كان سعرها", "كان السعر المطلوب", "سعر الشراء", "سعره السابق",
@@ -113,11 +113,25 @@ _ATTACHED_UNIT_RATE_CUES = tuple(sorted(
     reverse=True,
 ))
 
+_UNIT_PRICE_NAMES = (
+    "الباب", "الحبه", "القطعه", "الدرفه", "الضلفه", "الوحده",
+    "الكرتون", "الكيس", "الكيلو", "اللوح", "الكفر", "الاطار",
+    "المتر", "الساعه", "اليوم", "الليله", "الرحله", "الشخص", "الفرد",
+)
+_UNIT_PRICE_AMOUNT = re.compile(
+    rf"(?:{'|'.join(_UNIT_PRICE_NAMES)})(?:\s+(?:الواحد|الواحده))?"
+    rf"\s*(?:(?:بسعر|سعر|ب|[:：=])\s*{_PRICE_NUMBER}|"
+    rf"{_PRICE_NUMBER}\s*(?:ريال|ر\s*\.?\s*س|﷼|sar|sr))",
+    re.IGNORECASE,
+)
+
 
 def _contains_unit_or_installment(text: str) -> bool:
     if _contains_any(text, _UNIT_OR_INSTALLMENT) or _FIELD_UNIT_RATE.search(text):
         return True
     normalized = normalize(to_ascii_digits(text))
+    if _UNIT_PRICE_AMOUNT.search(normalized):
+        return True
     return any(
         re.search(rf"(?<=\d){re.escape(cue)}(?![\w])", normalized)
         for cue in _ATTACHED_UNIT_RATE_CUES
