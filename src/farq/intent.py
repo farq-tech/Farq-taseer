@@ -2161,9 +2161,9 @@ def analyze(query: str) -> IntentResponse:
         )
     if head.subcategory == "strollers" and head.model == "YOYO":
         expansions = (*expansions, "يويو عربة أطفال")
-        # Keep mixed-script «عربة أطفال YOYO» inside the provider's seven-query
-        # budget alongside Arabic singulars, reverse seller phrasing, and English terms.
-        plural_forms = {normalize("عربايات أطفال يويو"), normalize("عربات أطفال يويو")}
+        # Keep the colloquial plural «عربايات» and mixed-script YOYO phrase.
+        # A targeted extra provider query keeps both inside the YOYO recall budget.
+        plural_forms = {normalize("عربات أطفال يويو")}
         expansions = tuple(term for term in expansions if normalize(term) not in plural_forms)
     if head.subcategory == "strollers" and intent.model.known and intent.model.value in {"YOYO 2", "YOYO 3"}:
         variant = intent.model.value[-1]
