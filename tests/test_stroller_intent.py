@@ -353,7 +353,10 @@ def test_haraj_query_budget_keeps_arabic_and_english_yoyo_searches(query):
     searched = haraj_queries(intent.search_terms, None)[: SearchConfig().live_max_queries]
 
     assert len(searched) == 7
-    assert "عربة أطفال YOYO" in searched
+    mixed_script_term = "عربة أطفال YOYO"
+    if intent.model.value == "YOYO 2":
+        mixed_script_term += " 2"
+    assert mixed_script_term in searched
     assert any("Babyzen YOYO" in term for term in searched)
     assert any("YOYO" in term and "stroller" in term for term in searched)
     if intent.model.value == "YOYO 2":
