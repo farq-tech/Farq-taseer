@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from farq.cities import district_sides, find_cities, find_directions
+from farq.cities import district_sides, find_cities, find_directions, find_route
 from farq.contracts import Ad, IntentResponse, Seller
 from farq.text import normalize, prefix_variants, to_ascii_digits, tokens
 
@@ -175,6 +175,14 @@ _PRODUCT_NOT_TRADE = (
 # جميع انواع العفش», «سباك وتركيب سخانات». Those words reject a title only when it is
 # not the trade doing work. Vehicles stay out: «كهربائي سيارات» is not a home electrician.
 _MOVING = ("نقل عفش", "نقل اثاث", "نقل العفش", "نقل الاثاث")
+_VEHICLE_TRANSPORT_OFFER = (
+    "نقل سيارة", "نقل سيارات", "نقل مركبة", "نقل مركبات", "سطحة نقل", "سطحه نقل",
+    "سطحة سيارات", "سطحه سيارات", "سطحة سيارة", "سطحه سياره", "car towing", "vehicle transport",
+)
+_NATIONWIDE_ROUTE = (
+    "بين المدن", "جميع المدن", "جميع مدن المملكة", "كل مدن المملكة", "كافة مدن المملكة", "جميع مدن السعودية",
+    "كل مدن السعودية", "جميع مناطق المملكة", "كافة مناطق المملكة", "داخل وخارج المملكة",
+)
 _SERVICE_VERBS = ("تفصيل", "تركيب", "فك", "صيانه", "تصنيع", "تصليح", "اصلاح", "ترميم")
 _VEHICLE_WORDS = ("سياره", "سيارات", "ميكانيكي", "دباب", "سكوتر", "سيكل", "دراجه", "دركسون")
 
@@ -399,7 +407,10 @@ def _property_transaction(text: str) -> str | None:
 
 # The rules a near match may fail. Everything else - a deleted or sold listing, another
 # city, another model or size, a wanted-ad, a price outside the asked range - still rejects.
-SOFT_REJECTIONS = ("head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike", "yoyo_variant_mismatch")
+SOFT_REJECTIONS = (
+    "head_not_in_title_lead", "title_missing:", "missing:", "model_lookalike",
+    "yoyo_variant_mismatch", "route_unconfirmed",
+)
 
 
 def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed: bool = False) -> tuple[bool, list[str]]:
@@ -421,26 +432,41 @@ def decide(intent: IntentResponse, ad: Ad | None, seller: Seller | None, relaxed
             named = find_cities(ad.title, strict=True)
             if named and intent.location_city.value not in named:
                 return False, ["location_mismatch"]
-    if (
-        ad is not None
-        and intent.subcategory.value == "passenger_transport"
-        and intent.destination_city.known
-        and isinstance(intent.location_city.value, str)
-    ):
-        required_route_cities = {
-            normalize(intent.location_city.value),
-            normalize(str(intent.destination_city.value)),
-        }
-        listing_cities = {
-            normalize(city)
-            for city in find_cities(f"{ad.city or ''} {ad.title} {ad.description or ''}")
-        }
-        if not required_route_cities <= listing_cities:
-            return False, ["route_mismatch"]
     text = evidence_text(ad, seller)
     if not normalize(text):
         return False, ["no_evidence_text"]
     title = ad.title if ad is not None else ""
+    if ad is not None and intent.subcategory.value == "vehicle_transport":
+        listing_text = f"{ad.title} {ad.description or ''}"
+        if has_word(listing_text, _MOVING) and not has_word(listing_text, _VEHICLE_TRANSPORT_OFFER):
+            return False, ["moving_not_vehicle_transport"]
+    if (
+        ad is not None
+        and intent.subcategory.value in {"vehicle_transport", "passenger_transport", "moving", "goods_transport"}
+        and intent.destination_city.known
+        and isinstance(intent.location_city.value, str)
+    ):
+        origin = normalize(intent.location_city.value)
+        destination = normalize(str(intent.destination_city.value))
+        listing_text = f"{ad.title} {ad.description or ''}"
+        explicit_route = find_route(listing_text)
+        if explicit_route and explicit_route != (origin, destination):
+            return False, ["route_mismatch"]
+        listing_cities = {normalize(city) for city in find_cities(listing_text)}
+        if has_word(listing_text, _NATIONWIDE_ROUTE) and (
+            origin in listing_cities or normalize(ad.city or "") == origin
+        ):
+            pass
+        elif _has_explicit_route_cue(listing_text) and not {origin, destination} <= listing_cities:
+            return False, ["route_mismatch"]
+        elif {origin, destination} <= listing_cities:
+            pass
+        elif intent.subcategory.value == "passenger_transport":
+            return False, ["route_mismatch"]
+        elif relaxed:
+            pass
+        else:
+            return False, ["route_unconfirmed"]
     if intent.subcategory.value == "cats" and title and re.search(
         r"(?:^|\s)(?:cat|caterpillar)\s+\d{3,4}[a-z]?(?:\s|$)", normalize(title), re.IGNORECASE
     ):
@@ -763,6 +789,14 @@ def _yoyo_lookalike_claim(text: str) -> bool:
         if any(set(prefix_variants(candidate)) & model for candidate in window):
             return True
     return False
+
+
+def _has_explicit_route_cue(text: str) -> bool:
+    normalized = normalize(text)
+    arabic_route = re.search(r"(?:^|\s)من\s+\S+.*?\s+(?:الى|الي|ل)\s+\S+", normalized)
+    arabic_return = re.search(r"\S+\s+راجع(?:ه)?\s+(?:الى|الي|ل)\s+\S+", normalized)
+    english_route = re.search(r"\bfrom\s+\S+.*?\bto\s+\S+", normalized, re.IGNORECASE)
+    return bool(arabic_route or arabic_return or english_route)
 
 
 def _yoyo_is_primary_listing_identity(title: str, description: str) -> bool:
