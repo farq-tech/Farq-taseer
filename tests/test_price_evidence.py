@@ -257,13 +257,6 @@ def test_attached_unit_rate_in_price_field_is_not_a_total():
     assert evidence.amount is None
 
 
-@pytest.mark.parametrize(
-    "description",
-    [
-        "سعر المتر يبدأ من 1,200 ريال",
-        "سعر الوحدة 300 ريال",
-    ],
-)
 def test_per_door_promotion_price_is_not_the_total_for_a_multi_door_order():
     evidence = infer_price_evidence(
         "عرض خاص لمدة 3 أيام أبواب WPC بسعر 749",
@@ -275,6 +268,14 @@ def test_per_door_promotion_price_is_not_the_total_for_a_multi_door_order():
     assert evidence.amount is None
 
 
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "سعر المتر يبدأ من 1,200 ريال",
+        "سعر الوحدة 300 ريال",
+    ],
+)
 def test_unit_prices_named_as_price_of_unit_are_not_listing_totals(description):
     evidence = infer_price_evidence("عقار أو سلعة", description, None)
 
@@ -423,3 +424,14 @@ def test_seller_greeting_with_the_word_muqaddam_is_not_a_deposit():
 
     assert evidence.kind == "asking_price_in_field"
     assert evidence.amount == 50000
+
+
+def test_delivery_to_door_does_not_make_an_explicit_price_a_unit_rate():
+    evidence = infer_price_evidence(
+        "طاولة للبيع",
+        "السعر 500 ريال والتوصيل للباب",
+        None,
+    )
+
+    assert evidence.kind == "explicit_text_price"
+    assert evidence.amount == 500
