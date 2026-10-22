@@ -264,6 +264,17 @@ def test_attached_unit_rate_in_price_field_is_not_a_total():
         "سعر الوحدة 300 ريال",
     ],
 )
+def test_per_door_promotion_price_is_not_the_total_for_a_multi_door_order():
+    evidence = infer_price_evidence(
+        "عرض خاص لمدة 3 أيام أبواب WPC بسعر 749",
+        "سعر الباب: 749 ريال\nأقل كمية للطلب: 15 باب",
+        None,
+    )
+
+    assert evidence.kind == "unit_or_installment_price"
+    assert evidence.amount is None
+
+
 def test_unit_prices_named_as_price_of_unit_are_not_listing_totals(description):
     evidence = infer_price_evidence("عقار أو سلعة", description, None)
 
