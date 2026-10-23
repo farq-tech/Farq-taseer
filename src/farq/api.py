@@ -118,6 +118,7 @@ class SupplierClaimBody(ApiModel):
 
 class NotificationReadBody(ApiModel):
     id: str | None = None
+    request_id: str | None = None
 
 
 class EmailVerifyBody(ApiModel):
@@ -1170,7 +1171,7 @@ def create_app(
 
     @app.post("/v1/notifications/read")
     def customer_inbox_read(body: NotificationReadBody, user_id: str = Depends(current_user)) -> dict:
-        return {"marked": store.mark_customer_notifications_read(user_id, body.id)}
+        return {"marked": store.mark_customer_notifications_read(user_id, body.id, body.request_id)}
 
     @app.get("/v1/haraj/unmatched")
     def haraj_unmatched(user_id: str = Depends(current_user)) -> dict:

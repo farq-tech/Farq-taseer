@@ -67,15 +67,15 @@ def owned_request(tmp_path: Path, *, linked: bool = True) -> tuple[Store, str]:
 
 
 def test_payload_opens_the_conversation_and_collapses_per_request():
-    payload = reply_payload(FARQ_UID, "abc123", "مؤسسة النور", "  السعر 450  ")
+    payload = reply_payload(FARQ_UID, "abc123", "مؤسسة النور", "  السعر 450  ", "سباك الرياض")
     assert payload == {
         "user_id": FARQ_UID,
-        "title": "مؤسسة النور",
-        "body": "السعر 450",
+        "title": "رسالة جديدة من مؤسسة النور",
+        "body": "طلبك: سباك الرياض · السعر 450",
         "path": "/taseer?r=abc123",
         "collapse_id": "taseer:abc123",
     }
-    assert reply_payload(FARQ_UID, "abc", "", "")["body"] == "وصلك رد جديد على طلب التسعير"
+    assert reply_payload(FARQ_UID, "abc", "", "")["body"] == "على طلبك · وصلك رد جديد، افتح المحادثة لقراءته"
 
 
 def test_reply_asks_farq_with_the_service_credential(tmp_path, configured):
@@ -86,7 +86,8 @@ def test_reply_asks_farq_with_the_service_credential(tmp_path, configured):
     assert call["path"] == "/api/push/notify"
     assert call["auth"] == f"Bearer {SECRET}"
     assert call["body"]["user_id"] == FARQ_UID
-    assert call["body"]["title"] == "مؤسسة النور"
+    assert call["body"]["title"] == "رسالة جديدة من مؤسسة النور"
+    assert call["body"]["body"] == "طلبك: سباك · السعر 450 شامل التركيب"
     assert call["body"]["path"] == f"/taseer?r={request_id}"
 
 

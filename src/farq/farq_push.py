@@ -33,11 +33,13 @@ def configured() -> bool:
     return bool(os.environ.get("BILLING_S2S_SECRET", "").strip())
 
 
-def reply_payload(farq_user_id: str, request_id: str, sender: str, body: str) -> dict:
+def reply_payload(farq_user_id: str, request_id: str, sender: str, body: str, need: str | None = None) -> dict:
+    preview = (body or "").strip()[:180] or "وصلك رد جديد، افتح المحادثة لقراءته"
+    context = f"طلبك: {need} · " if need else "على طلبك · "
     return {
         "user_id": farq_user_id,
-        "title": sender or "مورد",
-        "body": (body or "").strip()[:180] or "وصلك رد جديد على طلب التسعير",
+        "title": f"رسالة جديدة من {sender or 'مورد'}"[:100],
+        "body": f"{context}{preview}"[:180],
         "path": f"/taseer?r={request_id}",
         # One banner per conversation on the lock screen: a newer reply replaces the older.
         "collapse_id": f"taseer:{request_id}"[:64],
@@ -53,7 +55,7 @@ def notify_farq_reply(store, request_id: str, seller_id: str | None, body: str,
     if not farq_user_id:
         return False
     base = api_url()
-    payload = reply_payload(farq_user_id, request_id, store.recipient_name(request_id, seller_id) or "", body)
+    payload = reply_payload(farq_user_id, request_id, store.recipient_name(request_id, seller_id) or "", body, store.request_need(request_id))
     http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
     try:
         response = http.post(

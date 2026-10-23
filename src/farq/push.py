@@ -49,8 +49,12 @@ def _web_push(store, request_id: str, seller_id: str | None, body: str) -> tuple
     except ImportError:
         return 0, 0
     name = store.recipient_name(request_id, seller_id) or "جهة"
+    need = store.request_need(request_id)
+    title = f"رسالة جديدة من {name}"
+    preview = " ".join((body or "").split()) or "وصلك رد جديد، افتح المحادثة لقراءته"
+    context = f"طلبك: {need} · " if need else "على طلبك · "
     payload = json.dumps(
-        {"title": name, "body": (body or "")[:180], "url": f"/?r={request_id}", "tag": request_id},
+        {"title": title[:100], "body": f"{context}{preview}"[:180], "url": f"/?r={request_id}", "tag": request_id},
         ensure_ascii=False,
     )
     tried = delivered = 0
