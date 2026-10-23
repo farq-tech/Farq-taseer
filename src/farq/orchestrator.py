@@ -337,9 +337,17 @@ def _search_need(
     )
     fetched = len(live_batch.ads) if live_batch is not None else 0
     zero_reason = None if ordered else _zero_reason(state, fetched, local_reasons + live_reasons)
-    if not ordered and near and live_batch is not None and live_batch.ads and zero_reason == "none_matching":
-        ordered = _near_results(intent, live_batch.ads, config, now)
-        stages.append({"stage": "near_match", "need": intent.need, "kept": len(ordered)})
+    if near and live_batch is not None and live_batch.ads:
+        exact_keys = {(item.ad.id if item.ad else None, item.seller.id if item.seller else None) for item in ordered}
+        near_results = [
+            item for item in _near_results(intent, live_batch.ads, config, now)
+            if (item.ad.id if item.ad else None, item.seller.id if item.seller else None) not in exact_keys
+        ]
+        if near_results:
+            # Keep exact matches first, followed by explicitly labelled near matches. The
+            # UI can show relevant uncertain listings without passing them off as exact.
+            ordered.extend(near_results)
+        stages.append({"stage": "near_match", "need": intent.need, "kept": len(near_results)})
     stages.append({"stage": "response", "need": intent.need, "state": state.value, "results": len(ordered), "zero_reason": zero_reason})
     yield {"type": "need_done", "state": state, "results": ordered, "stages": stages, "zero_reason": zero_reason}
 
@@ -449,7 +457,7 @@ def iter_search(
     if len(groups) == 1:
         yield finish(groups[0].state, groups[0].results, groups=[groups[0]], zero_reason=groups[0].zero_reason)
         return
-    # Near matches are not results: an order of only near matches is still «none matched».
+    # Near matches are never treated as exact when deciding the overall search state.
     any_results = any(item.match == "exact" for group in groups for item in group.results)
     state = SearchState.RESULTS if any_results else SearchState.NO_QUALIFIED_RESULTS
     yield finish(state, flat, groups=groups, zero_reason=None if any_results else "none_matching")

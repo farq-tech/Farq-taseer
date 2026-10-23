@@ -182,9 +182,8 @@ class SearchResult(ContractModel):
     seller: Seller | None = None
     score: float
     match_evidence: list[str] = Field(default_factory=list)
-    # "exact" passed every eligibility rule. "near" is offered only when nothing passed: a
-    # real listing that failed a soft rule (the head word not early in the title, or one of
-    # several word groups missing). The app labels it as near, never as a match.
+    # "exact" passed every eligibility rule. "near" failed only a soft rule and is
+    # identified to the customer as uncertain, never presented as an exact result.
     match: str = "exact"
 
 

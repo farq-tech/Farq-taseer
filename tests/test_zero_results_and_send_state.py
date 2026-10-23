@@ -97,13 +97,30 @@ def test_near_matches_are_real_listings_labelled_near(t9_reading):
     assert any(stage["stage"] == "near_match" for stage in trace["stages"])
 
 
-def test_an_exact_result_is_never_mixed_with_near(t9_reading):
+def test_exact_results_stay_ahead_of_labeled_near_matches(t9_reading):
     exact = _ad(6, "هارد سامسونج T9 خارجي 1 تيرا")
-    response, _trace = _search("هاردسك t9 الرياض", LiveBatch(ads=[*T9_ADS, exact]), near=True)
+    response, trace = _search("هاردسك t9 الرياض", LiveBatch(ads=[*T9_ADS, exact]), near=True)
     assert response.state == SearchState.RESULTS
     assert response.zero_reason is None
-    assert [item.ad.id for item in response.results] == ["6"]
+    assert [item.ad.id for item in response.results] == ["6", "1"]
     assert response.results[0].match == "exact"
+    assert response.results[1].match == "near"
+    assert any(stage["stage"] == "near_match" and stage["kept"] == 1 for stage in trace["stages"])
+
+
+def test_unconfirmed_vehicle_routes_are_shown_as_near_without_admitting_wrong_routes(monkeypatch):
+    monkeypatch.setattr(understand, "read_query", lambda query: None)
+    exact = _ad(11, "سطحة نقل سيارات من الرياض إلى جدة")
+    route_unconfirmed = _ad(12, "سطحة الرياض لنقل السيارات داخل وخارج الرياض")
+    wrong_route = _ad(13, "سطحة نقل السيارات من بيشة إلى القصيم")
+    response, _trace = _search(
+        "نقل سيارة من الرياض إلى جدة",
+        LiveBatch(ads=[route_unconfirmed, wrong_route, exact]),
+        near=True,
+    )
+
+    assert response.state == SearchState.RESULTS
+    assert [(item.ad.id, item.match) for item in response.results] == [("11", "exact"), ("12", "near")]
 
 
 def test_old_clients_never_get_near_matches(t9_reading):
