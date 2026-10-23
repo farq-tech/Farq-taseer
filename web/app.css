@@ -1794,6 +1794,7 @@ body.fq-auth .fq { background: linear-gradient(135deg, var(--fq-light) 25%, var(
 /* --- the bottom navigation --- */
 .fq-nav { border-top: 0.5px solid var(--fq-line); box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.051); backdrop-filter: blur(10px); }
 .fq-nav-row { padding: 12px 16px; }
+.fq-nav-notice { margin: 0; height: 28px; line-height: 28px; text-align: center; padding: 0 16px; border-bottom: 0.5px solid var(--fq-line); color: var(--fq-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fq-tab { width: 110px; font-size: 11px; font-weight: 500; }
 .fq-tab.on { color: var(--fq-deep); font-weight: 700; }
 .fq-tab-badge { background: var(--fq-success); }
