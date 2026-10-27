@@ -1689,6 +1689,16 @@ class PgStore:
         with self._pool.connection() as conn:
             conn.execute("update haraj_threads set checked_at=%s,retry_at=%s,failure_code=%s,high_water=greatest(coalesce(high_water,0),%s) where haraj_conversation_id=%s and request_id in (select r.id from requests r join users u on u.id=r.owner_user_id where u.farq_user_id=%s)",(moment,(moment+timedelta(seconds=retry_seconds)),failure_code,high_water or 0,conversation_id,farq_owner))
 
+    def reattach_haraj_threads(self, farq_owner: str, account_id: str, detached_code: str) -> int:
+        """Make this owner's conversations parked as detached from ``account_id`` due now."""
+        with self._pool.connection() as conn:
+            cursor = conn.execute(
+                "update haraj_threads set retry_at = now(), failure_code = null where failure_code = %s and haraj_account_id = %s"
+                " and request_id in (select r.id from requests r join users u on u.id = r.owner_user_id where u.farq_user_id = %s)",
+                (detached_code, account_id, farq_owner),
+            )
+            return cursor.rowcount
+
     def remove_owned_unmatched(self, farq_owner, message_id):
         with self._pool.connection() as conn:
             conn.execute("delete from haraj_unmatched where farq_user_id=%s and haraj_message_id=%s",(farq_owner,message_id))

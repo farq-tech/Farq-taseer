@@ -3,11 +3,37 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
 import uuid
 import httpx
 from farq.haraj_chat import HarajChatUnavailable, SentMessage, InboundMessage, find_references, with_reference
+
+log = logging.getLogger('farq.haraj_broker')
+
+# A read refused with HARAJ_CONVERSATION_OWNERSHIP can only succeed once the owner reconnects the
+# Haraj account the RFQ was sent from (Farq imports no history into a different account), and Farq
+# replays that refusal from cache. Park the conversation instead of re-asking every minute; a verify
+# that shows the original account connected again re-arms it (reattach_after_verify).
+DETACHED_CODE = 'HARAJ_CONVERSATION_DETACHED'
+DETACHED_RECHECK_SECONDS = 24 * 3600
+RATE_LIMIT_DEFAULT_SECONDS = 60
+RATE_LIMIT_MAX_SECONDS = 3600
+
+
+def _retry_after(response, result):
+    """Seconds from Retry-After (or Farq's meta.haraj.retryAfterSeconds), bounded; None if absent."""
+    raw = response.headers.get('Retry-After')
+    if raw is None and isinstance(result, dict):
+        meta = result.get('meta')
+        haraj = meta.get('haraj') if isinstance(meta, dict) else None
+        raw = haraj.get('retryAfterSeconds') if isinstance(haraj, dict) else None
+    try:
+        seconds = int(float(str(raw).strip()))
+    except (TypeError, ValueError):
+        return None
+    return min(max(seconds, 1), RATE_LIMIT_MAX_SECONDS)
 
 def recipient_consent(attributes, seller_id):
     """A merged campaign preserves each supplier's original account and consent."""
@@ -49,7 +75,8 @@ class UserHarajBroker:
             errors = result.get('errors') if isinstance(result,dict) else None
             code = errors[0].get('code') if isinstance(errors,list) and errors and isinstance(errors[0],dict) else None
             allowed = {'HARAJ_RATE_LIMITED','HARAJ_REAUTH_REQUIRED','HARAJ_CHALLENGE_REQUIRED','HARAJ_SEND_UNCERTAIN','HARAJ_CONVERSATION_OWNERSHIP','HARAJ_HISTORY_INCOMPLETE','HARAJ_CONFIGURATION_REQUIRED'}
-            raise HarajChatUnavailable(code if code in allowed else 'HARAJ_PROVIDER_UNAVAILABLE')
+            code = code if code in allowed else 'HARAJ_PROVIDER_UNAVAILABLE'
+            raise HarajChatUnavailable(code, retry_after=_retry_after(response, result) if code == 'HARAJ_RATE_LIMITED' else None)
         data = result.get('data')
         if not isinstance(data,dict):
             raise HarajChatUnavailable('HARAJ_PROTOCOL_UNRESOLVED')
@@ -169,8 +196,18 @@ def sync_user_replies(store, budget_seconds, clock):
         try:
             messages=broker.read_thread(store,threads[0],min(int(t.get('high_water') or 0) for t in threads))
         except HarajChatUnavailable as error:
+            if error.code == 'HARAJ_CONVERSATION_OWNERSHIP':
+                # Detached: the RFQ's Haraj account is no longer the one connected. Retrying cannot help.
+                log.warning('haraj conversation %s detached from account %s (requests %s); polling parked until the owner reconnects it',
+                            conversation, account, ', '.join(sorted({t['request_id'] for t in threads})))
+                for thread in threads:
+                    store.thread_checked(thread,failure_code=DETACHED_CODE,retry_seconds=DETACHED_RECHECK_SECONDS,now=clock())
+                continue
+            wait = 60
+            if error.code == 'HARAJ_RATE_LIMITED':
+                wait = error.retry_after or RATE_LIMIT_DEFAULT_SECONDS
             for thread in threads:
-                store.thread_checked(thread,failure_code=error.code,retry_seconds=60,now=clock())
+                store.thread_checked(thread,failure_code=error.code,retry_seconds=wait,now=clock())
             continue
         except Exception:
             for thread in threads:
@@ -232,6 +269,19 @@ def sync_user_replies(store, budget_seconds, clock):
         for request_id in synced_requests:
             store.mark_synced(request_id)
     return received
+
+
+def reattach_after_verify(store, farq_owner, verified):
+    """A verify showing the original Haraj account connected again makes its parked conversations due now."""
+    account = verified.get('provider_user_id') if isinstance(verified, dict) else None
+    if not farq_owner or not account or verified.get('status') != 'CONNECTED':
+        return 0
+    try:
+        return store.reattach_haraj_threads(farq_owner, str(account), DETACHED_CODE)
+    except Exception:
+        # Re-arming is best-effort; the daily recheck still finds a reconnected account.
+        log.warning('haraj detached conversations could not be re-armed after verify', exc_info=True)
+        return 0
 
 
 def owned_unmatched(store, local_owner):
