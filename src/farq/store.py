@@ -705,6 +705,12 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         need_cards.append({"need": label, "recipient_count": len(group), "offer_count": len(group_offers), "lowest_total": min(totals) if totals else None})
     last = messages[-1] if messages else None
     preview = " ".join((last["body"] or "").split()) if last is not None else ""
+    last_role = last["sender_role"] if last is not None else None
+    last_offer_amount = None if last is None or last["offer_amount"] is None else float(last["offer_amount"])
+    last_seller_name = None
+    if last_role == "seller" and last["seller_id"]:
+        last_seller_key = seller_key(last["seller_id"])
+        last_seller_name = next((item.seller_name for item in recipients if seller_key(item.seller_id) == last_seller_key), None)
     replies = max(len(replied), len(offers))
     latest_amount = None if latest_offer is None else float(latest_offer["offer_amount"])
     awarded_name = None
@@ -725,6 +731,9 @@ def request_summary(row, recipients: list[RequestRecipient], offers: list[Offer]
         "seller_names": [item.seller_name for item in recipients],
         "last_message": preview[:180],
         "last_message_at": None if last is None else _stamp(last["created_at"]),
+        "last_message_role": last_role,
+        "last_message_seller_name": last_seller_name,
+        "last_message_offer_amount": last_offer_amount,
         "recipient_count": recipient_count,
         "sent_count": sent_count,
         "failed_count": failed_count,
@@ -2976,6 +2985,10 @@ class Store:
         row = self._connection.execute("select owner_user_id from requests where id = ?", (request_id,)).fetchone()
         return None if row is None else row["owner_user_id"]
 
+    def request_need(self, request_id: str) -> str | None:
+        row = self._connection.execute("select need, original_text from requests where id = ?", (request_id,)).fetchone()
+        return None if row is None else (row["need"] or row["original_text"])
+
     def enqueue_customer_notification(self, *, user_id: str, event: str, dedupe_key: str, title: str, body: str | None,
                                       url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
         """The in-app row, written before any push is tried. None when this event was already queued."""
@@ -3005,10 +3018,14 @@ class Store:
         ).fetchone()["count"]
         return {"notifications": [customer_notification_view(row) for row in rows], "unread": int(unread)}
 
-    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None) -> int:
+    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None, request_id: str | None = None) -> int:
         if notification_id:
             cursor = self._connection.execute(
                 "update customer_notifications set read_at = ? where user_id = ? and id = ? and read_at is null", (_now(), user_id, notification_id)
+            )
+        elif request_id:
+            cursor = self._connection.execute(
+                "update customer_notifications set read_at = ? where user_id = ? and request_id = ? and read_at is null", (_now(), user_id, request_id)
             )
         else:
             cursor = self._connection.execute("update customer_notifications set read_at = ? where user_id = ? and read_at is null", (_now(), user_id))

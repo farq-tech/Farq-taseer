@@ -1933,6 +1933,11 @@ class PgStore:
             row = conn.execute("select owner_user_id from requests where id = %s", (request_id,)).fetchone()
         return None if row is None else row["owner_user_id"]
 
+    def request_need(self, request_id: str) -> str | None:
+        with self._pool.connection() as conn:
+            row = conn.execute("select need, original_text from requests where id = %s", (request_id,)).fetchone()
+        return None if row is None else (row["need"] or row["original_text"])
+
     def enqueue_customer_notification(self, *, user_id: str, event: str, dedupe_key: str, title: str, body: str | None,
                                       url: str | None, request_id: str | None = None, seller_id: str | None = None) -> dict | None:
         notification_id = uuid4().hex
@@ -1962,12 +1967,17 @@ class PgStore:
             ).fetchone()["count"]
         return {"notifications": [customer_notification_view(row) for row in rows], "unread": int(unread)}
 
-    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None) -> int:
+    def mark_customer_notifications_read(self, user_id: str, notification_id: str | None = None, request_id: str | None = None) -> int:
         with self._pool.connection() as conn:
             if notification_id:
                 done = conn.execute(
                     "update customer_notifications set read_at = now() where user_id = %s and id = %s and read_at is null returning id",
                     (user_id, notification_id),
+                ).fetchall()
+            elif request_id:
+                done = conn.execute(
+                    "update customer_notifications set read_at = now() where user_id = %s and request_id = %s and read_at is null returning id",
+                    (user_id, request_id),
                 ).fetchall()
             else:
                 done = conn.execute(
