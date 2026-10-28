@@ -170,3 +170,79 @@ def test_direct_send_spaces_provider_attempts_after_acceptance(monkeypatch):
     assert waits == [0.0, 30.0]
     assert attempts == [100.0, 132.0]
     assert store.finish_delivery.call_count == 2
+
+
+def _thread(**extra):
+    return {'request_id':'request-a','seller_id':'haraj:seller:202','need':'باب','haraj_conversation_id':'p2p101_202',
+            'haraj_account_id':'101','high_water':3,
+            'consent_attributes':{'_haraj_consent':{'owner':OWNER,'at':'2026-10-01T00:00:00Z','account':'101','recipients':['haraj:seller:202']}},
+            **extra}
+
+
+def _sync_with_service_response(monkeypatch, response):
+    """Run one reply-sync pass where Farq's service answers every messages read with ``response``."""
+    from farq import haraj_broker
+    http = Mock(); http.post.return_value = response
+    monkeypatch.setattr(haraj_broker, 'UserHarajBroker', lambda: UserHarajBroker(ENV, http))
+    store = Mock(); store.farq_user_for_request.return_value = OWNER
+    store.threads_to_sync.return_value = [_thread()]
+    assert haraj_broker.sync_user_replies(store, 40, lambda: 1000.0) == 0
+    return store, http
+
+
+def test_ownership_refusal_parks_the_conversation_instead_of_retrying(monkeypatch, caplog):
+    from farq.haraj_broker import DETACHED_CODE, DETACHED_RECHECK_SECONDS
+    refused = httpx.Response(403, json={'errors':[{'code':'HARAJ_CONVERSATION_OWNERSHIP'}]})
+    with caplog.at_level('WARNING', logger='farq.haraj_broker'):
+        store, http = _sync_with_service_response(monkeypatch, refused)
+    assert http.post.call_count == 1
+    store.thread_checked.assert_called_once()
+    kwargs = store.thread_checked.call_args.kwargs
+    assert kwargs['failure_code'] == DETACHED_CODE
+    assert kwargs['retry_seconds'] == DETACHED_RECHECK_SECONDS >= 24 * 3600
+    assert 'detached' in caplog.text and 'request-a' in caplog.text
+    store.record_inbound.assert_not_called()
+    store.mark_synced.assert_not_called()
+
+
+@pytest.mark.parametrize('headers,body_meta,expected', [
+    ({'Retry-After':'900'}, None, 900),
+    ({}, {'haraj':{'retryAfterSeconds':120}}, 120),
+    ({'Retry-After':'999999'}, None, 3600),
+    ({'Retry-After':'soon'}, None, 60),
+    ({}, None, 60),
+])
+def test_rate_limit_backs_off_for_retry_after(monkeypatch, headers, body_meta, expected):
+    body = {'errors':[{'code':'HARAJ_RATE_LIMITED'}]}
+    if body_meta:
+        body['meta'] = body_meta
+    store, http = _sync_with_service_response(monkeypatch, httpx.Response(429, json=body, headers=headers))
+    assert http.post.call_count == 1
+    kwargs = store.thread_checked.call_args.kwargs
+    assert kwargs['failure_code'] == 'HARAJ_RATE_LIMITED'
+    assert kwargs['retry_seconds'] == expected
+
+
+def test_parked_conversation_is_not_due_until_original_account_reconnects(tmp_path):
+    from datetime import datetime, timezone
+    from farq.store import Store
+    from farq.contracts import RequestRecipient
+    from farq.haraj_broker import DETACHED_CODE, DETACHED_RECHECK_SECONDS, reattach_after_verify
+    store = Store(tmp_path/'detached.sqlite3', tmp_path/'uploads')
+    owner = store.register('detached@example.test', 'synthetic')
+    store._connection.execute('update users set farq_user_id = ? where id = ?', (OWNER, owner))
+    request = store.create_request(owner, 'باب', 'باب', None, 'الرياض', {}, [RequestRecipient(seller_id='haraj:seller:202', seller_name='تجريبي')], supplier_message='بكم الباب؟')
+    store._connection.execute("update haraj_threads set haraj_conversation_id = 'p2p101_202', haraj_account_id = '101' where request_id = ?", (request,))
+    store._connection.commit()
+    now = datetime.now(timezone.utc).timestamp()
+    thread = next(t for t in store.threads_to_sync(now=now) if t['request_id'] == request)
+    store.thread_checked(thread, failure_code=DETACHED_CODE, retry_seconds=DETACHED_RECHECK_SECONDS, now=now)
+    assert not [t for t in store.threads_to_sync(now=now + 3600) if t['request_id'] == request]
+    # A different account, another owner, or a non-connected verify leaves it parked.
+    assert reattach_after_verify(store, OWNER, {'status':'CONNECTED','provider_user_id':'999'}) == 0
+    assert reattach_after_verify(store, '22222222-2222-4222-8222-222222222222', {'status':'CONNECTED','provider_user_id':'101'}) == 0
+    assert reattach_after_verify(store, OWNER, {'status':'REAUTH_REQUIRED','provider_user_id':'101'}) == 0
+    assert not [t for t in store.threads_to_sync(now=now + 3600) if t['request_id'] == request]
+    assert reattach_after_verify(store, OWNER, {'status':'CONNECTED','provider_user_id':101}) == 1
+    due = [t for t in store.threads_to_sync() if t['request_id'] == request]
+    assert due and due[0]['failure_code'] is None

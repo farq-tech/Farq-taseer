@@ -2500,6 +2500,16 @@ class Store:
         self._connection.execute("update haraj_threads set checked_at=?,retry_at=?,failure_code=?,high_water=max(coalesce(high_water,0),?) where haraj_conversation_id=? and request_id in (select r.id from requests r join users u on u.id=r.owner_user_id where u.farq_user_id=?)",(moment.isoformat(),(moment+timedelta(seconds=retry_seconds)).isoformat(),failure_code,high_water or 0,conversation_id,farq_owner))
         self._connection.commit()
 
+    def reattach_haraj_threads(self, farq_owner: str, account_id: str, detached_code: str) -> int:
+        """Make this owner's conversations parked as detached from ``account_id`` due now."""
+        cursor = self._connection.execute(
+            "update haraj_threads set retry_at = ?, failure_code = null where failure_code = ? and haraj_account_id = ?"
+            " and request_id in (select r.id from requests r join users u on u.id = r.owner_user_id where u.farq_user_id = ?)",
+            (_now(), detached_code, account_id, farq_owner),
+        )
+        self._connection.commit()
+        return cursor.rowcount
+
     def remove_owned_unmatched(self, farq_owner, message_id):
         self._connection.execute("delete from haraj_unmatched where farq_user_id=? and haraj_message_id=?",(farq_owner,message_id))
         self._connection.commit()

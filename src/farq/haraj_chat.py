@@ -51,9 +51,11 @@ UNREADABLE = "رسالة غير نصية"
 class HarajChatUnavailable(Exception):
     """Nothing was posted: not configured, no session, or paused. Deliveries stay queued."""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, retry_after: int | None = None):
         super().__init__(code)
         self.code = code
+        # Seconds the service asked us to wait (HTTP 429 Retry-After); None when it gave none.
+        self.retry_after = retry_after
 
 
 class HarajRefused(Exception):
